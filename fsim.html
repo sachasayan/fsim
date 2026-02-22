@@ -30,13 +30,11 @@
     <div id="warning-overlay">STALL</div>
 
     <!-- NEW CRASH SCREEN OVERLAY -->
-    <div id="crash-screen"
-        style="position: absolute; top: 0; left: 0; width: 100vw; height: 75vh; background: rgba(0,0,0,0.85); z-index: 50; display: none; flex-direction: column; justify-content: center; align-items: center; color: #ff3333; font-family: monospace; text-align: center;">
-        <h1 style="font-size: 64px; margin: 0; text-shadow: 0 0 20px #ff0000; letter-spacing: 5px;">AIRCRAFT DESTROYED
+    <div id="crash-screen">
+        <h1 class="crash-title">AIRCRAFT DESTROYED
         </h1>
-        <p id="crash-reason" style="font-size: 24px; color: #fff; margin-top: 10px;"></p>
-        <button onclick="resetFlight()"
-            style="margin-top: 40px; padding: 15px 30px; font-size: 20px; font-weight: bold; font-family: monospace; background: #ff0000; color: #fff; border: none; border-radius: 4px; cursor: pointer; box-shadow: 0 0 15px #ff0000; transition: background 0.2s;">RESTART
+        <p id="crash-reason" class="crash-reason"></p>
+        <button onclick="resetFlight()" class="crash-reset-btn">RESTART
             FLIGHT</button>
     </div>
 
@@ -45,31 +43,22 @@
         <!-- PFD (Primary Flight Display) -->
         <div id="pfd" class="screen">
             <!-- Flight Mode Annunciator (FMA) -->
-            <div id="fma"
-                style="position: absolute; top: 0; left: 0; width: 100%; height: 22px; background: #000; border-bottom: 2px solid #555; z-index: 20; display: flex; justify-content: space-around; align-items: center; color: #0f0; font-family: monospace; font-size: 14px; font-weight: bold;">
-                <span id="fma-spd" style="width: 25%; text-align: center; border-right: 1px solid #333;"></span>
-                <span id="fma-hdg" style="width: 25%; text-align: center; border-right: 1px solid #333;"></span>
-                <span id="fma-alt" style="width: 25%; text-align: center; border-right: 1px solid #333;"></span>
-                <span id="fma-ils" style="width: 25%; text-align: center; color: #f0f;"></span>
+            <div id="fma" class="fma-bar">
+                <span id="fma-spd" class="fma-slot"></span>
+                <span id="fma-hdg" class="fma-slot"></span>
+                <span id="fma-alt" class="fma-slot"></span>
+                <span id="fma-ils" class="fma-slot fma-ils"></span>
             </div>
 
             <div id="horizon-sky">
                 <div id="pitch-ladder"></div>
                 <!-- Flight Path Vector (FPV) Marker -->
-                <div id="fpv" style="position: absolute; top: 50%; left: 50%; width: 0; height: 0; z-index: 6;">
-                    <div style="position: absolute; top: -5px; left: -15px; width: 30px; height: 10px;">
-                        <div
-                            style="position: absolute; top: 4px; left: 0; width: 10px; height: 2px; background: #0f0; box-shadow: 0 0 2px #000;">
-                        </div>
-                        <div
-                            style="position: absolute; top: 4px; left: 20px; width: 10px; height: 2px; background: #0f0; box-shadow: 0 0 2px #000;">
-                        </div>
-                        <div
-                            style="position: absolute; top: 0; left: 10px; width: 10px; height: 10px; border: 2px solid #0f0; border-radius: 50%; box-sizing: border-box; box-shadow: 0 0 2px #000, inset 0 0 2px #000;">
-                        </div>
-                        <div
-                            style="position: absolute; top: -5px; left: 14px; width: 2px; height: 5px; background: #0f0; box-shadow: 0 0 2px #000;">
-                        </div>
+                <div id="fpv" class="fpv">
+                    <div class="fpv-body">
+                        <div class="fpv-wing-left"></div>
+                        <div class="fpv-wing-right"></div>
+                        <div class="fpv-circle"></div>
+                        <div class="fpv-stem"></div>
                     </div>
                 </div>
             </div>
@@ -78,19 +67,19 @@
             </div>
 
             <!-- ILS Localizer -->
-            <div id="ils-loc" class="ils-scale" style="display:none;">
+            <div id="ils-loc" class="ils-scale">
                 <div class="ils-dot"></div>
                 <div class="ils-dot"></div>
-                <div class="ils-dot" style="background:transparent;"></div>
+                <div class="ils-dot ils-dot-blank"></div>
                 <div class="ils-dot"></div>
                 <div class="ils-dot"></div>
                 <div id="loc-diamond" class="ils-diamond"></div>
             </div>
             <!-- ILS Glideslope -->
-            <div id="ils-gs" class="ils-scale" style="display:none;">
+            <div id="ils-gs" class="ils-scale">
                 <div class="ils-dot"></div>
                 <div class="ils-dot"></div>
-                <div class="ils-dot" style="background:transparent;"></div>
+                <div class="ils-dot ils-dot-blank"></div>
                 <div class="ils-dot"></div>
                 <div class="ils-dot"></div>
                 <div id="gs-diamond" class="ils-diamond"></div>
@@ -105,8 +94,7 @@
                 <div id="alt-tape-content" class="tape-content"></div>
                 <div class="tape-pointer" id="alt-readout">00000</div>
                 <!-- Radio Altimeter overlay -->
-                <div id="rad-alt"
-                    style="position:absolute; bottom:5px; left:5px; right:5px; text-align:center; color:#0f0; font-family:monospace; font-weight:bold; font-size:14px; background:rgba(0,0,0,0.8); padding:4px 0; border: 1px solid #0f0; border-radius:3px; display:none; z-index:10;">
+                <div id="rad-alt">
                     R 0000</div>
             </div>
 
@@ -128,8 +116,7 @@
             <div class="instrument-row"><span>AOA</span><span class="instrument-value" id="hud-aoa">0.0°</span></div>
             <div class="instrument-row"><span>G-FORCE</span><span class="instrument-value" id="hud-gforce">1.0</span>
             </div>
-            <div class="instrument-row"><span>GEAR</span><span class="instrument-value" id="hud-gear"
-                    style="color:#0f0;">DOWN</span></div>
+            <div class="instrument-row"><span>GEAR</span><span class="instrument-value hud-gear-down" id="hud-gear">DOWN</span></div>
             <div class="instrument-row"><span>FLAPS</span><span class="instrument-value" id="hud-flaps">0%</span></div>
             <div class="instrument-row"><span>SPOILERS</span><span class="instrument-value"
                     id="hud-spoilers">RETRACTED</span></div>
@@ -142,19 +129,19 @@
         <div id="controls-panel" class="screen">
             <h3>FLIGHT CONTROLS</h3>
             <div><span class="key">Z</span> / <span class="key">A</span> Thrust Up/Down</div>
-            <div style="margin-top: 6px;"><span class="key">Arrows</span> Pitch & Roll</div>
-            <div style="margin-top: 6px;"><span class="key">Q</span> / <span class="key">E</span> Yaw (Rudder)</div>
-            <div style="margin-top: 6px;"><span class="key">H</span> <span class="key">J</span> <span
+            <div class="control-row control-row-spaced"><span class="key">Arrows</span> Pitch & Roll</div>
+            <div class="control-row control-row-spaced"><span class="key">Q</span> / <span class="key">E</span> Yaw (Rudder)</div>
+            <div class="control-row control-row-spaced"><span class="key">H</span> <span class="key">J</span> <span
                     class="key">K</span> Autopilot (HDG/ALT/SPD)</div>
-            <div style="margin-top: 6px;"><span class="key">P</span> Autoland (APP Mode)</div>
-            <div style="margin-top: 6px;"><span class="key">M</span> Toggle EGPWS Map</div>
-            <div style="margin-top: 6px;"><span class="key">R</span> Cycle Weather</div>
-            <div style="margin-top: 6px;"><span class="key">C</span> Camera View</div>
-            <div style="margin-top: 6px;"><span class="key">Drag</span> Free Look <span class="key">Scroll</span> Zoom
+            <div class="control-row control-row-spaced"><span class="key">P</span> Autoland (APP Mode)</div>
+            <div class="control-row control-row-spaced"><span class="key">M</span> Toggle EGPWS Map</div>
+            <div class="control-row control-row-spaced"><span class="key">R</span> Cycle Weather</div>
+            <div class="control-row control-row-spaced"><span class="key">C</span> Camera View</div>
+            <div class="control-row control-row-spaced"><span class="key">Drag</span> Free Look <span class="key">Scroll</span> Zoom
             </div>
-            <div style="margin-top: 10px; color: #0f0; font-weight: bold; text-align: center;">GEAR & FLAPS: AUTOMATIC
+            <div class="control-note">GEAR & FLAPS: AUTOMATIC
             </div>
-            <div style="margin-top: 4px; color: #0f0; font-weight: bold; text-align: center;">BRAKES/SPOILERS: 0% THRUST
+            <div class="control-note control-note-secondary">BRAKES/SPOILERS: 0% THRUST
             </div>
         </div>
     </div>

@@ -1,2640 +1,598 @@
-        import * as THREE from 'three';
-        import { Sky } from 'three/addons/objects/Sky.js';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { Noise } from './noise.js';
+import { createSimulationState } from './state.js';
+import { createWorldObjects } from './world/objects.js';
+import { calculateAerodynamics } from './physics/updatePhysics.js';
+import { createCameraController } from './camera/updateCamera.js';
+import { createHUD } from './ui/hud.js';
 
-        // ==========================================
-        // 2. CORE SETUP & GLOBALS
-        // ==========================================
-        const container = document.getElementById('game-container');
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x3a2e3f); // Deep dusk sky
-        scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015); // Dusk distance haze
+// ==========================================
+// 2. CORE SETUP & GLOBALS
+// ==========================================
+const container = document.getElementById('game-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x3a2e3f);
+scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015);
 
-        // Adjust camera aspect ratio to account for 75vh game container height
-        const gameHeight = window.innerHeight * 0.75;
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / gameHeight, 1, 100000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-        renderer.setSize(window.innerWidth, gameHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 0.85; // Slightly darken global exposure
-        container.appendChild(renderer.domElement);
+const gameHeight = window.innerHeight * 0.75;
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / gameHeight, 1, 100000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+renderer.setSize(window.innerWidth, gameHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.85;
+container.appendChild(renderer.domElement);
 
-        // --- POST-PROCESSING (BLOOM) ---
-        const renderScene = new RenderPass(scene, camera);
-        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, gameHeight), 1.5, 0.4, 0.85);
-        // OPTICS CALIBRATION: Very high threshold so the sun/sky never blooms, ONLY artificial emissive lights do.
-        bloomPass.threshold = 5.0;
-        bloomPass.strength = 0.8;
-        bloomPass.radius = 0.4;
+const renderScene = new RenderPass(scene, camera);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, gameHeight), 1.5, 0.4, 0.85);
+bloomPass.threshold = 5.0;
+bloomPass.strength = 0.8;
+bloomPass.radius = 0.4;
 
-        const composer = new EffectComposer(renderer);
-        composer.addPass(renderScene);
-        composer.addPass(bloomPass);
+const composer = new EffectComposer(renderer);
+composer.addPass(renderScene);
+composer.addPass(bloomPass);
 
-        // ==========================================
-        // 3. FLIGHT PHYSICS ENGINE (Airliner Params)
-        // ==========================================
-        const AIRCRAFT = {
-            mass: 50000,
-            wingArea: 180,
-            maxThrust: 800000,
-            cdBase: 0.025,
-            clSlope: 0.1,         // Balanced arcade lift
-            stallAngle: 35,        // Extremely hard to stall
-            inertia: new THREE.Vector3(100000, 150000, 200000), // Balanced inertia for stable flight
-            gearHeight: 3.5,
-        };
+const { AIRCRAFT, PHYSICS, WEATHER, keys, runtime } = createSimulationState({ scene });
 
-        const PHYSICS = {
-            gravity: 9.81,
-            rho: 1.225,
-            dt: 0.016,
+// ==========================================
+// 4. WORLD OBJECTS
+// ==========================================
+const {
+  hemiLight,
+  dirLight,
+  waterMaterial,
+  PAPI,
+  alsStrobes,
+  strobeMatOn,
+  strobeMatOff,
+  getTerrainHeight,
+  updateTerrain,
+  clouds,
+  MAX_PARTICLES,
+  particleMesh,
+  particles,
+  spawnParticle,
+  pDummy,
+  pColor,
+  planeGroup,
+  engineFans,
+  engineExhausts,
+  movableSurfaces,
+  gearGroup,
+  strobes,
+  beacons
+} = createWorldObjects({ scene, renderer, Noise, PHYSICS });
 
-            position: new THREE.Vector3(0, AIRCRAFT.gearHeight, 0),
-            velocity: new THREE.Vector3(0, 0, 0),
-            quaternion: new THREE.Quaternion(),
-            angularVelocity: new THREE.Vector3(0, 0, 0),
+const cameraController = createCameraController({
+  camera,
+  planeGroup,
+  clouds,
+  PHYSICS,
+  AIRCRAFT,
+  getTerrainHeight
+});
 
-            throttle: 0,
-            elevator: 0,
-            aileron: 0,
-            rudder: 0,
-            flaps: 0,
-            targetFlaps: 0,
-            gearDown: true,
-            gearTransition: 1.0,
-            spoilers: false,
-            brakes: false,
-            egpwsMode: true,       // Enhanced Ground Proximity Warning System radar mode
+const hud = createHUD({ PHYSICS, WEATHER, getTerrainHeight });
 
-            // Autopilot State
-            autopilot: {
-                hdg: false, targetHdg: 0,
-                alt: false, targetAlt: 0,
-                spd: false, targetSpd: 0,
-                app: false // Approach / Autoland Mode
-            },
+window.addEventListener('keydown', (e) => {
+  if (Object.prototype.hasOwnProperty.call(keys, e.key.toLowerCase()) || Object.prototype.hasOwnProperty.call(keys, e.key)) {
+    const k = Object.prototype.hasOwnProperty.call(keys, e.key) ? e.key : e.key.toLowerCase();
+    keys[k] = true;
+  }
 
-            // ILS State Tracking
-            ils: {
-                active: false,
-                locError: 0,
-                gsError: 0,
-                distZ: 0
-            },
+  if (e.key.toLowerCase() === 'c') cameraController.cycleMode();
+  if (e.key.toLowerCase() === 'm') PHYSICS.egpwsMode = !PHYSICS.egpwsMode;
 
-            airspeed: 0,
-            aoa: 0,
-            slip: 0,
-            gForce: 1.0,
-            heightAgl: 0,          // Track Radar Altitude
-            isStalling: false,
-            onGround: true,
-            crashed: false         // Damage Model State
-        };
+  if (e.key.toLowerCase() === 'r') {
+    WEATHER.mode = (WEATHER.mode + 1) % 3;
+    if (WEATHER.mode === 0) WEATHER.targetFog = 0.00015;
+    if (WEATHER.mode === 1) WEATHER.targetFog = 0.0025;
+    if (WEATHER.mode === 2) WEATHER.targetFog = 0.006;
+  }
 
-        // ==========================================
-        // DYNAMIC WEATHER SYSTEM
-        // ==========================================
-        const WEATHER = {
-            mode: 0, // 0: Clear, 1: Low Vis Fog, 2: Heavy Storm
-            targetFog: 0.00015,
-            currentFog: 0.00015,
-            transition: 0,
-            rainCount: 20000,
-            rainMesh: null,
-            rainPositions: null,
-            rainVelocities: null
-        };
+  if (e.key.toLowerCase() === 'h') {
+    PHYSICS.autopilot.hdg = !PHYSICS.autopilot.hdg;
+    if (PHYSICS.autopilot.hdg) PHYSICS.autopilot.targetHdg = -new THREE.Euler().setFromQuaternion(PHYSICS.quaternion, 'YXZ').y;
+  }
+  if (e.key.toLowerCase() === 'j') {
+    PHYSICS.autopilot.alt = !PHYSICS.autopilot.alt;
+    if (PHYSICS.autopilot.alt) PHYSICS.autopilot.targetAlt = PHYSICS.position.y;
+  }
+  if (e.key.toLowerCase() === 'k') {
+    PHYSICS.autopilot.spd = !PHYSICS.autopilot.spd;
+    if (PHYSICS.autopilot.spd) PHYSICS.autopilot.targetSpd = PHYSICS.airspeed;
+  }
+  if (e.key.toLowerCase() === 'p') {
+    if (PHYSICS.ils.active) PHYSICS.autopilot.app = !PHYSICS.autopilot.app;
+  }
+});
 
-        // Initialize Rain Particle System
-        const rainGeo = new THREE.BufferGeometry();
-        WEATHER.rainPositions = new Float32Array(WEATHER.rainCount * 3);
-        WEATHER.rainVelocities = new Float32Array(WEATHER.rainCount);
+window.addEventListener('keyup', (e) => {
+  const k = Object.prototype.hasOwnProperty.call(keys, e.key) ? e.key : e.key.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(keys, k)) keys[k] = false;
+  if (e.key.toLowerCase() === 'b') PHYSICS.brakes = false;
+});
+// ==========================================
+
+// --- PROCEDURAL WEB AUDIO ENGINE (ZEN / RELAXING MODE) ---
+const ProceduralAudio = {
+    ctx: null,
+    engineGain: null,
+    engineOsc: null,
+    jetNoiseFilter: null,
+    windGain: null,
+    windFilter: null,
+    rainGain: null,
+    rainFilter: null,
+    initialized: false,
+
+    init: function () {
+        if (this.initialized) return;
+        this.initialized = true;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioContext();
+
+        // 1. Create a shared White Noise Buffer
+        const bufferSize = this.ctx.sampleRate * 2;
+        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+
+        // 2. Wind System (Gentle, ASMR-style breeze)
+        const windSrc = this.ctx.createBufferSource();
+        windSrc.buffer = noiseBuffer;
+        windSrc.loop = true;
+        this.windFilter = this.ctx.createBiquadFilter();
+        this.windFilter.type = 'lowpass';
+        this.windGain = this.ctx.createGain();
+        this.windGain.gain.value = 0;
+        windSrc.connect(this.windFilter).connect(this.windGain).connect(this.ctx.destination);
+        windSrc.start();
+
+        // 3. Jet Engine Roar (Deep, muffled low-frequency rumble)
+        const jetNoiseSrc = this.ctx.createBufferSource();
+        jetNoiseSrc.buffer = noiseBuffer;
+        jetNoiseSrc.loop = true;
+        this.jetNoiseFilter = this.ctx.createBiquadFilter();
+        this.jetNoiseFilter.type = 'lowpass';
+        this.engineGain = this.ctx.createGain();
+        this.engineGain.gain.value = 0;
+        jetNoiseSrc.connect(this.jetNoiseFilter).connect(this.engineGain).connect(this.ctx.destination);
+        jetNoiseSrc.start();
+
+        // 4. Engine Fan Whine (Smooth sine wave hum instead of harsh sawtooth)
+        this.engineOsc = this.ctx.createOscillator();
+        this.engineOsc.type = 'sine';
+        const oscGain = this.ctx.createGain();
+        oscGain.gain.value = 0.08; // Very soft blend behind the rumble
+        this.engineOsc.connect(oscGain).connect(this.engineGain);
+        this.engineOsc.start();
+
+        // 5. Storm Rain System (Soft hiss)
+        const rainSrc = this.ctx.createBufferSource();
+        rainSrc.buffer = noiseBuffer;
+        rainSrc.loop = true;
+        this.rainFilter = this.ctx.createBiquadFilter();
+        this.rainFilter.type = 'lowpass';
+        this.rainGain = this.ctx.createGain();
+        this.rainGain.gain.value = 0;
+        rainSrc.connect(this.rainFilter).connect(this.rainGain).connect(this.ctx.destination);
+        rainSrc.start();
+    },
+
+    update: function (throttle, airspeed, spoilers, cameraMode, weatherMode, gForce, angularVelocity) {
+        if (!this.initialized || this.ctx.state === 'suspended') return;
+
+        const t = this.ctx.currentTime;
+        // Camera dampening (Cockpit is highly insulated, exterior is louder but still smooth)
+        const masterVol = cameraMode === 1 ? 0.35 : 0.8;
+
+        // Engine Physics (Ultra-slow, soft transitions for a calmer vibe)
+        // INCREASED: Engine base presence and throttle scaling
+        this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.45) * masterVol, t, 1.0);
+        this.jetNoiseFilter.frequency.setTargetAtTime(60 + throttle * 150, t, 1.0); // Deep, soothing bass
+        this.engineOsc.frequency.setTargetAtTime(80 + throttle * 80, t, 1.0); // Low, stable hum
+
+        // Wind Physics (Dynamic based on G-force and maneuvers)
+        const speedFactor = Math.max(0, airspeed / 250);
+        const spoilerDrag = (spoilers && airspeed > 30) ? 0.15 : 0;
+
+        // Calculate structural / maneuver stress
+        const gStress = Math.abs(gForce - 1.0); // 0 when flying level, >0 when pulling/pushing Gs
+        const rotStress = Math.abs(angularVelocity.x) + Math.abs(angularVelocity.y) + Math.abs(angularVelocity.z);
+        const maneuverStress = Math.min(1.0, (gStress + rotStress) * 0.8);
+
+        // DECREASED: Base wind volume is now much quieter relative to the engines
+        const windVol = (Math.pow(speedFactor, 2) * 0.04 + maneuverStress * 0.25 + spoilerDrag);
+        this.windGain.gain.setTargetAtTime(windVol * masterVol, t, 0.5);
+
+        // Filter opens up during maneuvers for a realistic "rushing" sound
+        this.windFilter.frequency.setTargetAtTime(100 + speedFactor * 300 + maneuverStress * 800 + (spoilers ? 400 : 0), t, 0.5);
+
+        // Rain Audio Physics (Gentle drizzle)
+        const targetRainVol = (weatherMode === 2) ? 0.15 * masterVol : 0;
+        this.rainGain.gain.setTargetAtTime(targetRainVol, t, 1.0); // Slow fade in/out
+        this.rainFilter.frequency.setTargetAtTime(300 + (airspeed * 1.5), t, 0.5);
+    },
+
+    touchdown: function () {
+        if (!this.initialized || this.ctx.state === 'suspended') return;
+        const t = this.ctx.currentTime;
+
+        // Gentle, low-pitched suspension thud instead of tire screech
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+        osc.connect(gain).connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.4);
+    }
+};
+
+
+// --- CRASH LOGIC & RESET ---
+window.triggerCrash = function (reason) {
+    if (PHYSICS.crashed) return;
+    PHYSICS.crashed = true;
+
+    // Sever engine and control inputs
+    PHYSICS.throttle = 0;
+    PHYSICS.velocity.multiplyScalar(0.2); // Violent deceleration
+
+    document.getElementById('dashboard').style.opacity = '0.3';
+    document.getElementById('crash-screen').style.display = 'flex';
+    document.getElementById('crash-reason').innerText = "CAUSE: " + reason;
+
+    // Spawn massive fireball and smoke plume
+    for (let i = 0; i < 300; i++) {
+        let pVel = PHYSICS.velocity.clone().multiplyScalar(0.3).add(new THREE.Vector3((Math.random() - 0.5) * 80, Math.random() * 100, (Math.random() - 0.5) * 80));
+        let size = 20 + Math.random() * 40;
+        let life = 3 + Math.random() * 6;
+
+        if (Math.random() > 0.4) {
+            spawnParticle(planeGroup.position, pVel, size, 25, life, 1.0, 0.2 + Math.random() * 0.3, 0.0); // Fire
+        } else {
+            spawnParticle(planeGroup.position, pVel.multiplyScalar(0.5), size, 40, life * 1.5, 0.05, 0.05, 0.05); // Thick Smoke
+        }
+    }
+};
+
+window.resetFlight = function () {
+    PHYSICS.crashed = false;
+    PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
+    PHYSICS.velocity.set(0, 0, 0);
+    PHYSICS.quaternion.identity();
+    PHYSICS.angularVelocity.set(0, 0, 0);
+    PHYSICS.heading = 0;
+    PHYSICS.airspeed = 0;
+    PHYSICS.throttle = 0;
+    PHYSICS.flaps = 0;
+    PHYSICS.targetFlaps = 0;
+    PHYSICS.spoilers = false;
+    PHYSICS.gearDown = true;
+    PHYSICS.gearTransition = 1.0;
+    PHYSICS.brakes = false;
+
+    // Disable AP
+    PHYSICS.autopilot.alt = false;
+    PHYSICS.autopilot.hdg = false;
+    PHYSICS.autopilot.spd = false;
+    PHYSICS.autopilot.app = false;
+
+    document.getElementById('dashboard').style.opacity = '1.0';
+    document.getElementById('crash-screen').style.display = 'none';
+
+    // Clear particles
+    for (let i = 0; i < MAX_PARTICLES; i++) particles[i].active = false;
+
+    planeGroup.position.copy(PHYSICS.position);
+    planeGroup.quaternion.copy(PHYSICS.quaternion);
+};
+
+
+// ==========================================
+// 9. MAIN LOOP
+// ==========================================
+window.addEventListener('resize', () => {
+    const newGameHeight = window.innerHeight * 0.75;
+    camera.aspect = window.innerWidth / newGameHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, newGameHeight);
+    composer.setSize(window.innerWidth, newGameHeight); // Update Bloom resolution
+});
+
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const now = performance.now();
+    let dt = (now - runtime.lastTime) / 1000;
+    runtime.lastTime = now;
+
+    // Cap dt to avoid physics explosions on lag spikes
+    if (dt > 0.05) dt = 0.05;
+    PHYSICS.dt = dt;
+
+    // --- DYNAMIC WEATHER SYSTEM UPDATES ---
+    WEATHER.currentFog += (WEATHER.targetFog - WEATHER.currentFog) * dt * 0.5;
+    scene.fog.density = WEATHER.currentFog;
+
+    // Transition visuals based on weather (0 = Twilight, 1 = Stormy Gray)
+    let targetTransition = WEATHER.mode > 0 ? 1 : 0;
+    WEATHER.transition += (targetTransition - WEATHER.transition) * dt * 0.5;
+
+    // Darken the sky and fog in bad weather
+    const colorClear = new THREE.Color(0x3a2e3f);
+    const colorStorm = new THREE.Color(0x111115);
+    const currentColor = new THREE.Color();
+    currentColor.lerpColors(colorClear, colorStorm, WEATHER.transition);
+    scene.background = currentColor;
+    scene.fog.color = currentColor;
+
+    // Dim the lighting to match the overcast skies
+    hemiLight.intensity = 0.25 - (WEATHER.transition * 0.2);
+    dirLight.intensity = 1.0 - (WEATHER.transition * 0.9);
+
+    // Animate Storm Rain Physics
+    if (WEATHER.mode === 2) {
+        WEATHER.rainMesh.visible = true;
+        const pos = WEATHER.rainMesh.geometry.attributes.position.array;
+        const camPos = camera.position;
+
         for (let i = 0; i < WEATHER.rainCount; i++) {
-            // Distribute rain in a wide box that will anchor to the camera
-            WEATHER.rainPositions[i * 3] = (Math.random() - 0.5) * 800;
-            WEATHER.rainPositions[i * 3 + 1] = (Math.random() - 0.5) * 400;
-            WEATHER.rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 800;
-            WEATHER.rainVelocities[i] = -40 - Math.random() * 20; // Fast falling speed
+            // Apply gravity
+            pos[i * 3 + 1] += WEATHER.rainVelocities[i] * dt;
+
+            // Keep the rain anchored to the camera's moving frame of reference
+            let dx = pos[i * 3] - camPos.x;
+            let dy = pos[i * 3 + 1] - camPos.y;
+            let dz = pos[i * 3 + 2] - camPos.z;
+
+            if (dx > 400) pos[i * 3] -= 800; else if (dx < -400) pos[i * 3] += 800;
+            if (dy > 200) pos[i * 3 + 1] -= 400; else if (dy < -200) pos[i * 3 + 1] += 400;
+            if (dz > 400) pos[i * 3 + 2] -= 800; else if (dz < -400) pos[i * 3 + 2] += 800;
         }
-        rainGeo.setAttribute('position', new THREE.BufferAttribute(WEATHER.rainPositions, 3));
-        const rainMat = new THREE.PointsMaterial({
-            color: 0x9999bb,
-            size: 1.5,
-            transparent: true,
-            opacity: 0.5,
-            depthWrite: false
-        });
-        WEATHER.rainMesh = new THREE.Points(rainGeo, rainMat);
+        WEATHER.rainMesh.geometry.attributes.position.needsUpdate = true;
+    } else {
         WEATHER.rainMesh.visible = false;
-        scene.add(WEATHER.rainMesh);
+    }
 
-        let cameraMode = 0;
-        let isDragging = false;
+    // Animate Water Normal Map (Rolling Waves)
+    if (waterMaterial.normalMap) {
+        waterMaterial.normalMap.offset.x -= dt * 0.01;
+        waterMaterial.normalMap.offset.y += dt * 0.02;
+    }
 
-        // Controls tracking (Removed manual toggles for gear, flaps, and brakes since they are fully auto)
-        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, a: false, z: false, q: false, e: false, h: false, j: false, k: false, m: false, r: false, p: false };
+    // Animate Engine Fans & Exhaust based on throttle
+    const fanSpeed = 0.1 + (PHYSICS.throttle * 0.8);
+    engineFans.forEach(f => f.rotation.z -= fanSpeed);
 
-        window.addEventListener('keydown', (e) => {
-            if (keys.hasOwnProperty(e.key.toLowerCase()) || keys.hasOwnProperty(e.key)) {
-                let k = keys.hasOwnProperty(e.key) ? e.key : e.key.toLowerCase();
-                keys[k] = true;
-            }
-            if (e.key.toLowerCase() === 'c') cameraMode = (cameraMode + 1) % 3;
-            if (e.key.toLowerCase() === 'm') PHYSICS.egpwsMode = !PHYSICS.egpwsMode; // Toggle Radar Mode
+    // Emissive Jet Wash glow (Creates massive Bloom at high throttle)
+    engineExhausts.forEach(e => e.emissiveIntensity = PHYSICS.throttle * 25.0);
 
-            // Cycle Weather Mode
-            if (e.key.toLowerCase() === 'r') {
-                WEATHER.mode = (WEATHER.mode + 1) % 3;
-                if (WEATHER.mode === 0) WEATHER.targetFog = 0.00015; // Clear Twilight
-                if (WEATHER.mode === 1) WEATHER.targetFog = 0.0025;  // Cat II Fog (400m vis)
-                if (WEATHER.mode === 2) WEATHER.targetFog = 0.006;   // Cat III Storm (150m vis)
-            }
+    // Animate Control Surfaces
+    movableSurfaces.flaps.forEach(f => f.rotation.x = PHYSICS.flaps * 0.6);
+    movableSurfaces.aileronsL.forEach(a => a.rotation.x = -PHYSICS.aileron * 0.5);
+    movableSurfaces.aileronsR.forEach(a => a.rotation.x = PHYSICS.aileron * 0.5);
+    movableSurfaces.elevators.forEach(e => e.rotation.x = -PHYSICS.elevator * 0.5);
+    movableSurfaces.rudder.forEach(r => r.rotation.y = -PHYSICS.rudder * 0.5);
 
-            // Autopilot Toggles
-            if (e.key.toLowerCase() === 'h') {
-                PHYSICS.autopilot.hdg = !PHYSICS.autopilot.hdg;
-                if (PHYSICS.autopilot.hdg) PHYSICS.autopilot.targetHdg = -new THREE.Euler().setFromQuaternion(PHYSICS.quaternion, 'YXZ').y;
-            }
-            if (e.key.toLowerCase() === 'j') {
-                PHYSICS.autopilot.alt = !PHYSICS.autopilot.alt;
-                if (PHYSICS.autopilot.alt) PHYSICS.autopilot.targetAlt = PHYSICS.position.y;
-            }
-            if (e.key.toLowerCase() === 'k') {
-                PHYSICS.autopilot.spd = !PHYSICS.autopilot.spd;
-                if (PHYSICS.autopilot.spd) PHYSICS.autopilot.targetSpd = PHYSICS.airspeed;
-            }
-            if (e.key.toLowerCase() === 'p') {
-                // Only allow APP mode to engage if the ILS signal is being received
-                if (PHYSICS.ils.active) PHYSICS.autopilot.app = !PHYSICS.autopilot.app;
-            }
-        });
-        window.addEventListener('keyup', (e) => {
-            let k = keys.hasOwnProperty(e.key) ? e.key : e.key.toLowerCase();
-            if (keys.hasOwnProperty(k)) keys[k] = false;
+    // Smoothly animate spoilers deploying
+    const targetSpoilerRot = PHYSICS.spoilers ? -0.8 : 0;
+    movableSurfaces.spoilers.forEach(s => s.rotation.x += (targetSpoilerRot - s.rotation.x) * 10 * dt);
 
-            if (e.key.toLowerCase() === 'b') PHYSICS.brakes = false; // Release Brakes
-        });
+    // Strobe light logic (double flash every 1.5 seconds)
+    runtime.strobeTimer += dt;
+    let strobeCycle = runtime.strobeTimer % 1.5;
+    let isFlashing = (strobeCycle < 0.05) || (strobeCycle > 0.15 && strobeCycle < 0.2);
+    strobes.forEach(s => {
+        s.intensity = isFlashing ? 10 : 0;
+        if (s.children[0]) s.children[0].visible = isFlashing; // Hide/show physical bulb
+    });
 
-        // ==========================================
-        // 4. ENVIRONMENT & LIGHTING
-        // ==========================================
-        const hemiLight = new THREE.HemisphereLight(0x444455, 0x111118, 0.25); // Dark dusk ambient
-        hemiLight.position.set(0, 2000, 0);
-        scene.add(hemiLight);
+    // Beacon light logic (single pulse every 1 second)
+    let beaconCycle = runtime.strobeTimer % 1.0;
+    let beaconFlash = beaconCycle < 0.1;
+    beacons.forEach(b => {
+        b.intensity = beaconFlash ? 5 : 0;
+        if (b.children[0]) b.children[0].visible = beaconFlash; // Hide/show physical bulb
+    });
 
-        const dirLight = new THREE.DirectionalLight(0xff6633, 0.5); // Lowered intensity to prevent nuclear sky glare
-        dirLight.position.set(-1000, 2000, 1000);
-        dirLight.castShadow = true;
-        dirLight.shadow.camera.top = 200;
-        dirLight.shadow.camera.bottom = -200;
-        dirLight.shadow.camera.left = -200;
-        dirLight.shadow.camera.right = 200;
-        dirLight.shadow.camera.near = 0.1;
-        dirLight.shadow.camera.far = 5000;
-        dirLight.shadow.mapSize.width = 4096;
-        dirLight.shadow.mapSize.height = 4096;
-        dirLight.shadow.bias = -0.0005;
-        scene.add(dirLight);
+    // --- ALS RABBIT ANIMATION (Approach Lighting System) ---
+    let rabbitCycle = (now / 500) % 1.0; // Loops every 0.5s
+    let targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
 
-        // Physical Sky Model
-        const sky = new Sky();
-        sky.scale.setScalar(450000);
-        scene.add(sky);
-        const sun = new THREE.Vector3();
-        const skyUniforms = sky.material.uniforms;
-        skyUniforms['turbidity'].value = 10.0; // Thicker dusk atmosphere
-        skyUniforms['rayleigh'].value = 2.5;   // Deeper red/purple scattering
+    for (let i = 0; i < alsStrobes.length; i++) {
+        if (Math.abs(alsStrobes[i].dist - targetDist) < 40) {
+            alsStrobes[i].mesh.material = strobeMatOn;
+        } else {
+            alsStrobes[i].mesh.material = strobeMatOff;
+        }
+    }
 
-        // DIFFUSED SUN DISK: Scatters the light to prevent the hot-spot from causing nuclear bloom
-        skyUniforms['mieCoefficient'].value = 0.05;
-        skyUniforms['mieDirectionalG'].value = 0.4;
+    // --- AERODYNAMIC PARTICLE SYSTEM ---
+    // 1. Touchdown Smoke
+    if (!runtime.wasOnGround && PHYSICS.onGround && PHYSICS.airspeed > 30) {
 
-        const phi = THREE.MathUtils.degToRad(82.0); // Raised sun slightly higher above the horizon
-        const theta = THREE.MathUtils.degToRad(150); // Sun azimuth
-        sun.setFromSphericalCoords(1, phi, theta);
-        sky.material.uniforms['sunPosition'].value.copy(sun);
-        dirLight.position.copy(sun).multiplyScalar(2000);
+        // Trigger Touchdown Audio Chirp
+        ProceduralAudio.touchdown();
 
-        // --- GLOBAL ENVIRONMENT REFLECTIONS (PMREM) ---
-        // Captures the sky gradient and applies it to all shiny surfaces as a realistic reflection map
-        const pmremGenerator = new THREE.PMREMGenerator(renderer);
-        pmremGenerator.compileEquirectangularShader();
-        scene.environment = pmremGenerator.fromScene(sky).texture;
+        for (let i = 0; i < 40; i++) {
+            let offsetL = new THREE.Vector3(-4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
+            let offsetR = new THREE.Vector3(4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
+            let posL = offsetL.applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+            let posR = offsetR.applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
 
-        // ==========================================
-        // PROCEDURAL WATER SYSTEM
-        // ==========================================
-        function createWaterNormalMap() {
-            const size = 512;
-            const canvas = document.createElement('canvas');
-            canvas.width = size; canvas.height = size;
-            const ctx = canvas.getContext('2d');
-            const imgData = ctx.createImageData(size, size);
+            let pVel = PHYSICS.velocity.clone().multiplyScalar(0.4).add(new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 8, (Math.random() - 0.5) * 8));
 
-            // Generate a bumpy noise normal map
-            for (let y = 0; y < size; y++) {
-                for (let x = 0; x < size; x++) {
-                    let scale = 4; // Much lower scale for wide, sweeping ocean swells (Fixes tiling)
-                    let h0 = Noise.fractal(x / size * scale, y / size * scale, 3, 0.5, 1);
-                    let hx = Noise.fractal((x + 1) / size * scale, y / size * scale, 3, 0.5, 1);
-                    let hy = Noise.fractal(x / size * scale, (y + 1) / size * scale, 3, 0.5, 1);
+            spawnParticle(posL, pVel, 3 + Math.random() * 2, 8, 1.5, 0.7, 0.7, 0.7);
+            spawnParticle(posR, pVel, 3 + Math.random() * 2, 8, 1.5, 0.7, 0.7, 0.7);
+        }
+    }
+    runtime.wasOnGround = PHYSICS.onGround;
 
-                    let dx = (hx - h0) * 5.0; // Gentler slope
-                    let dy = (hy - h0) * 5.0;
-                    let dz = 1.0;
-                    let len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    // 2. Wingtip Vortices (High G, Spoilers, or heavy Flaps)
+    let intensity = (PHYSICS.gForce - 1.2) * 2.0 + (PHYSICS.spoilers ? 0.8 : 0) + (PHYSICS.flaps * 0.5);
+    if (!PHYSICS.onGround && intensity > 0.1 && PHYSICS.airspeed > 40) {
+        let tipL = new THREE.Vector3(-21, 2, 14).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+        let tipR = new THREE.Vector3(21, 2, 14).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+        let pVel = PHYSICS.velocity.clone().multiplyScalar(0.8);
 
-                    let idx = (y * size + x) * 4;
-                    imgData.data[idx] = Math.floor((dx / len * 0.5 + 0.5) * 255);
-                    imgData.data[idx + 1] = Math.floor((dy / len * 0.5 + 0.5) * 255);
-                    imgData.data[idx + 2] = 255;
-                    imgData.data[idx + 3] = 255;
-                }
-            }
-            ctx.putImageData(imgData, 0, 0);
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.repeat.set(4, 4); // Minimal repetition to remove the grid effect
-            return tex;
+        let iClamp = Math.min(1.0, intensity);
+        spawnParticle(tipL, pVel, 1.5, 4, 0.8, iClamp, iClamp, iClamp);
+        spawnParticle(tipR, pVel, 1.5, 4, 0.8, iClamp, iClamp, iClamp);
+    }
+
+    // 3. High Altitude Engine Contrails
+    if (PHYSICS.throttle > 0.2 && PHYSICS.airspeed > 50) {
+        let engL = new THREE.Vector3(-7.5, -2.2, 5).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+        let engR = new THREE.Vector3(7.5, -2.2, 5).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+        let pVel = PHYSICS.velocity.clone().multiplyScalar(0.7);
+
+        // Fade in at higher altitudes (starts > 1500m, peaks > 4500m)
+        let altFactor = Math.max(0, Math.min(1, (PHYSICS.position.y - 1500) / 3000));
+        let heatIntensity = altFactor * 0.8 * PHYSICS.throttle;
+
+        if (heatIntensity > 0.05) {
+            spawnParticle(engL, pVel, 2.0, 5, 2.5, heatIntensity, heatIntensity, heatIntensity);
+            spawnParticle(engR, pVel, 2.0, 5, 2.5, heatIntensity, heatIntensity, heatIntensity);
+        }
+    }
+
+    // 4. Update & Render Particles
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+        const p = particles[i];
+        if (!p.active) continue;
+
+        p.life -= dt;
+        if (p.life <= 0) {
+            p.active = false;
+            pDummy.scale.set(0, 0, 0);
+            pDummy.updateMatrix();
+            particleMesh.setMatrixAt(i, pDummy.matrix);
+            continue;
         }
 
-        const waterMaterial = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.90,
-            roughness: 0.3,      // Increased roughness to scatter the blinding sun reflection
-            metalness: 0.8,
-            normalMap: createWaterNormalMap(),
-            normalScale: new THREE.Vector2(0.5, 0.5)
-        });
+        p.pos.addScaledVector(p.vel, dt);
+        p.size += p.growth * dt;
 
-        // High-Res Procedural Runway Mesh
-        function createRunwayMesh() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 1024; canvas.height = 4096;
-            const ctx = canvas.getContext('2d');
+        pDummy.position.copy(p.pos);
+        // In case updateCamera hasn't run yet, ensure camera quaternion is valid
+        if (camera && camera.quaternion) {
+            pDummy.quaternion.copy(camera.quaternion);
+        }
+        pDummy.scale.set(p.size, p.size, p.size);
+        pDummy.updateMatrix();
+        particleMesh.setMatrixAt(i, pDummy.matrix);
 
-            // Asphalt base
-            ctx.fillStyle = '#1a1a1a';
-            ctx.fillRect(0, 0, 1024, 4096);
+        let progress = p.life / p.maxLife;
+        let fade = progress * progress;
+        pColor.setRGB(p.r * fade, p.g * fade, p.b * fade);
+        particleMesh.setColorAt(i, pColor);
+    }
+    particleMesh.instanceMatrix.needsUpdate = true;
+    if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
 
-            // Asphalt Noise
-            for (let i = 0; i < 200000; i++) {
-                ctx.fillStyle = Math.random() > 0.5 ? '#222' : '#111';
-                ctx.fillRect(Math.random() * 1024, Math.random() * 4096, 2, 2);
+    // --- PAPI LIGHTS UPDATE ---
+    const distZ = PHYSICS.position.z - 1000;
+    // Only activate if approaching from the South (Positive Z) within 15km
+    if (distZ > 0 && distZ < 15000) {
+        const distX = PHYSICS.position.x - (-63); // Center of PAPI array
+        const dist2D = Math.sqrt(distX * distX + distZ * distZ);
+
+        // Calculate viewing angle from the plane down to the PAPI lights
+        const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
+
+        // Standard PAPI Glidepath: 3.0 degrees
+        let wCount = 0;
+        if (angleDeg > 3.5) wCount = 4;        // Too High (4 White)
+        else if (angleDeg > 3.2) wCount = 3;   // Slightly High (3 White, 1 Red)
+        else if (angleDeg > 2.8) wCount = 2;   // On Glidepath (2 White, 2 Red)
+        else if (angleDeg > 2.5) wCount = 1;   // Slightly Low (1 White, 3 Red)
+        else wCount = 0;                       // Too Low (4 Red)
+
+        // Apply colors (Inner light is index 0, Outer is index 3)
+        // Real PAPI: On glidepath = inner 2 red, outer 2 white.
+        for (let i = 0; i < 4; i++) {
+            PAPI.lights[i].material = (i >= (4 - wCount)) ? PAPI.matWhite : PAPI.matRed;
+        }
+    } else {
+        for (let i = 0; i < 4; i++) PAPI.lights[i].material = PAPI.matOff;
+    }
+
+    if (!PHYSICS.crashed) {
+        calculateAerodynamics({ THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight, gearGroup, planeGroup, Noise });
+    } else {
+        // WRECKAGE PHYSICS: Let gravity pull the wreckage down if destroyed mid-air
+        if (!PHYSICS.onGround) {
+            PHYSICS.velocity.y -= PHYSICS.gravity * dt;
+            PHYSICS.position.add(PHYSICS.velocity.clone().multiplyScalar(dt));
+
+            // Add uncontrolled tumbling spin
+            PHYSICS.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(dt, dt * 0.5, dt * 2))).normalize();
+
+            const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z);
+            if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
+                PHYSICS.position.y = terrainY + AIRCRAFT.gearHeight;
+                PHYSICS.onGround = true;
+                PHYSICS.velocity.set(0, 0, 0);
             }
-
-            ctx.fillStyle = '#ffffff';
-            // Centerline
-            for (let y = 0; y < 4096; y += 128) {
-                ctx.fillRect(504, y, 16, 64);
-            }
-            // Edge lines
-            ctx.fillRect(100, 0, 16, 4096);
-            ctx.fillRect(908, 0, 16, 4096);
-
-            // Thresholds (Piano keys)
-            for (let i = 0; i < 8; i++) {
-                ctx.fillRect(150 + i * 40, 50, 20, 150);
-                ctx.fillRect(570 + i * 40, 50, 20, 150);
-                ctx.fillRect(150 + i * 40, 3896, 20, 150);
-                ctx.fillRect(570 + i * 40, 3896, 20, 150);
-            }
-
-            // Touchdown zones
-            for (let y = 500; y < 1500; y += 250) {
-                ctx.fillRect(250, y, 20, 100); ctx.fillRect(300, y, 20, 100);
-                ctx.fillRect(710, y, 20, 100); ctx.fillRect(760, y, 20, 100);
-                ctx.fillRect(250, 4096 - y - 100, 20, 100); ctx.fillRect(300, 4096 - y - 100, 20, 100);
-                ctx.fillRect(710, 4096 - y - 100, 20, 100); ctx.fillRect(760, 4096 - y - 100, 20, 100);
-            }
-
-            // Realistic Tire Skid Marks (Heavy in touchdown zones)
-            for (let i = 0; i < 800; i++) {
-                // Bias towards the ends of the runway
-                let isNorth = Math.random() > 0.5;
-                let yBase = isNorth ? 400 : 2500;
-                let yOffset = yBase + Math.random() * 1200;
-
-                let xCenter = 512 + (Math.random() - 0.5) * 40; // Clustered near centerline
-                let markW = 2 + Math.random() * 4;
-                let markH = 40 + Math.random() * 200;
-
-                ctx.fillStyle = `rgba(10, 10, 10, ${0.1 + Math.random() * 0.4})`;
-                // Left main gear
-                ctx.fillRect(xCenter - 25, yOffset, markW, markH);
-                // Right main gear
-                ctx.fillRect(xCenter + 25, yOffset, markW, markH);
-                // Nose gear (fainter and fewer)
-                if (Math.random() > 0.5) {
-                    ctx.fillStyle = `rgba(10, 10, 10, ${0.05 + Math.random() * 0.2})`;
-                    ctx.fillRect(xCenter, yOffset + 50, markW * 0.5, markH * 0.8);
-                }
-            }
-
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-
-            const runwayGeo = new THREE.PlaneGeometry(100, 4000);
-            const runwayMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.1 });
-            const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
-            runwayMesh.rotation.x = -Math.PI / 2;
-            runwayMesh.position.set(0, 0.2, 0); // Slightly above terrain to prevent z-fighting
-            runwayMesh.receiveShadow = true;
-            scene.add(runwayMesh);
-        }
-        createRunwayMesh();
-
-        // SCALED UP ALL EMISSIVE INTENSITIES SO THEY PIERCE THE NEW BLOOM THRESHOLD
-        const PAPI = {
-            lights: [],
-            matRed: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 30 }),
-            matWhite: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 30 }),
-            matOff: new THREE.MeshBasicMaterial({ color: 0x111111 })
-        };
-
-        // Global arrays for ALSF-2 Animation
-        const alsStrobes = [];
-        const strobeMatOn = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 60 });
-        const strobeMatOff = new THREE.MeshBasicMaterial({ color: 0x111111 });
-
-        // Runway Lighting
-        function createRunwayLights() {
-            const lightGroup = new THREE.Group();
-            const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffddaa, emissiveIntensity: 15 });
-            const centerMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 15 });
-            const endMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 15 });
-            const lightGeo = new THREE.SphereGeometry(0.5, 4, 4);
-
-            for (let z = -2000; z <= 2000; z += 50) {
-                // Edge lights
-                let leftEdge = new THREE.Mesh(lightGeo, Math.abs(z) > 1950 ? endMaterial : edgeMaterial);
-                leftEdge.position.set(-25, 0.5, z);
-                let rightEdge = new THREE.Mesh(lightGeo, Math.abs(z) > 1950 ? endMaterial : edgeMaterial);
-                rightEdge.position.set(25, 0.5, z);
-                lightGroup.add(leftEdge, rightEdge);
-
-                // Centerline lights
-                if (z % 100 === 0) {
-                    let centerLight = new THREE.Mesh(lightGeo, centerMaterial);
-                    centerLight.position.set(0, 0.1, z);
-                    lightGroup.add(centerLight);
-                }
-            }
-
-            // --- PAPI System (Precision Approach Path Indicator) ---
-            // Touchdown zone is Z=1000. PAPI placed on left side (X = -45 to -81)
-            for (let i = 0; i < 4; i++) {
-                // Use large disk shapes to ensure high visibility from kilometers away
-                let mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), PAPI.matWhite);
-                mesh.position.set(-45 - (i * 12), 1.5, 1000);
-                // Scale Z to make them directional (visible mostly from the front)
-                mesh.scale.z = 0.2;
-                lightGroup.add(mesh);
-                PAPI.lights.push(mesh);
-            }
-
-            // --- ALSF-2 Approach Lighting System ("The Rabbit") ---
-            const alsWhiteMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffee, emissiveIntensity: 20 });
-            const alsRedMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 20 });
-            const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
-
-            function buildALS(thresholdZ, direction) {
-                for (let dist = 30; dist <= 900; dist += 30) {
-                    let z = thresholdZ + dist * direction;
-                    let ty = getTerrainHeight(0, z);
-                    let rowY = ty + 1.5; // Lights elevated 1.5m above local terrain
-
-                    // Add vertical pole structure connecting to the ground
-                    if (rowY - ty > 0.1) {
-                        let pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, rowY - ty), poleMat);
-                        pole.position.set(0, ty + (rowY - ty) / 2, z);
-                        lightGroup.add(pole);
-                    }
-
-                    // Centerline white bar (5 lights)
-                    for (let x = -6; x <= 6; x += 3) {
-                        let mesh = new THREE.Mesh(lightGeo, alsWhiteMat);
-                        mesh.position.set(x, rowY, z);
-                        mesh.scale.set(1.5, 1.5, 1.5);
-                        lightGroup.add(mesh);
-                    }
-
-                    // 1000ft Crossbar
-                    if (Math.abs(dist - 300) <= 15) {
-                        for (let x = -24; x <= 24; x += 3) {
-                            if (Math.abs(x) > 6) {
-                                let mesh = new THREE.Mesh(lightGeo, alsWhiteMat);
-                                mesh.position.set(x, rowY, z);
-                                mesh.scale.set(1.5, 1.5, 1.5);
-                                lightGroup.add(mesh);
-                            }
-                        }
-                    }
-
-                    // Red side row bars (Inner 300m)
-                    if (dist <= 300) {
-                        for (let x of [-12, -9, 9, 12]) {
-                            let redL = new THREE.Mesh(lightGeo, alsRedMat);
-                            redL.position.set(x, rowY, z);
-                            redL.scale.set(1.5, 1.5, 1.5);
-                            lightGroup.add(redL);
-                        }
-                    }
-
-                    // Sequenced Flashing Lights "The Rabbit" (Outer 600m)
-                    if (dist > 300) {
-                        let strobe = new THREE.Mesh(lightGeo, strobeMatOff);
-                        strobe.position.set(0, rowY + 0.5, z);
-                        strobe.scale.set(3, 3, 3); // Make the flash very large
-                        lightGroup.add(strobe);
-                        alsStrobes.push({ mesh: strobe, dist: dist, dir: direction });
-                    }
-                }
-            }
-            buildALS(1950, 1);   // Approach from the South
-            buildALS(-1950, -1); // Approach from the North
-
-            scene.add(lightGroup);
-        }
-        createRunwayLights();
-
-        // Terrain System
-        const CHUNK_SIZE = 4000;
-        const CHUNK_RES = 128; // Doubled resolution from 64 to 128 for smoother terrain
-        const terrainChunks = new Map();
-        const terrainMaterial = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            roughness: 0.8,
-            flatShading: true
-        });
-
-        // Instanced Mesh Resources (Trees & Buildings)
-        const treeGeo = new THREE.ConeGeometry(8, 24, 5);
-        treeGeo.translate(0, 12, 0); // Base at y=0
-        const treeMat = new THREE.MeshStandardMaterial({ color: 0x1e3a15, roughness: 0.9 });
-
-        // Instanced Boats
-        const hullGeo = new THREE.BoxGeometry(2.5, 1.2, 8);
-        hullGeo.translate(0, 0.6, 0);
-        const cabinGeo = new THREE.BoxGeometry(2.0, 1.5, 3);
-        cabinGeo.translate(0, 1.9, -1); // Lift cabin above hull, push back slightly
-        const hullMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
-        const cabinMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.6 });
-
-        // We now use a 1x1x1 base box. We will scale and color it per-instance to create varied buildings
-        const baseBuildingGeo = new THREE.BoxGeometry(1, 1, 1);
-        baseBuildingGeo.translate(0, 0.5, 0); // Base at y=0
-        const baseBuildingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
-
-        const dummy = new THREE.Object3D();
-
-        function getTerrainHeight(x, z) {
-            let distFromRunwayZ = Math.abs(z);
-            let distFromRunwayX = Math.abs(x);
-
-            // Base noise averages around 0, multiply and add 100 so land is naturally elevated above water
-            let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
-
-            // Flatten for runway (centered at origin, extending along Z)
-            let runwayMask = 1.0;
-            if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-                return 0; // Lock runway exactly to Y=0
-            } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-                // Smooth transition
-                let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
-                let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-                runwayMask = Math.min(1.0, blendX + blendZ);
-                return noiseVal * runwayMask;
-            }
-
-            return noiseVal;
-        }
-
-        function generateChunk(cx, cz) {
-            const chunkGroup = new THREE.Group();
-            chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
-
-            const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_RES, CHUNK_RES);
-            geometry.rotateX(-Math.PI / 2); // Lay flat
-
-            const positions = geometry.attributes.position.array;
-            const colors = [];
-            const colorObj = new THREE.Color();
-
-            const treePositions = [];
-            const buildingPositions = [];
-            const boatPositions = [];
-
-            for (let i = 0; i < positions.length; i += 3) {
-                let lx = positions[i];
-                let lz = positions[i + 2];
-                let vx = lx + cx * CHUNK_SIZE;
-                let vz = lz + cz * CHUNK_SIZE;
-
-                let height = getTerrainHeight(vx, vz);
-                positions[i + 1] = height;
-
-                // Natural terrain coloring
-                if (height < -5) {
-                    // Underwater Seabed / Sand
-                    colorObj.setHex(0xc2b280);
-                } else if (height < 25) {
-                    colorObj.setHex(0x355e3b); // Lowland / Hunter green
-                } else if (height < 150) {
-                    colorObj.setHex(0x2a4b2a); // Dark forest green
-                } else if (height < 400) {
-                    // Blend rock and grass
-                    let rockBlend = (height - 150) / 250;
-                    let cGrass = new THREE.Color(0x2a4b2a);
-                    let cRock = new THREE.Color(0x555555);
-                    colorObj.lerpColors(cGrass, cRock, rockBlend);
-                } else if (height < 600) {
-                    colorObj.setHex(0x555555); // Solid Rock
-                } else {
-                    // Snow peak blending
-                    let snowBlend = Math.min(1.0, (height - 600) / 100);
-                    let cRock = new THREE.Color(0x555555);
-                    let cSnow = new THREE.Color(0xffffff);
-                    colorObj.lerpColors(cRock, cSnow, snowBlend);
-                }
-                colors.push(colorObj.r, colorObj.g, colorObj.b);
-
-                // Object Placement Logic (Biomes)
-                let distFromRunwayX = Math.abs(vx);
-                let distFromRunwayZ = Math.abs(vz);
-
-                // Sparse Boats in deep water (Probability adjusted for denser grid)
-                if (height < -30 && Math.random() < 0.0002) {
-                    boatPositions.push({ x: lx, z: lz, rot: Math.random() * Math.PI * 2 });
-                }
-
-                // Shrunk clear zone so forests/cities spawn closer to the airport
-                if (distFromRunwayX < 200 && distFromRunwayZ < 2600) continue;
-                if (height < -5 || height > 400) continue; // Don't spawn underwater or on cliffs
-
-                // Rebalanced noise to spawn much more frequently
-                let cityNoise = Noise.fractal(vx, vz, 4, 0.5, 0.001);
-                let forestNoise = Noise.fractal(vx + 5000, vz + 5000, 4, 0.5, 0.002);
-
-                // City Zoning Logic (Probabilities scaled down to match 4x grid density)
-                if (cityNoise > 0.3) {
-                    if (cityNoise > 0.7 && Math.random() < 0.15) {
-                        // DOWNTOWN: 1 Massive Skyscraper per grid node
-                        buildingPositions.push({ x: lx, y: height, z: lz, zone: 'downtown' });
-                    } else if (cityNoise > 0.5 && cityNoise <= 0.7 && Math.random() < 0.15) {
-                        // COMMERCIAL: 1-2 Mid-rise buildings
-                        buildingPositions.push({ x: lx, y: height, z: lz, zone: 'commercial' });
-                        if (Math.random() < 0.5) {
-                            let ox = 25, oz = 25;
-                            let exactY = getTerrainHeight(vx + ox, vz + oz);
-                            buildingPositions.push({ x: lx + ox, y: exactY, z: lz + oz, zone: 'commercial' });
-                        }
-                    } else if (cityNoise <= 0.5 && Math.random() < 0.2) {
-                        // SUBURBS: 3-4 small houses scattered around the node
-                        let numHouses = 2 + Math.floor(Math.random() * 3);
-                        for (let k = 0; k < numHouses; k++) {
-                            let ox = (Math.random() - 0.5) * 60;
-                            let oz = (Math.random() - 0.5) * 60;
-                            let exactY = getTerrainHeight(vx + ox, vz + oz);
-                            // Prevent houses from spawning in the water
-                            if (exactY > -5) {
-                                buildingPositions.push({ x: lx + ox, y: exactY, z: lz + oz, zone: 'suburb' });
-                            }
-                        }
-                    }
-                } else if (forestNoise > 0.1) {
-                    // Forest
-                    if (Math.random() < 0.2) {
-                        treePositions.push({ x: lx + (Math.random() - 0.5) * 20, y: height, z: lz + (Math.random() - 0.5) * 20 });
-                    }
-                }
-            }
-
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            geometry.computeVertexNormals();
-
-            const terrainMesh = new THREE.Mesh(geometry, terrainMaterial);
-            terrainMesh.receiveShadow = true;
-            chunkGroup.add(terrainMesh);
-
-            // --- Generate Procedural Water Chunk ---
-            const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_RES, CHUNK_RES);
-            waterGeo.rotateX(-Math.PI / 2);
-            const wPos = waterGeo.attributes.position.array;
-            const wCols = [];
-            const wColObj = new THREE.Color();
-
-            for (let i = 0; i < wPos.length; i += 3) {
-                let vx = wPos[i] + cx * CHUNK_SIZE;
-                let vz = wPos[i + 2] + cz * CHUNK_SIZE;
-                let th = getTerrainHeight(vx, vz); // Terrain depth
-
-                wPos[i + 1] = -10; // Flat water level
-
-                // Distort depth reading slightly with noise for organic, wavy shorelines
-                let waveNoise = Noise.fractal(vx / 30, vz / 30, 2, 0.5, 1);
-                let depth = (-10 - th) + waveNoise * 4.0;
-
-                if (depth < 2) {
-                    wColObj.setHex(0xffffff); // Shoreline Froth (White)
-                } else if (depth < 25) {
-                    let blend = (depth - 2) / 23;
-                    // Richer coastal blue
-                    wColObj.lerpColors(new THREE.Color(0xffffff), new THREE.Color(0x0077be), Math.pow(blend, 0.6));
-                } else {
-                    wColObj.setHex(0x003377); // Deeper, more vibrant ocean blue
-                }
-                wCols.push(wColObj.r, wColObj.g, wColObj.b);
-            }
-            waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(wCols, 3));
-            const waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
-            waterMesh.receiveShadow = true;
-            chunkGroup.add(waterMesh);
-
-
-            // Populate Instanced Meshes
-            if (treePositions.length > 0) {
-                const treeMesh = new THREE.InstancedMesh(treeGeo, treeMat, treePositions.length);
-                treeMesh.castShadow = true;
-                treeMesh.receiveShadow = true;
-                for (let j = 0; j < treePositions.length; j++) {
-                    let tp = treePositions[j];
-                    let exactY = getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE);
-                    dummy.position.set(tp.x, exactY, tp.z);
-                    dummy.rotation.set(0, Math.random() * Math.PI, 0);
-                    let scale = 0.6 + Math.random() * 0.8;
-                    dummy.scale.set(scale, scale, scale);
-                    dummy.updateMatrix();
-                    treeMesh.setMatrixAt(j, dummy.matrix);
-                }
-                chunkGroup.add(treeMesh);
-            }
-
-            if (buildingPositions.length > 0) {
-                const bldgMesh = new THREE.InstancedMesh(baseBuildingGeo, baseBuildingMat, buildingPositions.length);
-                bldgMesh.castShadow = true;
-                bldgMesh.receiveShadow = true;
-
-                const instColor = new THREE.Color();
-
-                for (let j = 0; j < buildingPositions.length; j++) {
-                    let bp = buildingPositions[j];
-                    dummy.position.set(bp.x, bp.y, bp.z);
-
-                    // Align to grid (city blocks)
-                    dummy.rotation.set(0, Math.floor(Math.random() * 4) * (Math.PI / 2), 0);
-
-                    let hScale, wScale;
-
-                    if (bp.zone === 'downtown') {
-                        // Skyscraper (Tall, glassy)
-                        hScale = 80 + Math.random() * 200;
-                        wScale = 25 + Math.random() * 20;
-                        const colors = [0x1a2b3c, 0x111111, 0x2c3e50, 0x34495e];
-                        instColor.setHex(colors[Math.floor(Math.random() * colors.length)]);
-                    } else if (bp.zone === 'commercial') {
-                        // Mid-rise (Blocky, brick/concrete)
-                        hScale = 20 + Math.random() * 40;
-                        wScale = 15 + Math.random() * 15;
-                        const colors = [0x8B4513, 0x808080, 0xA9A9A9, 0x5c4033, 0x696969];
-                        instColor.setHex(colors[Math.floor(Math.random() * colors.length)]);
-                    } else {
-                        // Suburb (Small, wide variety of bright colors)
-                        hScale = 6 + Math.random() * 6;
-                        wScale = 8 + Math.random() * 6;
-                        // Suburbs aren't grid-locked
-                        dummy.rotation.set(0, Math.random() * Math.PI, 0);
-                        const colors = [0xffffff, 0xf5f5dc, 0xd3d3d3, 0xfaebd7, 0xe0e0e0, 0xdeb887];
-                        instColor.setHex(colors[Math.floor(Math.random() * colors.length)]);
-                    }
-
-                    dummy.scale.set(wScale, hScale, wScale);
-                    dummy.updateMatrix();
-
-                    bldgMesh.setMatrixAt(j, dummy.matrix);
-                    bldgMesh.setColorAt(j, instColor);
-                }
-
-                bldgMesh.instanceColor.needsUpdate = true;
-                chunkGroup.add(bldgMesh);
-            }
-
-            if (boatPositions.length > 0) {
-                const hullMesh = new THREE.InstancedMesh(hullGeo, hullMat, boatPositions.length);
-                const cabinMesh = new THREE.InstancedMesh(cabinGeo, cabinMat, boatPositions.length);
-                hullMesh.castShadow = true; cabinMesh.castShadow = true;
-
-                for (let j = 0; j < boatPositions.length; j++) {
-                    let bp = boatPositions[j];
-                    dummy.position.set(bp.x, -10.2, bp.z); // Ride the water line
-                    dummy.rotation.set(0, bp.rot, 0);
-                    dummy.scale.set(1, 1, 1);
-                    dummy.updateMatrix();
-
-                    hullMesh.setMatrixAt(j, dummy.matrix);
-                    cabinMesh.setMatrixAt(j, dummy.matrix);
-                }
-                chunkGroup.add(hullMesh, cabinMesh);
-            }
-
-            scene.add(chunkGroup);
-            return chunkGroup;
-        }
-
-        function updateTerrain() {
-            const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
-            const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
-            const renderDistance = 2; // Radius of chunks
-
-            const activeChunks = new Set();
-
-            for (let dx = -renderDistance; dx <= renderDistance; dx++) {
-                for (let dz = -renderDistance; dz <= renderDistance; dz++) {
-                    const key = `${px + dx},${pz + dz}`;
-                    activeChunks.add(key);
-                    if (!terrainChunks.has(key)) {
-                        terrainChunks.set(key, generateChunk(px + dx, pz + dz));
-                    }
-                }
-            }
-
-            // Memory management: remove far chunks
-            for (const [key, chunkGroup] of terrainChunks.entries()) {
-                if (!activeChunks.has(key)) {
-                    scene.remove(chunkGroup);
-                    // Dispose geometries to prevent memory leaks
-                    chunkGroup.traverse((child) => {
-                        if (child.isMesh || child.isInstancedMesh) {
-                            child.geometry.dispose();
-                        }
-                    });
-                    terrainChunks.delete(key);
-                }
-            }
-        }
-
-        // Global Particle Texture (For Contrails/Smoke)
-        const particleCanvas = document.createElement('canvas');
-        particleCanvas.width = 64; particleCanvas.height = 64;
-        const pCtx = particleCanvas.getContext('2d');
-        const pGrad = pCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-        pGrad.addColorStop(0, 'rgba(255,255,255,1)');
-        pGrad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
-        pGrad.addColorStop(1, 'rgba(255,255,255,0)');
-        pCtx.fillStyle = pGrad;
-        pCtx.fillRect(0, 0, 64, 64);
-        const globalParticleTex = new THREE.CanvasTexture(particleCanvas);
-
-        // Realistic Procedural Cloud Texture
-        const cloudCanvas = document.createElement('canvas');
-        cloudCanvas.width = 128; cloudCanvas.height = 128;
-        const cCtx = cloudCanvas.getContext('2d');
-        const cGrad = cCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
-        cGrad.addColorStop(0, 'rgba(255,255,255,1)');
-        cGrad.addColorStop(0.6, 'rgba(255,255,255,0.3)');
-        cGrad.addColorStop(1, 'rgba(255,255,255,0)');
-        cCtx.fillStyle = cGrad;
-        cCtx.fillRect(0, 0, 128, 128);
-        const realCloudTex = new THREE.CanvasTexture(cloudCanvas);
-
-        // Clouds System (Volumetric Billboard approach)
-        function createClouds() {
-            const cloudGeo = new THREE.PlaneGeometry(2500, 2500); // Much larger, softer clouds
-
-            const cloudMat = new THREE.MeshBasicMaterial({
-                map: realCloudTex,
-                transparent: true,
-                opacity: 0.15, // Very soft opacity so they look like hazy fog, not dark spots
-                depthWrite: false,
-                color: 0xffffff,
-                blending: THREE.AdditiveBlending // Glows beautifully against the sunset
-            });
-
-            const cloudGroup = new THREE.Group();
-            for (let i = 0; i < 200; i++) {
-                const mesh = new THREE.Mesh(cloudGeo, cloudMat);
-                mesh.position.set(
-                    (Math.random() - 0.5) * 40000,
-                    1000 + Math.random() * 4000, // Spread them out vertically
-                    (Math.random() - 0.5) * 40000
-                );
-                mesh.rotation.z = Math.random() * Math.PI;
-                cloudGroup.add(mesh);
-            }
-            scene.add(cloudGroup);
-            return cloudGroup;
-        }
-        const clouds = createClouds();
-
-        // ==========================================
-        // AERODYNAMIC PARTICLE SYSTEM
-        // ==========================================
-        const MAX_PARTICLES = 1500;
-        const particleGeo = new THREE.PlaneGeometry(1, 1);
-        const particleMat = new THREE.MeshBasicMaterial({
-            map: globalParticleTex,
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.NormalBlending, // Changed from Additive so dark smoke renders correctly
-            color: 0xffffff
-        });
-
-        const particleMesh = new THREE.InstancedMesh(particleGeo, particleMat, MAX_PARTICLES);
-        particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        scene.add(particleMesh);
-
-        const particles = [];
-        for (let i = 0; i < MAX_PARTICLES; i++) {
-            particles.push({ active: false, life: 0, maxLife: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(), size: 1, growth: 1, r: 1, g: 1, b: 1 });
-            particleMesh.setColorAt(i, new THREE.Color(0x000000));
-
-            let m = new THREE.Matrix4();
-            m.scale(new THREE.Vector3(0, 0, 0));
-            particleMesh.setMatrixAt(i, m);
-        }
-        let pIdx = 0;
-
-        function spawnParticle(pos, vel, size, growth, life, r, g, b) {
-            const p = particles[pIdx];
-            p.active = true;
-            p.life = life;
-            p.maxLife = life;
-            p.pos.copy(pos);
-            p.vel.copy(vel);
-            p.size = size;
-            p.growth = growth;
-            p.r = r; p.g = g; p.b = b;
-            pIdx = (pIdx + 1) % MAX_PARTICLES;
-        }
-
-        const pDummy = new THREE.Object3D();
-        const pColor = new THREE.Color();
-        let wasOnGround = true;
-
-        // ==========================================
-        // 5. ULTRA-DETAILED AIRPLANE MODEL
-        // ==========================================
-        const planeGroup = new THREE.Group();
-        scene.add(planeGroup);
-
-        const engineFans = []; // Used to spin the fans in the render loop
-        const engineExhausts = []; // Used to glow the exhausts based on throttle
-        const movableSurfaces = { flaps: [], aileronsL: [], aileronsR: [], elevators: [], rudder: [], spoilers: [] }; // Moving parts
-
-        // Advanced Materials (Upgraded to utilize PBR reflections)
-        const fuselageMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.15, metalness: 0.4 });
-        const wingMat = new THREE.MeshStandardMaterial({ color: 0xe5e5e5, roughness: 0.25, metalness: 0.5 });
-        const darkMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
-        const glassMat = new THREE.MeshStandardMaterial({ color: 0x020202, roughness: 0.0, metalness: 1.0 }); // Perfect mirror glass
-        const metalMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.9 });
-
-        // --- Fuselage Texture (Livery, Windows, Doors) ---
-        const fuseCanvas = document.createElement('canvas');
-        fuseCanvas.width = 2048; fuseCanvas.height = 1024;
-        const fCtx = fuseCanvas.getContext('2d');
-        fCtx.fillStyle = '#ffffff'; fCtx.fillRect(0, 0, 2048, 1024);
-        // Lower belly color (light grey)
-        fCtx.fillStyle = '#e0e0e0'; fCtx.fillRect(0, 512, 2048, 512);
-        // Cheatline (Airline stripe)
-        fCtx.fillStyle = '#0033a0'; fCtx.fillRect(0, 480, 2048, 40);
-        fCtx.fillStyle = '#d50032'; fCtx.fillRect(0, 520, 2048, 10);
-        // Windows & Doors
-        fCtx.fillStyle = '#0a0a0a';
-        for (let side = 0; side < 2; side++) {
-            let y = side === 0 ? 250 : 774; // UV mapping sides for cylinder
-            for (let x = 200; x < 1800; x += 30) {
-                if (x % 400 < 60) {
-                    // Passenger Door
-                    fCtx.fillStyle = '#bbbbbb';
-                    fCtx.fillRect(x, y - 20, 25, 50);
-                    fCtx.strokeStyle = '#555'; fCtx.strokeRect(x, y - 20, 25, 50);
-                    fCtx.fillStyle = '#0a0a0a';
-                } else {
-                    // Passenger Window
-                    fCtx.fillRect(x, y, 12, 16);
-                }
-            }
-        }
-        const fuseTex = new THREE.CanvasTexture(fuseCanvas);
-        fuseTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        // Applied PBR reflection settings to the textured livery
-        const texturedFuselageMat = new THREE.MeshStandardMaterial({ map: fuseTex, roughness: 0.15, metalness: 0.4 });
-
-        // --- Main Body (Cylinder) ---
-        const fuselageGeo = new THREE.CylinderGeometry(2.2, 2.2, 34, 64);
-        fuselageGeo.rotateX(Math.PI / 2);
-        fuselageGeo.rotateZ(Math.PI / 2); // align texture correctly
-        const fuselage = new THREE.Mesh(fuselageGeo, texturedFuselageMat);
-        fuselage.castShadow = true; fuselage.receiveShadow = true;
-        planeGroup.add(fuselage);
-
-        // --- Curved Nose (Lathe) ---
-        const nosePoints = [];
-        for (let i = 0; i <= 20; i++) {
-            let t = i / 20;
-            let x = Math.sin(t * Math.PI / 2) * 2.2; // Curve radius
-            let y = Math.cos(t * Math.PI / 2) * 6;   // 6m long nose
-            nosePoints.push(new THREE.Vector2(x, y));
-        }
-        const noseGeo = new THREE.LatheGeometry(nosePoints, 64);
-        noseGeo.rotateX(-Math.PI / 2); // Point forward
-        const nose = new THREE.Mesh(noseGeo, fuselageMat);
-        nose.position.z = -17; // End of main body
-        nose.castShadow = true;
-        planeGroup.add(nose);
-
-        // --- Cockpit Glass ---
-        const cockpitGeo = new THREE.SphereGeometry(2.23, 32, 16, Math.PI * 0.3, Math.PI * 0.4, 0.4, 0.35);
-        cockpitGeo.rotateX(Math.PI / 2);
-        cockpitGeo.rotateZ(Math.PI / 2);
-        const cockpit = new THREE.Mesh(cockpitGeo, glassMat);
-        cockpit.position.set(0, 0.4, -19.2);
-        cockpit.rotation.x = -0.15;
-        planeGroup.add(cockpit);
-
-        // --- Curved Tail Cone (Lathe) ---
-        const tailPoints = [];
-        for (let i = 0; i <= 20; i++) {
-            let t = i / 20;
-            let x = 2.2 * (1 - Math.pow(t, 1.5)); // smooth aerodynamic taper
-            let y = t * 8; // 8m long tail cone
-            tailPoints.push(new THREE.Vector2(Math.max(x, 0.3), y)); // ends at 0.3 radius for APU
-        }
-        const tailGeo = new THREE.LatheGeometry(tailPoints, 64);
-        tailGeo.rotateX(Math.PI / 2); // Point backward
-        const tailCone = new THREE.Mesh(tailGeo, fuselageMat);
-        tailCone.position.z = 17;
-        tailCone.castShadow = true;
-        planeGroup.add(tailCone);
-
-        // APU Exhaust
-        const apuGeo = new THREE.CylinderGeometry(0.3, 0.15, 0.6, 16);
-        apuGeo.rotateX(Math.PI / 2);
-        const apu = new THREE.Mesh(apuGeo, metalMat);
-        apu.position.z = 25.3;
-        planeGroup.add(apu);
-
-        // --- Wing Root Belly Fairing ---
-        const bellyGeo = new THREE.CylinderGeometry(2.6, 2.6, 14, 32);
-        bellyGeo.rotateZ(Math.PI / 2);
-        bellyGeo.scale(1, 0.35, 1.2); // Flatten and stretch it
-        const belly = new THREE.Mesh(bellyGeo, fuselageMat);
-        belly.position.set(0, -1.8, 1.5);
-        planeGroup.add(belly);
-
-        // --- Wings & Control Surfaces ---
-        const wingGroup = new THREE.Group();
-
-        // Main Wing Box (Forward 75% of chord shaped into an Airfoil)
-        const wingGeo = new THREE.BoxGeometry(42, 0.6, 7.5, 32, 1, 8);
-        const wingPos = wingGeo.attributes.position;
-        for (let i = 0; i < wingPos.count; i++) {
-            let x = wingPos.getX(i); let y = wingPos.getY(i); let z = wingPos.getZ(i);
-            let dist = Math.abs(x);
-
-            // Airfoil shaping (rounded front, tapered back)
-            let zNorm = (z + 3.75) / 7.5; // 0 to 1
-            let thick = 1.0;
-            if (zNorm < 0.3) thick = Math.sqrt(zNorm / 0.3);
-            else thick = 1.0 - (zNorm - 0.3) * 0.8;
-            y *= thick;
-
-            z += dist * 0.65; // Sweep back
-            y += dist * 0.1;  // Dihedral
-            let taper = 1.0 - (dist / 21) * 0.7;
-
-            // Apply taper carefully to preserve the sweep line
-            z = (z - (dist * 0.65)) * taper + (dist * 0.65) - 0.5;
-            y *= Math.max(0.3, taper);
-            wingPos.setXYZ(i, x, y, z);
-        }
-        wingGeo.computeVertexNormals();
-        const wing = new THREE.Mesh(wingGeo, wingMat);
-        wing.castShadow = true; wing.receiveShadow = true;
-        wingGroup.add(wing);
-
-        // Function to create hinged trailing edge surfaces
-        function addTrailingSurface(xStart, xEnd, zBase, chord, type) {
-            let width = Math.abs(xEnd - xStart);
-            let midX = (xStart + xEnd) / 2;
-            let geo = new THREE.BoxGeometry(width - 0.1, 0.2, chord, Math.max(2, Math.floor(width / 2)), 1, 2);
-
-            let pos = geo.attributes.position;
-            for (let i = 0; i < pos.count; i++) {
-                let vx = pos.getX(i); let vy = pos.getY(i); let vz = pos.getZ(i);
-                let worldX = midX + vx;
-                let dist = Math.abs(worldX);
-                let taper = 1.0 - (dist / 21) * 0.7;
-                vz *= taper;
-                vy *= taper;
-
-                // thin out trailing edge to razor sharp
-                let zNorm = (vz + chord / 2) / chord;
-                vy *= (1.0 - zNorm * 0.8);
-                pos.setXYZ(i, vx, vy, vz);
-            }
-            geo.computeVertexNormals();
-            geo.translate(0, 0, chord / 2); // pivot exactly at the leading edge hinge
-
-            let mesh = new THREE.Mesh(geo, wingMat);
-            let dist = Math.abs(midX);
-            let sweepZ = dist * 0.65;
-            let dihedralY = dist * 0.1;
-            let taper = 1.0 - (dist / 21) * 0.7;
-
-            // Perfectly align hinge to the back of the tapered main wing
-            let localZOffset = zBase * taper;
-            mesh.position.set(midX, dihedralY, sweepZ + localZOffset - 0.5);
-
-            wingGroup.add(mesh);
-            movableSurfaces[type].push(mesh);
-        }
-
-        // Left Flaps & Ailerons
-        addTrailingSurface(-14, -3, 3.75, 2.5, 'flaps');
-        addTrailingSurface(-20.5, -14.2, 3.75, 1.8, 'aileronsL');
-        // Right Flaps & Ailerons
-        addTrailingSurface(3, 14, 3.75, 2.5, 'flaps');
-        addTrailingSurface(14.2, 20.5, 3.75, 1.8, 'aileronsR');
-
-        // Add Top-Wing Spoilers (Airbrakes)
-        function addSpoiler(xStart, xEnd, zBase, chord) {
-            let width = Math.abs(xEnd - xStart);
-            let midX = (xStart + xEnd) / 2;
-            let geo = new THREE.BoxGeometry(width - 0.2, 0.05, chord);
-            geo.translate(0, 0.025, chord / 2); // pivot at leading edge
-
-            let mesh = new THREE.Mesh(geo, wingMat);
-            let dist = Math.abs(midX);
-            let sweepZ = dist * 0.65;
-            let dihedralY = dist * 0.1;
-            let taper = 1.0 - (dist / 21) * 0.7;
-
-            let localZOffset = zBase * taper;
-            mesh.position.set(midX, dihedralY + 0.12, sweepZ + localZOffset - 0.5);
-
-            wingGroup.add(mesh);
-            movableSurfaces.spoilers.push(mesh);
-        }
-        // Left and Right Spoilers just ahead of the flaps
-        addSpoiler(-13.5, -3.5, 2.2, 1.2);
-        addSpoiler(3.5, 13.5, 2.2, 1.2);
-
-        // Aerodynamic Flap Track Fairings (Canoe shapes under wings)
-        const fairingGeo = new THREE.CylinderGeometry(0.18, 0.05, 4.0, 16);
-        fairingGeo.rotateX(Math.PI / 2);
-        const fPos = fairingGeo.attributes.position;
-        for (let i = 0; i < fPos.count; i++) {
-            let fz = fPos.getZ(i); let fy = fPos.getY(i);
-            if (fz < 0) { // smoothly taper the front of the fairing
-                let s = Math.max(0, 1.0 - Math.abs(fz) / 2.0);
-                fPos.setY(i, fy * s);
-            }
-        }
-        fairingGeo.computeVertexNormals();
-        [-12, -9, -6, 6, 9, 12].forEach(fx => {
-            const fairing = new THREE.Mesh(fairingGeo, wingMat);
-            let absX = Math.abs(fx);
-            fairing.position.set(fx, absX * 0.1 - 0.4, 2.5 + absX * 0.65);
-            wingGroup.add(fairing);
-        });
-
-        // Blended Winglets
-        const wingletGeo = new THREE.BoxGeometry(0.2, 3.5, 2);
-        const wingletPos = wingletGeo.attributes.position;
-        for (let i = 0; i < wingletPos.count; i++) {
-            let wy = wingletPos.getY(i); let wz = wingletPos.getZ(i);
-            if (wy > 0) wz += 1.5; // sweep tip back
-            let taper = 1.0 - Math.abs(wy / 1.75) * 0.5;
-            wingletPos.setZ(i, (wz - 1.5) * taper + 1.5);
-        }
-        wingletGeo.computeVertexNormals();
-        const wingletL = new THREE.Mesh(wingletGeo, wingMat);
-        wingletL.position.set(-20.9, 2.0, 14.5); wingletL.rotation.set(-0.2, 0, -0.3);
-        wingGroup.add(wingletL);
-        const wingletR = new THREE.Mesh(wingletGeo, wingMat);
-        wingletR.position.set(20.9, 2.0, 14.5); wingletR.rotation.set(-0.2, 0, 0.3);
-        wingGroup.add(wingletR);
-
-        wingGroup.position.set(0, -1.0, 1);
-        planeGroup.add(wingGroup);
-
-        // --- Empennage (Tail Section) ---
-        const empennage = new THREE.Group();
-
-        // Vertical Stabilizer (Fin)
-        const vTailGeo = new THREE.BoxGeometry(0.5, 9, 5);
-        const vTailPos = vTailGeo.attributes.position;
-        for (let i = 0; i < vTailPos.count; i++) {
-            let y = vTailPos.getY(i); let z = vTailPos.getZ(i);
-            if (y > 0) z += 5.0; // Sweep back
-            let taper = 1.0 - (Math.abs(y) / 4.5) * 0.6;
-            vTailPos.setZ(i, (z - 2.5) * taper + 2.5); // Tapering
-        }
-        vTailGeo.computeVertexNormals();
-        const vTail = new THREE.Mesh(vTailGeo, wingMat);
-        vTail.position.set(0, 5, 20);
-        empennage.add(vTail);
-
-        // Moving Rudder
-        const rudderGeo = new THREE.BoxGeometry(0.4, 8.5, 2.5);
-        const rPos = rudderGeo.attributes.position;
-        for (let i = 0; i < rPos.count; i++) {
-            let y = rPos.getY(i); let z = rPos.getZ(i);
-            if (y > 0) z += 4.5;
-            let taper = 1.0 - (Math.abs(y) / 4.25) * 0.6;
-            rPos.setXYZ(i, rPos.getX(i) * taper, y, (z - 1.25) * taper + 1.25);
-        }
-        rudderGeo.computeVertexNormals();
-        rudderGeo.translate(0, 0, 1.25); // hinge pivot
-        const rudder = new THREE.Mesh(rudderGeo, wingMat);
-        rudder.position.set(0, 5.2, 22.5);
-        empennage.add(rudder);
-        movableSurfaces.rudder.push(rudder);
-
-        // Horizontal Stabilizer
-        const hTailGeo = new THREE.BoxGeometry(16, 0.4, 3.5);
-        const hTailPos = hTailGeo.attributes.position;
-        for (let i = 0; i < hTailPos.count; i++) {
-            let x = hTailPos.getX(i); let y = hTailPos.getY(i); let z = hTailPos.getZ(i);
-            let dist = Math.abs(x);
-            z += dist * 0.6; // Sweep
-            y += dist * 0.08; // Dihedral
-            let taper = 1.0 - (dist / 8) * 0.6;
-            hTailPos.setXYZ(i, x, y * taper, (z - 1.75) * taper + 1.75);
-        }
-        hTailGeo.computeVertexNormals();
-        const hTail = new THREE.Mesh(hTailGeo, wingMat);
-        hTail.position.set(0, 1.2, 22.5);
-        empennage.add(hTail);
-
-        // Moving Elevators
-        const elevGeo = new THREE.BoxGeometry(7.8, 0.2, 2.0);
-        elevGeo.translate(0, 0, 1.0); // hinge pivot
-        function addElevator(xStart, xEnd) {
-            let midX = (xStart + xEnd) / 2;
-            let mesh = new THREE.Mesh(elevGeo, wingMat);
-            let dist = Math.abs(midX);
-            let taper = 1.0 - (dist / 8) * 0.6;
-            mesh.scale.set(1, taper, taper);
-            mesh.position.set(midX, 1.2 + dist * 0.08, 24.25 + dist * 0.6);
-            empennage.add(mesh);
-            movableSurfaces.elevators.push(mesh);
-        }
-        addElevator(-7.8, -0.2);
-        addElevator(0.2, 7.8);
-
-        planeGroup.add(empennage);
-
-        // --- High-Bypass Turbofans ---
-        // Fan blade spinning texture
-        const fanCanvas = document.createElement('canvas');
-        fanCanvas.width = 256; fanCanvas.height = 256;
-        const fanCtx = fanCanvas.getContext('2d');
-        fanCtx.fillStyle = '#111'; fanCtx.fillRect(0, 0, 256, 256);
-        fanCtx.translate(128, 128);
-        fanCtx.fillStyle = '#555';
-        for (let i = 0; i < 24; i++) {
-            fanCtx.rotate((Math.PI * 2) / 24);
-            fanCtx.beginPath(); fanCtx.moveTo(0, 0); fanCtx.lineTo(20, -120); fanCtx.lineTo(-10, -120); fanCtx.fill();
-        }
-        fanCtx.fillStyle = '#fff'; // Spinner swirl
-        fanCtx.beginPath(); fanCtx.arc(0, 0, 20, 0, Math.PI); fanCtx.fill();
-        const fanTex = new THREE.CanvasTexture(fanCanvas);
-        const fanMat = new THREE.MeshStandardMaterial({ map: fanTex, roughness: 0.5, metalness: 0.5 });
-
-        function createEngine(x, z) {
-            const engGroup = new THREE.Group();
-            // Main Cowling (Flattened bottom)
-            const cowlGeo = new THREE.CylinderGeometry(1.6, 1.4, 5.5, 32);
-            cowlGeo.rotateX(Math.PI / 2);
-            const cowlPos = cowlGeo.attributes.position;
-            for (let i = 0; i < cowlPos.count; i++) {
-                let y = cowlPos.getY(i);
-                if (y < -1.0) cowlPos.setY(i, -1.0 - (y + 1.0) * 0.2); // squash bottom for clearance
-            }
-            cowlGeo.computeVertexNormals();
-            const cowl = new THREE.Mesh(cowlGeo, texturedFuselageMat);
-            cowl.castShadow = true; engGroup.add(cowl);
-
-            // Intake Lip
-            const lip = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.15, 16, 32), metalMat);
-            lip.position.z = -2.75; engGroup.add(lip);
-
-            // Fan 
-            const fan = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8), fanMat);
-            fan.position.z = -1.8; engGroup.add(fan);
-            engineFans.push(fan); // Store for animation loop
-
-            // Exhaust Core (Now acts as an Emissive Light Source)
-            const exhaustGeo = new THREE.CylinderGeometry(0.8, 0.5, 2.0, 32);
-            exhaustGeo.rotateX(Math.PI / 2);
-            const exhaustMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6, metalness: 0.5, emissive: 0xff4400, emissiveIntensity: 0.0 });
-            const exhaust = new THREE.Mesh(exhaustGeo, exhaustMat);
-            exhaust.position.z = 3.5; engGroup.add(exhaust);
-            engineExhausts.push(exhaustMat); // Store for animation loop
-
-            // Pylon
-            const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.0, 4), wingMat);
-            pylon.position.set(0, 1.5, -0.5); pylon.rotation.x = 0.1;
-            engGroup.add(pylon);
-
-            engGroup.position.set(x, -2.2, z);
-            return engGroup;
-        }
-        planeGroup.add(createEngine(-7.5, 0));
-        planeGroup.add(createEngine(7.5, 0));
-
-        // --- Detailed Landing Gear ---
-        const gearGroup = new THREE.Group();
-        const tireGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 24); tireGeo.rotateZ(Math.PI / 2);
-        const tireMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
-        const strutMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 });
-
-        function createNoseGear() {
-            const g = new THREE.Group();
-            const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3), strutMat); strut.position.y = -1.5;
-            const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.8), strutMat);
-            axle.rotation.z = Math.PI / 2; axle.position.y = -3.0;
-            const w1 = new THREE.Mesh(tireGeo, tireMat); w1.position.set(-0.4, -3.0, 0);
-            const w2 = new THREE.Mesh(tireGeo, tireMat); w2.position.set(0.4, -3.0, 0);
-            g.add(strut, axle, w1, w2);
-            g.position.set(0, -0.5, -15);
-            return g;
-        }
-
-        function createMainGear(x) {
-            const g = new THREE.Group();
-            const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3.5), strutMat); strut.position.y = -1.75;
-            const beam = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 1.8), strutMat); beam.position.y = -3.5;
-            // 4 Wheel Bogie
-            [[-0.4, -3.5, -0.6], [0.4, -3.5, -0.6], [-0.4, -3.5, 0.6], [0.4, -3.5, 0.6]].forEach(pos => {
-                let w = new THREE.Mesh(tireGeo, tireMat); w.position.set(...pos); g.add(w);
-            });
-            g.add(strut, beam);
-            g.position.set(x, -0.5, 3);
-            return g;
-        }
-        gearGroup.add(createNoseGear(), createMainGear(-4.5), createMainGear(4.5));
-
-        // --- High-Fidelity Lighting System ---
-        const strobes = [];
-        const beacons = [];
-        const lightBulbGeo = new THREE.SphereGeometry(0.15, 8, 8); // Physical bulbs for bloom
-
-        // Wingtip Nav Lights
-        const redLight = new THREE.PointLight(0xff0000, 2, 20); redLight.position.set(-21, 2.0, 15);
-        redLight.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 30 })));
-        planeGroup.add(redLight);
-
-        const greenLight = new THREE.PointLight(0x00ff00, 2, 20); greenLight.position.set(21, 2.0, 15);
-        greenLight.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x00ff00, emissiveIntensity: 30 })));
-        planeGroup.add(greenLight);
-
-        // Strobes (Wingtip & Tail)
-        function addStrobe(x, y, z) {
-            const strobe = new THREE.PointLight(0xffffff, 0, 100); strobe.position.set(x, y, z);
-            strobe.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 80 })));
-            planeGroup.add(strobe); strobes.push(strobe);
-        }
-        addStrobe(-21.5, 2.0, 15.5); addStrobe(21.5, 2.0, 15.5); addStrobe(0, 9.5, 24);
-
-        // Beacons (Red flashing, top/bottom)
-        const beaconTop = new THREE.PointLight(0xff0000, 0, 50); beaconTop.position.set(0, 2.5, 0);
-        beaconTop.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 40 })));
-        planeGroup.add(beaconTop); beacons.push(beaconTop);
-
-        const beaconBot = new THREE.PointLight(0xff0000, 0, 50); beaconBot.position.set(0, -2.5, 0);
-        beaconBot.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 40 })));
-        planeGroup.add(beaconBot); beacons.push(beaconBot);
-
-        // Landing Lights (Attached to gear group so they hide seamlessly when retracted)
-        const landingLights = new THREE.Group();
-        const llLeft = new THREE.SpotLight(0xffffff, 5, 2000, 0.2, 0.5, 0.1); llLeft.position.set(-3, -1, -5); llLeft.target.position.set(-3, -1, -100);
-        const llRight = new THREE.SpotLight(0xffffff, 5, 2000, 0.2, 0.5, 0.1); llRight.position.set(3, -1, -5); llRight.target.position.set(3, -1, -100);
-        landingLights.add(llLeft, llLeft.target, llRight, llRight.target);
-
-        gearGroup.add(landingLights);
-        planeGroup.add(gearGroup);
-
-        // ==========================================
-        // 6. PHYSICS LOOP & AERODYNAMICS
-        // ==========================================
-
-        // --- PROCEDURAL WEB AUDIO ENGINE (ZEN / RELAXING MODE) ---
-        const ProceduralAudio = {
-            ctx: null,
-            engineGain: null,
-            engineOsc: null,
-            jetNoiseFilter: null,
-            windGain: null,
-            windFilter: null,
-            rainGain: null,
-            rainFilter: null,
-            initialized: false,
-
-            init: function () {
-                if (this.initialized) return;
-                this.initialized = true;
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                this.ctx = new AudioContext();
-
-                // 1. Create a shared White Noise Buffer
-                const bufferSize = this.ctx.sampleRate * 2;
-                const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-                const output = noiseBuffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
-
-                // 2. Wind System (Gentle, ASMR-style breeze)
-                const windSrc = this.ctx.createBufferSource();
-                windSrc.buffer = noiseBuffer;
-                windSrc.loop = true;
-                this.windFilter = this.ctx.createBiquadFilter();
-                this.windFilter.type = 'lowpass';
-                this.windGain = this.ctx.createGain();
-                this.windGain.gain.value = 0;
-                windSrc.connect(this.windFilter).connect(this.windGain).connect(this.ctx.destination);
-                windSrc.start();
-
-                // 3. Jet Engine Roar (Deep, muffled low-frequency rumble)
-                const jetNoiseSrc = this.ctx.createBufferSource();
-                jetNoiseSrc.buffer = noiseBuffer;
-                jetNoiseSrc.loop = true;
-                this.jetNoiseFilter = this.ctx.createBiquadFilter();
-                this.jetNoiseFilter.type = 'lowpass';
-                this.engineGain = this.ctx.createGain();
-                this.engineGain.gain.value = 0;
-                jetNoiseSrc.connect(this.jetNoiseFilter).connect(this.engineGain).connect(this.ctx.destination);
-                jetNoiseSrc.start();
-
-                // 4. Engine Fan Whine (Smooth sine wave hum instead of harsh sawtooth)
-                this.engineOsc = this.ctx.createOscillator();
-                this.engineOsc.type = 'sine';
-                const oscGain = this.ctx.createGain();
-                oscGain.gain.value = 0.08; // Very soft blend behind the rumble
-                this.engineOsc.connect(oscGain).connect(this.engineGain);
-                this.engineOsc.start();
-
-                // 5. Storm Rain System (Soft hiss)
-                const rainSrc = this.ctx.createBufferSource();
-                rainSrc.buffer = noiseBuffer;
-                rainSrc.loop = true;
-                this.rainFilter = this.ctx.createBiquadFilter();
-                this.rainFilter.type = 'lowpass';
-                this.rainGain = this.ctx.createGain();
-                this.rainGain.gain.value = 0;
-                rainSrc.connect(this.rainFilter).connect(this.rainGain).connect(this.ctx.destination);
-                rainSrc.start();
-            },
-
-            update: function (throttle, airspeed, spoilers, cameraMode, weatherMode, gForce, angularVelocity) {
-                if (!this.initialized || this.ctx.state === 'suspended') return;
-
-                const t = this.ctx.currentTime;
-                // Camera dampening (Cockpit is highly insulated, exterior is louder but still smooth)
-                const masterVol = cameraMode === 1 ? 0.35 : 0.8;
-
-                // Engine Physics (Ultra-slow, soft transitions for a calmer vibe)
-                // INCREASED: Engine base presence and throttle scaling
-                this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.45) * masterVol, t, 1.0);
-                this.jetNoiseFilter.frequency.setTargetAtTime(60 + throttle * 150, t, 1.0); // Deep, soothing bass
-                this.engineOsc.frequency.setTargetAtTime(80 + throttle * 80, t, 1.0); // Low, stable hum
-
-                // Wind Physics (Dynamic based on G-force and maneuvers)
-                const speedFactor = Math.max(0, airspeed / 250);
-                const spoilerDrag = (spoilers && airspeed > 30) ? 0.15 : 0;
-
-                // Calculate structural / maneuver stress
-                const gStress = Math.abs(gForce - 1.0); // 0 when flying level, >0 when pulling/pushing Gs
-                const rotStress = Math.abs(angularVelocity.x) + Math.abs(angularVelocity.y) + Math.abs(angularVelocity.z);
-                const maneuverStress = Math.min(1.0, (gStress + rotStress) * 0.8);
-
-                // DECREASED: Base wind volume is now much quieter relative to the engines
-                const windVol = (Math.pow(speedFactor, 2) * 0.04 + maneuverStress * 0.25 + spoilerDrag);
-                this.windGain.gain.setTargetAtTime(windVol * masterVol, t, 0.5);
-
-                // Filter opens up during maneuvers for a realistic "rushing" sound
-                this.windFilter.frequency.setTargetAtTime(100 + speedFactor * 300 + maneuverStress * 800 + (spoilers ? 400 : 0), t, 0.5);
-
-                // Rain Audio Physics (Gentle drizzle)
-                const targetRainVol = (weatherMode === 2) ? 0.15 * masterVol : 0;
-                this.rainGain.gain.setTargetAtTime(targetRainVol, t, 1.0); // Slow fade in/out
-                this.rainFilter.frequency.setTargetAtTime(300 + (airspeed * 1.5), t, 0.5);
-            },
-
-            touchdown: function () {
-                if (!this.initialized || this.ctx.state === 'suspended') return;
-                const t = this.ctx.currentTime;
-
-                // Gentle, low-pitched suspension thud instead of tire screech
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-
-                osc.frequency.setValueAtTime(150, t);
-                osc.frequency.exponentialRampToValueAtTime(40, t + 0.4);
-
-                gain.gain.setValueAtTime(0.5, t);
-                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-
-                osc.connect(gain).connect(this.ctx.destination);
-                osc.start(t);
-                osc.stop(t + 0.4);
-            }
-        };
-
-
-        // --- CRASH LOGIC & RESET ---
-        window.triggerCrash = function (reason) {
-            if (PHYSICS.crashed) return;
-            PHYSICS.crashed = true;
-
-            // Sever engine and control inputs
-            PHYSICS.throttle = 0;
-            PHYSICS.velocity.multiplyScalar(0.2); // Violent deceleration
-
-            document.getElementById('dashboard').style.opacity = '0.3';
-            document.getElementById('crash-screen').style.display = 'flex';
-            document.getElementById('crash-reason').innerText = "CAUSE: " + reason;
-
-            // Spawn massive fireball and smoke plume
-            for (let i = 0; i < 300; i++) {
-                let pVel = PHYSICS.velocity.clone().multiplyScalar(0.3).add(new THREE.Vector3((Math.random() - 0.5) * 80, Math.random() * 100, (Math.random() - 0.5) * 80));
-                let size = 20 + Math.random() * 40;
-                let life = 3 + Math.random() * 6;
-
-                if (Math.random() > 0.4) {
-                    spawnParticle(planeGroup.position, pVel, size, 25, life, 1.0, 0.2 + Math.random() * 0.3, 0.0); // Fire
-                } else {
-                    spawnParticle(planeGroup.position, pVel.multiplyScalar(0.5), size, 40, life * 1.5, 0.05, 0.05, 0.05); // Thick Smoke
-                }
-            }
-        };
-
-        window.resetFlight = function () {
-            PHYSICS.crashed = false;
-            PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
-            PHYSICS.velocity.set(0, 0, 0);
-            PHYSICS.quaternion.identity();
-            PHYSICS.angularVelocity.set(0, 0, 0);
-            PHYSICS.heading = 0;
-            PHYSICS.airspeed = 0;
-            PHYSICS.throttle = 0;
-            PHYSICS.flaps = 0;
-            PHYSICS.targetFlaps = 0;
-            PHYSICS.spoilers = false;
-            PHYSICS.gearDown = true;
-            PHYSICS.gearTransition = 1.0;
-            PHYSICS.brakes = false;
-
-            // Disable AP
-            PHYSICS.autopilot.alt = false;
-            PHYSICS.autopilot.hdg = false;
-            PHYSICS.autopilot.spd = false;
-            PHYSICS.autopilot.app = false;
-
-            document.getElementById('dashboard').style.opacity = '1.0';
-            document.getElementById('crash-screen').style.display = 'none';
-
-            // Clear particles
-            for (let i = 0; i < MAX_PARTICLES; i++) particles[i].active = false;
-
             planeGroup.position.copy(PHYSICS.position);
             planeGroup.quaternion.copy(PHYSICS.quaternion);
-        };
-
-
-        function calculateAerodynamics() {
-            const p = PHYSICS;
-
-            // Ground Interaction setup (needed early for ground effect)
-            let _terrainY = getTerrainHeight(p.position.x, p.position.z);
-            const groundY = _terrainY + AIRCRAFT.gearHeight;
-            const heightAgl = p.position.y - groundY;
-            p.heightAgl = Math.max(0, heightAgl);
-
-            // Mountain strike crash disabled for relaxing gameplay
-            if (p.position.y < _terrainY) {
-                p.position.y = _terrainY; // Gently bump up instead of exploding
-            }
-
-            // Read current orientation for tracking
-            const currentEuler = new THREE.Euler().setFromQuaternion(p.quaternion, 'YXZ');
-            const currentPitch = currentEuler.x;
-            const currentRoll = -currentEuler.z;
-            const currentHeading = -currentEuler.y;
-
-            // ILS Signal Calculation (Instrument Landing System)
-            const touchdownZ = 1000;
-            const distZ = p.position.z - touchdownZ;
-            let headingDeg = currentHeading * (180 / Math.PI);
-            if (headingDeg < 0) headingDeg += 360;
-
-            // Active if within 15km, approaching from the South, facing broadly North (270 to 90 degrees)
-            if (distZ > 0 && distZ < 15000 && (headingDeg > 270 || headingDeg < 90)) {
-                p.ils.active = true;
-                p.ils.distZ = distZ;
-                p.ils.locError = Math.atan2(p.position.x, distZ) * (180 / Math.PI);
-                let targetAlt = distZ * Math.tan(3 * Math.PI / 180) + AIRCRAFT.gearHeight;
-                p.ils.gsError = p.position.y - targetAlt;
-            } else {
-                p.ils.active = false;
-                p.autopilot.app = false; // Disconnect Autoland if signal lost
-            }
-
-            // --- AUTOMATIC GEAR & FLAPS LOGIC ---
-            // Widened the localizer error cone to 45 degrees so it triggers reliably when banking to intercept
-            if (p.ils.active && Math.abs(p.ils.locError) <= 45) {
-                if (p.ils.distZ < 12000) p.gearDown = true; // Drop gear at 12km out
-
-                // Progressive Flaps based on distance to runway
-                if (p.ils.distZ < 3000) p.targetFlaps = 1.0;
-                else if (p.ils.distZ < 6000) p.targetFlaps = 0.75;
-                else if (p.ils.distZ < 9000) p.targetFlaps = 0.50;
-                else if (p.ils.distZ < 12000) p.targetFlaps = 0.25;
-            }
-
-            // Clean up config ONLY if taking off or executing a Go-Around (High thrust and actively climbing)
-            if (!p.onGround && p.heightAgl > 150 && p.throttle > 0.5 && p.velocity.y > 0 && (!p.ils.active || Math.abs(p.ils.locError) > 45)) {
-                p.gearDown = false;
-                p.targetFlaps = 0.0;
-            }
-
-            // Ensure gear is safely locked down if we are physically touching the ground
-            if (p.onGround) {
-                p.gearDown = true;
-                // Clean flaps up during rollout if engines are at idle
-                if (p.airspeed < 40 && p.throttle <= 0.02) {
-                    p.targetFlaps = 0.0;
-                }
-            }
-
-
-            // Base manual input
-            let targetElevator = (keys.ArrowUp ? -1 : 0) + (keys.ArrowDown ? 1 : 0);
-            let targetAileron = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
-            let targetRudder = (keys.q ? 1 : 0) + (keys.e ? -1 : 0);
-
-            // Autopilot Disconnects on manual override
-            if (targetElevator !== 0) { p.autopilot.alt = false; p.autopilot.app = false; }
-            if (targetAileron !== 0) { p.autopilot.hdg = false; p.autopilot.app = false; }
-            if (keys.z || keys.a) p.autopilot.spd = false;
-
-            // --- AUTOMATIC SPOILERS & BRAKES ---
-            // 0 thrust means deploy airbrakes and wheel brakes
-            if (p.throttle <= 0.02) {
-                p.spoilers = true;
-                p.brakes = true;
-            } else {
-                p.spoilers = false;
-                p.brakes = false;
-            }
-
-            // Autopilot: APP Mode (CAT III Autoland)
-            if (p.autopilot.app && p.ils.active) {
-
-                // Auto-Flare & Touchdown Rollout
-                if (p.heightAgl < 15) { // Below 45 feet
-                    // 1. Flare Pitch
-                    let idealPitch = 0.05; // Flare ~3 degrees nose up
-                    targetElevator = (idealPitch - currentPitch) * 4.0;
-
-                    // 2. Auto-Retard Thrust
-                    p.autopilot.spd = false;
-                    p.throttle = Math.max(0, p.throttle - p.dt * 0.2);
-
-                    // 3. Keep wings perfectly level
-                    targetAileron = -(0 - currentRoll) * 4.0;
-
-                    // 4. Ground Rollout (Steering)
-                    if (p.onGround) {
-                        // Spoilers and Brakes are now handled automatically by the 0% thrust check above!
-                        // Steer back to centerline using rudder
-                        let runwayHeading = 0;
-                        let correctionYaw = p.ils.locError * (Math.PI / 180) * 2.0;
-                        let idealYaw = runwayHeading - correctionYaw;
-
-                        let hdgErr = idealYaw - currentHeading;
-                        while (hdgErr > Math.PI) hdgErr -= Math.PI * 2;
-                        while (hdgErr < -Math.PI) hdgErr += Math.PI * 2;
-
-                        targetRudder = -hdgErr * 4.0;
-                    }
-                } else {
-                    // Track Glideslope (GS)
-                    let baseSinkRate = Math.sin(3 * Math.PI / 180) * p.airspeed;
-                    let targetVS = Math.max(-12, Math.min(5, -baseSinkRate - (p.ils.gsError * 0.5)));
-                    let vsError = targetVS - p.velocity.y;
-                    let idealPitch = Math.max(-0.15, Math.min(0.25, vsError * 0.05));
-                    targetElevator = (idealPitch - currentPitch) * 4.0;
-
-                    // Track Localizer (LOC)
-                    let correctionAngle = Math.max(-30, Math.min(30, p.ils.locError * 15)); // Steer towards beam
-                    let targetHdg = 0 - (correctionAngle * Math.PI / 180);
-
-                    let hdgErr = targetHdg - currentHeading;
-                    while (hdgErr > Math.PI) hdgErr -= Math.PI * 2;
-                    while (hdgErr < -Math.PI) hdgErr += Math.PI * 2;
-
-                    let idealRoll = Math.max(-0.5, Math.min(0.5, hdgErr * 2.5));
-                    targetAileron = -(idealRoll - currentRoll) * 4.0;
-                }
-            }
-            else {
-                // Standard Autopilot: Altitude Hold
-                if (p.autopilot.alt) {
-                    let altError = p.autopilot.targetAlt - p.position.y;
-                    let targetVS = Math.max(-15, Math.min(15, altError * 0.5)); // Climb/Descend up to 15m/s
-                    let vsError = targetVS - p.velocity.y;
-                    let idealPitch = Math.max(-0.25, Math.min(0.25, vsError * 0.05));
-                    targetElevator = (idealPitch - currentPitch) * 4.0;
-                }
-
-                // Standard Autopilot: Heading Hold
-                if (p.autopilot.hdg) {
-                    let hdgError = p.autopilot.targetHdg - currentHeading;
-                    while (hdgError > Math.PI) hdgError -= Math.PI * 2;
-                    while (hdgError < -Math.PI) hdgError += Math.PI * 2;
-
-                    let idealRoll = Math.max(-0.5, Math.min(0.5, hdgError * 2.5)); // Bank up to ~28 degrees
-                    targetAileron = -(idealRoll - currentRoll) * 4.0;
-                }
-            }
-
-            // Apply smoothed control surface deflections
-            p.elevator += (targetElevator - p.elevator) * 8.0 * p.dt;
-            p.aileron += (targetAileron - p.aileron) * 8.0 * p.dt;
-            p.rudder += (targetRudder - p.rudder) * 8.0 * p.dt;
-            p.flaps += (p.targetFlaps - p.flaps) * 1.5 * p.dt;
-
-            // Autopilot: Auto-Throttle Logic
-            if (p.autopilot.spd) {
-                let spdError = p.autopilot.targetSpd - p.airspeed;
-                p.throttle += spdError * 0.5 * p.dt; // Spool up/down to match speed
-                p.throttle = Math.max(0, Math.min(1, p.throttle));
-            } else {
-                // Manual Throttle
-                if (keys.z) p.throttle = Math.min(1.0, p.throttle + 2.0 * p.dt);
-                if (keys.a) p.throttle = Math.max(0.0, p.throttle - 2.0 * p.dt);
-            }
-
-            // Gear Logic Animation
-            if (p.gearDown && p.gearTransition < 1.0) p.gearTransition = Math.min(1.0, p.gearTransition + p.dt * 0.2);
-            if (!p.gearDown && p.gearTransition > 0.0) p.gearTransition = Math.max(0.0, p.gearTransition - p.dt * 0.2);
-
-            gearGroup.position.y = (1.0 - p.gearTransition) * 2; // Move up
-            gearGroup.scale.y = Math.max(0.01, p.gearTransition); // Squash
-            gearGroup.visible = p.gearTransition > 0;
-
-            // Kinematics setup
-            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(p.quaternion);
-            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(p.quaternion);
-            const up = new THREE.Vector3(0, 1, 0).applyQuaternion(p.quaternion);
-
-            p.airspeed = p.velocity.length();
-
-            // Local velocity to find AoA and Slip
-            const invQ = p.quaternion.clone().invert();
-            const localVel = p.velocity.clone().applyQuaternion(invQ);
-
-            if (p.airspeed > 1.0) {
-                p.aoa = Math.atan2(-localVel.y, -localVel.z);
-                p.slip = Math.atan2(localVel.x, -localVel.z);
-            } else {
-                p.aoa = 0; p.slip = 0;
-            }
-
-            // Adjust aerodynamic properties based on flaps & spoilers
-            let currentCdBase = AIRCRAFT.cdBase + (p.flaps * 0.05) + (p.spoilers ? 0.08 : 0);
-            let currentClSlope = AIRCRAFT.clSlope + (p.flaps * 0.03);
-            let currentStallAngle = AIRCRAFT.stallAngle;
-
-            const aoaDeg = p.aoa * (180 / Math.PI);
-            p.isStalling = Math.abs(aoaDeg) > currentStallAngle;
-
-            // Dynamics (Forces)
-            let dynPressure = 0.5 * p.rho * p.airspeed * p.airspeed;
-
-            // Ground Effect (increases lift, decreases drag near ground)
-            // Simplified wingspan roughly sqrt(wingArea * aspect ratio) ~ 30m
-            let groundEffect = Math.max(0, 1.0 - (heightAgl / 30.0));
-
-            // Lift
-            let cl = aoaDeg * currentClSlope;
-            if (p.isStalling) cl *= Math.exp(-(Math.abs(aoaDeg) - currentStallAngle) * 0.1);
-            let liftMag = dynPressure * AIRCRAFT.wingArea * cl;
-            liftMag *= (1.0 + groundEffect * 0.15);
-
-            // Spoilers dump 40% of the wing's lift!
-            if (p.spoilers) liftMag *= 0.6;
-
-            let liftForce = up.clone().multiplyScalar(liftMag);
-
-            // Drag 
-            let gearDrag = p.gearTransition * 0.015;
-            let inducedDrag = (cl * cl) / (Math.PI * 8);
-            inducedDrag *= (1.0 - groundEffect * 0.5);
-
-            let cd = currentCdBase + inducedDrag + gearDrag;
-            if (p.isStalling) cd += 0.2;
-            let dragMag = dynPressure * AIRCRAFT.wingArea * cd;
-            let dragForce = p.velocity.clone().normalize().multiplyScalar(-dragMag);
-            if (p.airspeed < 0.1) dragForce.set(0, 0, 0);
-
-            // Thrust
-            let thrustMag = p.throttle * AIRCRAFT.maxThrust;
-            let thrustForce = forward.clone().multiplyScalar(thrustMag);
-
-            // Gravity
-            let weightForce = new THREE.Vector3(0, -AIRCRAFT.mass * p.gravity, 0);
-
-            // Ground Contact Physics
-            let groundForce = new THREE.Vector3();
-            let frictionForce = new THREE.Vector3();
-
-            if (p.position.y <= groundY) {
-                p.onGround = true;
-                // Suspension spring
-                const penetration = groundY - p.position.y;
-                const springForce = penetration * AIRCRAFT.mass * 50;
-                const dampForce = -p.velocity.y * AIRCRAFT.mass * 5;
-                let normalForceMag = Math.max(0, springForce + dampForce);
-
-                // Ground stops downward movement forcefully if spring isn't enough
-                if (p.position.y < groundY - 0.5) p.position.y = groundY;
-
-                groundForce.set(0, normalForceMag, 0);
-
-                // Friction (Wheel Brakes & Auto-braking)
-                let frictionCoeff = 0.05; // Base rolling resistance
-                if (p.throttle < 0.1 && p.airspeed < 20) frictionCoeff = 0.3; // Gentle auto brake at low speeds
-                if (p.brakes) frictionCoeff = 1.2; // Massive friction from wheel brakes
-
-                let frictionMag = normalForceMag * frictionCoeff;
-                let velHorizontal = p.velocity.clone(); velHorizontal.y = 0;
-
-                let maxFriction = (velHorizontal.length() / p.dt) * AIRCRAFT.mass;
-                if (frictionMag > maxFriction) {
-                    frictionMag = maxFriction;
-                }
-
-                if (velHorizontal.length() > 0.01) {
-                    frictionForce = velHorizontal.normalize().multiplyScalar(-frictionMag);
-                } else {
-                    if (p.throttle < 0.1) {
-                        p.velocity.x = 0; p.velocity.z = 0;
-                    }
-                }
-
-                // Ground steering (Yaw translates to rotational force while on ground)
-                if (p.airspeed > 1) {
-                    p.angularVelocity.y += -p.rudder * 0.01 * (p.airspeed / 30) * p.dt;
-                }
-
-                // Remove lift to prevent floating while parked
-                if (p.airspeed < 40) liftForce.multiplyScalar(0.1);
-            } else {
-                p.onGround = false;
-            }
-
-            // Combine Forces
-            const netForce = new THREE.Vector3()
-                .add(liftForce)
-                .add(dragForce)
-                .add(thrustForce)
-                .add(weightForce)
-                .add(groundForce)
-                .add(frictionForce);
-
-            // --- STORM TURBULENCE (Linear Forces) ---
-            if (WEATHER.mode === 2 && p.airspeed > 20 && !p.onGround) {
-                let tTime = performance.now() * 0.001;
-                // Brutal up/downdrafts pushing the plane around
-                let turbLift = Noise.noise(tTime * 0.8, 0, 0) * AIRCRAFT.mass * 6;
-                netForce.add(new THREE.Vector3(0, turbLift, 0));
-            }
-
-            const acceleration = netForce.divideScalar(AIRCRAFT.mass);
-
-            // Calculate G-Force
-            p.gForce = (liftForce.length() + groundForce.length()) / (AIRCRAFT.mass * p.gravity);
-            if (Math.abs(p.gForce) < 0.1 && p.onGround) p.gForce = 1.0; // Rest
-
-            // Integrate Linear Velocity & Position
-            p.velocity.add(acceleration.clone().multiplyScalar(p.dt));
-            p.position.add(p.velocity.clone().multiplyScalar(p.dt));
-
-            // --- ARCADE ROTATIONAL DYNAMICS ---
-            // Aerodynamic control authority requires airflow. 
-            // 0x at 0 m/s, 1x at ~80 m/s (takeoff speed), up to 2x at high speeds.
-            let controlAuthority = Math.max(0, Math.min(2.0, Math.pow(p.airspeed / 80, 1.5)));
-
-            // Direct Angular Acceleration (Bypasses inertia for predictable, snappy control)
-            let pitchAcc = p.elevator * 3.0 * controlAuthority;
-            let rollAcc = -p.aileron * 4.0 * controlAuthority;
-            let yawAcc = -p.rudder * 1.5 * controlAuthority;
-
-            // Add aerodynamic stability (weathercocking / auto-level)
-            rollAcc += p.slip * 0.005 * dynPressure;
-            yawAcc += -p.slip * 0.01 * dynPressure;
-            pitchAcc += -p.aoa * 0.002 * dynPressure;
-
-            // --- GROUND STABILITY (Landing Gear Physics) ---
-            if (p.onGround) {
-                // Main gear wide stance forces wings level
-                rollAcc += (0 - currentRoll) * 15.0;
-                p.angularVelocity.z *= Math.pow(0.01, p.dt); // Dampen ground rolling
-
-                // Nose gear prevents the nose from dipping below the horizon
-                if (currentPitch < 0) {
-                    pitchAcc += (0 - currentPitch) * 20.0;
-                    if (p.angularVelocity.x < 0) p.angularVelocity.x *= Math.pow(0.001, p.dt);
-                }
-            }
-
-            // --- STORM TURBULENCE (Rotational Buffeting) ---
-            if (WEATHER.mode === 2 && p.airspeed > 20 && !p.onGround) {
-                let tTime = performance.now() * 0.001;
-                pitchAcc += Noise.noise(tTime * 2.2, 10, 0) * 0.5;
-                rollAcc += Noise.noise(0, tTime * 2.5, 10) * 0.9;
-                yawAcc += Noise.noise(10, 0, tTime * 2.1) * 0.3;
-            }
-
-            // Integrate Angular Velocity
-            p.angularVelocity.x += pitchAcc * p.dt;
-            p.angularVelocity.y += yawAcc * p.dt;
-            p.angularVelocity.z += rollAcc * p.dt;
-
-            // ARCADE CLAMP: Prevent windmilling by hard-capping max rotation rates (rad/s)
-            const maxPitchRate = 0.8 * Math.max(0.2, controlAuthority);
-            const maxYawRate = 0.5 * Math.max(0.2, controlAuthority);
-            const maxRollRate = 1.2 * Math.max(0.2, controlAuthority);
-
-            p.angularVelocity.x = Math.max(-maxPitchRate, Math.min(maxPitchRate, p.angularVelocity.x));
-            p.angularVelocity.y = Math.max(-maxYawRate, Math.min(maxYawRate, p.angularVelocity.y));
-            p.angularVelocity.z = Math.max(-maxRollRate, Math.min(maxRollRate, p.angularVelocity.z));
-
-            // Arcade Auto-Stop & Damping:
-            // Always apply a gentle baseline drag to rotation
-            p.angularVelocity.multiplyScalar(Math.pow(0.5, p.dt));
-
-            // If no input is actively pressed, bleed off rotational velocity extremely fast (snap to halt)
-            if (targetElevator === 0) p.angularVelocity.x *= Math.pow(0.0001, p.dt);
-            if (targetRudder === 0) p.angularVelocity.y *= Math.pow(0.0001, p.dt);
-            if (targetAileron === 0) p.angularVelocity.z *= Math.pow(0.0001, p.dt);
-
-            // Create quaternion from angular velocity and apply to current quaternion
-            const deltaRotation = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(
-                    p.angularVelocity.x * p.dt,
-                    p.angularVelocity.y * p.dt,
-                    p.angularVelocity.z * p.dt,
-                    'YXZ'
-                )
-            );
-            p.quaternion.multiply(deltaRotation).normalize();
-
-            // Update Three.js object
-            planeGroup.position.copy(p.position);
-            planeGroup.quaternion.copy(p.quaternion);
+        }
+    }
+
+    updateTerrain();
+    cameraController.updateCamera();
+    hud.updateHUD();
+
+    // Update Procedural Audio Synthesis (Relaxing Zen Mode)
+    ProceduralAudio.update(
+        PHYSICS.throttle,
+        PHYSICS.airspeed,
+        PHYSICS.spoilers,
+        cameraController.getMode(),
+        WEATHER.mode,
+        PHYSICS.gForce,
+        PHYSICS.angularVelocity
+    );
+
+    composer.render(); // Replaced renderer.render with the Post-Processing Composer
+}
+
+// Initialization complete
+setTimeout(() => {
+    document.querySelector('.spinner').style.display = 'none';
+    document.getElementById('loader-text').innerText = 'READY FOR TAKEOFF';
+    document.getElementById('loader-subtext').innerText = 'Ensure speakers/headphones are active.';
+
+    const startBtn = document.getElementById('start-btn');
+    startBtn.style.display = 'block';
+
+    startBtn.addEventListener('click', () => {
+        // Initialize Audio Context on user gesture
+        ProceduralAudio.init();
+        if (ProceduralAudio.ctx && ProceduralAudio.ctx.state === 'suspended') {
+            ProceduralAudio.ctx.resume();
         }
 
-        // ==========================================
-        // 7. CAMERA SYSTEM
-        // ==========================================
-        const cameraParams = {
-            distance: 80,
-            height: 15,
-            springFactor: 0.1
-        };
-
-        let camRotX = 0;
-        let camRotY = 0; // Reset to 0 since we now use the height offset properly
-
-        window.addEventListener('mousedown', () => isDragging = true);
-        window.addEventListener('mouseup', () => isDragging = false);
-        window.addEventListener('mousemove', (e) => {
-            if (isDragging && cameraMode !== 2) {
-                camRotX -= e.movementX * 0.005;
-                camRotY -= e.movementY * 0.005;
-                // Prevent camera from flipping upside down
-                camRotY = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, camRotY));
-            }
-        });
-        window.addEventListener('wheel', (e) => {
-            if (cameraMode === 0) {
-                cameraParams.distance += e.deltaY * 0.05;
-                cameraParams.distance = Math.max(30, Math.min(200, cameraParams.distance)); // Clamp zoom bounds
-            }
-        });
-
-        function updateCamera() {
-            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(planeGroup.quaternion);
-            const up = new THREE.Vector3(0, 1, 0).applyQuaternion(planeGroup.quaternion);
-            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(planeGroup.quaternion);
-
-            // Auto-center camera smoothly when mouse is released
-            if (!isDragging) {
-                camRotX += (0 - camRotX) * 0.05;
-                camRotY += (0 - camRotY) * 0.05;
-            }
-
-            if (cameraMode === 0) {
-                // CHASE CAMERA (With Mouse Orbit)
-                const localOffset = new THREE.Vector3(0, 0, cameraParams.distance);
-
-                // Apply vertical (pitch) and horizontal (yaw) orbit rotations
-                localOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), camRotY);
-                localOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), camRotX);
-
-                // Align offset with plane's orientation
-                localOffset.applyQuaternion(planeGroup.quaternion);
-
-                // Add the local offset PLUS the vertical height offset so camera sits above the plane
-                const idealPosition = planeGroup.position.clone()
-                    .add(localOffset)
-                    .add(up.clone().multiplyScalar(cameraParams.height));
-
-                camera.position.lerp(idealPosition, cameraParams.springFactor * 2);
-
-                // Look slightly ahead of the plane, and lift the look target up slightly
-                const lookTarget = planeGroup.position.clone()
-                    .add(forward.clone().multiplyScalar(10))
-                    .add(up.clone().multiplyScalar(5));
-                camera.lookAt(lookTarget);
-
-                camera.fov = 60 + (PHYSICS.airspeed / 340) * 15;
-
-                // --- PREVENT GROUND CLIPPING ---
-                const camTerrainY = getTerrainHeight(camera.position.x, camera.position.z);
-                const minHeight = Math.max(camTerrainY + 2, -8); // Minimum 2m above terrain, or 2m above water level (-10 + 2)
-                if (camera.position.y < minHeight) {
-                    camera.position.y = minHeight;
-                    camera.lookAt(lookTarget); // Re-focus on the plane if pushed up
-                }
-            }
-            else if (cameraMode === 1) {
-                // COCKPIT CAMERA (With Head Turning / Free Look)
-                const cockpitPos = planeGroup.position.clone()
-                    .add(forward.clone().multiplyScalar(15)) // Move to nose
-                    .add(up.clone().multiplyScalar(1.5)); // Move up to window level
-
-                camera.position.copy(cockpitPos);
-
-                // Combine plane rotation with mouse rotation
-                const lookEuler = new THREE.Euler(camRotY - 0.1, camRotX, 0, 'YXZ');
-                const lookQuat = new THREE.Quaternion().setFromEuler(lookEuler);
-                camera.quaternion.copy(planeGroup.quaternion).multiply(lookQuat);
-
-                camera.fov = 75; // Wider view for cockpit
-            }
-            else if (cameraMode === 2) {
-                // TOWER CAMERA
-                // Place tower roughly 500m to the side of the runway
-                const towerPos = new THREE.Vector3(400, 50, -500);
-                camera.position.lerp(towerPos, 0.05); // Smoothly move to tower if switching
-                camera.lookAt(planeGroup.position);
-
-                // Zoom in slightly if far away
-                let dist = camera.position.distanceTo(planeGroup.position);
-                camera.fov = Math.max(10, 60 - (dist / 100));
-            }
-
-            // --- KINETIC CAMERA SHAKE (IMMERSION UPGRADE) ---
-            let shakeIntensity = 0;
-
-            // 1. Ground Roll Rumble (Scales with speed on runway)
-            if (PHYSICS.onGround && PHYSICS.airspeed > 10) {
-                shakeIntensity += Math.pow(PHYSICS.airspeed / 100, 2) * 0.8;
-            }
-
-            // 2. Airbrake/Spoiler Buffet (Turbulent airflow over wings)
-            if (PHYSICS.spoilers && !PHYSICS.onGround && PHYSICS.airspeed > 40) {
-                shakeIntensity += (PHYSICS.airspeed / 150) * 0.6;
-            }
-
-            // 3. Pre-Stall Buffet (Violent shaking as lift breaks down)
-            const currentAoaDeg = Math.abs(PHYSICS.aoa * (180 / Math.PI));
-            if (!PHYSICS.onGround && currentAoaDeg > AIRCRAFT.stallAngle - 10) {
-                let severity = Math.min(1.0, (currentAoaDeg - (AIRCRAFT.stallAngle - 10)) / 10);
-                shakeIntensity += severity * 2.0; // Heavy shake
-            }
-
-            // Apply calculated shake
-            if (shakeIntensity > 0 && cameraMode !== 2) { // No shake for stationary tower cam
-                const modeMultiplier = cameraMode === 1 ? 1.0 : 0.4; // Stronger inside the cockpit
-
-                camera.position.x += (Math.random() - 0.5) * shakeIntensity * modeMultiplier;
-                camera.position.y += (Math.random() - 0.5) * shakeIntensity * modeMultiplier;
-                camera.position.z += (Math.random() - 0.5) * shakeIntensity * modeMultiplier;
-
-                if (cameraMode === 1) {
-                    // Add subtle rotational head rattle in cockpit view
-                    camera.rotation.x += (Math.random() - 0.5) * shakeIntensity * 0.02;
-                    camera.rotation.z += (Math.random() - 0.5) * shakeIntensity * 0.02;
-                }
-            }
-
-            camera.updateProjectionMatrix();
-
-            // Rotate clouds to face camera
-            clouds.children.forEach(c => c.quaternion.copy(camera.quaternion));
-        }
-
-        // ==========================================
-        // 8. HUD & UI UPDATES
-        // ==========================================
-        const UI = {
-            speedReadout: document.getElementById('speed-readout'),
-            speedTape: document.getElementById('speed-tape-content'),
-            altReadout: document.getElementById('alt-readout'),
-            altTape: document.getElementById('alt-tape-content'),
-            radAlt: document.getElementById('rad-alt'),
-            ilsLoc: document.getElementById('ils-loc'),
-            ilsGs: document.getElementById('ils-gs'),
-            locDiamond: document.getElementById('loc-diamond'),
-            gsDiamond: document.getElementById('gs-diamond'),
-            compassTape: document.getElementById('compass-tape'),
-            pitchLadder: document.getElementById('pitch-ladder'),
-            horizonSky: document.getElementById('horizon-sky'),
-            fpv: document.getElementById('fpv'),
-            fmaSpd: document.getElementById('fma-spd'),
-            fmaHdg: document.getElementById('fma-hdg'),
-            fmaAlt: document.getElementById('fma-alt'),
-            fmaIls: document.getElementById('fma-ils'),
-            thrust: document.getElementById('hud-thrust'),
-            aoa: document.getElementById('hud-aoa'),
-            gforce: document.getElementById('hud-gforce'),
-            vs: document.getElementById('hud-vs'),
-            gear: document.getElementById('hud-gear'),
-            flaps: document.getElementById('hud-flaps'),
-            spoilers: document.getElementById('hud-spoilers'),
-            brakes: document.getElementById('hud-brakes'),
-            warning: document.getElementById('warning-overlay')
-        };
-
-        const minimapCanvas = document.getElementById('minimap');
-        const mmCtx = minimapCanvas.getContext('2d');
-
-        // Initialize HUD generation
-        function initHUD() {
-            // Generate Pitch Ladder Lines
-            for (let i = 90; i >= -90; i -= 10) {
-                if (i === 0) continue;
-                let line = document.createElement('div');
-                line.className = 'pitch-line';
-                line.dataset.pitch = Math.abs(i);
-                // 1 degree = 4px spacing
-                line.style.position = 'absolute';
-                line.style.top = `calc(50% - ${i * 4}px)`;
-                UI.pitchLadder.appendChild(line);
-            }
-
-            // Generate Compass marks
-            for (let i = 0; i <= 360; i += 10) {
-                let mark = document.createElement('div');
-                mark.className = 'compass-mark';
-                mark.innerText = i % 90 === 0 ? (i === 0 || i === 360 ? 'N' : i === 90 ? 'E' : i === 180 ? 'S' : 'W') : (i / 10).toString().padStart(2, '0');
-                UI.compassTape.appendChild(mark);
-            }
-
-            // Generate Tape marks (lazy loaded visually in CSS, physically in DOM)
-            for (let i = 500; i >= 0; i -= 10) {
-                let mark = document.createElement('div');
-                mark.className = 'tape-mark' + (i % 50 === 0 ? ' major' : '');
-                mark.innerText = i % 50 === 0 ? i : '';
-                UI.speedTape.appendChild(mark);
-            }
-            for (let i = 40000; i >= -1000; i -= 100) {
-                let mark = document.createElement('div');
-                mark.className = 'tape-mark' + (i % 500 === 0 ? ' major' : '');
-                mark.innerText = i % 500 === 0 ? i : '';
-                UI.altTape.appendChild(mark);
-            }
-        }
-        initHUD();
-
-        function updateHUD() {
-            // Conversions
-            const kts = PHYSICS.airspeed * 1.94384;
-            const altFt = PHYSICS.position.y * 3.28084;
-            const vsFpm = PHYSICS.velocity.y * 196.85;
-
-            // Extract Pitch, Roll, Heading from Quaternion
-            const euler = new THREE.Euler().setFromQuaternion(PHYSICS.quaternion, 'YXZ');
-            const pitch = euler.x * (180 / Math.PI);
-            const roll = -euler.z * (180 / Math.PI); // Invert for display
-            let heading = -euler.y * (180 / Math.PI);
-            if (heading < 0) heading += 360;
-
-            const aoaDeg = PHYSICS.aoa * (180 / Math.PI);
-            const slipDeg = PHYSICS.slip * (180 / Math.PI);
-
-            // Artificial Horizon
-            UI.horizonSky.style.transform = `rotate(${roll}deg) translateY(${pitch * 4}px)`;
-
-            // Flight Path Vector (FPA = Pitch - AoA)
-            const fpa = pitch - aoaDeg;
-            UI.fpv.style.transform = `translate(${slipDeg * 4}px, ${-fpa * 4}px)`;
-
-            // Tapes (1 unit per pixel mapped mathematically)
-            UI.speedReadout.innerText = Math.round(kts).toString().padStart(3, '0');
-            // speed tape: 500 max, 10 units = 20px -> 1 unit = 2px. Offset from middle.
-            let speedOffset = (500 - kts) * 2;
-            UI.speedTape.style.transform = `translateY(calc(-50% + 150px - ${speedOffset}px))`;
-
-            UI.altReadout.innerText = Math.round(altFt).toString().padStart(5, '0');
-            // alt tape: 40000 max, 100 units = 20px -> 1 unit = 0.2px.
-            let altOffset = (40000 - altFt) * 0.2;
-            UI.altTape.style.transform = `translateY(calc(-50% + 150px - ${altOffset}px))`;
-
-            // Radio Altimeter (Visible < 2500ft)
-            const radAltFt = PHYSICS.heightAgl * 3.28084;
-            if (radAltFt < 2500) {
-                UI.radAlt.style.display = 'block';
-                UI.radAlt.innerText = 'R ' + Math.round(radAltFt).toString().padStart(4, '0');
-                if (radAltFt < 500) { UI.radAlt.style.color = '#ff0'; UI.radAlt.style.borderColor = '#ff0'; }
-                if (radAltFt < 200) { UI.radAlt.style.color = '#f00'; UI.radAlt.style.borderColor = '#f00'; }
-                if (radAltFt >= 500) { UI.radAlt.style.color = '#0f0'; UI.radAlt.style.borderColor = '#0f0'; }
-            } else {
-                UI.radAlt.style.display = 'none';
-            }
-
-            // Compass (360 degrees = 36 * 30px = 1080px width)
-            let headingOffset = (heading / 10) * 30;
-            UI.compassTape.style.transform = `translateX(calc(50% - ${headingOffset}px))`;
-
-            // Update FMA (Autopilot Status Board)
-            UI.fmaSpd.innerText = PHYSICS.autopilot.spd ? `SPD ${Math.round(PHYSICS.autopilot.targetSpd * 1.94384)}` : '';
-            let hdgDeg = PHYSICS.autopilot.targetHdg * (180 / Math.PI);
-            if (hdgDeg < 0) hdgDeg += 360;
-            UI.fmaHdg.innerText = PHYSICS.autopilot.hdg ? `HDG ${Math.round(hdgDeg).toString().padStart(3, '0')}` : '';
-            UI.fmaAlt.innerText = PHYSICS.autopilot.alt ? `ALT ${Math.round(PHYSICS.autopilot.targetAlt * 3.28084)}` : '';
-
-            // ILS Logic UI Update
-            if (PHYSICS.ils.active) {
-                UI.ilsLoc.style.display = 'flex';
-                UI.ilsGs.style.display = 'flex';
-
-                // FMA Status
-                if (PHYSICS.autopilot.app) {
-                    UI.fmaIls.innerText = 'AUTOLAND';
-                    UI.fmaIls.style.color = '#0f0';
-                } else {
-                    let catText = WEATHER.mode > 0 ? " CAT III" : "";
-                    UI.fmaIls.innerText = 'ILS 36' + catText;
-                    UI.fmaIls.style.color = '#f0f';
-                }
-
-                // Localizer (Horizontal alignment)
-                let locNormalized = Math.max(-4, Math.min(4, PHYSICS.ils.locError)) / 4;
-                UI.locDiamond.style.transform = `translateX(calc(-50% + ${-locNormalized * 70}px)) rotate(45deg)`;
-
-                // Glideslope (Vertical alignment)
-                let gsNormalized = Math.max(-100, Math.min(100, PHYSICS.ils.gsError)) / 100;
-                UI.gsDiamond.style.transform = `translateY(calc(-50% + ${gsNormalized * 70}px)) rotate(45deg)`;
-            } else {
-                UI.ilsLoc.style.display = 'none';
-                UI.ilsGs.style.display = 'none';
-                UI.fmaIls.innerText = '';
-            }
-
-            // Values
-            UI.thrust.innerText = (PHYSICS.throttle * 100).toFixed(0) + '%';
-            UI.aoa.innerText = aoaDeg.toFixed(1) + '°';
-            UI.gforce.innerText = PHYSICS.gForce.toFixed(1);
-            UI.vs.innerText = Math.round(vsFpm);
-
-            if (PHYSICS.gearTransition === 1) { UI.gear.innerText = 'DOWN'; UI.gear.style.color = '#0f0'; }
-            else if (PHYSICS.gearTransition === 0) { UI.gear.innerText = 'UP'; UI.gear.style.color = '#fff'; }
-            else { UI.gear.innerText = 'MOVING'; UI.gear.style.color = '#ff0'; }
-
-            // Flaps, Spoilers, Brakes
-            UI.flaps.innerText = (PHYSICS.flaps * 100).toFixed(0) + '%';
-
-            if (PHYSICS.spoilers) { UI.spoilers.innerText = 'DEPLOYED'; UI.spoilers.style.color = '#ff0'; }
-            else { UI.spoilers.innerText = 'RETRACTED'; UI.spoilers.style.color = '#fff'; }
-
-            if (PHYSICS.brakes) { UI.brakes.innerText = 'ON'; UI.brakes.style.color = '#f00'; }
-            else { UI.brakes.innerText = 'OFF'; UI.brakes.style.color = '#fff'; }
-
-            // Advanced Warning System (GPWS) - Disabled for relaxing gameplay
-            UI.warning.style.display = 'none';
-
-            // Draw Minimap
-            mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-            mmCtx.save();
-
-            // Move to center of minimap
-            mmCtx.translate(minimapCanvas.width / 2, minimapCanvas.height / 2);
-
-            // Rotate the world opposite to the plane's heading so plane always points UP
-            mmCtx.rotate(euler.y);
-
-            const mmScale = 0.015; // Zoom level
-
-            // Scale and translate the context to match world coordinates
-            mmCtx.scale(mmScale, mmScale);
-            mmCtx.translate(-PHYSICS.position.x, -PHYSICS.position.z);
-
-            // Calculate visible bounds in world coordinates
-            const viewRadiusWorld = (minimapCanvas.width / 2) / mmScale;
-            const step = 400; // Resolution of the minimap terrain (lower is higher res)
-
-            // Draw top-down procedural terrain
-            const startX = Math.floor((PHYSICS.position.x - viewRadiusWorld * 1.5) / step) * step;
-            const endX = Math.floor((PHYSICS.position.x + viewRadiusWorld * 1.5) / step) * step;
-            const startZ = Math.floor((PHYSICS.position.z - viewRadiusWorld * 1.5) / step) * step;
-            const endZ = Math.floor((PHYSICS.position.z + viewRadiusWorld * 1.5) / step) * step;
-
-            for (let x = startX; x <= endX; x += step) {
-                for (let z = startZ; z <= endZ; z += step) {
-                    let height = getTerrainHeight(x, z);
-
-                    if (PHYSICS.egpwsMode) {
-                        // EGPWS Terrain Radar (Relative Altitude)
-                        let altDiff = height - PHYSICS.position.y;
-                        if (altDiff > 0) mmCtx.fillStyle = '#ff0000'; // Danger (Terrain above)
-                        else if (altDiff > -150) mmCtx.fillStyle = '#ffaa00'; // Orange
-                        else if (altDiff > -300) mmCtx.fillStyle = '#ffff00'; // Yellow
-                        else if (altDiff > -600) mmCtx.fillStyle = '#00ff00'; // Green
-                        else if (altDiff > -1000) mmCtx.fillStyle = '#004400'; // Dark Green
-                        else if (height <= -5) mmCtx.fillStyle = '#000022'; // Deep water tracking
-                        else mmCtx.fillStyle = '#000000'; // Safe / Not picked up by radar
-                    } else {
-                        // Color code the topography (VFR Map)
-                        if (height <= -5) {
-                            mmCtx.fillStyle = '#0a5b8c'; // Deep Water
-                        } else if (height < 25) {
-                            mmCtx.fillStyle = '#355e3b'; // Lowland
-                        } else if (height < 150) {
-                            mmCtx.fillStyle = '#2a4b2a'; // Forest
-                        } else if (height < 400) {
-                            mmCtx.fillStyle = '#555555'; // Rock
-                        } else {
-                            mmCtx.fillStyle = '#ffffff'; // Snow Peak
-                        }
-                    }
-
-                    // Overlap slightly to prevent gaps when rotating
-                    mmCtx.fillRect(x, z, step + 15, step + 15);
-                }
-            }
-
-            // Draw Runway on minimap
-            mmCtx.fillStyle = '#222222';
-            mmCtx.fillRect(-75, -2000, 150, 4000);
-
-            // Draw Runway Centerline
-            mmCtx.fillStyle = '#ffffff';
-            mmCtx.fillRect(-5, -1950, 10, 3900);
-
-            // Animated Sweeping Radar Beam for EGPWS
-            if (PHYSICS.egpwsMode) {
-                let sweepAngle = (performance.now() / 600) % (Math.PI * 2);
-
-                mmCtx.fillStyle = 'rgba(0, 255, 0, 0.15)';
-                mmCtx.beginPath();
-                mmCtx.moveTo(PHYSICS.position.x, PHYSICS.position.z);
-                mmCtx.arc(PHYSICS.position.x, PHYSICS.position.z, viewRadiusWorld * 1.5, sweepAngle, sweepAngle + 0.4);
-                mmCtx.lineTo(PHYSICS.position.x, PHYSICS.position.z);
-                mmCtx.fill();
-
-                mmCtx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-                mmCtx.lineWidth = 150; // Thick line relative to the zoomed out world scale
-                mmCtx.beginPath();
-                mmCtx.moveTo(PHYSICS.position.x, PHYSICS.position.z);
-                mmCtx.lineTo(PHYSICS.position.x + Math.cos(sweepAngle + 0.4) * viewRadiusWorld * 1.5,
-                    PHYSICS.position.z + Math.sin(sweepAngle + 0.4) * viewRadiusWorld * 1.5);
-                mmCtx.stroke();
-            }
-
-            mmCtx.restore();
-
-            // Draw ND Range Rings (Glass Cockpit Style)
-            mmCtx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
-            mmCtx.lineWidth = 2;
-            mmCtx.beginPath();
-            mmCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, 50, 0, Math.PI * 2);
-            mmCtx.stroke();
-            mmCtx.beginPath();
-            mmCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, 100, 0, Math.PI * 2);
-            mmCtx.stroke();
-            mmCtx.beginPath();
-            mmCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, 150, 0, Math.PI * 2);
-            mmCtx.stroke();
-
-            // Draw Plane marker (Always center, pointing up)
-            mmCtx.fillStyle = '#0f0';
-            mmCtx.beginPath();
-            mmCtx.moveTo(minimapCanvas.width / 2, minimapCanvas.height / 2 - 10);
-            mmCtx.lineTo(minimapCanvas.width / 2 + 8, minimapCanvas.height / 2 + 10);
-            mmCtx.lineTo(minimapCanvas.width / 2, minimapCanvas.height / 2 + 5);
-            mmCtx.lineTo(minimapCanvas.width / 2 - 8, minimapCanvas.height / 2 + 10);
-            mmCtx.fill();
-
-            // Draw Map Mode Text
-            mmCtx.fillStyle = PHYSICS.egpwsMode ? '#0f0' : '#0aa';
-            mmCtx.font = 'bold 16px monospace';
-            mmCtx.textAlign = 'left';
-            mmCtx.fillText(PHYSICS.egpwsMode ? 'EGPWS' : 'VFR', 10, 25);
-        }
-
-        // ==========================================
-        // 9. MAIN LOOP
-        // ==========================================
-        window.addEventListener('resize', () => {
-            const newGameHeight = window.innerHeight * 0.75;
-            camera.aspect = window.innerWidth / newGameHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, newGameHeight);
-            composer.setSize(window.innerWidth, newGameHeight); // Update Bloom resolution
-        });
-
-        let lastTime = performance.now();
-        let strobeTimer = 0;
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const now = performance.now();
-            let dt = (now - lastTime) / 1000;
-            lastTime = now;
-
-            // Cap dt to avoid physics explosions on lag spikes
-            if (dt > 0.05) dt = 0.05;
-            PHYSICS.dt = dt;
-
-            // --- DYNAMIC WEATHER SYSTEM UPDATES ---
-            WEATHER.currentFog += (WEATHER.targetFog - WEATHER.currentFog) * dt * 0.5;
-            scene.fog.density = WEATHER.currentFog;
-
-            // Transition visuals based on weather (0 = Twilight, 1 = Stormy Gray)
-            let targetTransition = WEATHER.mode > 0 ? 1 : 0;
-            WEATHER.transition += (targetTransition - WEATHER.transition) * dt * 0.5;
-
-            // Darken the sky and fog in bad weather
-            const colorClear = new THREE.Color(0x3a2e3f);
-            const colorStorm = new THREE.Color(0x111115);
-            const currentColor = new THREE.Color();
-            currentColor.lerpColors(colorClear, colorStorm, WEATHER.transition);
-            scene.background = currentColor;
-            scene.fog.color = currentColor;
-
-            // Dim the lighting to match the overcast skies
-            hemiLight.intensity = 0.25 - (WEATHER.transition * 0.2);
-            dirLight.intensity = 1.0 - (WEATHER.transition * 0.9);
-
-            // Animate Storm Rain Physics
-            if (WEATHER.mode === 2) {
-                WEATHER.rainMesh.visible = true;
-                const pos = WEATHER.rainMesh.geometry.attributes.position.array;
-                const camPos = camera.position;
-
-                for (let i = 0; i < WEATHER.rainCount; i++) {
-                    // Apply gravity
-                    pos[i * 3 + 1] += WEATHER.rainVelocities[i] * dt;
-
-                    // Keep the rain anchored to the camera's moving frame of reference
-                    let dx = pos[i * 3] - camPos.x;
-                    let dy = pos[i * 3 + 1] - camPos.y;
-                    let dz = pos[i * 3 + 2] - camPos.z;
-
-                    if (dx > 400) pos[i * 3] -= 800; else if (dx < -400) pos[i * 3] += 800;
-                    if (dy > 200) pos[i * 3 + 1] -= 400; else if (dy < -200) pos[i * 3 + 1] += 400;
-                    if (dz > 400) pos[i * 3 + 2] -= 800; else if (dz < -400) pos[i * 3 + 2] += 800;
-                }
-                WEATHER.rainMesh.geometry.attributes.position.needsUpdate = true;
-            } else {
-                WEATHER.rainMesh.visible = false;
-            }
-
-            // Animate Water Normal Map (Rolling Waves)
-            if (waterMaterial.normalMap) {
-                waterMaterial.normalMap.offset.x -= dt * 0.01;
-                waterMaterial.normalMap.offset.y += dt * 0.02;
-            }
-
-            // Animate Engine Fans & Exhaust based on throttle
-            const fanSpeed = 0.1 + (PHYSICS.throttle * 0.8);
-            engineFans.forEach(f => f.rotation.z -= fanSpeed);
-
-            // Emissive Jet Wash glow (Creates massive Bloom at high throttle)
-            engineExhausts.forEach(e => e.emissiveIntensity = PHYSICS.throttle * 25.0);
-
-            // Animate Control Surfaces
-            movableSurfaces.flaps.forEach(f => f.rotation.x = PHYSICS.flaps * 0.6);
-            movableSurfaces.aileronsL.forEach(a => a.rotation.x = -PHYSICS.aileron * 0.5);
-            movableSurfaces.aileronsR.forEach(a => a.rotation.x = PHYSICS.aileron * 0.5);
-            movableSurfaces.elevators.forEach(e => e.rotation.x = -PHYSICS.elevator * 0.5);
-            movableSurfaces.rudder.forEach(r => r.rotation.y = -PHYSICS.rudder * 0.5);
-
-            // Smoothly animate spoilers deploying
-            const targetSpoilerRot = PHYSICS.spoilers ? -0.8 : 0;
-            movableSurfaces.spoilers.forEach(s => s.rotation.x += (targetSpoilerRot - s.rotation.x) * 10 * dt);
-
-            // Strobe light logic (double flash every 1.5 seconds)
-            strobeTimer += dt;
-            let strobeCycle = strobeTimer % 1.5;
-            let isFlashing = (strobeCycle < 0.05) || (strobeCycle > 0.15 && strobeCycle < 0.2);
-            strobes.forEach(s => {
-                s.intensity = isFlashing ? 10 : 0;
-                if (s.children[0]) s.children[0].visible = isFlashing; // Hide/show physical bulb
-            });
-
-            // Beacon light logic (single pulse every 1 second)
-            let beaconCycle = strobeTimer % 1.0;
-            let beaconFlash = beaconCycle < 0.1;
-            beacons.forEach(b => {
-                b.intensity = beaconFlash ? 5 : 0;
-                if (b.children[0]) b.children[0].visible = beaconFlash; // Hide/show physical bulb
-            });
-
-            // --- ALS RABBIT ANIMATION (Approach Lighting System) ---
-            let rabbitCycle = (now / 500) % 1.0; // Loops every 0.5s
-            let targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
-
-            for (let i = 0; i < alsStrobes.length; i++) {
-                if (Math.abs(alsStrobes[i].dist - targetDist) < 40) {
-                    alsStrobes[i].mesh.material = strobeMatOn;
-                } else {
-                    alsStrobes[i].mesh.material = strobeMatOff;
-                }
-            }
-
-            // --- AERODYNAMIC PARTICLE SYSTEM ---
-            // 1. Touchdown Smoke
-            if (!wasOnGround && PHYSICS.onGround && PHYSICS.airspeed > 30) {
-
-                // Trigger Touchdown Audio Chirp
-                ProceduralAudio.touchdown();
-
-                for (let i = 0; i < 40; i++) {
-                    let offsetL = new THREE.Vector3(-4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
-                    let offsetR = new THREE.Vector3(4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
-                    let posL = offsetL.applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-                    let posR = offsetR.applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-
-                    let pVel = PHYSICS.velocity.clone().multiplyScalar(0.4).add(new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 8, (Math.random() - 0.5) * 8));
-
-                    spawnParticle(posL, pVel, 3 + Math.random() * 2, 8, 1.5, 0.7, 0.7, 0.7);
-                    spawnParticle(posR, pVel, 3 + Math.random() * 2, 8, 1.5, 0.7, 0.7, 0.7);
-                }
-            }
-            wasOnGround = PHYSICS.onGround;
-
-            // 2. Wingtip Vortices (High G, Spoilers, or heavy Flaps)
-            let intensity = (PHYSICS.gForce - 1.2) * 2.0 + (PHYSICS.spoilers ? 0.8 : 0) + (PHYSICS.flaps * 0.5);
-            if (!PHYSICS.onGround && intensity > 0.1 && PHYSICS.airspeed > 40) {
-                let tipL = new THREE.Vector3(-21, 2, 14).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-                let tipR = new THREE.Vector3(21, 2, 14).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-                let pVel = PHYSICS.velocity.clone().multiplyScalar(0.8);
-
-                let iClamp = Math.min(1.0, intensity);
-                spawnParticle(tipL, pVel, 1.5, 4, 0.8, iClamp, iClamp, iClamp);
-                spawnParticle(tipR, pVel, 1.5, 4, 0.8, iClamp, iClamp, iClamp);
-            }
-
-            // 3. High Altitude Engine Contrails
-            if (PHYSICS.throttle > 0.2 && PHYSICS.airspeed > 50) {
-                let engL = new THREE.Vector3(-7.5, -2.2, 5).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-                let engR = new THREE.Vector3(7.5, -2.2, 5).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-                let pVel = PHYSICS.velocity.clone().multiplyScalar(0.7);
-
-                // Fade in at higher altitudes (starts > 1500m, peaks > 4500m)
-                let altFactor = Math.max(0, Math.min(1, (PHYSICS.position.y - 1500) / 3000));
-                let heatIntensity = altFactor * 0.8 * PHYSICS.throttle;
-
-                if (heatIntensity > 0.05) {
-                    spawnParticle(engL, pVel, 2.0, 5, 2.5, heatIntensity, heatIntensity, heatIntensity);
-                    spawnParticle(engR, pVel, 2.0, 5, 2.5, heatIntensity, heatIntensity, heatIntensity);
-                }
-            }
-
-            // 4. Update & Render Particles
-            for (let i = 0; i < MAX_PARTICLES; i++) {
-                const p = particles[i];
-                if (!p.active) continue;
-
-                p.life -= dt;
-                if (p.life <= 0) {
-                    p.active = false;
-                    pDummy.scale.set(0, 0, 0);
-                    pDummy.updateMatrix();
-                    particleMesh.setMatrixAt(i, pDummy.matrix);
-                    continue;
-                }
-
-                p.pos.addScaledVector(p.vel, dt);
-                p.size += p.growth * dt;
-
-                pDummy.position.copy(p.pos);
-                // In case updateCamera hasn't run yet, ensure camera quaternion is valid
-                if (camera && camera.quaternion) {
-                    pDummy.quaternion.copy(camera.quaternion);
-                }
-                pDummy.scale.set(p.size, p.size, p.size);
-                pDummy.updateMatrix();
-                particleMesh.setMatrixAt(i, pDummy.matrix);
-
-                let progress = p.life / p.maxLife;
-                let fade = progress * progress;
-                pColor.setRGB(p.r * fade, p.g * fade, p.b * fade);
-                particleMesh.setColorAt(i, pColor);
-            }
-            particleMesh.instanceMatrix.needsUpdate = true;
-            if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
-
-            // --- PAPI LIGHTS UPDATE ---
-            const distZ = PHYSICS.position.z - 1000;
-            // Only activate if approaching from the South (Positive Z) within 15km
-            if (distZ > 0 && distZ < 15000) {
-                const distX = PHYSICS.position.x - (-63); // Center of PAPI array
-                const dist2D = Math.sqrt(distX * distX + distZ * distZ);
-
-                // Calculate viewing angle from the plane down to the PAPI lights
-                const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
-
-                // Standard PAPI Glidepath: 3.0 degrees
-                let wCount = 0;
-                if (angleDeg > 3.5) wCount = 4;        // Too High (4 White)
-                else if (angleDeg > 3.2) wCount = 3;   // Slightly High (3 White, 1 Red)
-                else if (angleDeg > 2.8) wCount = 2;   // On Glidepath (2 White, 2 Red)
-                else if (angleDeg > 2.5) wCount = 1;   // Slightly Low (1 White, 3 Red)
-                else wCount = 0;                       // Too Low (4 Red)
-
-                // Apply colors (Inner light is index 0, Outer is index 3)
-                // Real PAPI: On glidepath = inner 2 red, outer 2 white.
-                for (let i = 0; i < 4; i++) {
-                    PAPI.lights[i].material = (i >= (4 - wCount)) ? PAPI.matWhite : PAPI.matRed;
-                }
-            } else {
-                for (let i = 0; i < 4; i++) PAPI.lights[i].material = PAPI.matOff;
-            }
-
-            if (!PHYSICS.crashed) {
-                calculateAerodynamics();
-            } else {
-                // WRECKAGE PHYSICS: Let gravity pull the wreckage down if destroyed mid-air
-                if (!PHYSICS.onGround) {
-                    PHYSICS.velocity.y -= PHYSICS.gravity * dt;
-                    PHYSICS.position.add(PHYSICS.velocity.clone().multiplyScalar(dt));
-
-                    // Add uncontrolled tumbling spin
-                    PHYSICS.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(dt, dt * 0.5, dt * 2))).normalize();
-
-                    const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z);
-                    if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
-                        PHYSICS.position.y = terrainY + AIRCRAFT.gearHeight;
-                        PHYSICS.onGround = true;
-                        PHYSICS.velocity.set(0, 0, 0);
-                    }
-                    planeGroup.position.copy(PHYSICS.position);
-                    planeGroup.quaternion.copy(PHYSICS.quaternion);
-                }
-            }
-
-            updateTerrain();
-            updateCamera();
-            updateHUD();
-
-            // Update Procedural Audio Synthesis (Relaxing Zen Mode)
-            ProceduralAudio.update(PHYSICS.throttle, PHYSICS.airspeed, PHYSICS.spoilers, cameraMode, WEATHER.mode, PHYSICS.gForce, PHYSICS.angularVelocity);
-
-            composer.render(); // Replaced renderer.render with the Post-Processing Composer
-        }
-
-        // Initialization complete
-        setTimeout(() => {
-            document.querySelector('.spinner').style.display = 'none';
-            document.getElementById('loader-text').innerText = 'READY FOR TAKEOFF';
-            document.getElementById('loader-subtext').innerText = 'Ensure speakers/headphones are active.';
-
-            const startBtn = document.getElementById('start-btn');
-            startBtn.style.display = 'block';
-
-            startBtn.addEventListener('click', () => {
-                // Initialize Audio Context on user gesture
-                ProceduralAudio.init();
-                if (ProceduralAudio.ctx && ProceduralAudio.ctx.state === 'suspended') {
-                    ProceduralAudio.ctx.resume();
-                }
-
-                document.getElementById('loader').style.opacity = '0';
-                setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
-
-                // Position at runway start
-                PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
-                animate();
-            });
-        }, 1500);
-
+        document.getElementById('loader').style.opacity = '0';
+        setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
+
+        // Position at runway start
+        PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
+        animate();
+    });
+}, 1500);
