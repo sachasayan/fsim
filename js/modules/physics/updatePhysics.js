@@ -1,6 +1,34 @@
+let _tmp = null;
+
+function getTmp(THREE) {
+    if (_tmp) return _tmp;
+    _tmp = {
+        euler: new THREE.Euler(),
+        forward: new THREE.Vector3(),
+        up: new THREE.Vector3(),
+        invQ: new THREE.Quaternion(),
+        localVel: new THREE.Vector3(),
+        lift: new THREE.Vector3(),
+        drag: new THREE.Vector3(),
+        thrust: new THREE.Vector3(),
+        weight: new THREE.Vector3(),
+        ground: new THREE.Vector3(),
+        friction: new THREE.Vector3(),
+        velHoriz: new THREE.Vector3(),
+        net: new THREE.Vector3(),
+        accel: new THREE.Vector3(),
+        specific: new THREE.Vector3(),
+        gravityVec: new THREE.Vector3(),
+        deltaEuler: new THREE.Euler(0, 0, 0, 'YXZ'),
+        deltaQ: new THREE.Quaternion()
+    };
+    return _tmp;
+}
+
 export function calculateAerodynamics(ctx) {
   const { THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight, gearGroup, planeGroup, Noise } = ctx;
             const p = PHYSICS;
+            const t = getTmp(THREE);
 
             // Ground Interaction setup (needed early for ground effect)
             let _terrainY = getTerrainHeight(p.position.x, p.position.z);
@@ -14,27 +42,66 @@ export function calculateAerodynamics(ctx) {
             }
 
             // Read current orientation for tracking
-            const currentEuler = new THREE.Euler().setFromQuaternion(p.quaternion, 'YXZ');
+            const currentEuler = t.euler.setFromQuaternion(p.quaternion, 'YXZ');
             const currentPitch = currentEuler.x;
             const currentRoll = -currentEuler.z;
             const currentHeading = -currentEuler.y;
 
-            // ILS Signal Calculation (Instrument Landing System)
-            const touchdownZ = 1000;
-            const distZ = p.position.z - touchdownZ;
+            // ILS Signal Calculation (Instrument Landing System) for both runway directions
+            const touchdownZNorth = 1000;   // Runway 36 touchdown zone
+            const touchdownZSouth = -1000;  // Runway 18 touchdown zone
             let headingDeg = currentHeading * (180 / Math.PI);
             if (headingDeg < 0) headingDeg += 360;
 
-            // Active if within 15km, approaching from the South, facing broadly North (270 to 90 degrees)
-            if (distZ > 0 && distZ < 15000 && (headingDeg > 270 || headingDeg < 90)) {
+            function headingDiffDeg(targetDeg) {
+                let d = headingDeg - targetDeg;
+                while (d > 180) d -= 360;
+                while (d < -180) d += 360;
+                return d;
+            }
+
+            const candidate36Dist = p.position.z - touchdownZNorth;
+            const candidate36HeadingOk = Math.abs(headingDiffDeg(0)) <= 90;
+            const candidate36Active = candidate36Dist > 0 && candidate36Dist < 15000 && candidate36HeadingOk;
+
+            const candidate18Dist = touchdownZSouth - p.position.z;
+            const candidate18HeadingOk = Math.abs(headingDiffDeg(180)) <= 90;
+            const candidate18Active = candidate18Dist > 0 && candidate18Dist < 15000 && candidate18HeadingOk;
+
+            let activeRunway = null;
+            let distToTd = 0;
+            let runwayHeading = 0;
+            if (candidate36Active && candidate18Active) {
+                if (candidate36Dist <= candidate18Dist) {
+                    activeRunway = '36';
+                    distToTd = candidate36Dist;
+                    runwayHeading = 0;
+                } else {
+                    activeRunway = '18';
+                    distToTd = candidate18Dist;
+                    runwayHeading = Math.PI;
+                }
+            } else if (candidate36Active) {
+                activeRunway = '36';
+                distToTd = candidate36Dist;
+                runwayHeading = 0;
+            } else if (candidate18Active) {
+                activeRunway = '18';
+                distToTd = candidate18Dist;
+                runwayHeading = Math.PI;
+            }
+
+            if (activeRunway) {
                 p.ils.active = true;
-                p.ils.distZ = distZ;
-                p.ils.locError = Math.atan2(p.position.x, distZ) * (180 / Math.PI);
-                let targetAlt = distZ * Math.tan(3 * Math.PI / 180) + AIRCRAFT.gearHeight;
+                p.ils.runwayId = activeRunway;
+                p.ils.runwayHeading = runwayHeading;
+                p.ils.distZ = distToTd;
+                p.ils.locError = Math.atan2(p.position.x, distToTd) * (180 / Math.PI);
+                let targetAlt = distToTd * Math.tan(3 * Math.PI / 180) + AIRCRAFT.gearHeight;
                 p.ils.gsError = p.position.y - targetAlt;
-            } else {
+            }
+            else {
                 p.ils.active = false;
-                p.autopilot.app = false; // Disconnect Autoland if signal lost
             }
 
             // --- AUTOMATIC GEAR & FLAPS LOGIC ---
@@ -70,90 +137,14 @@ export function calculateAerodynamics(ctx) {
             let targetAileron = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
             let targetRudder = (keys.q ? 1 : 0) + (keys.e ? -1 : 0);
 
-            // Autopilot Disconnects on manual override
-            if (targetElevator !== 0) { p.autopilot.alt = false; p.autopilot.app = false; }
-            if (targetAileron !== 0) { p.autopilot.hdg = false; p.autopilot.app = false; }
-            if (keys.z || keys.a) p.autopilot.spd = false;
-
             // --- AUTOMATIC SPOILERS & BRAKES ---
-            // 0 thrust means deploy airbrakes and wheel brakes
-            if (p.throttle <= 0.02) {
+            // Keep arcade convenience, but avoid unrealistic in-flight auto deployment at idle thrust.
+            if (p.onGround && p.throttle <= 0.02) {
                 p.spoilers = true;
                 p.brakes = true;
             } else {
                 p.spoilers = false;
                 p.brakes = false;
-            }
-
-            // Autopilot: APP Mode (CAT III Autoland)
-            if (p.autopilot.app && p.ils.active) {
-
-                // Auto-Flare & Touchdown Rollout
-                if (p.heightAgl < 15) { // Below 45 feet
-                    // 1. Flare Pitch
-                    let idealPitch = 0.05; // Flare ~3 degrees nose up
-                    targetElevator = (idealPitch - currentPitch) * 4.0;
-
-                    // 2. Auto-Retard Thrust
-                    p.autopilot.spd = false;
-                    p.throttle = Math.max(0, p.throttle - p.dt * 0.2);
-
-                    // 3. Keep wings perfectly level
-                    targetAileron = -(0 - currentRoll) * 4.0;
-
-                    // 4. Ground Rollout (Steering)
-                    if (p.onGround) {
-                        // Spoilers and Brakes are now handled automatically by the 0% thrust check above!
-                        // Steer back to centerline using rudder
-                        let runwayHeading = 0;
-                        let correctionYaw = p.ils.locError * (Math.PI / 180) * 2.0;
-                        let idealYaw = runwayHeading - correctionYaw;
-
-                        let hdgErr = idealYaw - currentHeading;
-                        while (hdgErr > Math.PI) hdgErr -= Math.PI * 2;
-                        while (hdgErr < -Math.PI) hdgErr += Math.PI * 2;
-
-                        targetRudder = -hdgErr * 4.0;
-                    }
-                } else {
-                    // Track Glideslope (GS)
-                    let baseSinkRate = Math.sin(3 * Math.PI / 180) * p.airspeed;
-                    let targetVS = Math.max(-12, Math.min(5, -baseSinkRate - (p.ils.gsError * 0.5)));
-                    let vsError = targetVS - p.velocity.y;
-                    let idealPitch = Math.max(-0.15, Math.min(0.25, vsError * 0.05));
-                    targetElevator = (idealPitch - currentPitch) * 4.0;
-
-                    // Track Localizer (LOC)
-                    let correctionAngle = Math.max(-30, Math.min(30, p.ils.locError * 15)); // Steer towards beam
-                    let targetHdg = 0 - (correctionAngle * Math.PI / 180);
-
-                    let hdgErr = targetHdg - currentHeading;
-                    while (hdgErr > Math.PI) hdgErr -= Math.PI * 2;
-                    while (hdgErr < -Math.PI) hdgErr += Math.PI * 2;
-
-                    let idealRoll = Math.max(-0.5, Math.min(0.5, hdgErr * 2.5));
-                    targetAileron = -(idealRoll - currentRoll) * 4.0;
-                }
-            }
-            else {
-                // Standard Autopilot: Altitude Hold
-                if (p.autopilot.alt) {
-                    let altError = p.autopilot.targetAlt - p.position.y;
-                    let targetVS = Math.max(-15, Math.min(15, altError * 0.5)); // Climb/Descend up to 15m/s
-                    let vsError = targetVS - p.velocity.y;
-                    let idealPitch = Math.max(-0.25, Math.min(0.25, vsError * 0.05));
-                    targetElevator = (idealPitch - currentPitch) * 4.0;
-                }
-
-                // Standard Autopilot: Heading Hold
-                if (p.autopilot.hdg) {
-                    let hdgError = p.autopilot.targetHdg - currentHeading;
-                    while (hdgError > Math.PI) hdgError -= Math.PI * 2;
-                    while (hdgError < -Math.PI) hdgError += Math.PI * 2;
-
-                    let idealRoll = Math.max(-0.5, Math.min(0.5, hdgError * 2.5)); // Bank up to ~28 degrees
-                    targetAileron = -(idealRoll - currentRoll) * 4.0;
-                }
             }
 
             // Apply smoothed control surface deflections
@@ -162,16 +153,9 @@ export function calculateAerodynamics(ctx) {
             p.rudder += (targetRudder - p.rudder) * 8.0 * p.dt;
             p.flaps += (p.targetFlaps - p.flaps) * 1.5 * p.dt;
 
-            // Autopilot: Auto-Throttle Logic
-            if (p.autopilot.spd) {
-                let spdError = p.autopilot.targetSpd - p.airspeed;
-                p.throttle += spdError * 0.5 * p.dt; // Spool up/down to match speed
-                p.throttle = Math.max(0, Math.min(1, p.throttle));
-            } else {
-                // Manual Throttle
-                if (keys.z) p.throttle = Math.min(1.0, p.throttle + 2.0 * p.dt);
-                if (keys.a) p.throttle = Math.max(0.0, p.throttle - 2.0 * p.dt);
-            }
+            // Manual Throttle
+            if (keys.z) p.throttle = Math.min(1.0, p.throttle + 2.0 * p.dt);
+            if (keys.a) p.throttle = Math.max(0.0, p.throttle - 2.0 * p.dt);
 
             // Gear Logic Animation
             if (p.gearDown && p.gearTransition < 1.0) p.gearTransition = Math.min(1.0, p.gearTransition + p.dt * 0.2);
@@ -182,15 +166,14 @@ export function calculateAerodynamics(ctx) {
             gearGroup.visible = p.gearTransition > 0;
 
             // Kinematics setup
-            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(p.quaternion);
-            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(p.quaternion);
-            const up = new THREE.Vector3(0, 1, 0).applyQuaternion(p.quaternion);
+            const forward = t.forward.set(0, 0, -1).applyQuaternion(p.quaternion);
+            const up = t.up.set(0, 1, 0).applyQuaternion(p.quaternion);
 
             p.airspeed = p.velocity.length();
 
             // Local velocity to find AoA and Slip
-            const invQ = p.quaternion.clone().invert();
-            const localVel = p.velocity.clone().applyQuaternion(invQ);
+            const invQ = t.invQ.copy(p.quaternion).invert();
+            const localVel = t.localVel.copy(p.velocity).applyQuaternion(invQ);
 
             if (p.airspeed > 1.0) {
                 p.aoa = Math.atan2(-localVel.y, -localVel.z);
@@ -223,7 +206,7 @@ export function calculateAerodynamics(ctx) {
             // Spoilers dump 40% of the wing's lift!
             if (p.spoilers) liftMag *= 0.6;
 
-            let liftForce = up.clone().multiplyScalar(liftMag);
+            let liftForce = t.lift.copy(up).multiplyScalar(liftMag);
 
             // Drag 
             let gearDrag = p.gearTransition * 0.015;
@@ -233,19 +216,24 @@ export function calculateAerodynamics(ctx) {
             let cd = currentCdBase + inducedDrag + gearDrag;
             if (p.isStalling) cd += 0.2;
             let dragMag = dynPressure * AIRCRAFT.wingArea * cd;
-            let dragForce = p.velocity.clone().normalize().multiplyScalar(-dragMag);
+            let dragForce = t.drag;
+            if (p.airspeed > 0.1) {
+                dragForce.copy(p.velocity).multiplyScalar(-dragMag / p.airspeed);
+            } else {
+                dragForce.set(0, 0, 0);
+            }
             if (p.airspeed < 0.1) dragForce.set(0, 0, 0);
 
             // Thrust
             let thrustMag = p.throttle * AIRCRAFT.maxThrust;
-            let thrustForce = forward.clone().multiplyScalar(thrustMag);
+            let thrustForce = t.thrust.copy(forward).multiplyScalar(thrustMag);
 
             // Gravity
-            let weightForce = new THREE.Vector3(0, -AIRCRAFT.mass * p.gravity, 0);
+            let weightForce = t.weight.set(0, -AIRCRAFT.mass * p.gravity, 0);
 
             // Ground Contact Physics
-            let groundForce = new THREE.Vector3();
-            let frictionForce = new THREE.Vector3();
+            let groundForce = t.ground.set(0, 0, 0);
+            let frictionForce = t.friction.set(0, 0, 0);
 
             if (p.position.y <= groundY) {
                 p.onGround = true;
@@ -266,7 +254,7 @@ export function calculateAerodynamics(ctx) {
                 if (p.brakes) frictionCoeff = 1.2; // Massive friction from wheel brakes
 
                 let frictionMag = normalForceMag * frictionCoeff;
-                let velHorizontal = p.velocity.clone(); velHorizontal.y = 0;
+                let velHorizontal = t.velHoriz.copy(p.velocity); velHorizontal.y = 0;
 
                 let maxFriction = (velHorizontal.length() / p.dt) * AIRCRAFT.mass;
                 if (frictionMag > maxFriction) {
@@ -274,7 +262,8 @@ export function calculateAerodynamics(ctx) {
                 }
 
                 if (velHorizontal.length() > 0.01) {
-                    frictionForce = velHorizontal.normalize().multiplyScalar(-frictionMag);
+                    const invLen = 1 / Math.sqrt(velHorizontal.lengthSq());
+                    frictionForce.copy(velHorizontal).multiplyScalar(-frictionMag * invLen);
                 } else {
                     if (p.throttle < 0.1) {
                         p.velocity.x = 0; p.velocity.z = 0;
@@ -293,7 +282,8 @@ export function calculateAerodynamics(ctx) {
             }
 
             // Combine Forces
-            const netForce = new THREE.Vector3()
+            const netForce = t.net
+                .set(0, 0, 0)
                 .add(liftForce)
                 .add(dragForce)
                 .add(thrustForce)
@@ -306,33 +296,41 @@ export function calculateAerodynamics(ctx) {
                 let tTime = performance.now() * 0.001;
                 // Brutal up/downdrafts pushing the plane around
                 let turbLift = Noise.noise(tTime * 0.8, 0, 0) * AIRCRAFT.mass * 6;
-                netForce.add(new THREE.Vector3(0, turbLift, 0));
+                netForce.y += turbLift;
             }
 
-            const acceleration = netForce.divideScalar(AIRCRAFT.mass);
+            const acceleration = t.accel.copy(netForce).divideScalar(AIRCRAFT.mass);
 
-            // Calculate G-Force
-            p.gForce = (liftForce.length() + groundForce.length()) / (AIRCRAFT.mass * p.gravity);
-            if (Math.abs(p.gForce) < 0.1 && p.onGround) p.gForce = 1.0; // Rest
+            // Apparent load factor along aircraft "up" axis (felt Gs in seat).
+            const specificForce = t.specific.copy(acceleration).sub(t.gravityVec.set(0, -p.gravity, 0));
+            p.gForce = specificForce.dot(up) / p.gravity;
+            if (!Number.isFinite(p.gForce)) p.gForce = 1.0;
 
             // Integrate Linear Velocity & Position
-            p.velocity.add(acceleration.clone().multiplyScalar(p.dt));
-            p.position.add(p.velocity.clone().multiplyScalar(p.dt));
+            p.velocity.addScaledVector(acceleration, p.dt);
+            p.position.addScaledVector(p.velocity, p.dt);
 
-            // --- ARCADE ROTATIONAL DYNAMICS ---
-            // Aerodynamic control authority requires airflow. 
-            // 0x at 0 m/s, 1x at ~80 m/s (takeoff speed), up to 2x at high speeds.
-            let controlAuthority = Math.max(0, Math.min(2.0, Math.pow(p.airspeed / 80, 1.5)));
+            // --- ARCADE+ ROTATIONAL DYNAMICS ---
+            // Blend real-ish inertia response with forgiving control authority.
+            // 0x at very low speed, ~1x near approach speed, up to 2x at high speed.
+            let controlAuthority = Math.max(0, Math.min(2.0, Math.pow(p.airspeed / 85, 1.4)));
+            const pitchTorque = 360000;
+            const rollTorque = 800000;
+            const yawTorque = 225000;
 
-            // Direct Angular Acceleration (Bypasses inertia for predictable, snappy control)
-            let pitchAcc = p.elevator * 3.0 * controlAuthority;
-            let rollAcc = -p.aileron * 4.0 * controlAuthority;
-            let yawAcc = -p.rudder * 1.5 * controlAuthority;
+            let pitchAcc = (p.elevator * pitchTorque / AIRCRAFT.inertia.x) * controlAuthority;
+            let rollAcc = (-p.aileron * rollTorque / AIRCRAFT.inertia.z) * controlAuthority;
+            let yawAcc = (-p.rudder * yawTorque / AIRCRAFT.inertia.y) * controlAuthority;
 
             // Add aerodynamic stability (weathercocking / auto-level)
             rollAcc += p.slip * 0.005 * dynPressure;
             yawAcc += -p.slip * 0.01 * dynPressure;
             pitchAcc += -p.aoa * 0.002 * dynPressure;
+            // Angular damping scales with airflow; helps prevent instant over-rotation.
+            const angDamp = 0.25 + controlAuthority * 0.55;
+            pitchAcc += -p.angularVelocity.x * angDamp;
+            yawAcc += -p.angularVelocity.y * (angDamp * 0.8);
+            rollAcc += -p.angularVelocity.z * (angDamp * 1.05);
 
             // --- GROUND STABILITY (Landing Gear Physics) ---
             if (p.onGround) {
@@ -369,22 +367,16 @@ export function calculateAerodynamics(ctx) {
             p.angularVelocity.y = Math.max(-maxYawRate, Math.min(maxYawRate, p.angularVelocity.y));
             p.angularVelocity.z = Math.max(-maxRollRate, Math.min(maxRollRate, p.angularVelocity.z));
 
-            // Arcade Auto-Stop & Damping:
-            // Always apply a gentle baseline drag to rotation
-            p.angularVelocity.multiplyScalar(Math.pow(0.5, p.dt));
-
-            // If no input is actively pressed, bleed off rotational velocity extremely fast (snap to halt)
-            if (targetElevator === 0) p.angularVelocity.x *= Math.pow(0.0001, p.dt);
-            if (targetRudder === 0) p.angularVelocity.y *= Math.pow(0.0001, p.dt);
-            if (targetAileron === 0) p.angularVelocity.z *= Math.pow(0.0001, p.dt);
+            // Baseline rotational damping (no hard snap-to-zero; more physical decay).
+            p.angularVelocity.multiplyScalar(Math.pow(0.65, p.dt));
+            if (p.onGround) p.angularVelocity.multiplyScalar(Math.pow(0.35, p.dt));
 
             // Create quaternion from angular velocity and apply to current quaternion
-            const deltaRotation = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(
+            const deltaRotation = t.deltaQ.setFromEuler(
+                t.deltaEuler.set(
                     p.angularVelocity.x * p.dt,
                     p.angularVelocity.y * p.dt,
-                    p.angularVelocity.z * p.dt,
-                    'YXZ'
+                    p.angularVelocity.z * p.dt
                 )
             );
             p.quaternion.multiply(deltaRotation).normalize();

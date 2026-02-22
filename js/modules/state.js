@@ -33,20 +33,13 @@ export function createSimulationState({ scene }) {
     spoilers: false,
     brakes: false,
     egpwsMode: true,
-    autopilot: {
-      hdg: false,
-      targetHdg: 0,
-      alt: false,
-      targetAlt: 0,
-      spd: false,
-      targetSpd: 0,
-      app: false
-    },
     ils: {
       active: false,
       locError: 0,
       gsError: 0,
-      distZ: 0
+      distZ: 0,
+      runwayHeading: 0,
+      runwayId: '36'
     },
     airspeed: 0,
     aoa: 0,
@@ -133,18 +126,16 @@ export function createSimulationState({ scene }) {
     z: false,
     q: false,
     e: false,
-    h: false,
-    j: false,
-    k: false,
     m: false,
-    r: false,
-    p: false
+    r: false
   };
 
   const runtime = {
     wasOnGround: true,
     lastTime: performance.now(),
-    strobeTimer: 0
+    strobeTimer: 0,
+    rainPhase: 0,
+    physicsAccumulator: 0
   };
 
   return { AIRCRAFT, PHYSICS, WEATHER, keys, runtime };

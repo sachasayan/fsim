@@ -37,7 +37,80 @@ function createWaterNormalMap(Noise) {
   return tex;
 }
 
+function createTreeBillboardTexture(THREE, kind) {
+  const w = 128;
+  const h = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  // Trunk
+  ctx.fillStyle = kind === 'dry' ? '#6f5b45' : '#5a4029';
+  ctx.fillRect(56, 156, 16, 86);
+
+  if (kind === 'conifer') {
+    ctx.fillStyle = '#2d5525';
+    ctx.beginPath();
+    ctx.moveTo(64, 26);
+    ctx.lineTo(20, 170);
+    ctx.lineTo(108, 170);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#38652d';
+    ctx.beginPath();
+    ctx.moveTo(64, 52);
+    ctx.lineTo(30, 182);
+    ctx.lineTo(98, 182);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === 'poplar') {
+    ctx.fillStyle = '#5f8a3e';
+    ctx.beginPath();
+    ctx.ellipse(64, 98, 26, 74, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6a9646';
+    ctx.beginPath();
+    ctx.ellipse(64, 110, 18, 60, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === 'dry') {
+    ctx.strokeStyle = '#7e6951';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(64, 158);
+    ctx.lineTo(50, 98);
+    ctx.moveTo(64, 150);
+    ctx.lineTo(78, 92);
+    ctx.moveTo(64, 126);
+    ctx.lineTo(38, 84);
+    ctx.moveTo(64, 118);
+    ctx.lineTo(92, 76);
+    ctx.stroke();
+  } else {
+    // broadleaf default
+    ctx.fillStyle = '#487532';
+    ctx.beginPath();
+    ctx.arc(50, 106, 32, 0, Math.PI * 2);
+    ctx.arc(80, 104, 30, 0, Math.PI * 2);
+    ctx.arc(65, 76, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#56883b';
+    ctx.beginPath();
+    ctx.arc(62, 96, 24, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearMipMapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  return tex;
+}
+
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {
+  const TREE_DENSITY_MULTIPLIER = 4.0;
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     transparent: true,
@@ -86,31 +159,39 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const terrainChunks = new Map();
   const pendingChunkBuilds = [];
   const pendingChunkKeys = new Set();
+  let pendingQueueDirty = false;
   const terrainMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.8,
     flatShading: true
   });
 
-  // Instanced Tree Resources (multiple forest biomes)
-  const treeTrunkGeo = new THREE.CylinderGeometry(0.55, 0.75, 6.8, 6);
-  treeTrunkGeo.translate(0, 3.4, 0);
-  const coniferCanopyGeo = new THREE.ConeGeometry(6.8, 20, 7);
-  coniferCanopyGeo.translate(0, 15.5, 0);
-  const coniferTopGeo = new THREE.ConeGeometry(4.3, 11, 7);
-  coniferTopGeo.translate(0, 22, 0);
-  const broadleafCanopyGeo = new THREE.SphereGeometry(7.2, 10, 8);
-  broadleafCanopyGeo.translate(0, 14.5, 0);
-  const poplarCanopyGeo = new THREE.CylinderGeometry(3.0, 4.2, 15, 8);
-  poplarCanopyGeo.translate(0, 16.0, 0);
-  const deadBranchGeo = new THREE.ConeGeometry(1.4, 5.5, 6);
-  deadBranchGeo.translate(0, 10.0, 0);
-  const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.95 });
-  const coniferCanopyMat = new THREE.MeshStandardMaterial({ color: 0x1c3d18, roughness: 0.9 });
-  const coniferTopMat = new THREE.MeshStandardMaterial({ color: 0x2a4a20, roughness: 0.88 });
-  const broadleafCanopyMat = new THREE.MeshStandardMaterial({ color: 0x3f6a2a, roughness: 0.92 });
-  const poplarCanopyMat = new THREE.MeshStandardMaterial({ color: 0x5b7f34, roughness: 0.92 });
-  const deadBranchMat = new THREE.MeshStandardMaterial({ color: 0x5a4938, roughness: 0.95 });
+  // Instanced Tree Resources: crossed low-poly billboard cards
+  const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+  treeBillboardGeo.translate(0, 0.5, 0);
+  const treeTextures = {
+    conifer: createTreeBillboardTexture(THREE, 'conifer'),
+    broadleaf: createTreeBillboardTexture(THREE, 'broadleaf'),
+    poplar: createTreeBillboardTexture(THREE, 'poplar'),
+    dry: createTreeBillboardTexture(THREE, 'dry')
+  };
+  function makeTreeBillboardMaterial(texture, tint) {
+    return new THREE.MeshStandardMaterial({
+      map: texture,
+      color: tint,
+      transparent: true,
+      alphaTest: 0.12,
+      side: THREE.DoubleSide,
+      roughness: 1.0,
+      metalness: 0.0
+    });
+  }
+  const treeBillboardMats = {
+    conifer: makeTreeBillboardMaterial(treeTextures.conifer, 0x9eb38a),
+    broadleaf: makeTreeBillboardMaterial(treeTextures.broadleaf, 0xa3b88e),
+    poplar: makeTreeBillboardMaterial(treeTextures.poplar, 0xafc093),
+    dry: makeTreeBillboardMaterial(treeTextures.dry, 0xc6b696)
+  };
 
   // Instanced Boats
   const hullGeo = new THREE.BoxGeometry(2.5, 1.2, 8);
@@ -136,6 +217,14 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const spireGeo = new THREE.CylinderGeometry(0.06, 0.12, 1, 8);
   spireGeo.translate(0, 0.5, 0);
   const spireMat = new THREE.MeshStandardMaterial({ color: 0xc7c7c7, roughness: 0.3, metalness: 0.9 });
+  const terrainColorSand = new THREE.Color(0xc2b280);
+  const terrainColorLowland = new THREE.Color(0x355e3b);
+  const terrainColorForest = new THREE.Color(0x2a4b2a);
+  const terrainColorRock = new THREE.Color(0x555555);
+  const terrainColorSnow = new THREE.Color(0xffffff);
+  const waterColorFoam = new THREE.Color(0xffffff);
+  const waterColorBlue = new THREE.Color(0x0077be);
+  const waterColorDeep = new THREE.Color(0x003377);
 
   const dummy = new THREE.Object3D();
 
@@ -334,15 +423,19 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     if (pendingChunkKeys.has(key)) return;
     pendingChunkKeys.add(key);
     pendingChunkBuilds.push({ cx, cz, lod, key, priority });
+    pendingQueueDirty = true;
   }
 
   function processChunkBuildQueue(maxBuildsPerFrame = 2) {
     if (pendingChunkBuilds.length === 0) return;
-    pendingChunkBuilds.sort((a, b) => a.priority - b.priority);
+    if (pendingQueueDirty) {
+      pendingChunkBuilds.sort((a, b) => b.priority - a.priority);
+      pendingQueueDirty = false;
+    }
 
     let builds = 0;
     while (builds < maxBuildsPerFrame && pendingChunkBuilds.length > 0) {
-      const job = pendingChunkBuilds.shift();
+      const job = pendingChunkBuilds.pop();
       pendingChunkKeys.delete(job.key);
       const existing = terrainChunks.get(job.key);
       if (existing && existing.lod === job.lod) {
@@ -401,23 +494,19 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
 
       // Natural terrain coloring
       if (height < -5) {
-        colorObj.setHex(0xc2b280); // Underwater Seabed / Sand
+        colorObj.copy(terrainColorSand); // Underwater Seabed / Sand
       } else if (height < 25) {
-        colorObj.setHex(0x355e3b); // Lowland / Hunter green
+        colorObj.copy(terrainColorLowland); // Lowland / Hunter green
       } else if (height < 150) {
-        colorObj.setHex(0x2a4b2a); // Dark forest green
+        colorObj.copy(terrainColorForest); // Dark forest green
       } else if (height < 400) {
         let rockBlend = (height - 150) / 250;
-        let cGrass = new THREE.Color(0x2a4b2a);
-        let cRock = new THREE.Color(0x555555);
-        colorObj.lerpColors(cGrass, cRock, rockBlend);
+        colorObj.lerpColors(terrainColorForest, terrainColorRock, rockBlend);
       } else if (height < 600) {
-        colorObj.setHex(0x555555); // Solid Rock
+        colorObj.copy(terrainColorRock); // Solid Rock
       } else {
         let snowBlend = Math.min(1.0, (height - 600) / 100);
-        let cRock = new THREE.Color(0x555555);
-        let cSnow = new THREE.Color(0xffffff);
-        colorObj.lerpColors(cRock, cSnow, snowBlend);
+        colorObj.lerpColors(terrainColorRock, terrainColorSnow, snowBlend);
       }
       colors.push(colorObj.r, colorObj.g, colorObj.b);
 
@@ -478,7 +567,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         }
       } else if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
         const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore);
-        if (rng < forest.density * lodCfg.propDensity) {
+        const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
+        if (rng < treeChance) {
           const treeType = pickWeighted(hash2(cellX, cellZ, 24), forest.typeWeights);
           treePositions[treeType].push({
             x: lx + (hash2(cellX, cellZ, 20) - 0.5) * 20,
@@ -517,12 +607,12 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       let depth = -10 - th + waveNoise * 4.0;
 
       if (depth < 2) {
-        wColObj.setHex(0xffffff); // Shoreline Froth
+        wColObj.copy(waterColorFoam); // Shoreline Froth
       } else if (depth < 25) {
         let blend = (depth - 2) / 23;
-        wColObj.lerpColors(new THREE.Color(0xffffff), new THREE.Color(0x0077be), Math.pow(blend, 0.6));
+        wColObj.lerpColors(waterColorFoam, waterColorBlue, Math.pow(blend, 0.6));
       } else {
-        wColObj.setHex(0x003377);
+        wColObj.copy(waterColorDeep);
       }
       wCols.push(wColObj.r, wColObj.g, wColObj.b);
     }
@@ -532,83 +622,41 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     chunkGroup.add(waterMesh);
 
     const treeTypeConfigs = {
-      conifer: {
-        canopyGeo: coniferCanopyGeo,
-        canopyMat: coniferCanopyMat,
-        accentGeo: coniferTopGeo,
-        accentMat: coniferTopMat,
-        trunkScale: [0.85, 1.0, 0.85],
-        canopyScale: [1.0, 1.0, 1.0]
-      },
-      broadleaf: {
-        canopyGeo: broadleafCanopyGeo,
-        canopyMat: broadleafCanopyMat,
-        accentGeo: null,
-        accentMat: null,
-        trunkScale: [0.75, 1.1, 0.75],
-        canopyScale: [1.0, 0.85, 1.0]
-      },
-      poplar: {
-        canopyGeo: poplarCanopyGeo,
-        canopyMat: poplarCanopyMat,
-        accentGeo: null,
-        accentMat: null,
-        trunkScale: [0.7, 1.15, 0.7],
-        canopyScale: [0.72, 1.08, 0.72]
-      },
-      dry: {
-        canopyGeo: deadBranchGeo,
-        canopyMat: deadBranchMat,
-        accentGeo: null,
-        accentMat: null,
-        trunkScale: [0.6, 0.95, 0.6],
-        canopyScale: [0.6, 0.8, 0.6]
-      }
+      conifer: { mat: treeBillboardMats.conifer, hRange: [14, 24], wScale: 0.45 },
+      broadleaf: { mat: treeBillboardMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
+      poplar: { mat: treeBillboardMats.poplar, hRange: [13, 23], wScale: 0.42 },
+      dry: { mat: treeBillboardMats.dry, hRange: [8, 15], wScale: 0.52 }
     };
 
     for (const [treeType, trees] of Object.entries(treePositions)) {
       if (trees.length === 0) continue;
       const cfg = treeTypeConfigs[treeType];
-
-      const trunkMesh = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, trees.length);
-      const canopyMesh = new THREE.InstancedMesh(cfg.canopyGeo, cfg.canopyMat, trees.length);
-      const accentMesh = cfg.accentGeo ? new THREE.InstancedMesh(cfg.accentGeo, cfg.accentMat, trees.length) : null;
-
-      trunkMesh.castShadow = true;
-      canopyMesh.castShadow = true;
-      trunkMesh.receiveShadow = true;
-      canopyMesh.receiveShadow = true;
-      if (accentMesh) {
-        accentMesh.castShadow = true;
-        accentMesh.receiveShadow = true;
-      }
+      const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, trees.length);
+      const cardB = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, trees.length);
+      cardA.castShadow = false;
+      cardB.castShadow = false;
+      cardA.receiveShadow = false;
+      cardB.receiveShadow = false;
 
       for (let j = 0; j < trees.length; j++) {
         const tp = trees[j];
-        const exactY = getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE);
+        const exactY = lod <= 1 ? getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE) : tp.y;
         const heading = tp.seed * Math.PI * 2;
-        const scale = 0.62 + tp.seed * 0.95;
+        const treeHeight = cfg.hRange[0] + tp.seed * (cfg.hRange[1] - cfg.hRange[0]);
+        const treeWidth = treeHeight * cfg.wScale * (0.92 + tp.seed2 * 0.3);
 
         dummy.position.set(tp.x, exactY, tp.z);
-        dummy.rotation.set(tp.lean, heading, -tp.lean * 0.8);
-        dummy.scale.set(scale * cfg.trunkScale[0], scale * cfg.trunkScale[1], scale * cfg.trunkScale[2]);
+        dummy.rotation.set(tp.lean * 0.5, heading, 0);
+        dummy.scale.set(treeWidth, treeHeight, 1);
         dummy.updateMatrix();
-        trunkMesh.setMatrixAt(j, dummy.matrix);
+        cardA.setMatrixAt(j, dummy.matrix);
 
-        dummy.scale.set(scale * cfg.canopyScale[0], scale * cfg.canopyScale[1], scale * cfg.canopyScale[2]);
+        dummy.rotation.set(tp.lean * 0.5, heading + Math.PI * 0.5, 0);
         dummy.updateMatrix();
-        canopyMesh.setMatrixAt(j, dummy.matrix);
-
-        if (accentMesh) {
-          const accentScale = scale * (0.85 + tp.seed2 * 0.2);
-          dummy.scale.set(accentScale, accentScale, accentScale);
-          dummy.updateMatrix();
-          accentMesh.setMatrixAt(j, dummy.matrix);
-        }
+        cardB.setMatrixAt(j, dummy.matrix);
       }
 
-      chunkGroup.add(trunkMesh, canopyMesh);
-      if (accentMesh) chunkGroup.add(accentMesh);
+      chunkGroup.add(cardA, cardB);
     }
 
     const classConfigs = {
@@ -804,6 +852,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       if (!activeChunks.has(job.key)) {
         pendingChunkKeys.delete(job.key);
         pendingChunkBuilds.splice(i, 1);
+        pendingQueueDirty = true;
       }
     }
 

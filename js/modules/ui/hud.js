@@ -15,9 +15,6 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             pitchLadder: document.getElementById('pitch-ladder'),
             horizonSky: document.getElementById('horizon-sky'),
             fpv: document.getElementById('fpv'),
-            fmaSpd: document.getElementById('fma-spd'),
-            fmaHdg: document.getElementById('fma-hdg'),
-            fmaAlt: document.getElementById('fma-alt'),
             fmaIls: document.getElementById('fma-ils'),
             thrust: document.getElementById('hud-thrust'),
             aoa: document.getElementById('hud-aoa'),
@@ -208,27 +205,14 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             let headingOffset = (heading / 10) * 30;
             UI.compassTape.style.transform = `translateX(calc(50% - ${headingOffset}px))`;
 
-            // Update FMA (Autopilot Status Board)
-            UI.fmaSpd.innerText = PHYSICS.autopilot.spd ? `SPD ${Math.round(PHYSICS.autopilot.targetSpd * 1.94384)}` : '';
-            let hdgDeg = PHYSICS.autopilot.targetHdg * (180 / Math.PI);
-            if (hdgDeg < 0) hdgDeg += 360;
-            UI.fmaHdg.innerText = PHYSICS.autopilot.hdg ? `HDG ${Math.round(hdgDeg).toString().padStart(3, '0')}` : '';
-            UI.fmaAlt.innerText = PHYSICS.autopilot.alt ? `ALT ${Math.round(PHYSICS.autopilot.targetAlt * 3.28084)}` : '';
-
             // ILS Logic UI Update
             if (PHYSICS.ils.active) {
                 UI.ilsLoc.style.display = 'flex';
                 UI.ilsGs.style.display = 'flex';
 
-                // FMA Status
-                if (PHYSICS.autopilot.app) {
-                    UI.fmaIls.innerText = 'AUTOLAND';
-                    UI.fmaIls.style.color = '#0f0';
-                } else {
-                    let catText = WEATHER.mode > 0 ? " CAT III" : "";
-                    UI.fmaIls.innerText = 'ILS 36' + catText;
-                    UI.fmaIls.style.color = '#f0f';
-                }
+                let catText = WEATHER.mode > 0 ? " CAT III" : "";
+                UI.fmaIls.innerText = `ILS ${PHYSICS.ils.runwayId || '36'}${catText}`;
+                UI.fmaIls.style.color = '#f0f';
 
                 // Localizer (Horizontal alignment)
                 let locNormalized = Math.max(-4, Math.min(4, PHYSICS.ils.locError)) / 4;

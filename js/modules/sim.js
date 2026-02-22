@@ -51,6 +51,12 @@ renderer.toneMappingExposure = WEATHER.exposure;
 bloomPass.threshold = WEATHER.bloomThreshold;
 bloomPass.strength = WEATHER.bloomStrength;
 bloomPass.radius = WEATHER.bloomRadius;
+const PHYSICS_STEP = 1 / 75;
+const MAX_PHYSICS_STEPS_PER_FRAME = 4;
+const tmpHdgEuler = new THREE.Euler();
+const tmpCrashStep = new THREE.Vector3();
+const tmpCrashSpinEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const tmpCrashSpinQuat = new THREE.Quaternion();
 
 // ==========================================
 // 4. WORLD OBJECTS
@@ -108,22 +114,6 @@ window.addEventListener('keydown', (e) => {
     WEATHER.modeName = cfg.name;
     WEATHER.targetFog = cfg.fog;
     WEATHER.targetTransition = cfg.intensity;
-  }
-
-  if (e.key.toLowerCase() === 'h') {
-    PHYSICS.autopilot.hdg = !PHYSICS.autopilot.hdg;
-    if (PHYSICS.autopilot.hdg) PHYSICS.autopilot.targetHdg = -new THREE.Euler().setFromQuaternion(PHYSICS.quaternion, 'YXZ').y;
-  }
-  if (e.key.toLowerCase() === 'j') {
-    PHYSICS.autopilot.alt = !PHYSICS.autopilot.alt;
-    if (PHYSICS.autopilot.alt) PHYSICS.autopilot.targetAlt = PHYSICS.position.y;
-  }
-  if (e.key.toLowerCase() === 'k') {
-    PHYSICS.autopilot.spd = !PHYSICS.autopilot.spd;
-    if (PHYSICS.autopilot.spd) PHYSICS.autopilot.targetSpd = PHYSICS.airspeed;
-  }
-  if (e.key.toLowerCase() === 'p') {
-    if (PHYSICS.ils.active) PHYSICS.autopilot.app = !PHYSICS.autopilot.app;
   }
 });
 
@@ -300,12 +290,6 @@ window.resetFlight = function () {
     PHYSICS.gearTransition = 1.0;
     PHYSICS.brakes = false;
 
-    // Disable AP
-    PHYSICS.autopilot.alt = false;
-    PHYSICS.autopilot.hdg = false;
-    PHYSICS.autopilot.spd = false;
-    PHYSICS.autopilot.app = false;
-
     document.getElementById('dashboard').style.opacity = '1.0';
     document.getElementById('crash-screen').style.display = 'none';
 
@@ -336,9 +320,8 @@ function animate() {
     let dt = (now - runtime.lastTime) / 1000;
     runtime.lastTime = now;
 
-    // Cap dt to avoid physics explosions on lag spikes
+    // Cap dt to avoid simulation explosions on lag spikes
     if (dt > 0.05) dt = 0.05;
-    PHYSICS.dt = dt;
 
     // --- DYNAMIC WEATHER SYSTEM UPDATES ---
     WEATHER.currentFog += (WEATHER.targetFog - WEATHER.currentFog) * dt * 0.5;
@@ -368,10 +351,12 @@ function animate() {
         WEATHER.rainMesh.visible = true;
         const pos = WEATHER.rainMesh.geometry.attributes.position.array;
         const camPos = camera.position;
+        runtime.rainPhase = (runtime.rainPhase + 1) & 1;
+        const rainStepDt = dt * 2.0;
 
-        for (let i = 0; i < WEATHER.rainCount; i++) {
+        for (let i = runtime.rainPhase; i < WEATHER.rainCount; i += 2) {
             // Apply gravity
-            pos[i * 3 + 1] += WEATHER.rainVelocities[i] * dt;
+            pos[i * 3 + 1] += WEATHER.rainVelocities[i] * rainStepDt;
 
             // Keep the rain anchored to the camera's moving frame of reference
             let dx = pos[i * 3] - camPos.x;
@@ -522,43 +507,75 @@ function animate() {
     particleMesh.instanceMatrix.needsUpdate = true;
     if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
 
-    // --- PAPI LIGHTS UPDATE ---
-    const distZ = PHYSICS.position.z - 1000;
-    // Only activate if approaching from the South (Positive Z) within 15km
-    if (distZ > 0 && distZ < 15000) {
-        const distX = PHYSICS.position.x - (-63); // Center of PAPI array
-        const dist2D = Math.sqrt(distX * distX + distZ * distZ);
+    // --- PAPI LIGHTS UPDATE (RWY 36 / RWY 18) ---
+    const allPapiLights = PAPI.lights || [];
+    const papi36 = PAPI.lights36 || [];
+    const papi18 = PAPI.lights18 || [];
+    for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
 
-        // Calculate viewing angle from the plane down to the PAPI lights
-        const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
-
-        // Standard PAPI Glidepath: 3.0 degrees
-        let wCount = 0;
-        if (angleDeg > 3.5) wCount = 4;        // Too High (4 White)
-        else if (angleDeg > 3.2) wCount = 3;   // Slightly High (3 White, 1 Red)
-        else if (angleDeg > 2.8) wCount = 2;   // On Glidepath (2 White, 2 Red)
-        else if (angleDeg > 2.5) wCount = 1;   // Slightly Low (1 White, 3 Red)
-        else wCount = 0;                       // Too Low (4 Red)
-
-        // Apply colors (Inner light is index 0, Outer is index 3)
-        // Real PAPI: On glidepath = inner 2 red, outer 2 white.
-        for (let i = 0; i < 4; i++) {
-            PAPI.lights[i].material = (i >= (4 - wCount)) ? PAPI.matWhite : PAPI.matRed;
+    function setPapiColors(lights, whiteCount) {
+        for (let i = 0; i < lights.length; i++) {
+            lights[i].material = (i >= (4 - whiteCount)) ? PAPI.matWhite : PAPI.matRed;
         }
-    } else {
-        for (let i = 0; i < 4; i++) PAPI.lights[i].material = PAPI.matOff;
     }
 
-    if (!PHYSICS.crashed) {
-        calculateAerodynamics({ THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight, gearGroup, planeGroup, Noise });
-    } else {
-        // WRECKAGE PHYSICS: Let gravity pull the wreckage down if destroyed mid-air
-        if (!PHYSICS.onGround) {
-            PHYSICS.velocity.y -= PHYSICS.gravity * dt;
-            PHYSICS.position.add(PHYSICS.velocity.clone().multiplyScalar(dt));
+    let headingDeg = (-tmpHdgEuler.setFromQuaternion(PHYSICS.quaternion, 'YXZ').y) * (180 / Math.PI);
+    if (headingDeg < 0) headingDeg += 360;
+    const headingDiff = (targetDeg) => {
+        let d = headingDeg - targetDeg;
+        while (d > 180) d -= 360;
+        while (d < -180) d += 360;
+        return Math.abs(d);
+    };
+
+    const dist36 = PHYSICS.position.z - 1000;
+    const dist18 = -1000 - PHYSICS.position.z;
+    const canUse36 = dist36 > 0 && dist36 < 15000 && headingDiff(0) <= 90;
+    const canUse18 = dist18 > 0 && dist18 < 15000 && headingDiff(180) <= 90;
+
+    let activeSet = null;
+    let activeDist = 0;
+    let papiCenterX = 0;
+    if (canUse36 && (!canUse18 || dist36 <= dist18)) {
+        activeSet = papi36;
+        activeDist = dist36;
+        papiCenterX = -63;
+    } else if (canUse18) {
+        activeSet = papi18;
+        activeDist = dist18;
+        papiCenterX = 63;
+    }
+
+    if (activeSet && activeSet.length === 4) {
+        const distX = PHYSICS.position.x - papiCenterX;
+        const dist2D = Math.sqrt(distX * distX + activeDist * activeDist);
+        const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
+
+        let whiteCount = 0;
+        if (angleDeg > 3.5) whiteCount = 4;
+        else if (angleDeg > 3.2) whiteCount = 3;
+        else if (angleDeg > 2.8) whiteCount = 2;
+        else if (angleDeg > 2.5) whiteCount = 1;
+        setPapiColors(activeSet, whiteCount);
+    }
+
+    runtime.physicsAccumulator = Math.min(runtime.physicsAccumulator + dt, PHYSICS_STEP * MAX_PHYSICS_STEPS_PER_FRAME);
+    let physicsSteps = 0;
+    while (runtime.physicsAccumulator >= PHYSICS_STEP && physicsSteps < MAX_PHYSICS_STEPS_PER_FRAME) {
+        PHYSICS.dt = PHYSICS_STEP;
+        if (!PHYSICS.crashed) {
+            calculateAerodynamics({ THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight, gearGroup, planeGroup, Noise });
+        } else if (!PHYSICS.onGround) {
+            // WRECKAGE PHYSICS: Let gravity pull the wreckage down if destroyed mid-air
+            PHYSICS.velocity.y -= PHYSICS.gravity * PHYSICS_STEP;
+            PHYSICS.position.add(tmpCrashStep.copy(PHYSICS.velocity).multiplyScalar(PHYSICS_STEP));
 
             // Add uncontrolled tumbling spin
-            PHYSICS.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(dt, dt * 0.5, dt * 2))).normalize();
+            PHYSICS.quaternion.multiply(
+                tmpCrashSpinQuat.setFromEuler(
+                    tmpCrashSpinEuler.set(PHYSICS_STEP, PHYSICS_STEP * 0.5, PHYSICS_STEP * 2)
+                )
+            ).normalize();
 
             const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z);
             if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
@@ -569,6 +586,8 @@ function animate() {
             planeGroup.position.copy(PHYSICS.position);
             planeGroup.quaternion.copy(PHYSICS.quaternion);
         }
+        runtime.physicsAccumulator -= PHYSICS_STEP;
+        physicsSteps++;
     }
 
     updateTerrain();

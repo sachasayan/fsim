@@ -105,6 +105,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   // SCALED UP ALL EMISSIVE INTENSITIES SO THEY PIERCE THE NEW BLOOM THRESHOLD
   const PAPI = {
     lights: [],
+    lights36: [],
+    lights18: [],
     matRed: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 30 }),
     matWhite: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 30 }),
     matOff: new THREE.MeshBasicMaterial({ color: 0x111111 })
@@ -150,17 +152,28 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     }
 
     // --- PAPI System (Precision Approach Path Indicator) ---
-    // Touchdown zone is Z=1000. PAPI placed on left side (X = -45 to -81)
+    // RWY 36 (touchdown Z=1000), left side for northbound approach.
     for (let i = 0; i < 4; i++) {
-      // Use large disk shapes to ensure high visibility from kilometers away
-      let mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), PAPI.matWhite);
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), PAPI.matWhite);
       mesh.position.set(-45 - i * 12, 1.5, 1000);
-      // Scale Z to make them directional (visible mostly from the front)
       mesh.scale.z = 0.2;
       lightGroup.add(mesh);
       const papiBase = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.4, 1.2), baseMat);
       papiBase.position.set(-45 - i * 12, 0.3, 1000);
       lightGroup.add(papiBase);
+      PAPI.lights36.push(mesh);
+      PAPI.lights.push(mesh);
+    }
+    // RWY 18 (touchdown Z=-1000), left side for southbound approach.
+    for (let i = 0; i < 4; i++) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), PAPI.matWhite);
+      mesh.position.set(45 + i * 12, 1.5, -1000);
+      mesh.scale.z = 0.2;
+      lightGroup.add(mesh);
+      const papiBase = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.4, 1.2), baseMat);
+      papiBase.position.set(45 + i * 12, 0.3, -1000);
+      lightGroup.add(papiBase);
+      PAPI.lights18.push(mesh);
       PAPI.lights.push(mesh);
     }
 
