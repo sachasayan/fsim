@@ -134,5 +134,5 @@ export function createCloudSystem({ scene }) {
   }
 
   scene.add(clouds);
-  return { clouds };
+  return { clouds, cloudMaterial: voxelMat };
 }

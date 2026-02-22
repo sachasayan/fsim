@@ -51,7 +51,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const CHUNK_SIZE = 4000;
   const LOD_LEVELS = [
     {
-      terrainRes: 112,
+      terrainRes: 224,
       waterRes: 72,
       propDensity: 1.0,
       enableBuildings: true,
@@ -72,6 +72,14 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       propDensity: 0.16,
       enableBuildings: false,
       enableTrees: true,
+      enableBoats: false
+    },
+    {
+      terrainRes: 12,
+      waterRes: 10,
+      propDensity: 0.0,
+      enableBuildings: false,
+      enableTrees: false,
       enableBoats: false
     }
   ];
@@ -285,23 +293,31 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   function getLodForRingDistance(ringDistance, currentLod = null) {
     // Hysteresis band to avoid rapid LOD toggling near ring boundaries.
     if (currentLod === 0) {
-      if (ringDistance <= 2) return 0;
-      if (ringDistance <= 4) return 1;
-      return 2;
+      if (ringDistance <= 1) return 0;
+      if (ringDistance <= 3) return 1;
+      if (ringDistance <= 6) return 2;
+      return 3;
     }
     if (currentLod === 1) {
       if (ringDistance <= 1) return 0;
       if (ringDistance <= 4) return 1;
-      return 2;
+      if (ringDistance <= 7) return 2;
+      return 3;
     }
     if (currentLod === 2) {
-      if (ringDistance <= 3) return 1;
-      return 2;
+      if (ringDistance <= 2) return 1;
+      if (ringDistance <= 7) return 2;
+      return 3;
+    }
+    if (currentLod === 3) {
+      if (ringDistance <= 6) return 2;
+      return 3;
     }
 
     if (ringDistance <= 1) return 0;
     if (ringDistance <= 3) return 1;
-    return 2;
+    if (ringDistance <= 6) return 2;
+    return 3;
   }
 
   function disposeChunkGroup(chunkGroup) {
@@ -758,7 +774,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   function updateTerrain() {
     const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
     const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
-    const renderDistance = 4; // 9x9 loaded chunk window
+    const renderDistance = 8; // 17x17 loaded chunk window (2x previous radius)
     const activeChunks = new Map();
 
     for (let dx = -renderDistance; dx <= renderDistance; dx++) {
@@ -798,7 +814,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       }
     }
 
-    processChunkBuildQueue(2);
+    const buildBudget = pendingChunkBuilds.length > 160 ? 5 : pendingChunkBuilds.length > 80 ? 3 : 2;
+    processChunkBuildQueue(buildBudget);
   }
 
   return { waterMaterial, getTerrainHeight, updateTerrain };

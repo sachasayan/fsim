@@ -8,12 +8,7 @@ import { createWorldObjects } from './world/objects.js';
 import { calculateAerodynamics } from './physics/updatePhysics.js';
 import { createCameraController } from './camera/updateCamera.js';
 import { createHUD } from './ui/hud.js';
-
-function getFogForMode(mode) {
-  if (mode === 1) return 0.0025;
-  if (mode === 2) return 0.006;
-  return 0.00015;
-}
+import { getWeatherModeConfig } from './lighting.js';
 
 // ==========================================
 // 2. CORE SETUP & GLOBALS
@@ -49,6 +44,13 @@ scene.fog = new THREE.FogExp2(WEATHER.clearColor, WEATHER.currentFog);
 const clearWeatherColor = new THREE.Color(WEATHER.clearColor);
 const stormWeatherColor = new THREE.Color(WEATHER.stormColor);
 const currentWeatherColor = new THREE.Color();
+const clearCloudColor = new THREE.Color(WEATHER.cloudColorClear);
+const stormCloudColor = new THREE.Color(WEATHER.cloudColorStorm);
+const currentCloudColor = new THREE.Color(clearCloudColor);
+renderer.toneMappingExposure = WEATHER.exposure;
+bloomPass.threshold = WEATHER.bloomThreshold;
+bloomPass.strength = WEATHER.bloomStrength;
+bloomPass.radius = WEATHER.bloomRadius;
 
 // ==========================================
 // 4. WORLD OBJECTS
@@ -64,6 +66,7 @@ const {
   getTerrainHeight,
   updateTerrain,
   clouds,
+  cloudMaterial,
   MAX_PARTICLES,
   particleMesh,
   particles,
@@ -101,7 +104,10 @@ window.addEventListener('keydown', (e) => {
 
   if (e.key.toLowerCase() === 'r') {
     WEATHER.mode = (WEATHER.mode + 1) % 3;
-    WEATHER.targetFog = getFogForMode(WEATHER.mode);
+    const cfg = getWeatherModeConfig(WEATHER.mode);
+    WEATHER.modeName = cfg.name;
+    WEATHER.targetFog = cfg.fog;
+    WEATHER.targetTransition = cfg.intensity;
   }
 
   if (e.key.toLowerCase() === 'h') {
@@ -339,8 +345,7 @@ function animate() {
     scene.fog.density = WEATHER.currentFog;
 
     // Transition visuals based on weather (0 = Twilight, 1 = Stormy Gray)
-    let targetTransition = WEATHER.mode > 0 ? 1 : 0;
-    WEATHER.transition += (targetTransition - WEATHER.transition) * dt * 0.5;
+    WEATHER.transition += (WEATHER.targetTransition - WEATHER.transition) * dt * 0.5;
 
     // Darken the sky and fog in bad weather
     currentWeatherColor.lerpColors(clearWeatherColor, stormWeatherColor, WEATHER.transition);
@@ -348,8 +353,15 @@ function animate() {
     scene.fog.color = currentWeatherColor;
 
     // Dim the lighting to match the overcast skies
-    hemiLight.intensity = WEATHER.lightAmbientBase - (WEATHER.transition * 0.2);
-    dirLight.intensity = WEATHER.lightDirectBase - (WEATHER.transition * 0.9);
+    hemiLight.intensity = WEATHER.lightAmbientBase * (1.0 - WEATHER.transition * 0.55);
+    dirLight.intensity = WEATHER.lightDirectBase * (1.0 - WEATHER.transition * 0.9);
+
+    if (cloudMaterial) {
+        currentCloudColor.lerpColors(clearCloudColor, stormCloudColor, WEATHER.transition);
+        cloudMaterial.color.copy(currentCloudColor);
+        cloudMaterial.opacity = WEATHER.cloudOpacityBase + (WEATHER.cloudOpacityStorm - WEATHER.cloudOpacityBase) * WEATHER.transition;
+        cloudMaterial.emissiveIntensity = WEATHER.cloudEmissiveBase + (WEATHER.cloudEmissiveStorm - WEATHER.cloudEmissiveBase) * WEATHER.transition;
+    }
 
     // Animate Storm Rain Physics
     if (WEATHER.mode === 2) {

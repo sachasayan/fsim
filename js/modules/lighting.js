@@ -1,0 +1,180 @@
+const WEATHER_MODES = {
+  0: { name: 'clear', fog: 0.0002, intensity: 0.0 },
+  1: { name: 'overcast', fog: 0.0028, intensity: 0.55 },
+  2: { name: 'storm', fog: 0.0065, intensity: 1.0 }
+};
+
+export const LIGHTING_PRESETS = {
+  dawn: {
+    clearColor: 0x7f8db3,
+    stormColor: 0x2f3646,
+    hemiSkyColor: 0xbfd4ff,
+    hemiGroundColor: 0x2a2230,
+    dirColor: 0xffb176,
+    ambientBase: 0.34,
+    directBase: 1.2,
+    sunPhiDeg: 82,
+    sunThetaDeg: 114,
+    skyTurbidity: 9.2,
+    skyRayleigh: 2.35,
+    skyMieCoefficient: 0.045,
+    skyMieDirectionalG: 0.43,
+    exposure: 0.88,
+    bloom: { threshold: 5.0, strength: 0.82, radius: 0.4 },
+    hazeColor: 0x4d4f64,
+    hazeOpacity: 0.12,
+    starOpacity: 0.14,
+    cloudColorClear: 0xf8fbff,
+    cloudColorStorm: 0xd7dee8,
+    cloudOpacityBase: 0.43,
+    cloudOpacityStorm: 0.52,
+    cloudEmissiveBase: 0.05,
+    cloudEmissiveStorm: 0.02
+  },
+  golden_hour: {
+    clearColor: 0x6b5c72,
+    stormColor: 0x2a2f3d,
+    hemiSkyColor: 0xffd3a8,
+    hemiGroundColor: 0x2f2220,
+    dirColor: 0xff9a52,
+    ambientBase: 0.31,
+    directBase: 1.15,
+    sunPhiDeg: 84,
+    sunThetaDeg: 148,
+    skyTurbidity: 10.2,
+    skyRayleigh: 2.8,
+    skyMieCoefficient: 0.052,
+    skyMieDirectionalG: 0.4,
+    exposure: 0.84,
+    bloom: { threshold: 5.0, strength: 0.85, radius: 0.4 },
+    hazeColor: 0x4b3f4a,
+    hazeOpacity: 0.14,
+    starOpacity: 0.22,
+    cloudColorClear: 0xfff6ee,
+    cloudColorStorm: 0xd5cfca,
+    cloudOpacityBase: 0.45,
+    cloudOpacityStorm: 0.55,
+    cloudEmissiveBase: 0.05,
+    cloudEmissiveStorm: 0.015
+  },
+  midday_haze: {
+    clearColor: 0x7ea0c2,
+    stormColor: 0x3b4658,
+    hemiSkyColor: 0xd6e8ff,
+    hemiGroundColor: 0x354055,
+    dirColor: 0xffffff,
+    ambientBase: 0.42,
+    directBase: 1.35,
+    sunPhiDeg: 70,
+    sunThetaDeg: 126,
+    skyTurbidity: 7.4,
+    skyRayleigh: 1.95,
+    skyMieCoefficient: 0.038,
+    skyMieDirectionalG: 0.46,
+    exposure: 0.93,
+    bloom: { threshold: 5.4, strength: 0.65, radius: 0.35 },
+    hazeColor: 0x778ba2,
+    hazeOpacity: 0.1,
+    starOpacity: 0.02,
+    cloudColorClear: 0xffffff,
+    cloudColorStorm: 0xe0e8ef,
+    cloudOpacityBase: 0.4,
+    cloudOpacityStorm: 0.5,
+    cloudEmissiveBase: 0.05,
+    cloudEmissiveStorm: 0.02
+  },
+  blue_hour: {
+    clearColor: 0x4e5f86,
+    stormColor: 0x1f2532,
+    hemiSkyColor: 0xa7c2ff,
+    hemiGroundColor: 0x222736,
+    dirColor: 0x8fb2ff,
+    ambientBase: 0.26,
+    directBase: 0.82,
+    sunPhiDeg: 86,
+    sunThetaDeg: 160,
+    skyTurbidity: 11.0,
+    skyRayleigh: 2.65,
+    skyMieCoefficient: 0.055,
+    skyMieDirectionalG: 0.37,
+    exposure: 0.8,
+    bloom: { threshold: 4.9, strength: 0.9, radius: 0.42 },
+    hazeColor: 0x313a50,
+    hazeOpacity: 0.15,
+    starOpacity: 0.3,
+    cloudColorClear: 0xf4f8ff,
+    cloudColorStorm: 0xc7d1df,
+    cloudOpacityBase: 0.47,
+    cloudOpacityStorm: 0.58,
+    cloudEmissiveBase: 0.04,
+    cloudEmissiveStorm: 0.01
+  },
+  night_clear: {
+    clearColor: 0x1a1f2d,
+    stormColor: 0x0f131c,
+    hemiSkyColor: 0x6b7ea8,
+    hemiGroundColor: 0x1b1d29,
+    dirColor: 0x94abcc,
+    ambientBase: 0.18,
+    directBase: 0.48,
+    sunPhiDeg: 90,
+    sunThetaDeg: 186,
+    skyTurbidity: 5.6,
+    skyRayleigh: 1.4,
+    skyMieCoefficient: 0.03,
+    skyMieDirectionalG: 0.5,
+    exposure: 0.76,
+    bloom: { threshold: 4.5, strength: 1.0, radius: 0.45 },
+    hazeColor: 0x1c2231,
+    hazeOpacity: 0.08,
+    starOpacity: 0.5,
+    cloudColorClear: 0xe8edf6,
+    cloudColorStorm: 0xbec8d5,
+    cloudOpacityBase: 0.5,
+    cloudOpacityStorm: 0.62,
+    cloudEmissiveBase: 0.03,
+    cloudEmissiveStorm: 0.01
+  },
+  night_overcast: {
+    clearColor: 0x232a39,
+    stormColor: 0x0d1016,
+    hemiSkyColor: 0x73829d,
+    hemiGroundColor: 0x1a1c24,
+    dirColor: 0x8aa1c5,
+    ambientBase: 0.2,
+    directBase: 0.58,
+    sunPhiDeg: 88,
+    sunThetaDeg: 196,
+    skyTurbidity: 8.1,
+    skyRayleigh: 1.7,
+    skyMieCoefficient: 0.041,
+    skyMieDirectionalG: 0.45,
+    exposure: 0.74,
+    bloom: { threshold: 4.3, strength: 1.05, radius: 0.47 },
+    hazeColor: 0x1d2432,
+    hazeOpacity: 0.1,
+    starOpacity: 0.18,
+    cloudColorClear: 0xdde4ef,
+    cloudColorStorm: 0xb9c5d1,
+    cloudOpacityBase: 0.53,
+    cloudOpacityStorm: 0.66,
+    cloudEmissiveBase: 0.025,
+    cloudEmissiveStorm: 0.0
+  }
+};
+
+export function getWeatherModeConfig(mode) {
+  return WEATHER_MODES[mode] ?? WEATHER_MODES[0];
+}
+
+export function pickStartupWeatherMode() {
+  const r = Math.random();
+  if (r < 0.62) return 0;
+  if (r < 0.9) return 1;
+  return 2;
+}
+
+export function pickLightingPresetId() {
+  const ids = Object.keys(LIGHTING_PRESETS);
+  return ids[Math.floor(Math.random() * ids.length)];
+}

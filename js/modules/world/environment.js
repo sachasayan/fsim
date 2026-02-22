@@ -5,11 +5,15 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   const hemiBase = WEATHER?.lightAmbientBase ?? 0.25;
   const dirBase = WEATHER?.lightDirectBase ?? 1.0;
 
-  const hemiLight = new THREE.HemisphereLight(0x444455, 0x111118, hemiBase);
+  const hemiLight = new THREE.HemisphereLight(
+    WEATHER?.hemiSkyColor ?? 0x444455,
+    WEATHER?.hemiGroundColor ?? 0x111118,
+    hemiBase
+  );
   hemiLight.position.set(0, 2000, 0);
   scene.add(hemiLight);
 
-  const dirLight = new THREE.DirectionalLight(0xff9a66, dirBase);
+  const dirLight = new THREE.DirectionalLight(WEATHER?.dirColor ?? 0xff9a66, dirBase);
   dirLight.position.set(-1000, 2000, 1000);
   dirLight.castShadow = true;
   dirLight.shadow.camera.top = 200;
@@ -50,9 +54,9 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   // Far horizon haze dome for depth layering
   const hazeGeo = new THREE.SphereGeometry(180000, 24, 24);
   const hazeMat = new THREE.MeshBasicMaterial({
-    color: 0x2f2736,
+    color: WEATHER?.hazeColor ?? 0x2f2736,
     transparent: true,
-    opacity: 0.12,
+    opacity: WEATHER?.hazeOpacity ?? 0.12,
     side: THREE.BackSide,
     depthWrite: false
   });
@@ -74,7 +78,13 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
   const stars = new THREE.Points(
     starGeo,
-    new THREE.PointsMaterial({ color: 0xcad8ff, size: 140, transparent: true, opacity: 0.3, depthWrite: false })
+    new THREE.PointsMaterial({
+      color: 0xcad8ff,
+      size: 140,
+      transparent: true,
+      opacity: WEATHER?.starOpacity ?? 0.3,
+      depthWrite: false
+    })
   );
   scene.add(stars);
 

@@ -1,60 +1,5 @@
 import * as THREE from 'three';
-
-function pickWeatherModeWeighted() {
-  const r = Math.random();
-  if (r < 0.62) return 0; // clear
-  if (r < 0.9) return 1;  // overcast
-  return 2;               // storm
-}
-
-function getFogForMode(mode) {
-  if (mode === 1) return 0.0025;
-  if (mode === 2) return 0.006;
-  return 0.00015;
-}
-
-function pickAtmospherePreset() {
-  const presets = [
-    {
-      clearColor: 0x5a6e8a,
-      stormColor: 0x1b2029,
-      ambientBase: 0.3,
-      directBase: 1.1,
-      sunPhiDeg: 80 + Math.random() * 5,
-      sunThetaDeg: 130 + Math.random() * 18,
-      turbidity: 8.8,
-      rayleigh: 2.3,
-      mieCoefficient: 0.045,
-      mieDirectionalG: 0.42
-    },
-    {
-      clearColor: 0x3a2e3f,
-      stormColor: 0x111115,
-      ambientBase: 0.25,
-      directBase: 1.0,
-      sunPhiDeg: 82 + Math.random() * 4,
-      sunThetaDeg: 145 + Math.random() * 14,
-      turbidity: 10.2,
-      rayleigh: 2.6,
-      mieCoefficient: 0.05,
-      mieDirectionalG: 0.4
-    },
-    {
-      clearColor: 0x6e7890,
-      stormColor: 0x1f232d,
-      ambientBase: 0.34,
-      directBase: 1.2,
-      sunPhiDeg: 76 + Math.random() * 5,
-      sunThetaDeg: 118 + Math.random() * 20,
-      turbidity: 7.7,
-      rayleigh: 2.0,
-      mieCoefficient: 0.04,
-      mieDirectionalG: 0.45
-    }
-  ];
-
-  return presets[Math.floor(Math.random() * presets.length)];
-}
+import { LIGHTING_PRESETS, getWeatherModeConfig, pickLightingPresetId, pickStartupWeatherMode } from './lighting.js';
 
 export function createSimulationState({ scene }) {
   const AIRCRAFT = {
@@ -113,25 +58,45 @@ export function createSimulationState({ scene }) {
     crashed: false
   };
 
-  const startupMode = pickWeatherModeWeighted();
-  const startupFog = getFogForMode(startupMode);
-  const atmosphere = pickAtmospherePreset();
+  const startupMode = pickStartupWeatherMode();
+  const weatherModeCfg = getWeatherModeConfig(startupMode);
+  const presetId = pickLightingPresetId();
+  const preset = LIGHTING_PRESETS[presetId];
 
   const WEATHER = {
     mode: startupMode,
-    targetFog: startupFog,
-    currentFog: startupFog,
-    transition: startupMode > 0 ? 1 : 0,
-    clearColor: atmosphere.clearColor,
-    stormColor: atmosphere.stormColor,
-    lightAmbientBase: atmosphere.ambientBase,
-    lightDirectBase: atmosphere.directBase,
-    sunPhiDeg: atmosphere.sunPhiDeg,
-    sunThetaDeg: atmosphere.sunThetaDeg,
-    skyTurbidity: atmosphere.turbidity,
-    skyRayleigh: atmosphere.rayleigh,
-    skyMieCoefficient: atmosphere.mieCoefficient,
-    skyMieDirectionalG: atmosphere.mieDirectionalG,
+    modeName: weatherModeCfg.name,
+    targetFog: weatherModeCfg.fog,
+    currentFog: weatherModeCfg.fog,
+    transition: weatherModeCfg.intensity,
+    targetTransition: weatherModeCfg.intensity,
+    lightingPresetId: presetId,
+    clearColor: preset.clearColor,
+    stormColor: preset.stormColor,
+    lightAmbientBase: preset.ambientBase,
+    lightDirectBase: preset.directBase,
+    hemiSkyColor: preset.hemiSkyColor,
+    hemiGroundColor: preset.hemiGroundColor,
+    dirColor: preset.dirColor,
+    sunPhiDeg: preset.sunPhiDeg,
+    sunThetaDeg: preset.sunThetaDeg,
+    skyTurbidity: preset.skyTurbidity,
+    skyRayleigh: preset.skyRayleigh,
+    skyMieCoefficient: preset.skyMieCoefficient,
+    skyMieDirectionalG: preset.skyMieDirectionalG,
+    hazeColor: preset.hazeColor,
+    hazeOpacity: preset.hazeOpacity,
+    starOpacity: preset.starOpacity,
+    exposure: preset.exposure,
+    bloomThreshold: preset.bloom.threshold,
+    bloomStrength: preset.bloom.strength,
+    bloomRadius: preset.bloom.radius,
+    cloudColorClear: preset.cloudColorClear,
+    cloudColorStorm: preset.cloudColorStorm,
+    cloudOpacityBase: preset.cloudOpacityBase,
+    cloudOpacityStorm: preset.cloudOpacityStorm,
+    cloudEmissiveBase: preset.cloudEmissiveBase,
+    cloudEmissiveStorm: preset.cloudEmissiveStorm,
     rainCount: 20000,
     rainMesh: null,
     rainPositions: null,
