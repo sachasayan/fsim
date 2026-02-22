@@ -18,6 +18,17 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       ctx.fillRect(Math.random() * 1024, Math.random() * 4096, 2, 2);
     }
 
+    // Longitudinal sealing strips and patchwork
+    for (let y = 0; y < 4096; y += 180) {
+      ctx.fillStyle = 'rgba(30,30,30,0.35)';
+      ctx.fillRect(430 + Math.sin(y * 0.003) * 8, y, 6, 130);
+      ctx.fillRect(586 + Math.cos(y * 0.004) * 9, y + 20, 5, 110);
+      if (Math.random() > 0.5) {
+        ctx.fillStyle = 'rgba(45,45,45,0.3)';
+        ctx.fillRect(200 + Math.random() * 620, y + Math.random() * 40, 40 + Math.random() * 80, 10 + Math.random() * 28);
+      }
+    }
+
     ctx.fillStyle = '#ffffff';
     // Centerline
     for (let y = 0; y < 4096; y += 128) {
@@ -34,6 +45,12 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       ctx.fillRect(150 + i * 40, 3896, 20, 150);
       ctx.fillRect(570 + i * 40, 3896, 20, 150);
     }
+
+    // Runway aiming point markers
+    ctx.fillRect(220, 700, 90, 500);
+    ctx.fillRect(715, 700, 90, 500);
+    ctx.fillRect(220, 4096 - 1200, 90, 500);
+    ctx.fillRect(715, 4096 - 1200, 90, 500);
 
     // Touchdown zones
     for (let y = 500; y < 1500; y += 250) {
@@ -72,6 +89,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
 
     const runwayGeo = new THREE.PlaneGeometry(100, 4000);
     const runwayMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.1 });
@@ -103,6 +122,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     const centerMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 15 });
     const endMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 15 });
     const lightGeo = new THREE.SphereGeometry(0.5, 4, 4);
+    const baseGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.28, 8);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
 
     for (let z = -2000; z <= 2000; z += 50) {
       // Edge lights
@@ -111,12 +132,20 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       let rightEdge = new THREE.Mesh(lightGeo, Math.abs(z) > 1950 ? endMaterial : edgeMaterial);
       rightEdge.position.set(25, 0.5, z);
       lightGroup.add(leftEdge, rightEdge);
+      const leftBase = new THREE.Mesh(baseGeo, baseMat);
+      leftBase.position.set(-25, 0.14, z);
+      const rightBase = new THREE.Mesh(baseGeo, baseMat);
+      rightBase.position.set(25, 0.14, z);
+      lightGroup.add(leftBase, rightBase);
 
       // Centerline lights
       if (z % 100 === 0) {
         let centerLight = new THREE.Mesh(lightGeo, centerMaterial);
         centerLight.position.set(0, 0.1, z);
         lightGroup.add(centerLight);
+        const centerBase = new THREE.Mesh(baseGeo, baseMat);
+        centerBase.position.set(0, -0.16, z);
+        lightGroup.add(centerBase);
       }
     }
 
@@ -129,6 +158,9 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       // Scale Z to make them directional (visible mostly from the front)
       mesh.scale.z = 0.2;
       lightGroup.add(mesh);
+      const papiBase = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.4, 1.2), baseMat);
+      papiBase.position.set(-45 - i * 12, 0.3, 1000);
+      lightGroup.add(papiBase);
       PAPI.lights.push(mesh);
     }
 

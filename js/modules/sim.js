@@ -9,6 +9,12 @@ import { calculateAerodynamics } from './physics/updatePhysics.js';
 import { createCameraController } from './camera/updateCamera.js';
 import { createHUD } from './ui/hud.js';
 
+function getFogForMode(mode) {
+  if (mode === 1) return 0.0025;
+  if (mode === 2) return 0.006;
+  return 0.00015;
+}
+
 // ==========================================
 // 2. CORE SETUP & GLOBALS
 // ==========================================
@@ -38,6 +44,11 @@ composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
 const { AIRCRAFT, PHYSICS, WEATHER, keys, runtime } = createSimulationState({ scene });
+scene.background = new THREE.Color(WEATHER.clearColor);
+scene.fog = new THREE.FogExp2(WEATHER.clearColor, WEATHER.currentFog);
+const clearWeatherColor = new THREE.Color(WEATHER.clearColor);
+const stormWeatherColor = new THREE.Color(WEATHER.stormColor);
+const currentWeatherColor = new THREE.Color();
 
 // ==========================================
 // 4. WORLD OBJECTS
@@ -66,7 +77,7 @@ const {
   gearGroup,
   strobes,
   beacons
-} = createWorldObjects({ scene, renderer, Noise, PHYSICS });
+} = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
 const cameraController = createCameraController({
   camera,
@@ -90,9 +101,7 @@ window.addEventListener('keydown', (e) => {
 
   if (e.key.toLowerCase() === 'r') {
     WEATHER.mode = (WEATHER.mode + 1) % 3;
-    if (WEATHER.mode === 0) WEATHER.targetFog = 0.00015;
-    if (WEATHER.mode === 1) WEATHER.targetFog = 0.0025;
-    if (WEATHER.mode === 2) WEATHER.targetFog = 0.006;
+    WEATHER.targetFog = getFogForMode(WEATHER.mode);
   }
 
   if (e.key.toLowerCase() === 'h') {
@@ -334,16 +343,13 @@ function animate() {
     WEATHER.transition += (targetTransition - WEATHER.transition) * dt * 0.5;
 
     // Darken the sky and fog in bad weather
-    const colorClear = new THREE.Color(0x3a2e3f);
-    const colorStorm = new THREE.Color(0x111115);
-    const currentColor = new THREE.Color();
-    currentColor.lerpColors(colorClear, colorStorm, WEATHER.transition);
-    scene.background = currentColor;
-    scene.fog.color = currentColor;
+    currentWeatherColor.lerpColors(clearWeatherColor, stormWeatherColor, WEATHER.transition);
+    scene.background = currentWeatherColor;
+    scene.fog.color = currentWeatherColor;
 
     // Dim the lighting to match the overcast skies
-    hemiLight.intensity = 0.25 - (WEATHER.transition * 0.2);
-    dirLight.intensity = 1.0 - (WEATHER.transition * 0.9);
+    hemiLight.intensity = WEATHER.lightAmbientBase - (WEATHER.transition * 0.2);
+    dirLight.intensity = WEATHER.lightDirectBase - (WEATHER.transition * 0.9);
 
     // Animate Storm Rain Physics
     if (WEATHER.mode === 2) {
@@ -379,8 +385,7 @@ function animate() {
     const fanSpeed = 0.1 + (PHYSICS.throttle * 0.8);
     engineFans.forEach(f => f.rotation.z -= fanSpeed);
 
-    // Emissive Jet Wash glow (Creates massive Bloom at high throttle)
-    engineExhausts.forEach(e => e.emissiveIntensity = PHYSICS.throttle * 25.0);
+    // Engine exhaust glow intentionally disabled for a non-emissive nacelle look.
 
     // Animate Control Surfaces
     movableSurfaces.flaps.forEach(f => f.rotation.x = PHYSICS.flaps * 0.6);

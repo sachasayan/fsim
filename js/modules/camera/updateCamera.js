@@ -122,7 +122,6 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     }
 
     camera.updateProjectionMatrix();
-    clouds.children.forEach((c) => c.quaternion.copy(camera.quaternion));
   }
 
   return { cycleMode, getMode, updateCamera };

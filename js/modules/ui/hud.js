@@ -32,6 +32,93 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
 
         const minimapCanvas = document.getElementById('minimap');
         const mmCtx = minimapCanvas.getContext('2d');
+        const mapW = minimapCanvas.width;
+        const mapH = minimapCanvas.height;
+        const centerX = mapW * 0.5;
+        const centerY = mapH * 0.5;
+        const pixelsPerWorld = 0.045;
+        const samplePx = 4;
+        const coastlineStepY = samplePx * 3;
+        const coastlineStepX = samplePx * 2;
+        const mapCacheCanvas = document.createElement('canvas');
+        mapCacheCanvas.width = mapW;
+        mapCacheCanvas.height = mapH;
+        const mapCacheCtx = mapCacheCanvas.getContext('2d');
+        const mapState = {
+            lastRenderTime: 0,
+            lastCenterX: Number.POSITIVE_INFINITY,
+            lastCenterZ: Number.POSITIVE_INFINITY,
+            minRenderIntervalMs: 140,
+            moveThresholdWorld: 120
+        };
+
+        function terrainColor(heightValue) {
+            if (heightValue < -25) return '#1d4f88';
+            if (heightValue < -5) return '#2d72a8';
+            if (heightValue < 8) return '#d6d2b0';
+            if (heightValue < 45) return '#6f9a59';
+            if (heightValue < 130) return '#4f7e42';
+            if (heightValue < 240) return '#7a8c58';
+            if (heightValue < 380) return '#7a736a';
+            if (heightValue < 560) return '#9d9890';
+            return '#f2f2f2';
+        }
+
+        function renderMapBase(centerWorldX, centerWorldZ) {
+            mapCacheCtx.clearRect(0, 0, mapW, mapH);
+            mapCacheCtx.fillStyle = '#0f1724';
+            mapCacheCtx.fillRect(0, 0, mapW, mapH);
+
+            // Terrain raster (cached, not per-frame)
+            for (let py = 0; py < mapH; py += samplePx) {
+                for (let px = 0; px < mapW; px += samplePx) {
+                    const wx = centerWorldX + (px - centerX) / pixelsPerWorld;
+                    const wz = centerWorldZ + (py - centerY) / pixelsPerWorld;
+                    mapCacheCtx.fillStyle = terrainColor(getTerrainHeight(wx, wz));
+                    mapCacheCtx.fillRect(px, py, samplePx + 1, samplePx + 1);
+                }
+            }
+
+            // Coastline contour pass
+            mapCacheCtx.strokeStyle = 'rgba(230, 225, 180, 0.55)';
+            mapCacheCtx.lineWidth = 1;
+            for (let py = 0; py < mapH; py += coastlineStepY) {
+                mapCacheCtx.beginPath();
+                let started = false;
+                for (let px = 0; px < mapW; px += coastlineStepX) {
+                    const wx = centerWorldX + (px - centerX) / pixelsPerWorld;
+                    const wz = centerWorldZ + (py - centerY) / pixelsPerWorld;
+                    const h = getTerrainHeight(wx, wz);
+                    if (h > -8 && h < 6) {
+                        if (!started) {
+                            mapCacheCtx.moveTo(px, py);
+                            started = true;
+                        } else {
+                            mapCacheCtx.lineTo(px, py);
+                        }
+                    }
+                }
+                if (started) mapCacheCtx.stroke();
+            }
+
+            // Runway overlay
+            const rwCenterX = centerX + (-centerWorldX) * pixelsPerWorld;
+            const rwCenterY = centerY + (-centerWorldZ) * pixelsPerWorld;
+            const rwW = 100 * pixelsPerWorld;
+            const rwL = 4000 * pixelsPerWorld;
+            mapCacheCtx.fillStyle = 'rgba(30, 30, 30, 0.95)';
+            mapCacheCtx.fillRect(rwCenterX - rwW * 0.5, rwCenterY - rwL * 0.5, rwW, rwL);
+            mapCacheCtx.fillStyle = 'rgba(245, 245, 245, 0.95)';
+            mapCacheCtx.fillRect(rwCenterX - 1.5, rwCenterY - rwL * 0.48, 3, rwL * 0.96);
+
+            // Airport tower marker (matches world/tower.js coords)
+            const twX = centerX + (-190 - centerWorldX) * pixelsPerWorld;
+            const twY = centerY + (-300 - centerWorldZ) * pixelsPerWorld;
+            mapCacheCtx.fillStyle = '#ffd26f';
+            mapCacheCtx.beginPath();
+            mapCacheCtx.arc(twX, twY, 3.5, 0, Math.PI * 2);
+            mapCacheCtx.fill();
+        }
 
         // Initialize HUD generation
         function initHUD() {
@@ -178,123 +265,58 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             // Advanced Warning System (GPWS) - Disabled for relaxing gameplay
             UI.warning.style.display = 'none';
 
-            // Draw Minimap
-            mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+            // Draw North-up full-color world map (cached/throttled)
+            const now = performance.now();
+            const moved = Math.hypot(PHYSICS.position.x - mapState.lastCenterX, PHYSICS.position.z - mapState.lastCenterZ);
+            if (
+                now - mapState.lastRenderTime > mapState.minRenderIntervalMs ||
+                moved > mapState.moveThresholdWorld ||
+                !Number.isFinite(mapState.lastCenterX)
+            ) {
+                renderMapBase(PHYSICS.position.x, PHYSICS.position.z);
+                mapState.lastRenderTime = now;
+                mapState.lastCenterX = PHYSICS.position.x;
+                mapState.lastCenterZ = PHYSICS.position.z;
+            }
+
+            mmCtx.clearRect(0, 0, mapW, mapH);
+            mmCtx.drawImage(mapCacheCanvas, 0, 0);
+
+            // Distance rings
+            mmCtx.strokeStyle = 'rgba(120, 170, 215, 0.28)';
+            mmCtx.lineWidth = 1.5;
+            mmCtx.beginPath();
+            mmCtx.arc(centerX, centerY, 45, 0, Math.PI * 2);
+            mmCtx.stroke();
+            mmCtx.beginPath();
+            mmCtx.arc(centerX, centerY, 90, 0, Math.PI * 2);
+            mmCtx.stroke();
+            mmCtx.beginPath();
+            mmCtx.arc(centerX, centerY, 135, 0, Math.PI * 2);
+            mmCtx.stroke();
+
+            // Aircraft icon rotates on north-up map
             mmCtx.save();
-
-            // Move to center of minimap
-            mmCtx.translate(minimapCanvas.width / 2, minimapCanvas.height / 2);
-
-            // Rotate the world opposite to the plane's heading so plane always points UP
-            mmCtx.rotate(euler.y);
-
-            const mmScale = 0.015; // Zoom level
-
-            // Scale and translate the context to match world coordinates
-            mmCtx.scale(mmScale, mmScale);
-            mmCtx.translate(-PHYSICS.position.x, -PHYSICS.position.z);
-
-            // Calculate visible bounds in world coordinates
-            const viewRadiusWorld = (minimapCanvas.width / 2) / mmScale;
-            const step = 400; // Resolution of the minimap terrain (lower is higher res)
-
-            // Draw top-down procedural terrain
-            const startX = Math.floor((PHYSICS.position.x - viewRadiusWorld * 1.5) / step) * step;
-            const endX = Math.floor((PHYSICS.position.x + viewRadiusWorld * 1.5) / step) * step;
-            const startZ = Math.floor((PHYSICS.position.z - viewRadiusWorld * 1.5) / step) * step;
-            const endZ = Math.floor((PHYSICS.position.z + viewRadiusWorld * 1.5) / step) * step;
-
-            for (let x = startX; x <= endX; x += step) {
-                for (let z = startZ; z <= endZ; z += step) {
-                    let height = getTerrainHeight(x, z);
-
-                    if (PHYSICS.egpwsMode) {
-                        // EGPWS Terrain Radar (Relative Altitude)
-                        let altDiff = height - PHYSICS.position.y;
-                        if (altDiff > 0) mmCtx.fillStyle = '#ff0000'; // Danger (Terrain above)
-                        else if (altDiff > -150) mmCtx.fillStyle = '#ffaa00'; // Orange
-                        else if (altDiff > -300) mmCtx.fillStyle = '#ffff00'; // Yellow
-                        else if (altDiff > -600) mmCtx.fillStyle = '#00ff00'; // Green
-                        else if (altDiff > -1000) mmCtx.fillStyle = '#004400'; // Dark Green
-                        else if (height <= -5) mmCtx.fillStyle = '#000022'; // Deep water tracking
-                        else mmCtx.fillStyle = '#000000'; // Safe / Not picked up by radar
-                    } else {
-                        // Color code the topography (VFR Map)
-                        if (height <= -5) {
-                            mmCtx.fillStyle = '#0a5b8c'; // Deep Water
-                        } else if (height < 25) {
-                            mmCtx.fillStyle = '#355e3b'; // Lowland
-                        } else if (height < 150) {
-                            mmCtx.fillStyle = '#2a4b2a'; // Forest
-                        } else if (height < 400) {
-                            mmCtx.fillStyle = '#555555'; // Rock
-                        } else {
-                            mmCtx.fillStyle = '#ffffff'; // Snow Peak
-                        }
-                    }
-
-                    // Overlap slightly to prevent gaps when rotating
-                    mmCtx.fillRect(x, z, step + 15, step + 15);
-                }
-            }
-
-            // Draw Runway on minimap
-            mmCtx.fillStyle = '#222222';
-            mmCtx.fillRect(-75, -2000, 150, 4000);
-
-            // Draw Runway Centerline
-            mmCtx.fillStyle = '#ffffff';
-            mmCtx.fillRect(-5, -1950, 10, 3900);
-
-            // Animated Sweeping Radar Beam for EGPWS
-            if (PHYSICS.egpwsMode) {
-                let sweepAngle = (performance.now() / 600) % (Math.PI * 2);
-
-                mmCtx.fillStyle = 'rgba(0, 255, 0, 0.15)';
-                mmCtx.beginPath();
-                mmCtx.moveTo(PHYSICS.position.x, PHYSICS.position.z);
-                mmCtx.arc(PHYSICS.position.x, PHYSICS.position.z, viewRadiusWorld * 1.5, sweepAngle, sweepAngle + 0.4);
-                mmCtx.lineTo(PHYSICS.position.x, PHYSICS.position.z);
-                mmCtx.fill();
-
-                mmCtx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-                mmCtx.lineWidth = 150; // Thick line relative to the zoomed out world scale
-                mmCtx.beginPath();
-                mmCtx.moveTo(PHYSICS.position.x, PHYSICS.position.z);
-                mmCtx.lineTo(PHYSICS.position.x + Math.cos(sweepAngle + 0.4) * viewRadiusWorld * 1.5,
-                    PHYSICS.position.z + Math.sin(sweepAngle + 0.4) * viewRadiusWorld * 1.5);
-                mmCtx.stroke();
-            }
-
+            mmCtx.translate(centerX, centerY);
+            mmCtx.rotate(-euler.y);
+            mmCtx.fillStyle = '#f4ff66';
+            mmCtx.beginPath();
+            mmCtx.moveTo(0, -11);
+            mmCtx.lineTo(8, 9);
+            mmCtx.lineTo(0, 4);
+            mmCtx.lineTo(-8, 9);
+            mmCtx.closePath();
+            mmCtx.fill();
             mmCtx.restore();
 
-            // Draw ND Range Rings (Glass Cockpit Style)
-            mmCtx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
-            mmCtx.lineWidth = 2;
-            mmCtx.beginPath();
-            mmCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, 50, 0, Math.PI * 2);
-            mmCtx.stroke();
-            mmCtx.beginPath();
-            mmCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, 100, 0, Math.PI * 2);
-            mmCtx.stroke();
-            mmCtx.beginPath();
-            mmCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, 150, 0, Math.PI * 2);
-            mmCtx.stroke();
-
-            // Draw Plane marker (Always center, pointing up)
-            mmCtx.fillStyle = '#0f0';
-            mmCtx.beginPath();
-            mmCtx.moveTo(minimapCanvas.width / 2, minimapCanvas.height / 2 - 10);
-            mmCtx.lineTo(minimapCanvas.width / 2 + 8, minimapCanvas.height / 2 + 10);
-            mmCtx.lineTo(minimapCanvas.width / 2, minimapCanvas.height / 2 + 5);
-            mmCtx.lineTo(minimapCanvas.width / 2 - 8, minimapCanvas.height / 2 + 10);
-            mmCtx.fill();
-
-            // Draw Map Mode Text
-            mmCtx.fillStyle = PHYSICS.egpwsMode ? '#0f0' : '#0aa';
-            mmCtx.font = 'bold 16px monospace';
+            // Map labels
+            mmCtx.fillStyle = '#9ed0ff';
+            mmCtx.font = 'bold 15px monospace';
             mmCtx.textAlign = 'left';
-            mmCtx.fillText(PHYSICS.egpwsMode ? 'EGPWS' : 'VFR', 10, 25);
+            mmCtx.fillText('MAP', 10, 22);
+            mmCtx.fillStyle = '#80b7ea';
+            mmCtx.font = '12px monospace';
+            mmCtx.fillText('N', centerX - 4, 14);
         }
 
   return { updateHUD };

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Twin-Engine Business Jet Orthographic Blueprint</title>
+  <desc id="desc">Technical 3-view drawing of a Learjet-like twin-engine business jet with aligned top, side, and front views.</desc>
+
+  <defs>
+    <style>
+      .bg { fill: #f4f7fb; }
+      .sheet { fill: #ffffff; stroke: #d6deea; stroke-width: 2; }
+      .grid { stroke: #e8edf5; stroke-width: 1; }
+      .axis { stroke: #8ea3bf; stroke-width: 1.2; stroke-dasharray: 8 6; }
+      .outline { fill: none; stroke: #0d1a2b; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .detail { fill: none; stroke: #314a6b; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .dim { fill: none; stroke: #2b5d9d; stroke-width: 1.4; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .tick { stroke: #2b5d9d; stroke-width: 1.4; }
+      .title { fill: #162a44; font-family: Menlo, Consolas, monospace; font-size: 22px; font-weight: 700; }
+      .label { fill: #1f3c63; font-family: Menlo, Consolas, monospace; font-size: 16px; font-weight: 600; }
+      .note { fill: #486586; font-family: Menlo, Consolas, monospace; font-size: 14px; }
+    </style>
+
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+      <path d="M0 5 L10 0 L10 10 Z" fill="#2b5d9d"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1800" height="1200"/>
+  <rect class="sheet" x="40" y="40" width="1720" height="1120" rx="14"/>
+
+  <!-- Grid -->
+  <g>
+    <path class="grid" d="M120 80V1120 M240 80V1120 M360 80V1120 M480 80V1120 M600 80V1120 M720 80V1120 M840 80V1120 M960 80V1120 M1080 80V1120 M1200 80V1120 M1320 80V1120 M1440 80V1120 M1560 80V1120"/>
+    <path class="grid" d="M80 160H1720 M80 280H1720 M80 400H1720 M80 520H1720 M80 640H1720 M80 760H1720 M80 880H1720 M80 1000H1720"/>
+  </g>
+
+  <text class="title" x="100" y="124">BUSINESS JET CONCEPT - TECHNICAL ORTHOGRAPHIC (3-VIEW)</text>
+  <text class="note" x="100" y="148">Learjet-style proportions | Twin rear turbofans | Swept low wing | T-tail</text>
+
+  <!-- Shared longitudinal stations for top + side views -->
+  <g>
+    <line class="axis" x1="260" y1="210" x2="260" y2="760"/>
+    <line class="axis" x1="540" y1="210" x2="540" y2="760"/>
+    <line class="axis" x1="820" y1="210" x2="820" y2="760"/>
+    <line class="axis" x1="1100" y1="210" x2="1100" y2="760"/>
+    <line class="axis" x1="1460" y1="210" x2="1460" y2="760"/>
+  </g>
+
+  <!-- TOP VIEW -->
+  <text class="title" x="100" y="212">TOP VIEW</text>
+  <line class="axis" x1="860" y1="220" x2="860" y2="510"/>
+
+  <!-- fuselage top outline -->
+  <path class="outline" d="M260 365
+                           C300 330, 370 303, 490 292
+                           L1220 292
+                           C1320 298, 1400 322, 1460 365
+                           C1400 408, 1320 432, 1220 438
+                           L490 438
+                           C370 427, 300 400, 260 365 Z"/>
+
+  <!-- canopy / cockpit glazing top -->
+  <path class="detail" d="M300 362 C338 338, 390 324, 458 320"/>
+  <path class="detail" d="M316 378 C360 354, 404 344, 470 342"/>
+
+  <!-- low swept wing planform -->
+  <path class="outline" d="M790 334 L590 246 L420 230 L770 350 Z"/>
+  <path class="outline" d="M930 334 L1130 246 L1300 230 L950 350 Z"/>
+  <path class="outline" d="M770 380 L420 500 L590 484 L790 396 Z"/>
+  <path class="outline" d="M950 380 L1300 500 L1130 484 L930 396 Z"/>
+
+  <!-- flap / aileron boundaries top -->
+  <path class="detail" d="M776 352 L536 272"/>
+  <path class="detail" d="M782 366 L504 458"/>
+  <path class="detail" d="M944 352 L1184 272"/>
+  <path class="detail" d="M938 366 L1216 458"/>
+
+  <!-- engines top -->
+  <rect class="outline" x="1140" y="310" width="126" height="40" rx="16"/>
+  <rect class="outline" x="1140" y="380" width="126" height="40" rx="16"/>
+  <path class="detail" d="M1238 330 L1268 330"/>
+  <path class="detail" d="M1238 400 L1268 400"/>
+
+  <!-- horizontal tail top -->
+  <path class="outline" d="M1260 320 L1402 276 L1460 268 L1320 336 Z"/>
+  <path class="outline" d="M1260 410 L1402 454 L1460 462 L1320 394 Z"/>
+
+  <!-- SIDE VIEW -->
+  <text class="title" x="100" y="572">SIDE VIEW</text>
+  <line class="axis" x1="860" y1="590" x2="860" y2="1010"/>
+  <line class="axis" x1="220" y1="830" x2="1600" y2="830"/>
+
+  <!-- fuselage side -->
+  <path class="outline" d="M260 790
+                           C300 742, 380 708, 520 700
+                           L1220 700
+                           C1320 706, 1400 728, 1460 770
+                           C1432 802, 1432 858, 1460 890
+                           C1400 932, 1320 954, 1220 960
+                           L520 960
+                           C380 952, 300 918, 260 870
+                           C246 844, 246 816, 260 790 Z"/>
+
+  <!-- side canopy -->
+  <path class="detail" d="M312 784 L372 744 L452 738"/>
+  <path class="detail" d="M356 800 L446 794"/>
+
+  <!-- wing side airfoil -->
+  <path class="outline" d="M760 816 L1060 808 L1236 838 L928 852 Z"/>
+
+  <!-- engine nacelles side -->
+  <path class="outline" d="M1126 766 C1186 764, 1240 790, 1248 834 C1240 878, 1186 904, 1126 902 C1066 904, 1012 878, 1004 834 C1012 790, 1066 764, 1126 766 Z"/>
+  <path class="detail" d="M1224 834 L1264 834"/>
+
+  <!-- vertical tail + T-tail side -->
+  <path class="outline" d="M1268 706 L1322 584 L1372 590 L1334 718 Z"/>
+  <path class="outline" d="M1286 596 L1500 602 L1492 624 L1278 618 Z"/>
+
+  <!-- gear stations -->
+  <circle class="detail" cx="768" cy="944" r="18"/>
+  <circle class="detail" cx="946" cy="948" r="22"/>
+
+  <!-- FRONT VIEW -->
+  <text class="title" x="100" y="1054">FRONT VIEW</text>
+  <line class="axis" x1="860" y1="900" x2="860" y2="1110"/>
+  <line class="axis" x1="560" y1="1030" x2="1160" y2="1030"/>
+
+  <!-- fuselage front -->
+  <ellipse class="outline" cx="860" cy="950" rx="86" ry="108"/>
+  <ellipse class="detail" cx="860" cy="950" rx="52" ry="72"/>
+
+  <!-- cockpit front -->
+  <path class="detail" d="M808 900 C824 878, 844 868, 860 868 C876 868, 896 878, 912 900"/>
+  <path class="detail" d="M814 916 L848 910"/>
+  <path class="detail" d="M872 910 L906 916"/>
+
+  <!-- wings front with dihedral -->
+  <path class="outline" d="M774 972 L566 900 L542 922 L766 998 Z"/>
+  <path class="outline" d="M946 972 L1154 900 L1178 922 L954 998 Z"/>
+
+  <!-- rear engines front -->
+  <circle class="outline" cx="742" cy="964" r="38"/>
+  <circle class="detail" cx="742" cy="964" r="22"/>
+  <circle class="outline" cx="978" cy="964" r="38"/>
+  <circle class="detail" cx="978" cy="964" r="22"/>
+
+  <!-- T-tail front -->
+  <path class="outline" d="M846 852 L874 852 L888 748 L832 748 Z"/>
+  <path class="outline" d="M694 746 L1026 746 L1006 768 L714 768 Z"/>
+
+  <!-- landing gear front -->
+  <circle class="detail" cx="814" cy="1070" r="20"/>
+  <circle class="detail" cx="906" cy="1070" r="20"/>
+  <circle class="detail" cx="860" cy="1074" r="15"/>
+
+  <!-- Dimensions -->
+  <line class="dim" x1="260" y1="1020" x2="1460" y2="1020"/>
+  <line class="tick" x1="260" y1="995" x2="260" y2="1044"/>
+  <line class="tick" x1="1460" y1="995" x2="1460" y2="1044"/>
+  <text class="label" x="760" y="1000">OVERALL LENGTH DATUM</text>
+
+  <line class="dim" x1="430" y1="1088" x2="1290" y2="1088"/>
+  <line class="tick" x1="430" y1="1063" x2="430" y2="1112"/>
+  <line class="tick" x1="1290" y1="1063" x2="1290" y2="1112"/>
+  <text class="label" x="722" y="1118">WINGSPAN DATUM</text>
+
+  <line class="dim" x1="1548" y1="590" x2="1548" y2="960"/>
+  <line class="tick" x1="1522" y1="590" x2="1572" y2="590"/>
+  <line class="tick" x1="1522" y1="960" x2="1572" y2="960"/>
+  <text class="label" x="1578" y="780">HEIGHT DATUM</text>
+
+  <text class="note" x="100" y="1140">Revision A: Orthographic-only draft for 3D blockout planning. Next: station table + section curves for fuselage loft.</text>
+</svg>
