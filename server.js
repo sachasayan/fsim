@@ -1,0 +1,72 @@
+import http from 'node:http';
+import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+
+const ROOT = process.cwd();
+const PORT = Number(process.env.PORT || 5173);
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8'
+};
+
+function safeResolve(urlPath) {
+  const decoded = decodeURIComponent(urlPath.split('?')[0]);
+  let requestPath = decoded;
+
+  if (requestPath === '/') {
+    requestPath = '/fsim.html';
+  }
+
+  const absolutePath = path.resolve(ROOT, `.${requestPath}`);
+  if (!absolutePath.startsWith(ROOT)) {
+    return null;
+  }
+
+  return absolutePath;
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const absolutePath = safeResolve(req.url || '/');
+    if (!absolutePath) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
+
+    let filePath = absolutePath;
+    if (!existsSync(filePath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+      return;
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const content = await readFile(filePath);
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'no-cache'
+    });
+    res.end(content);
+  } catch (error) {
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Internal Server Error');
+  }
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`fsim server running at http://127.0.0.1:${PORT}`);
+});
