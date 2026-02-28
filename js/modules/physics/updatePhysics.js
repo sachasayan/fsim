@@ -1,4 +1,8 @@
 let _tmp = null;
+
+// Approximate wingspan for ground effect onset (~b metres AGL)
+const GROUND_EFFECT_WINGSPAN = 30.0;
+
 const FLIGHT_TUNING = {
     controlAuthorityMultiplier: 4.0,
     sideForceSlipGain: 0.9,
@@ -157,8 +161,8 @@ export function calculateAerodynamics(ctx) {
     let dynPressure = 0.5 * p.rho * p.airspeed * p.airspeed;
 
     // Ground Effect (increases lift, decreases drag near ground)
-    // Simplified wingspan roughly sqrt(wingArea * aspect ratio) ~ 30m
-    let groundEffect = Math.max(0, 1.0 - (heightAgl / 30.0));
+    // Onset height ≈ one wingspan (GROUND_EFFECT_WINGSPAN)
+    let groundEffect = Math.max(0, 1.0 - (heightAgl / GROUND_EFFECT_WINGSPAN));
 
     // Lift
     let cl = aoaDeg * currentClSlope;
@@ -199,7 +203,6 @@ export function calculateAerodynamics(ctx) {
     } else {
         dragForce.set(0, 0, 0);
     }
-    if (p.airspeed < 0.1) dragForce.set(0, 0, 0);
 
     // Thrust
     let thrustMag = p.throttle * AIRCRAFT.maxThrust;
@@ -213,17 +216,20 @@ export function calculateAerodynamics(ctx) {
     let gearNormalNose = 0;
 
     // 3-point landing gear normal-load estimate for on-ground stability moments.
+    // Also cache terrain heights for reuse in the wheel force loop below.
     const gearLoadClearance = 0.22;
     const gearPoints = [
         { local: t.gearLocalL, world: t.gearWorldL, side: 'L' },
         { local: t.gearLocalR, world: t.gearWorldR, side: 'R' },
         { local: t.gearLocalN, world: t.gearWorldN, side: 'N' }
     ];
+    const cachedTerrainY = [0, 0, 0]; // reused in wheel force loop
 
     for (let i = 0; i < gearPoints.length; i++) {
         const gp = gearPoints[i];
         const wp = gp.world.copy(gp.local).applyQuaternion(p.quaternion).add(p.position);
         const terrainWheelY = getTerrainHeight(wp.x, wp.z);
+        cachedTerrainY[i] = terrainWheelY;
         const penetration = (terrainWheelY + gearLoadClearance) - wp.y;
         if (penetration <= 0) continue;
 
@@ -269,7 +275,8 @@ export function calculateAerodynamics(ctx) {
     for (let i = 0; i < wheelPoints.length; i++) {
         const wheel = wheelPoints[i];
         const wp = wheel.world.copy(wheel.local).applyQuaternion(p.quaternion).add(p.position);
-        const terrainWheelY = getTerrainHeight(wp.x, wp.z);
+        // Reuse terrain height cached from the normal-load loop above (same world positions).
+        const terrainWheelY = cachedTerrainY[i];
         const penetration = (terrainWheelY + wheelClearance) - wp.y;
         if (penetration <= 0) continue;
 
@@ -288,7 +295,9 @@ export function calculateAerodynamics(ctx) {
         let wheelForward = t.wheelForward.copy(baseForward);
         let wheelRight = t.wheelRight.copy(baseRight);
         if (wheel.isNose) {
-            const steerAuthority = Math.max(0, Math.min(1.0, 1.0 - Math.max(0, p.airspeed - 40) / 100));
+            // Smoothly fade nose-wheel steering from full authority at 30 kt to zero at 80 kt.
+            const steerFade = Math.max(0, p.airspeed - 30) / 50;
+            const steerAuthority = Math.max(0, 1.0 - steerFade * steerFade * (3 - 2 * steerFade));
             const steerAngle = -p.rudder * 0.62 * steerAuthority;
             if (Math.abs(steerAngle) > 1e-4) {
                 wheelForward.applyAxisAngle(t.worldUp, steerAngle).normalize();
@@ -336,31 +345,9 @@ export function calculateAerodynamics(ctx) {
     if (!Number.isFinite(p.gForce)) p.gForce = 1.0;
     p.externalForce.copy(netForce);
 
-    // --- ARCADE+ ROTATIONAL DYNAMICS ---
-    // Blend real-ish inertia response with forgiving control authority.
-    // 0x at very low speed, ~1x near approach speed, up to 2x at high speed.
-    let controlAuthority = Math.max(0, Math.min(2.0, Math.pow(p.airspeed / 85, 1.4)));
-    const pitchTorque = 360000 * FLIGHT_TUNING.controlAuthorityMultiplier;
-    const rollTorque = 800000 * FLIGHT_TUNING.controlAuthorityMultiplier;
-    const yawTorque = 225000 * FLIGHT_TUNING.controlAuthorityMultiplier;
-
-    let pitchAcc = (p.elevator * pitchTorque / AIRCRAFT.inertia.x) * controlAuthority;
-    let rollAcc = (-p.aileron * rollTorque / AIRCRAFT.inertia.z) * controlAuthority;
-    let yawAcc = (-p.rudder * yawTorque / AIRCRAFT.inertia.y) * controlAuthority;
-
-    // Add aerodynamic stability (weathercocking / auto-level)
-    rollAcc += p.slip * 0.005 * dynPressure;
-    yawAcc += -p.slip * 0.01 * dynPressure;
-    pitchAcc += -p.aoa * 0.002 * dynPressure;
-    // Angular damping scales with airflow; helps prevent instant over-rotation.
-    const angDamp = 0.25 + controlAuthority * 0.55;
-    pitchAcc += -p.angularVelocity.x * angDamp;
-    yawAcc += -p.angularVelocity.y * (angDamp * 0.8);
-    rollAcc += -p.angularVelocity.z * (angDamp * 1.05);
-
-
-
-
+    // --- ROTATIONAL DYNAMICS ---
+    // All torques (control surfaces, aerodynamic stability, damping) flow through
+    // the bounded torqueLocal model below, which is applied via p.externalTorque → Rapier.
 
     // Dedicated bounded torque model for Rapier rigid-body mode.
     // On ground: allow speedFactor to scale up to 1.1 so pitch authority at rotation

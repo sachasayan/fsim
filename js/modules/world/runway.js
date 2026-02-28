@@ -17,8 +17,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     ctx.fillStyle = '#30343b';
     ctx.fillRect(0, 0, 1024, 4096);
 
-    // Asphalt Noise
-    for (let i = 0; i < 200000; i++) {
+    // Asphalt Noise — 50k iterations gives near-identical results to 200k at a quarter of the cost
+    for (let i = 0; i < 50000; i++) {
       ctx.fillStyle = Math.random() > 0.5 ? '#434a53' : '#2a3038';
       ctx.fillRect(Math.random() * 1024, Math.random() * 4096, 2, 2);
     }
@@ -92,21 +92,29 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       }
     }
 
+    // Derive roughness at half resolution (512×2048) to reduce startup cost.
     function createRoughnessMapFromAlbedo(sourceCanvas) {
+      const outW = sourceCanvas.width / 2;
+      const outH = sourceCanvas.height / 2;
       const roughCanvas = document.createElement('canvas');
-      roughCanvas.width = sourceCanvas.width;
-      roughCanvas.height = sourceCanvas.height;
+      roughCanvas.width = outW;
+      roughCanvas.height = outH;
       const roughCtx = roughCanvas.getContext('2d');
-      const srcCtx = sourceCanvas.getContext('2d');
-      const src = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-      const out = roughCtx.createImageData(sourceCanvas.width, sourceCanvas.height);
+      // Downsample source into a half-size offscreen canvas first
+      const downCanvas = document.createElement('canvas');
+      downCanvas.width = outW;
+      downCanvas.height = outH;
+      const downCtx = downCanvas.getContext('2d');
+      downCtx.drawImage(sourceCanvas, 0, 0, outW, outH);
+      const src = downCtx.getImageData(0, 0, outW, outH);
+      const out = roughCtx.createImageData(outW, outH);
 
       for (let i = 0; i < src.data.length; i += 4) {
         const r = src.data[i];
         const g = src.data[i + 1];
         const b = src.data[i + 2];
-        const x = (i / 4) % sourceCanvas.width;
-        const y = Math.floor((i / 4) / sourceCanvas.width);
+        const x = (i / 4) % outW;
+        const y = Math.floor((i / 4) / outW);
         const luma = (r + g + b) / 3;
 
         // Asphalt is rough; painted markings are smoother; skids become slightly glossier.

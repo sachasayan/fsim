@@ -664,10 +664,10 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
       return 0; // Lock runway exactly to Y=0
     } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-      // Smooth transition
+      // Smooth radial transition — Math.max avoids the additive corner crease
       let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
       let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-      runwayMask = Math.min(1.0, blendX + blendZ);
+      runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
       return noiseVal * runwayMask;
     }
 

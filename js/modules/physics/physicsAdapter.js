@@ -15,9 +15,12 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
       const { world } = rapier;
 
       const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+      // Safety-net ground plane placed well below any reachable terrain.
+      // Normal ground contact is handled by the spring-damper wheel model in
+      // calculateAerodynamics; this collider only catches extreme edge cases.
       world.createCollider(
         RAPIER.ColliderDesc.cuboid(80000, 2.0, 80000)
-          .setTranslation(0, -2.0, 0)
+          .setTranslation(0, -200.0, 0)
           .setFriction(0.12)
           .setRestitution(0.0),
         groundBody
@@ -32,8 +35,9 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
 
       const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(PHYSICS.position.x, PHYSICS.position.y, PHYSICS.position.z)
-        .setLinearDamping(0.08)
-        .setAngularDamping(0.25)
+        // Damping is set here once; the step() function no longer overrides it each frame.
+        .setLinearDamping(0.04)
+        .setAngularDamping(0.18)
         .setCcdEnabled(true);
       body = world.createRigidBody(bodyDesc);
 
@@ -108,11 +112,6 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
   function step(dt) {
     if (!rapier || !body || !RAPIER) return;
     if (needsSyncFromState) syncFromState();
-
-    const speed = PHYSICS.airspeed || PHYSICS.velocity.length();
-    // Apply consistent damping regardless of ground state
-    body.setLinearDamping(0.04);
-    body.setAngularDamping(0.18);
 
     body.resetForces(true);
     body.resetTorques(true);
