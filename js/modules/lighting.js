@@ -1,8 +1,4 @@
-const WEATHER_MODES = {
-  0: { name: 'clear', fog: 0.0002, intensity: 0.0 },
-  1: { name: 'overcast', fog: 0.0028, intensity: 0.55 },
-  2: { name: 'storm', fog: 0.0065, intensity: 1.0 }
-};
+
 
 export const LIGHTING_PRESETS = {
   dawn: {
@@ -85,16 +81,7 @@ export const LIGHTING_PRESETS = {
   }
 };
 
-export function getWeatherModeConfig(mode) {
-  return WEATHER_MODES[mode] ?? WEATHER_MODES[0];
-}
 
-export function pickStartupWeatherMode() {
-  const r = Math.random();
-  if (r < 0.62) return 0;
-  if (r < 0.9) return 1;
-  return 2;
-}
 
 export function pickLightingPresetId() {
   const ids = Object.keys(LIGHTING_PRESETS);

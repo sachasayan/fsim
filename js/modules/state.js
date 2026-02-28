@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LIGHTING_PRESETS, getWeatherModeConfig, pickLightingPresetId, pickStartupWeatherMode } from './lighting.js';
+import { LIGHTING_PRESETS, pickLightingPresetId } from './lighting.js';
 
 export function createSimulationState({ scene }) {
   const AIRCRAFT = {
@@ -34,15 +34,6 @@ export function createSimulationState({ scene }) {
     gearTransition: 1.0,
     spoilers: false,
     brakes: false,
-    egpwsMode: true,
-    ils: {
-      active: false,
-      locError: 0,
-      gsError: 0,
-      distZ: 0,
-      runwayHeading: 0,
-      runwayId: '36'
-    },
     airspeed: 0,
     aoa: 0,
     slip: 0,
@@ -53,18 +44,16 @@ export function createSimulationState({ scene }) {
     crashed: false
   };
 
-  const startupMode = pickStartupWeatherMode();
-  const weatherModeCfg = getWeatherModeConfig(startupMode);
   const presetId = pickLightingPresetId();
   const preset = LIGHTING_PRESETS[presetId];
 
   const WEATHER = {
-    mode: startupMode,
-    modeName: weatherModeCfg.name,
-    targetFog: weatherModeCfg.fog,
-    currentFog: weatherModeCfg.fog,
-    transition: weatherModeCfg.intensity,
-    targetTransition: weatherModeCfg.intensity,
+    mode: 0,
+    modeName: 'clear',
+    targetFog: 0.0002,
+    currentFog: 0.0002,
+    transition: 0,
+    targetTransition: 0,
     lightingPresetId: presetId,
     clearColor: preset.clearColor,
     stormColor: preset.stormColor,
@@ -92,32 +81,10 @@ export function createSimulationState({ scene }) {
     cloudOpacityStorm: preset.cloudOpacityStorm,
     cloudEmissiveBase: preset.cloudEmissiveBase,
     cloudEmissiveStorm: preset.cloudEmissiveStorm,
-    rainCount: 20000,
-    rainMesh: null,
-    rainPositions: null,
-    rainVelocities: null
+    cloudEmissiveStorm: preset.cloudEmissiveStorm
   };
 
-  const rainGeo = new THREE.BufferGeometry();
-  WEATHER.rainPositions = new Float32Array(WEATHER.rainCount * 3);
-  WEATHER.rainVelocities = new Float32Array(WEATHER.rainCount);
-  for (let i = 0; i < WEATHER.rainCount; i++) {
-    WEATHER.rainPositions[i * 3] = (Math.random() - 0.5) * 800;
-    WEATHER.rainPositions[i * 3 + 1] = (Math.random() - 0.5) * 400;
-    WEATHER.rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 800;
-    WEATHER.rainVelocities[i] = -40 - Math.random() * 20;
-  }
-  rainGeo.setAttribute('position', new THREE.BufferAttribute(WEATHER.rainPositions, 3));
-  const rainMat = new THREE.PointsMaterial({
-    color: 0x9999bb,
-    size: 1.5,
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false
-  });
-  WEATHER.rainMesh = new THREE.Points(rainGeo, rainMat);
-  WEATHER.rainMesh.visible = false;
-  scene.add(WEATHER.rainMesh);
+
 
   const keys = {
     ArrowUp: false,
@@ -128,8 +95,7 @@ export function createSimulationState({ scene }) {
     z: false,
     q: false,
     e: false,
-    m: false,
-    r: false
+    m: false
   };
 
   const runtime = {

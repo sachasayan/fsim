@@ -133,9 +133,7 @@
             border-right: none;
         }
 
-        .fma-ils {
-            color: #f0f;
-        }
+
 
         .fpv {
             position: absolute;
@@ -271,66 +269,7 @@
             border-radius: 50%;
         }
 
-        /* ILS Indicators (Instrument Landing System) */
-        .ils-scale {
-            position: absolute;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 7;
-        }
 
-        .ils-dot {
-            width: 4px;
-            height: 4px;
-            background: white;
-            border-radius: 50%;
-            box-shadow: 0 0 2px #000;
-        }
-
-        #ils-loc {
-            bottom: 42px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 140px;
-            height: 10px;
-            display: none;
-        }
-
-        #ils-gs {
-            right: 75px;
-            top: 50%;
-            transform: translateY(-50%);
-            height: 140px;
-            width: 10px;
-            flex-direction: column;
-            display: none;
-        }
-
-        .ils-dot-blank {
-            background: transparent;
-        }
-
-        .ils-diamond {
-            position: absolute;
-            width: 14px;
-            height: 14px;
-            border: 3px solid #f0f;
-            transform: rotate(45deg);
-            box-sizing: border-box;
-            transition: 0.1s linear;
-            box-shadow: 0 0 3px #000, inset 0 0 3px #000;
-        }
-
-        #loc-diamond {
-            bottom: -2px;
-            left: 50%;
-        }
-
-        #gs-diamond {
-            right: -2px;
-            top: 50%;
-        }
 
         /* PFD Tapes */
         .tape {

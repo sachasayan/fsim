@@ -76,10 +76,10 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
           },
           rigidBodyInertia: rbInertia
             ? {
-                x: Number(rbInertia.x.toFixed(1)),
-                y: Number(rbInertia.y.toFixed(1)),
-                z: Number(rbInertia.z.toFixed(1))
-              }
+              x: Number(rbInertia.x.toFixed(1)),
+              y: Number(rbInertia.y.toFixed(1)),
+              z: Number(rbInertia.z.toFixed(1))
+            }
             : 'unknown'
         });
       } catch (_err) {
@@ -110,14 +110,9 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
     if (needsSyncFromState) syncFromState();
 
     const speed = PHYSICS.airspeed || PHYSICS.velocity.length();
-    if (PHYSICS.onGround) {
-      const takeoffBlend = Math.max(0, Math.min(1, speed / 90));
-      body.setLinearDamping(0.16 - 0.11 * takeoffBlend);
-      body.setAngularDamping(1.4 - 0.95 * takeoffBlend);
-    } else {
-      body.setLinearDamping(0.04);
-      body.setAngularDamping(0.18);
-    }
+    // Apply consistent damping regardless of ground state
+    body.setLinearDamping(0.04);
+    body.setAngularDamping(0.18);
 
     body.resetForces(true);
     body.resetTorques(true);
