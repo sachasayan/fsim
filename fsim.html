@@ -43,47 +43,7 @@
     <!-- NEW UNIFIED DASHBOARD -->
     <div id="dashboard">
         <!-- PFD (Primary Flight Display) -->
-        <div id="pfd" class="screen">
-            <!-- Flight Mode Annunciator (FMA) -->
-            <div id="fma" class="fma-bar">
-            </div>
 
-            <div id="horizon-sky">
-                <div id="pitch-ladder"></div>
-                <!-- Flight Path Vector (FPV) Marker -->
-                <div id="fpv" class="fpv">
-                    <div class="fpv-body">
-                        <div class="fpv-wing-left"></div>
-                        <div class="fpv-wing-right"></div>
-                        <div class="fpv-circle"></div>
-                        <div class="fpv-stem"></div>
-                    </div>
-                </div>
-            </div>
-            <div id="crosshair">
-                <div id="crosshair-center"></div>
-            </div>
-
-
-
-            <div id="speed-tape" class="tape">
-                <div id="speed-tape-content" class="tape-content"></div>
-                <div class="tape-pointer" id="speed-readout">000</div>
-            </div>
-
-            <div id="alt-tape" class="tape">
-                <div id="alt-tape-content" class="tape-content"></div>
-                <div class="tape-pointer" id="alt-readout">00000</div>
-                <!-- Radio Altimeter overlay -->
-                <div id="rad-alt">
-                    R 0000</div>
-            </div>
-
-            <div id="compass">
-                <div id="compass-tape"></div>
-                <div id="compass-pointer"></div>
-            </div>
-        </div>
 
         <!-- ND (Navigation Display / Minimap) -->
         <div id="nd" class="screen">
@@ -108,24 +68,7 @@
         </div>
 
         <!-- Controls Help -->
-        <div id="controls-panel" class="screen">
-            <h3>FLIGHT CONTROLS</h3>
-            <div><span class="key">Z</span> / <span class="key">A</span> Thrust Down/Up</div>
-            <div class="control-row control-row-spaced"><span class="key">Arrows</span> Pitch & Roll</div>
-            <div class="control-row control-row-spaced"><span class="key">Q</span> / <span class="key">E</span> Yaw
-                (Rudder)</div>
 
-            <div class="control-row control-row-spaced"><span class="key">R</span> Cycle Weather</div>
-            <div class="control-row control-row-spaced"><span class="key">G</span> Toggle Env Tuner</div>
-            <div class="control-row control-row-spaced"><span class="key">C</span> Camera View</div>
-            <div class="control-row control-row-spaced"><span class="key">Drag</span> Free Look <span
-                    class="key">Scroll</span> Zoom
-            </div>
-            <div class="control-note">GEAR & FLAPS: AUTOMATIC
-            </div>
-            <div class="control-note control-note-secondary">BRAKES/SPOILERS: 0% THRUST
-            </div>
-        </div>
     </div>
 
     <script type="module" src="./js/modules/sim.js"></script>

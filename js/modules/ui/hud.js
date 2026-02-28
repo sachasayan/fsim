@@ -22,6 +22,8 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     };
 
     const minimapCanvas = document.getElementById('minimap');
+    if (!minimapCanvas) return { updateHUD: () => { } };
+
     const mmCtx = minimapCanvas.getContext('2d');
     const mapW = minimapCanvas.width;
     const mapH = minimapCanvas.height;
@@ -114,37 +116,45 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     // Initialize HUD generation
     function initHUD() {
         // Generate Pitch Ladder Lines
-        for (let i = 90; i >= -90; i -= 10) {
-            if (i === 0) continue;
-            let line = document.createElement('div');
-            line.className = 'pitch-line';
-            line.dataset.pitch = Math.abs(i);
-            // 1 degree = 4px spacing
-            line.style.position = 'absolute';
-            line.style.top = `calc(50% - ${i * 4}px)`;
-            UI.pitchLadder.appendChild(line);
+        if (UI.pitchLadder) {
+            for (let i = 90; i >= -90; i -= 10) {
+                if (i === 0) continue;
+                let line = document.createElement('div');
+                line.className = 'pitch-line';
+                line.dataset.pitch = Math.abs(i);
+                // 1 degree = 4px spacing
+                line.style.position = 'absolute';
+                line.style.top = `calc(50% - ${i * 4}px)`;
+                UI.pitchLadder.appendChild(line);
+            }
         }
 
         // Generate Compass marks
-        for (let i = 0; i <= 360; i += 10) {
-            let mark = document.createElement('div');
-            mark.className = 'compass-mark';
-            mark.innerText = i % 90 === 0 ? (i === 0 || i === 360 ? 'N' : i === 90 ? 'E' : i === 180 ? 'S' : 'W') : (i / 10).toString().padStart(2, '0');
-            UI.compassTape.appendChild(mark);
+        if (UI.compassTape) {
+            for (let i = 0; i <= 360; i += 10) {
+                let mark = document.createElement('div');
+                mark.className = 'compass-mark';
+                mark.innerText = i % 90 === 0 ? (i === 0 || i === 360 ? 'N' : i === 90 ? 'E' : i === 180 ? 'S' : 'W') : (i / 10).toString().padStart(2, '0');
+                UI.compassTape.appendChild(mark);
+            }
         }
 
         // Generate Tape marks (lazy loaded visually in CSS, physically in DOM)
-        for (let i = 500; i >= 0; i -= 10) {
-            let mark = document.createElement('div');
-            mark.className = 'tape-mark' + (i % 50 === 0 ? ' major' : '');
-            mark.innerText = i % 50 === 0 ? i : '';
-            UI.speedTape.appendChild(mark);
+        if (UI.speedTape) {
+            for (let i = 500; i >= 0; i -= 10) {
+                let mark = document.createElement('div');
+                mark.className = 'tape-mark' + (i % 50 === 0 ? ' major' : '');
+                mark.innerText = i % 50 === 0 ? i : '';
+                UI.speedTape.appendChild(mark);
+            }
         }
-        for (let i = 40000; i >= -1000; i -= 100) {
-            let mark = document.createElement('div');
-            mark.className = 'tape-mark' + (i % 500 === 0 ? ' major' : '');
-            mark.innerText = i % 500 === 0 ? i : '';
-            UI.altTape.appendChild(mark);
+        if (UI.altTape) {
+            for (let i = 40000; i >= -1000; i -= 100) {
+                let mark = document.createElement('div');
+                mark.className = 'tape-mark' + (i % 500 === 0 ? ' major' : '');
+                mark.innerText = i % 500 === 0 ? i : '';
+                UI.altTape.appendChild(mark);
+            }
         }
     }
     initHUD();
@@ -166,60 +176,80 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         const slipDeg = PHYSICS.slip * (180 / Math.PI);
 
         // Artificial Horizon
-        UI.horizonSky.style.transform = `rotate(${roll}deg) translateY(${pitch * 4}px)`;
+        if (UI.horizonSky) {
+            UI.horizonSky.style.transform = `rotate(${roll}deg) translateY(${pitch * 4}px)`;
+        }
 
         // Flight Path Vector (FPA = Pitch - AoA)
-        const fpa = pitch - aoaDeg;
-        UI.fpv.style.transform = `translate(${slipDeg * 4}px, ${-fpa * 4}px)`;
+        if (UI.fpv) {
+            const fpa = pitch - aoaDeg;
+            UI.fpv.style.transform = `translate(${slipDeg * 4}px, ${-fpa * 4}px)`;
+        }
 
         // Tapes (1 unit per pixel mapped mathematically)
-        UI.speedReadout.innerText = Math.round(kts).toString().padStart(3, '0');
-        // speed tape: 500 max, 10 units = 20px -> 1 unit = 2px. Offset from middle.
-        let speedOffset = (500 - kts) * 2;
-        UI.speedTape.style.transform = `translateY(calc(-50% + 150px - ${speedOffset}px))`;
+        if (UI.speedReadout) {
+            UI.speedReadout.innerText = Math.round(kts).toString().padStart(3, '0');
+        }
+        if (UI.speedTape) {
+            // speed tape: 500 max, 10 units = 20px -> 1 unit = 2px. Offset from middle.
+            let speedOffset = (500 - kts) * 2;
+            UI.speedTape.style.transform = `translateY(calc(-50% + 150px - ${speedOffset}px))`;
+        }
 
-        UI.altReadout.innerText = Math.round(altFt).toString().padStart(5, '0');
-        // alt tape: 40000 max, 100 units = 20px -> 1 unit = 0.2px.
-        let altOffset = (40000 - altFt) * 0.2;
-        UI.altTape.style.transform = `translateY(calc(-50% + 150px - ${altOffset}px))`;
+        if (UI.altReadout) {
+            UI.altReadout.innerText = Math.round(altFt).toString().padStart(5, '0');
+        }
+        if (UI.altTape) {
+            // alt tape: 40000 max, 100 units = 20px -> 1 unit = 0.2px.
+            let altOffset = (40000 - altFt) * 0.2;
+            UI.altTape.style.transform = `translateY(calc(-50% + 150px - ${altOffset}px))`;
+        }
 
         // Radio Altimeter (Visible < 2500ft)
-        const radAltFt = PHYSICS.heightAgl * 3.28084;
-        if (radAltFt < 2500) {
-            UI.radAlt.style.display = 'block';
-            UI.radAlt.innerText = 'R ' + Math.round(radAltFt).toString().padStart(4, '0');
-            if (radAltFt < 500) { UI.radAlt.style.color = '#ff0'; UI.radAlt.style.borderColor = '#ff0'; }
-            if (radAltFt < 200) { UI.radAlt.style.color = '#f00'; UI.radAlt.style.borderColor = '#f00'; }
-            if (radAltFt >= 500) { UI.radAlt.style.color = '#0f0'; UI.radAlt.style.borderColor = '#0f0'; }
-        } else {
-            UI.radAlt.style.display = 'none';
+        if (UI.radAlt) {
+            const radAltFt = PHYSICS.heightAgl * 3.28084;
+            if (radAltFt < 2500) {
+                UI.radAlt.style.display = 'block';
+                UI.radAlt.innerText = 'R ' + Math.round(radAltFt).toString().padStart(4, '0');
+                if (radAltFt < 500) { UI.radAlt.style.color = '#ff0'; UI.radAlt.style.borderColor = '#ff0'; }
+                if (radAltFt < 200) { UI.radAlt.style.color = '#f00'; UI.radAlt.style.borderColor = '#f00'; }
+                if (radAltFt >= 500) { UI.radAlt.style.color = '#0f0'; UI.radAlt.style.borderColor = '#0f0'; }
+            } else {
+                UI.radAlt.style.display = 'none';
+            }
         }
 
         // Compass (360 degrees = 36 * 30px = 1080px width)
-        let headingOffset = (heading / 10) * 30;
-        UI.compassTape.style.transform = `translateX(calc(50% - ${headingOffset}px))`;
-
+        if (UI.compassTape) {
+            let headingOffset = (heading / 10) * 30;
+            UI.compassTape.style.transform = `translateX(calc(50% - ${headingOffset}px))`;
+        }
 
 
         // Values
-        UI.thrust.innerText = (PHYSICS.throttle * 100).toFixed(0) + '%';
-        UI.aoa.innerText = aoaDeg.toFixed(1) + '°';
-        UI.gforce.innerText = PHYSICS.gForce.toFixed(1);
-        UI.vs.innerText = Math.round(vsFpm);
+        if (UI.thrust) UI.thrust.innerText = (PHYSICS.throttle * 100).toFixed(0) + '%';
+        if (UI.aoa) UI.aoa.innerText = aoaDeg.toFixed(1) + '°';
+        if (UI.gforce) UI.gforce.innerText = PHYSICS.gForce.toFixed(1);
+        if (UI.vs) UI.vs.innerText = Math.round(vsFpm);
 
-        if (PHYSICS.gearTransition === 1) { UI.gear.innerText = 'DOWN'; UI.gear.style.color = '#0f0'; }
-        else if (PHYSICS.gearTransition === 0) { UI.gear.innerText = 'UP'; UI.gear.style.color = '#fff'; }
-        else { UI.gear.innerText = 'MOVING'; UI.gear.style.color = '#ff0'; }
+        if (UI.gear) {
+            if (PHYSICS.gearTransition === 1) { UI.gear.innerText = 'DOWN'; UI.gear.style.color = '#0f0'; }
+            else if (PHYSICS.gearTransition === 0) { UI.gear.innerText = 'UP'; UI.gear.style.color = '#fff'; }
+            else { UI.gear.innerText = 'MOVING'; UI.gear.style.color = '#ff0'; }
+        }
 
         // Flaps, Spoilers, Brakes
-        UI.flaps.innerText = (PHYSICS.flaps * 100).toFixed(0) + '%';
+        if (UI.flaps) UI.flaps.innerText = (PHYSICS.flaps * 100).toFixed(0) + '%';
 
-        if (PHYSICS.spoilers) { UI.spoilers.innerText = 'DEPLOYED'; UI.spoilers.style.color = '#ff0'; }
-        else { UI.spoilers.innerText = 'RETRACTED'; UI.spoilers.style.color = '#fff'; }
+        if (UI.spoilers) {
+            if (PHYSICS.spoilers) { UI.spoilers.innerText = 'DEPLOYED'; UI.spoilers.style.color = '#ff0'; }
+            else { UI.spoilers.innerText = 'RETRACTED'; UI.spoilers.style.color = '#fff'; }
+        }
 
-        if (PHYSICS.brakes) { UI.brakes.innerText = 'ON'; UI.brakes.style.color = '#f00'; }
-        else { UI.brakes.innerText = 'OFF'; UI.brakes.style.color = '#fff'; }
-
+        if (UI.brakes) {
+            if (PHYSICS.brakes) { UI.brakes.innerText = 'ON'; UI.brakes.style.color = '#f00'; }
+            else { UI.brakes.innerText = 'OFF'; UI.brakes.style.color = '#fff'; }
+        }
 
 
         // Draw North-up full-color world map (cached/throttled)
@@ -268,12 +298,12 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
 
         // Map labels
         mmCtx.fillStyle = '#9ed0ff';
-        mmCtx.font = 'bold 15px monospace';
+        mmCtx.font = 'bold 10px monospace';
         mmCtx.textAlign = 'left';
-        mmCtx.fillText('MAP', 10, 22);
+        mmCtx.fillText('MAP', 6, 16);
         mmCtx.fillStyle = '#80b7ea';
-        mmCtx.font = '12px monospace';
-        mmCtx.fillText('N', centerX - 4, 14);
+        mmCtx.font = '9px monospace';
+        mmCtx.fillText('N', centerX - 3, 10);
     }
 
     return { updateHUD };

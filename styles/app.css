@@ -12,7 +12,7 @@
             top: 0;
             left: 0;
             width: 100vw;
-            height: 75vh;
+            height: 100vh;
         }
 
         #dashboard {
@@ -20,16 +20,10 @@
             bottom: 0;
             left: 0;
             width: 100vw;
-            height: 25vh;
-            background: #111113;
-            border-top: 4px solid #333;
-            display: flex;
-            justify-content: space-evenly;
-            align-items: center;
-            box-sizing: border-box;
-            padding: 10px;
+            height: 100vh;
+            background: transparent;
             z-index: 10;
-            box-shadow: inset 0 20px 20px -20px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
         }
 
         #crash-screen {
@@ -37,7 +31,7 @@
             top: 0;
             left: 0;
             width: 100vw;
-            height: 75vh;
+            height: 100vh;
             background: rgba(0, 0, 0, 0.85);
             z-index: 50;
             display: none;
@@ -84,13 +78,14 @@
         /* Glass Cockpit Screens */
         .screen {
             height: 100%;
-            background: #000;
-            border: 4px solid #222;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.2);
             border-radius: 6px;
-            box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.05), 0 5px 10px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
             position: relative;
             overflow: hidden;
             box-sizing: border-box;
+            pointer-events: auto;
         }
 
         /* 1. Primary Flight Display (PFD) */
@@ -407,8 +402,11 @@
 
         /* 2. Navigation Display (ND / Minimap) */
         #nd {
-            width: 25vh;
-            /* Keep it perfectly square based on height */
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 140px;
+            height: 140px;
         }
 
         #minimap {
@@ -418,8 +416,12 @@
 
         /* 3. EICAS / Telemetry Screen */
         #eicas {
-            width: 250px;
-            padding: 15px;
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 160px;
+            height: 180px;
+            padding: 10px;
             color: #0f0;
             display: flex;
             flex-direction: column;
@@ -430,14 +432,14 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 14px;
+            font-size: 10px;
             font-weight: bold;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
         }
 
         .instrument-value {
             font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 18px;
+            font-size: 12px;
             color: #fff;
             text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
         }

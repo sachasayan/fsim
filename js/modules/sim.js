@@ -22,7 +22,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x3a2e3f);
 scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015);
 
-const gameHeight = window.innerHeight * 0.75;
+const gameHeight = window.innerHeight;
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / gameHeight, 1, 100000);
 const renderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true });
 const BASELINE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -40,8 +40,8 @@ document.body.appendChild(stats.dom);
 
 const renderScene = new RenderPass(scene, camera);
 const pixelRatio = renderer.getPixelRatio();
-const smaaPass = new SMAAPass(window.innerWidth * pixelRatio, gameHeight * pixelRatio);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, gameHeight), 1.5, 0.4, 0.85);
+const smaaPass = new SMAAPass(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
 bloomPass.threshold = 5.0;
 bloomPass.strength = 0.8;
 bloomPass.radius = 0.4;
@@ -769,7 +769,7 @@ window.resetFlight = function () {
 // 9. MAIN LOOP
 // ==========================================
 window.addEventListener('resize', () => {
-  const newGameHeight = window.innerHeight * 0.75;
+  const newGameHeight = window.innerHeight;
   camera.aspect = window.innerWidth / newGameHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, newGameHeight);
