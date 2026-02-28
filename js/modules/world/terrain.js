@@ -837,9 +837,12 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       // Cleanup props before pooling
       while (chunkGroup.children.length > 2) {
         const child = chunkGroup.children.pop();
-        if (child.dispose) child.dispose();
-        if (child.geometry) child.geometry.dispose();
-        // Materials are shared, don't dispose them
+        // Do NOT dispose the children's geometries because they are shared global constants
+        // (like treeBillboardGeo, baseBuildingGeo, etc.)
+        if (child.isInstancedMesh) {
+          if (child.instanceMatrix) child.instanceMatrix.needsUpdate = false; // Just hints
+          if (child.instanceColor) child.instanceColor.needsUpdate = false;
+        }
       }
       chunkPools[lod].push(chunkGroup);
     } else {
