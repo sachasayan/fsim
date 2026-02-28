@@ -61,6 +61,12 @@ const tmpHdgEuler = new THREE.Euler();
 const tmpCrashStep = new THREE.Vector3();
 const tmpCrashSpinEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const tmpCrashSpinQuat = new THREE.Quaternion();
+let lastTerrainChunkX = Number.POSITIVE_INFINITY;
+let lastTerrainChunkZ = Number.POSITIVE_INFINITY;
+let lastTerrainUpdateMs = 0;
+const TERRAIN_UPDATE_INTERVAL_MS = 120;
+let prevAlsTargetIndex = -1;
+let prevPapiKey = '';
 
 // ==========================================
 // 4. WORLD OBJECTS
@@ -800,22 +806,25 @@ function animate() {
     if (WEATHER.mode === 2) {
         WEATHER.rainMesh.visible = true;
         const pos = WEATHER.rainMesh.geometry.attributes.position.array;
-        const camPos = camera.position;
+        const camX = camera.position.x;
+        const camY = camera.position.y;
+        const camZ = camera.position.z;
         runtime.rainPhase = (runtime.rainPhase + 1) & 1;
         const rainStepDt = dt * 2.0;
 
         for (let i = runtime.rainPhase; i < WEATHER.rainCount; i += 2) {
+            const base = i * 3;
             // Apply gravity
-            pos[i * 3 + 1] += WEATHER.rainVelocities[i] * rainStepDt;
+            pos[base + 1] += WEATHER.rainVelocities[i] * rainStepDt;
 
             // Keep the rain anchored to the camera's moving frame of reference
-            let dx = pos[i * 3] - camPos.x;
-            let dy = pos[i * 3 + 1] - camPos.y;
-            let dz = pos[i * 3 + 2] - camPos.z;
+            let dx = pos[base] - camX;
+            let dy = pos[base + 1] - camY;
+            let dz = pos[base + 2] - camZ;
 
-            if (dx > 400) pos[i * 3] -= 800; else if (dx < -400) pos[i * 3] += 800;
-            if (dy > 200) pos[i * 3 + 1] -= 400; else if (dy < -200) pos[i * 3 + 1] += 400;
-            if (dz > 400) pos[i * 3 + 2] -= 800; else if (dz < -400) pos[i * 3 + 2] += 800;
+            if (dx > 400) pos[base] -= 800; else if (dx < -400) pos[base] += 800;
+            if (dy > 200) pos[base + 1] -= 400; else if (dy < -200) pos[base + 1] += 400;
+            if (dz > 400) pos[base + 2] -= 800; else if (dz < -400) pos[base + 2] += 800;
         }
         WEATHER.rainMesh.geometry.attributes.position.needsUpdate = true;
     } else {
@@ -865,13 +874,21 @@ function animate() {
     // --- ALS RABBIT ANIMATION (Approach Lighting System) ---
     let rabbitCycle = (now / 500) % 1.0; // Loops every 0.5s
     let targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
-
+    let targetIdx = -1;
     for (let i = 0; i < alsStrobes.length; i++) {
         if (Math.abs(alsStrobes[i].dist - targetDist) < 40) {
-            alsStrobes[i].mesh.material = strobeMatOn;
-        } else {
-            alsStrobes[i].mesh.material = strobeMatOff;
+            targetIdx = i;
+            break;
         }
+    }
+    if (targetIdx !== prevAlsTargetIndex) {
+        if (prevAlsTargetIndex >= 0 && prevAlsTargetIndex < alsStrobes.length) {
+            alsStrobes[prevAlsTargetIndex].mesh.material = strobeMatOff;
+        }
+        if (targetIdx >= 0 && targetIdx < alsStrobes.length) {
+            alsStrobes[targetIdx].mesh.material = strobeMatOn;
+        }
+        prevAlsTargetIndex = targetIdx;
     }
 
     // --- AERODYNAMIC PARTICLE SYSTEM ---
@@ -935,8 +952,6 @@ function animate() {
     const allPapiLights = PAPI.lights || [];
     const papi36 = PAPI.lights36 || [];
     const papi18 = PAPI.lights18 || [];
-    for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
-
     function setPapiColors(lights, whiteCount) {
         for (let i = 0; i < lights.length; i++) {
             lights[i].material = (i >= (4 - whiteCount)) ? PAPI.matWhite : PAPI.matRed;
@@ -980,7 +995,15 @@ function animate() {
         else if (angleDeg > 3.2) whiteCount = 3;
         else if (angleDeg > 2.8) whiteCount = 2;
         else if (angleDeg > 2.5) whiteCount = 1;
-        setPapiColors(activeSet, whiteCount);
+        const activeKey = `${activeSet === papi36 ? '36' : '18'}:${whiteCount}`;
+        if (activeKey !== prevPapiKey) {
+            for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
+            setPapiColors(activeSet, whiteCount);
+            prevPapiKey = activeKey;
+        }
+    } else if (prevPapiKey !== '') {
+        for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
+        prevPapiKey = '';
     }
 
     runtime.physicsAccumulator = Math.min(runtime.physicsAccumulator + dt, PHYSICS_STEP * MAX_PHYSICS_STEPS_PER_FRAME);
@@ -1041,7 +1064,16 @@ function animate() {
         planeGroup.quaternion.copy(PHYSICS.quaternion);
     }
 
-    updateTerrain();
+    const chunkX = Math.floor(PHYSICS.position.x / 4000);
+    const chunkZ = Math.floor(PHYSICS.position.z / 4000);
+    const terrainDue = (now - lastTerrainUpdateMs) >= TERRAIN_UPDATE_INTERVAL_MS;
+    const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
+    if (terrainDue || chunkChanged) {
+        updateTerrain();
+        lastTerrainUpdateMs = now;
+        lastTerrainChunkX = chunkX;
+        lastTerrainChunkZ = chunkZ;
+    }
     cameraController.updateCamera();
     hud.updateHUD();
 
