@@ -104,7 +104,8 @@ export function createSimulationState({ scene }) {
     lastTime: performance.now(),
     strobeTimer: 0,
     rainPhase: 0,
-    physicsAccumulator: 0
+    physicsAccumulator: 0,
+    frameCount: 0
   };
 
   return { AIRCRAFT, PHYSICS, WEATHER, keys, runtime };

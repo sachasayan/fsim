@@ -557,39 +557,43 @@ function animate() {
   if (dt > 0.05) dt = 0.05;
 
   // --- DYNAMIC WEATHER SYSTEM UPDATES ---
-  WEATHER.currentFog += (WEATHER.targetFog - WEATHER.currentFog) * dt * 0.5;
-  scene.fog.density = WEATHER.currentFog;
+  runtime.frameCount++;
 
-  // Transition visuals based on weather (0 = Twilight, 1 = Stormy Gray)
-  WEATHER.transition += (WEATHER.targetTransition - WEATHER.transition) * dt * 0.5;
+  if (runtime.frameCount % 4 === 0) {
+    WEATHER.currentFog += (WEATHER.targetFog - WEATHER.currentFog) * dt * 2.0; // Scaled dt to maintain speed
+    scene.fog.density = WEATHER.currentFog;
 
-  // Darken the sky and fog in bad weather
-  currentWeatherColor.lerpColors(clearWeatherColor, stormWeatherColor, WEATHER.transition);
-  scene.background = currentWeatherColor;
-  scene.fog.color = currentWeatherColor;
-  if (updateTerrainAtmosphere) updateTerrainAtmosphere(camera, currentWeatherColor);
+    // Transition visuals based on weather (0 = Twilight, 1 = Stormy Gray)
+    WEATHER.transition += (WEATHER.targetTransition - WEATHER.transition) * dt * 2.0;
 
-  // Preserve low-sun readability without flattening mood.
-  tmpLightingSunDir.copy(dirLight.position).normalize();
-  const sunElev = THREE.MathUtils.clamp((tmpLightingSunDir.y + 0.06) / 0.74, 0, 1);
-  const lowSun = 1.0 - sunElev;
-  const lowSunWeight = lowSun * (1.0 - WEATHER.transition * 0.45);
+    // Darken the sky and fog in bad weather
+    currentWeatherColor.lerpColors(clearWeatherColor, stormWeatherColor, WEATHER.transition);
+    scene.background = currentWeatherColor;
+    scene.fog.color = currentWeatherColor;
+    if (updateTerrainAtmosphere) updateTerrainAtmosphere(camera, currentWeatherColor);
 
-  hemiLight.intensity = WEATHER.lightAmbientBase * (1.0 - WEATHER.transition * 0.55) * (1.0 + lowSunWeight * 0.26);
-  dirLight.intensity = WEATHER.lightDirectBase * (1.0 - WEATHER.transition * 0.9) * (1.0 + lowSunWeight * 0.1);
-  renderer.toneMappingExposure = WEATHER.exposure * (1.0 + lowSunWeight * 0.12);
-  bloomPass.threshold = WEATHER.bloomThreshold + lowSunWeight * 0.4;
-  bloomPass.strength = WEATHER.bloomStrength * (1.0 - lowSunWeight * 0.2);
+    // Preserve low-sun readability without flattening mood.
+    tmpLightingSunDir.copy(dirLight.position).normalize();
+    const sunElev = THREE.MathUtils.clamp((tmpLightingSunDir.y + 0.06) / 0.74, 0, 1);
+    const lowSun = 1.0 - sunElev;
+    const lowSunWeight = lowSun * (1.0 - WEATHER.transition * 0.45);
 
-  if (cloudMaterial) {
-    currentCloudColor.lerpColors(clearCloudColor, stormCloudColor, WEATHER.transition);
-    cloudMaterial.color.copy(currentCloudColor);
-    cloudMaterial.opacity = WEATHER.cloudOpacityBase + (WEATHER.cloudOpacityStorm - WEATHER.cloudOpacityBase) * WEATHER.transition;
-    cloudMaterial.emissiveIntensity = WEATHER.cloudEmissiveBase + (WEATHER.cloudEmissiveStorm - WEATHER.cloudEmissiveBase) * WEATHER.transition;
-  }
+    hemiLight.intensity = WEATHER.lightAmbientBase * (1.0 - WEATHER.transition * 0.55) * (1.0 + lowSunWeight * 0.26);
+    dirLight.intensity = WEATHER.lightDirectBase * (1.0 - WEATHER.transition * 0.9) * (1.0 + lowSunWeight * 0.1);
+    renderer.toneMappingExposure = WEATHER.exposure * (1.0 + lowSunWeight * 0.12);
+    bloomPass.threshold = WEATHER.bloomThreshold + lowSunWeight * 0.4;
+    bloomPass.strength = WEATHER.bloomStrength * (1.0 - lowSunWeight * 0.2);
 
-  if (updateClouds) {
-    updateClouds(dt, camera, WEATHER, currentCloudColor, tmpSunDir.copy(dirLight.position).normalize());
+    if (cloudMaterial) {
+      currentCloudColor.lerpColors(clearCloudColor, stormCloudColor, WEATHER.transition);
+      cloudMaterial.color.copy(currentCloudColor);
+      cloudMaterial.opacity = WEATHER.cloudOpacityBase + (WEATHER.cloudOpacityStorm - WEATHER.cloudOpacityBase) * WEATHER.transition;
+      cloudMaterial.emissiveIntensity = WEATHER.cloudEmissiveBase + (WEATHER.cloudEmissiveStorm - WEATHER.cloudEmissiveBase) * WEATHER.transition;
+    }
+
+    if (updateClouds) {
+      updateClouds(dt * 4.0, camera, WEATHER, currentCloudColor, tmpSunDir.copy(dirLight.position).normalize());
+    }
   }
 
 
@@ -718,52 +722,52 @@ function animate() {
   }
 
   // --- PAPI LIGHTS UPDATE (RWY 36 / RWY 18) ---
-  const allPapiLights = PAPI.lights || [];
-  const papi36 = PAPI.lights36 || [];
-  const papi18 = PAPI.lights18 || [];
-  let headingDeg = (-tmpHdgEuler.setFromQuaternion(PHYSICS.quaternion, 'YXZ').y) * (180 / Math.PI);
-  if (headingDeg < 0) headingDeg += 360;
+  if (runtime.frameCount % 6 === 0) {
+    const allPapiLights = PAPI.lights || [];
+    const papi36 = PAPI.lights36 || [];
+    const papi18 = PAPI.lights18 || [];
 
-  const dist36 = PHYSICS.position.z - 1000;
-  const dist18 = -1000 - PHYSICS.position.z;
-  const canUse36 = dist36 > 0 && dist36 < 15000 && getHeadingDiff(headingDeg, 0) <= 90;
-  const canUse18 = dist18 > 0 && dist18 < 15000 && getHeadingDiff(headingDeg, 180) <= 90;
+    const dist36 = PHYSICS.position.z - 1000;
+    const dist18 = -1000 - PHYSICS.position.z;
+    const canUse36 = dist36 > 0 && dist36 < 15000 && getHeadingDiff(headingDeg, 0) <= 90;
+    const canUse18 = dist18 > 0 && dist18 < 15000 && getHeadingDiff(headingDeg, 180) <= 90;
 
-  let activeSet = null;
-  let activeDist = 0;
-  let papiCenterX = 0;
-  if (canUse36 && (!canUse18 || dist36 <= dist18)) {
-    activeSet = papi36;
-    activeDist = dist36;
-    papiCenterX = -63;
-  } else if (canUse18) {
-    activeSet = papi18;
-    activeDist = dist18;
-    papiCenterX = 63;
-  }
-
-  if (activeSet && activeSet.length === 4) {
-    const distX = PHYSICS.position.x - papiCenterX;
-    const dist2D = Math.sqrt(distX * distX + activeDist * activeDist);
-    const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
-
-    // Standard ICAO PAPI: 3° nominal glideslope, ±0.5° bands.
-    // >3.5° = all white (too high), <2.0° = all red (too low)
-    let whiteCount = 0;
-    if (angleDeg > 3.5) whiteCount = 4; // All white — too high
-    else if (angleDeg > 3.0) whiteCount = 3; // 3W 1R — slightly high
-    else if (angleDeg > 2.5) whiteCount = 2; // 2W 2R — on glidepath
-    else if (angleDeg > 2.0) whiteCount = 1; // 1W 3R — slightly low
-    // else whiteCount = 0               // All red — too low
-    const activeKey = `${activeSet === papi36 ? '36' : '18'}:${whiteCount}`;
-    if (activeKey !== prevPapiKey) {
-      for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
-      setPapiColors(activeSet, whiteCount);
-      prevPapiKey = activeKey;
+    let activeSet = null;
+    let activeDist = 0;
+    let papiCenterX = 0;
+    if (canUse36 && (!canUse18 || dist36 <= dist18)) {
+      activeSet = papi36;
+      activeDist = dist36;
+      papiCenterX = -63;
+    } else if (canUse18) {
+      activeSet = papi18;
+      activeDist = dist18;
+      papiCenterX = 63;
     }
-  } else if (prevPapiKey !== '') {
-    for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
-    prevPapiKey = '';
+
+    if (activeSet && activeSet.length === 4) {
+      const distX = PHYSICS.position.x - papiCenterX;
+      const dist2D = Math.sqrt(distX * distX + activeDist * activeDist);
+      const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
+
+      // Standard ICAO PAPI: 3° nominal glideslope, ±0.5° bands.
+      // >3.5° = all white (too high), <2.0° = all red (too low)
+      let whiteCount = 0;
+      if (angleDeg > 3.5) whiteCount = 4; // All white — too high
+      else if (angleDeg > 3.0) whiteCount = 3; // 3W 1R — slightly high
+      else if (angleDeg > 2.5) whiteCount = 2; // 2W 2R — on glidepath
+      else if (angleDeg > 2.0) whiteCount = 1; // 1W 3R — slightly low
+      // else whiteCount = 0               // All red — too low
+      const activeKey = `${activeSet === papi36 ? '36' : '18'}:${whiteCount}`;
+      if (activeKey !== prevPapiKey) {
+        for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
+        setPapiColors(activeSet, whiteCount);
+        prevPapiKey = activeKey;
+      }
+    } else if (prevPapiKey !== '') {
+      for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
+      prevPapiKey = '';
+    }
   }
 
   runtime.physicsAccumulator = Math.min(runtime.physicsAccumulator + dt, PHYSICS_STEP * MAX_PHYSICS_STEPS_PER_FRAME);
@@ -864,7 +868,9 @@ function animate() {
     lastTerrainChunkZ = chunkZ;
   }
   cameraController.updateCamera();
-  hud.updateHUD();
+  if (runtime.frameCount % 3 === 0) {
+    hud.updateHUD();
+  }
 
   // Update Procedural Audio Synthesis (Relaxing Zen Mode)
   ProceduralAudio.update(
