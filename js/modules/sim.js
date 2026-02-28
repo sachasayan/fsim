@@ -213,6 +213,19 @@ function applyWind() {
   // structure in case wind is re-added to a different UI.
 }
 
+function setPapiColors(lights, whiteCount) {
+  for (let i = 0; i < lights.length; i++) {
+    lights[i].material = (i >= (4 - whiteCount)) ? PAPI.matWhite : PAPI.matRed;
+  }
+}
+
+function getHeadingDiff(headingDeg, targetDeg) {
+  let d = headingDeg - targetDeg;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return Math.abs(d);
+}
+
 window.addEventListener('keydown', (e) => {
   if (Object.prototype.hasOwnProperty.call(keys, e.key.toLowerCase()) || Object.prototype.hasOwnProperty.call(keys, e.key)) {
     const k = Object.prototype.hasOwnProperty.call(keys, e.key) ? e.key : e.key.toLowerCase();
@@ -708,25 +721,13 @@ function animate() {
   const allPapiLights = PAPI.lights || [];
   const papi36 = PAPI.lights36 || [];
   const papi18 = PAPI.lights18 || [];
-  function setPapiColors(lights, whiteCount) {
-    for (let i = 0; i < lights.length; i++) {
-      lights[i].material = (i >= (4 - whiteCount)) ? PAPI.matWhite : PAPI.matRed;
-    }
-  }
-
   let headingDeg = (-tmpHdgEuler.setFromQuaternion(PHYSICS.quaternion, 'YXZ').y) * (180 / Math.PI);
   if (headingDeg < 0) headingDeg += 360;
-  const headingDiff = (targetDeg) => {
-    let d = headingDeg - targetDeg;
-    while (d > 180) d -= 360;
-    while (d < -180) d += 360;
-    return Math.abs(d);
-  };
 
   const dist36 = PHYSICS.position.z - 1000;
   const dist18 = -1000 - PHYSICS.position.z;
-  const canUse36 = dist36 > 0 && dist36 < 15000 && headingDiff(0) <= 90;
-  const canUse18 = dist18 > 0 && dist18 < 15000 && headingDiff(180) <= 90;
+  const canUse36 = dist36 > 0 && dist36 < 15000 && getHeadingDiff(headingDeg, 0) <= 90;
+  const canUse18 = dist18 > 0 && dist18 < 15000 && getHeadingDiff(headingDeg, 180) <= 90;
 
   let activeSet = null;
   let activeDist = 0;
