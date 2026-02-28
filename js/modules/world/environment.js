@@ -22,8 +22,8 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   dirLight.shadow.camera.right = 200;
   dirLight.shadow.camera.near = 0.1;
   dirLight.shadow.camera.far = 5000;
-  dirLight.shadow.mapSize.width = 4096;
-  dirLight.shadow.mapSize.height = 4096;
+  dirLight.shadow.mapSize.width = 1024;
+  dirLight.shadow.mapSize.height = 1024;
   dirLight.shadow.bias = -0.0005;
   scene.add(dirLight);
 
@@ -44,11 +44,11 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   let environmentTexture = null;
 
   // Far horizon haze dome for depth layering
-  const hazeGeo = new THREE.SphereGeometry(180000, 24, 24);
+  const hazeGeo = new THREE.SphereGeometry(180000, 64, 48);
   const hazeMat = new THREE.MeshBasicMaterial({
     color: WEATHER?.hazeColor ?? 0x2f2736,
     transparent: true,
-    opacity: WEATHER?.hazeOpacity ?? 0.12,
+    opacity: (WEATHER?.hazeOpacity ?? 0.12) * 0.88,
     side: THREE.BackSide,
     depthWrite: false
   });
@@ -98,7 +98,7 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
     dirLight.position.copy(sun).multiplyScalar(2000);
 
     hazeMat.color.setHex(weather?.hazeColor ?? 0x2f2736);
-    hazeMat.opacity = weather?.hazeOpacity ?? 0.12;
+    hazeMat.opacity = (weather?.hazeOpacity ?? 0.12) * 0.88;
     starsMat.opacity = weather?.starOpacity ?? 0.3;
 
     if (refreshEnvironmentMap) {

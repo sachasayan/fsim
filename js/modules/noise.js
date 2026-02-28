@@ -49,6 +49,36 @@ export const Noise = {
     );
   },
   fractal(x, z, octaves, persistence, scale) {
+    if (persistence === 0.5) {
+      let f = scale;
+      if (octaves === 5) {
+        const n0 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n1 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n2 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n3 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n4 = this.noise(x * f, 0, z * f);
+        return (n0 + n1 * 0.5 + n2 * 0.25 + n3 * 0.125 + n4 * 0.0625) / 1.9375;
+      }
+      if (octaves === 6) {
+        const n0 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n1 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n2 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n3 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n4 = this.noise(x * f, 0, z * f);
+        f *= 2;
+        const n5 = this.noise(x * f, 0, z * f);
+        return (n0 + n1 * 0.5 + n2 * 0.25 + n3 * 0.125 + n4 * 0.0625 + n5 * 0.03125) / 1.96875;
+      }
+    }
+
     let total = 0;
     let frequency = scale;
     let amplitude = 1;

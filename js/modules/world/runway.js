@@ -2,7 +2,9 @@ import * as THREE from 'three';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
-  const RUNWAY_LIGHT_GLOW_SCALE = 0.5;
+  const RUNWAY_LIGHT_GLOW_SCALE = 0.38;
+  const RUNWAY_LIGHT_PAPI_SCALE = 0.32;
+  const RUNWAY_LIGHT_STROBE_SCALE = 0.42;
 
   // High-Res Procedural Runway Mesh
   function createRunwayMesh() {
@@ -11,23 +13,23 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     canvas.height = 4096;
     const ctx = canvas.getContext('2d');
 
-    // Asphalt base
-    ctx.fillStyle = '#1a1a1a';
+    // Asphalt base (lifted slightly so runway doesn't crush to black at low sun angles)
+    ctx.fillStyle = '#30343b';
     ctx.fillRect(0, 0, 1024, 4096);
 
     // Asphalt Noise
     for (let i = 0; i < 200000; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? '#222' : '#111';
+      ctx.fillStyle = Math.random() > 0.5 ? '#434a53' : '#2a3038';
       ctx.fillRect(Math.random() * 1024, Math.random() * 4096, 2, 2);
     }
 
     // Longitudinal sealing strips and patchwork
     for (let y = 0; y < 4096; y += 180) {
-      ctx.fillStyle = 'rgba(30,30,30,0.35)';
+      ctx.fillStyle = 'rgba(42,44,48,0.28)';
       ctx.fillRect(430 + Math.sin(y * 0.003) * 8, y, 6, 130);
       ctx.fillRect(586 + Math.cos(y * 0.004) * 9, y + 20, 5, 110);
       if (Math.random() > 0.5) {
-        ctx.fillStyle = 'rgba(45,45,45,0.3)';
+        ctx.fillStyle = 'rgba(62,64,69,0.22)';
         ctx.fillRect(200 + Math.random() * 620, y + Math.random() * 40, 40 + Math.random() * 80, 10 + Math.random() * 28);
       }
     }
@@ -90,13 +92,98 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       }
     }
 
+    function createRoughnessMapFromAlbedo(sourceCanvas) {
+      const roughCanvas = document.createElement('canvas');
+      roughCanvas.width = sourceCanvas.width;
+      roughCanvas.height = sourceCanvas.height;
+      const roughCtx = roughCanvas.getContext('2d');
+      const srcCtx = sourceCanvas.getContext('2d');
+      const src = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+      const out = roughCtx.createImageData(sourceCanvas.width, sourceCanvas.height);
+
+      for (let i = 0; i < src.data.length; i += 4) {
+        const r = src.data[i];
+        const g = src.data[i + 1];
+        const b = src.data[i + 2];
+        const x = (i / 4) % sourceCanvas.width;
+        const y = Math.floor((i / 4) / sourceCanvas.width);
+        const luma = (r + g + b) / 3;
+
+        // Asphalt is rough; painted markings are smoother; skids become slightly glossier.
+        let rough = 188;
+        if (luma > 205) rough = 88;
+        else if (luma < 22) rough = 146;
+
+        // Fine variation and longitudinal runway wear breakup.
+        rough += (Math.sin(x * 0.018 + y * 0.009) + Math.sin(x * 0.031 - y * 0.014)) * 7;
+        rough += (Math.random() - 0.5) * 10;
+        rough = Math.max(38, Math.min(232, rough));
+
+        out.data[i] = rough;
+        out.data[i + 1] = rough;
+        out.data[i + 2] = rough;
+        out.data[i + 3] = 255;
+      }
+
+      roughCtx.putImageData(out, 0, 0);
+      return roughCanvas;
+    }
+
+    function createRunwayBumpMap(width, height) {
+      const bumpCanvas = document.createElement('canvas');
+      bumpCanvas.width = width;
+      bumpCanvas.height = height;
+      const bumpCtx = bumpCanvas.getContext('2d');
+      const bumpData = bumpCtx.createImageData(width, height);
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          let h = 128;
+          h += Math.sin(x * 0.06 + y * 0.015) * 6;
+          h += Math.sin(x * 0.11 - y * 0.02) * 4;
+          h += (Math.random() - 0.5) * 8;
+          h = Math.max(90, Math.min(170, h));
+          bumpData.data[i] = h;
+          bumpData.data[i + 1] = h;
+          bumpData.data[i + 2] = h;
+          bumpData.data[i + 3] = 255;
+        }
+      }
+
+      bumpCtx.putImageData(bumpData, 0, 0);
+      return bumpCanvas;
+    }
+
+    const roughnessCanvas = createRoughnessMapFromAlbedo(canvas);
+    const bumpCanvas = createRunwayBumpMap(512, 2048);
+
     const tex = new THREE.CanvasTexture(canvas);
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const roughnessTex = new THREE.CanvasTexture(roughnessCanvas);
+    const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+    const anisotropy = renderer.capabilities.getMaxAnisotropy();
+    tex.anisotropy = anisotropy;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    roughnessTex.anisotropy = anisotropy;
+    roughnessTex.wrapS = THREE.ClampToEdgeWrapping;
+    roughnessTex.wrapT = THREE.RepeatWrapping;
+    bumpTex.anisotropy = anisotropy;
+    bumpTex.wrapS = THREE.ClampToEdgeWrapping;
+    bumpTex.wrapT = THREE.RepeatWrapping;
+    bumpTex.repeat.set(2, 2);
+    tex.colorSpace = THREE.SRGBColorSpace;
 
     const runwayGeo = new THREE.PlaneGeometry(100, 4000);
-    const runwayMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.1 });
+    const runwayMat = new THREE.MeshStandardMaterial({
+      map: tex,
+      roughnessMap: roughnessTex,
+      roughness: 0.92,
+      metalness: 0.0,
+      bumpMap: bumpTex,
+      bumpScale: 0.16,
+      envMapIntensity: 0.32
+    });
     const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
     runwayMesh.rotation.x = -Math.PI / 2;
     runwayMesh.position.set(0, 0.2, 0); // Slightly above terrain to prevent z-fighting
@@ -110,14 +197,14 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     lights: [],
     lights36: [],
     lights18: [],
-    matRed: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 30 * RUNWAY_LIGHT_GLOW_SCALE }),
-    matWhite: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 30 * RUNWAY_LIGHT_GLOW_SCALE }),
+    matRed: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 30 * RUNWAY_LIGHT_PAPI_SCALE }),
+    matWhite: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 30 * RUNWAY_LIGHT_PAPI_SCALE }),
     matOff: new THREE.MeshBasicMaterial({ color: 0x111111 })
   };
 
   // Global arrays for ALSF-2 Animation
   const alsStrobes = [];
-  const strobeMatOn = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 60 * RUNWAY_LIGHT_GLOW_SCALE });
+  const strobeMatOn = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 60 * RUNWAY_LIGHT_STROBE_SCALE });
   const strobeMatOff = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
   // Runway Lighting

@@ -109,17 +109,141 @@ function createTreeBillboardTexture(THREE, kind) {
   return tex;
 }
 
+function createTerrainDetailTexture(kind = 'grass') {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  function hash2(x, y, seed) {
+    const n = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453123;
+    return n - Math.floor(n);
+  }
+
+  function smoothNoise(x, y, seed) {
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = x0 + 1;
+    const y1 = y0 + 1;
+    const tx = x - x0;
+    const ty = y - y0;
+    const sx = tx * tx * (3 - 2 * tx);
+    const sy = ty * ty * (3 - 2 * ty);
+
+    const n00 = hash2(x0, y0, seed);
+    const n10 = hash2(x1, y0, seed);
+    const n01 = hash2(x0, y1, seed);
+    const n11 = hash2(x1, y1, seed);
+    const nx0 = n00 * (1 - sx) + n10 * sx;
+    const nx1 = n01 * (1 - sx) + n11 * sx;
+    return nx0 * (1 - sy) + nx1 * sy;
+  }
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const n1 = smoothNoise(x * 0.08, y * 0.08, 1);
+      const n2 = smoothNoise(x * 0.19, y * 0.19, 2);
+      const n3 = smoothNoise(x * 0.39, y * 0.39, 3);
+      const n = n1 * 0.55 + n2 * 0.3 + n3 * 0.15;
+      const i = (y * size + x) * 4;
+
+      if (kind === 'rock') {
+        const g = Math.floor(90 + n * 105);
+        data[i] = g;
+        data[i + 1] = g;
+        data[i + 2] = g + Math.floor(n * 8);
+      } else {
+        const r = Math.floor(70 + n * 55);
+        const g = Math.floor(98 + n * 85);
+        const b = Math.floor(58 + n * 45);
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+      }
+      data[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipMapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  return tex;
+}
+
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const TREE_DENSITY_MULTIPLIER = 4.0;
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     transparent: true,
     opacity: 0.9,
-    roughness: 0.3, // Increased roughness to scatter the blinding sun reflection
-    metalness: 0.8,
+    roughness: 0.62,
+    metalness: 0.05,
+    envMapIntensity: 0.22,
     normalMap: createWaterNormalMap(Noise),
-    normalScale: new THREE.Vector2(0.5, 0.5)
+    normalScale: new THREE.Vector2(0.36, 0.36)
   });
+  const atmosphereCameraPos = new THREE.Vector3();
+  const atmosphereColor = new THREE.Color(0x90939f);
+  const atmosphereUniforms = {
+    uAtmosCameraPos: { value: atmosphereCameraPos },
+    uAtmosColor: { value: atmosphereColor },
+    uAtmosNear: { value: 9000.0 },
+    uAtmosFar: { value: 68000.0 }
+  };
+  const tmpColorA = new THREE.Color();
+  const tmpColorB = new THREE.Color();
+
+  function applyDistanceAtmosphereToMaterial(material, programKey, strength = 0.5, desat = 0.0) {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uAtmosCameraPos = atmosphereUniforms.uAtmosCameraPos;
+      shader.uniforms.uAtmosColor = atmosphereUniforms.uAtmosColor;
+      shader.uniforms.uAtmosNear = atmosphereUniforms.uAtmosNear;
+      shader.uniforms.uAtmosFar = atmosphereUniforms.uAtmosFar;
+
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+varying vec3 vAtmosWorldPos;`
+        )
+        .replace(
+          '#include <worldpos_vertex>',
+          `#include <worldpos_vertex>
+vAtmosWorldPos = worldPosition.xyz;`
+        );
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+varying vec3 vAtmosWorldPos;
+uniform vec3 uAtmosCameraPos;
+uniform vec3 uAtmosColor;
+uniform float uAtmosNear;
+uniform float uAtmosFar;`
+        )
+        .replace(
+          'vec4 diffuseColor = vec4( diffuse, opacity );',
+          `vec4 diffuseColor = vec4( diffuse, opacity );
+float atmosDist = distance(vAtmosWorldPos, uAtmosCameraPos);
+float atmosMix = smoothstep(uAtmosNear, uAtmosFar, atmosDist) * ${strength.toFixed(4)};
+float atmosLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(atmosLuma), ${desat.toFixed(4)} * atmosMix);
+diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
+        );
+    };
+    material.customProgramCacheKey = () => `atmos-${programKey}`;
+  }
+
+  applyDistanceAtmosphereToMaterial(waterMaterial, 'water', 0.74, 0.08);
 
   const CHUNK_SIZE = 4000;
   const LOD_LEVELS = [
@@ -160,11 +284,120 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const pendingChunkBuilds = [];
   const pendingChunkKeys = new Set();
   let pendingQueueDirty = false;
+  const pendingPropBuilds = [];
+  const pendingPropKeys = new Set();
+  let pendingPropQueueDirty = false;
+  const terrainGrassDetailTex = createTerrainDetailTexture('grass');
+  const terrainRockDetailTex = createTerrainDetailTexture('rock');
   const terrainMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.8,
-    flatShading: true
+    roughness: 0.78,
+    metalness: 0.02,
+    flatShading: false
   });
+  const terrainDetailUniforms = {
+    uTerrainGrassDetailTex: { value: terrainGrassDetailTex },
+    uTerrainRockDetailTex: { value: terrainRockDetailTex },
+    uTerrainDetailScale: { value: 0.0006 },
+    uTerrainDetailStrength: { value: 0.62 },
+    uTerrainSlopeStart: { value: 0.26 },
+    uTerrainSlopeEnd: { value: 0.62 },
+    uTerrainRockHeightStart: { value: 220.0 },
+    uTerrainRockHeightEnd: { value: 560.0 },
+    uTerrainAtmosStrength: { value: 0.44 },
+    uTerrainFoliageNearStart: { value: 50.0 },
+    uTerrainFoliageNearEnd: { value: 320.0 },
+    uTerrainFoliageStrength: { value: 0.14 }
+  };
+  terrainMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uTerrainGrassDetailTex = terrainDetailUniforms.uTerrainGrassDetailTex;
+    shader.uniforms.uTerrainRockDetailTex = terrainDetailUniforms.uTerrainRockDetailTex;
+    shader.uniforms.uTerrainDetailScale = terrainDetailUniforms.uTerrainDetailScale;
+    shader.uniforms.uTerrainDetailStrength = terrainDetailUniforms.uTerrainDetailStrength;
+    shader.uniforms.uTerrainSlopeStart = terrainDetailUniforms.uTerrainSlopeStart;
+    shader.uniforms.uTerrainSlopeEnd = terrainDetailUniforms.uTerrainSlopeEnd;
+    shader.uniforms.uTerrainRockHeightStart = terrainDetailUniforms.uTerrainRockHeightStart;
+    shader.uniforms.uTerrainRockHeightEnd = terrainDetailUniforms.uTerrainRockHeightEnd;
+    shader.uniforms.uAtmosCameraPos = atmosphereUniforms.uAtmosCameraPos;
+    shader.uniforms.uAtmosColor = atmosphereUniforms.uAtmosColor;
+    shader.uniforms.uAtmosNear = atmosphereUniforms.uAtmosNear;
+    shader.uniforms.uAtmosFar = atmosphereUniforms.uAtmosFar;
+    shader.uniforms.uTerrainAtmosStrength = terrainDetailUniforms.uTerrainAtmosStrength;
+    shader.uniforms.uTerrainFoliageNearStart = terrainDetailUniforms.uTerrainFoliageNearStart;
+    shader.uniforms.uTerrainFoliageNearEnd = terrainDetailUniforms.uTerrainFoliageNearEnd;
+    shader.uniforms.uTerrainFoliageStrength = terrainDetailUniforms.uTerrainFoliageStrength;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vTerrainWorldPos;
+varying vec3 vTerrainWorldNormal;`
+      )
+      .replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+vTerrainWorldPos = worldPosition.xyz;
+vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);`
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vTerrainWorldPos;
+varying vec3 vTerrainWorldNormal;
+uniform sampler2D uTerrainGrassDetailTex;
+uniform sampler2D uTerrainRockDetailTex;
+uniform float uTerrainDetailScale;
+uniform float uTerrainDetailStrength;
+uniform float uTerrainSlopeStart;
+uniform float uTerrainSlopeEnd;
+uniform float uTerrainRockHeightStart;
+uniform float uTerrainRockHeightEnd;
+uniform vec3 uAtmosCameraPos;
+uniform vec3 uAtmosColor;
+uniform float uAtmosNear;
+uniform float uAtmosFar;
+uniform float uTerrainAtmosStrength;
+uniform float uTerrainFoliageNearStart;
+uniform float uTerrainFoliageNearEnd;
+uniform float uTerrainFoliageStrength;`
+      )
+      .replace(
+        'vec4 diffuseColor = vec4( diffuse, opacity );',
+        `vec4 diffuseColor = vec4( diffuse, opacity );
+vec2 terrainUvA = vTerrainWorldPos.xz * uTerrainDetailScale;
+vec2 terrainUvB = vTerrainWorldPos.xz * (uTerrainDetailScale * 0.28);
+float grassDetail = mix(texture2D(uTerrainGrassDetailTex, terrainUvA).g, texture2D(uTerrainGrassDetailTex, terrainUvB).g, 0.32);
+float rockDetail = mix(texture2D(uTerrainRockDetailTex, terrainUvA).r, texture2D(uTerrainRockDetailTex, terrainUvB).r, 0.4);
+float slope = 1.0 - clamp(abs(dot(normalize(vTerrainWorldNormal), vec3(0.0, 1.0, 0.0))), 0.0, 1.0);
+float slopeMask = smoothstep(uTerrainSlopeStart, uTerrainSlopeEnd, slope);
+float heightMask = smoothstep(uTerrainRockHeightStart, uTerrainRockHeightEnd, vTerrainWorldPos.y);
+float rockMask = max(slopeMask, heightMask);
+float detailLuma = mix(grassDetail, rockDetail, rockMask);
+float detailBoost = mix(0.76, 1.22, detailLuma);
+diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
+float terrainDist = distance(vTerrainWorldPos, uAtmosCameraPos);
+float nearMid = 1.0 - smoothstep(140.0, 1700.0, terrainDist);
+float macroA = sin(vTerrainWorldPos.x * 0.0022 + vTerrainWorldPos.z * 0.0016);
+float macroB = sin(vTerrainWorldPos.x * 0.0014 - vTerrainWorldPos.z * 0.0020);
+float macro = 0.5 + 0.5 * (macroA * 0.6 + macroB * 0.4);
+float macroShade = mix(0.88, 1.12, macro);
+diffuseColor.rgb *= mix(1.0, macroShade, nearMid * (1.0 - rockMask * 0.35));
+float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, terrainDist);
+float foliageEligible = (1.0 - rockMask) * foliageFade;
+float tuft = smoothstep(0.48, 0.86, grassDetail);
+float foliage = foliageEligible * tuft * uTerrainFoliageStrength;
+float micro = sin(vTerrainWorldPos.x * 0.42 + vTerrainWorldPos.z * 0.35);
+float blade = smoothstep(0.2, 0.95, abs(micro));
+diffuseColor.rgb *= mix(1.0, 0.92 + 0.1 * blade, foliage * 0.55);
+diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.01, 0.026, 0.008), foliage * 0.45);
+float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, terrainDist) * uTerrainAtmosStrength;
+diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
+      );
+  };
+  terrainMaterial.customProgramCacheKey = () => 'terrain-detail-v3';
 
   // Instanced Tree Resources: crossed low-poly billboard cards
   const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
@@ -217,6 +450,68 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const spireGeo = new THREE.CylinderGeometry(0.06, 0.12, 1, 8);
   spireGeo.translate(0, 0.5, 0);
   const spireMat = new THREE.MeshStandardMaterial({ color: 0xc7c7c7, roughness: 0.3, metalness: 0.9 });
+  const treeTypeConfigs = {
+    conifer: { mat: treeBillboardMats.conifer, hRange: [14, 24], wScale: 0.45 },
+    broadleaf: { mat: treeBillboardMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
+    poplar: { mat: treeBillboardMats.poplar, hRange: [13, 23], wScale: 0.42 },
+    dry: { mat: treeBillboardMats.dry, hRange: [8, 15], wScale: 0.52 }
+  };
+  const classConfigs = {
+    supertall: {
+      height: [180, 380],
+      width: [24, 42],
+      depth: [24, 42],
+      colors: [0x1b2738, 0x111111, 0x202a36, 0x27364a],
+      roof: [0x2d2d2d, 0x353535],
+      podium: true,
+      spire: true
+    },
+    highrise: {
+      height: [80, 190],
+      width: [18, 30],
+      depth: [16, 28],
+      colors: [0x34495e, 0x2c3e50, 0x4a6073, 0x3b4a59],
+      roof: [0x3d3d3d, 0x4a4a4a],
+      podium: true,
+      spire: false
+    },
+    office: {
+      height: [35, 90],
+      width: [14, 26],
+      depth: [12, 24],
+      colors: [0x6e7b85, 0x7a7f89, 0x5e6970, 0x8a8f97],
+      roof: [0x555555, 0x636363],
+      podium: false,
+      spire: false
+    },
+    apartment: {
+      height: [18, 48],
+      width: [12, 20],
+      depth: [10, 18],
+      colors: [0xb6b1a5, 0x9f9a90, 0xc7c2b5, 0xa8a39a],
+      roof: [0x6a5e50, 0x736857],
+      podium: false,
+      spire: false
+    },
+    townhouse: {
+      height: [8, 16],
+      width: [7, 12],
+      depth: [8, 13],
+      colors: [0xe0d7cc, 0xd5cabf, 0xcbc0b3, 0xede4da],
+      roof: [0x6a5035, 0x5a4731],
+      podium: false,
+      spire: false
+    },
+    industrial: {
+      height: [10, 24],
+      width: [18, 34],
+      depth: [16, 30],
+      colors: [0x8b8d8f, 0x7b7d7f, 0x6d7278, 0x9a9ca0],
+      roof: [0x53575e, 0x454a52],
+      podium: false,
+      spire: false
+    }
+  };
   const terrainColorSand = new THREE.Color(0xc2b280);
   const terrainColorLowland = new THREE.Color(0x355e3b);
   const terrainColorForest = new THREE.Color(0x2a4b2a);
@@ -426,6 +721,22 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     pendingQueueDirty = true;
   }
 
+  function removePendingPropJobs(key) {
+    if (!pendingPropKeys.has(key)) return;
+    for (let i = pendingPropBuilds.length - 1; i >= 0; i--) {
+      if (pendingPropBuilds[i].key === key) pendingPropBuilds.splice(i, 1);
+    }
+    pendingPropKeys.delete(key);
+    pendingPropQueueDirty = true;
+  }
+
+  function enqueuePropBuild(cx, cz, lod, priority, key, groupRef) {
+    if (pendingPropKeys.has(key)) return;
+    pendingPropKeys.add(key);
+    pendingPropBuilds.push({ cx, cz, lod, priority, key, groupRef });
+    pendingPropQueueDirty = true;
+  }
+
   function processChunkBuildQueue(maxBuildsPerFrame = 2) {
     if (pendingChunkBuilds.length === 0) return;
     if (pendingQueueDirty) {
@@ -439,22 +750,49 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       pendingChunkKeys.delete(job.key);
       const existing = terrainChunks.get(job.key);
       if (existing && existing.lod === job.lod) {
+        if (!existing.propsBuilt) {
+          enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group);
+        }
         builds++;
         continue;
       }
 
       if (existing) {
+        removePendingPropJobs(job.key);
         disposeChunkGroup(existing.group);
         terrainChunks.delete(job.key);
       }
 
-      const group = generateChunk(job.cx, job.cz, job.lod);
-      terrainChunks.set(job.key, { group, lod: job.lod });
+      const group = generateChunkBase(job.cx, job.cz, job.lod);
+      terrainChunks.set(job.key, { group, lod: job.lod, propsBuilt: false });
+      enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
       builds++;
     }
   }
 
-  function generateChunk(cx, cz, lod = 0) {
+  function processPropBuildQueue(maxBuildsPerFrame = 1) {
+    if (pendingPropBuilds.length === 0) return;
+    if (pendingPropQueueDirty) {
+      pendingPropBuilds.sort((a, b) => b.priority - a.priority);
+      pendingPropQueueDirty = false;
+    }
+
+    let builds = 0;
+    while (builds < maxBuildsPerFrame && pendingPropBuilds.length > 0) {
+      const job = pendingPropBuilds.pop();
+      pendingPropKeys.delete(job.key);
+      const state = terrainChunks.get(job.key);
+      if (!state || state.group !== job.groupRef || state.lod !== job.lod || state.propsBuilt) {
+        builds++;
+        continue;
+      }
+      generateChunkProps(state.group, job.cx, job.cz, job.lod);
+      state.propsBuilt = true;
+      builds++;
+    }
+  }
+
+  function generateChunkBase(cx, cz, lod = 0) {
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const chunkGroup = new THREE.Group();
     chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
@@ -466,22 +804,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     const positions = geometry.attributes.position.array;
     const colors = [];
     const colorObj = new THREE.Color();
-
-    const treePositions = {
-      conifer: [],
-      broadleaf: [],
-      poplar: [],
-      dry: []
-    };
-    const buildingPositions = {
-      supertall: [],
-      highrise: [],
-      office: [],
-      apartment: [],
-      townhouse: [],
-      industrial: []
-    };
-    const boatPositions = [];
 
     for (let i = 0; i < positions.length; i += 3) {
       let lx = positions[i];
@@ -509,77 +831,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         colorObj.lerpColors(terrainColorRock, terrainColorSnow, snowBlend);
       }
       colors.push(colorObj.r, colorObj.g, colorObj.b);
-
-      // Object Placement Logic (cities, roads, parks, forests)
-      const distFromRunwayX = Math.abs(vx);
-      const distFromRunwayZ = Math.abs(vz);
-      const cellX = Math.floor(vx / 18);
-      const cellZ = Math.floor(vz / 18);
-      const rng = hash2(cellX, cellZ, 9);
-
-      if (lodCfg.enableBoats && height < -30 && rng > (0.9988 + (1 - lodCfg.propDensity) * 0.0008)) {
-        boatPositions.push({ x: lx, z: lz, rot: hash2(cellX, cellZ, 10) * Math.PI * 2 });
-      }
-
-      if (distFromRunwayX < 250 && distFromRunwayZ < 2800) continue;
-      if (height < -5 || height > 430) continue;
-
-      const macroUrban = (Noise.fractal(vx, vz, 3, 0.5, 0.00035) + 1) * 0.5;
-      const hubUrban = cityHubInfluence(vx, vz);
-      const corridorUrban = Math.max(0, 1 - Math.abs(Math.abs(vx) - 1800) / 1800) * Math.max(0, 1 - Math.abs(vz) / 14000);
-      const urbanScore = Math.max(0, Math.min(1, hubUrban * 0.65 + macroUrban * 0.25 + corridorUrban * 0.25));
-      const district = getDistrictProfile(vx, vz, urbanScore, height);
-
-      const warpX = Noise.fractal(vx + 7000, vz - 11000, 2, 0.5, 0.0013) * 60;
-      const warpZ = Noise.fractal(vx - 9000, vz + 13000, 2, 0.5, 0.0013) * 60;
-      const roadSpacing = (90 + (1 - urbanScore) * 140) * district.roadScale;
-      const roadWidth = 4 + urbanScore * 4;
-      const roadX = Math.abs((((vx + warpX) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
-      const roadZ = Math.abs((((vz + warpZ) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
-      const isRoad = roadX < roadWidth || roadZ < roadWidth;
-
-      const parkNoise = (Noise.fractal(vx - 20000, vz + 15000, 3, 0.5, 0.0025) + 1) * 0.5;
-      const isPark = urbanScore > 0.35 && parkNoise > 0.7 && !isRoad;
-      const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
-
-      if (lodCfg.enableBuildings && urbanScore > 0.22 && !isRoad && !isPark) {
-        const lotDensity = district.lotDensity * (0.55 + urbanScore * 0.95);
-        if (rng < lotDensity * lodCfg.propDensity) {
-          const classNoise = hash2(cellX, cellZ, 12);
-          const buildingClass = pickWeighted(classNoise, district.classWeights);
-
-          const ox = (hash2(cellX, cellZ, 14) - 0.5) * 24;
-          const oz = (hash2(cellX, cellZ, 15) - 0.5) * 24;
-          const px = lx + ox;
-          const pz = lz + oz;
-          const py = getTerrainHeight(vx + ox, vz + oz);
-          if (py > -5 && py < 430) {
-            buildingPositions[buildingClass].push({
-              x: px,
-              y: py,
-              z: pz,
-              angle: Math.floor(hash2(cellX, cellZ, 16) * 4) * (Math.PI / 2),
-              seed: hash2(cellX, cellZ, 17),
-              seed2: hash2(cellX, cellZ, 18),
-              seed3: hash2(cellX, cellZ, 19)
-            });
-          }
-        }
-      } else if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
-        const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore);
-        const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
-        if (rng < treeChance) {
-          const treeType = pickWeighted(hash2(cellX, cellZ, 24), forest.typeWeights);
-          treePositions[treeType].push({
-            x: lx + (hash2(cellX, cellZ, 20) - 0.5) * 20,
-            y: height,
-            z: lz + (hash2(cellX, cellZ, 21) - 0.5) * 20,
-            lean: (hash2(cellX, cellZ, 22) - 0.5) * 0.08,
-            seed: hash2(cellX, cellZ, 23),
-            seed2: hash2(cellX, cellZ, 25)
-          });
-        }
-      }
     }
 
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -620,13 +871,107 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     const waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
     waterMesh.receiveShadow = true;
     chunkGroup.add(waterMesh);
+    scene.add(chunkGroup);
+    return chunkGroup;
+  }
 
-    const treeTypeConfigs = {
-      conifer: { mat: treeBillboardMats.conifer, hRange: [14, 24], wScale: 0.45 },
-      broadleaf: { mat: treeBillboardMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
-      poplar: { mat: treeBillboardMats.poplar, hRange: [13, 23], wScale: 0.42 },
-      dry: { mat: treeBillboardMats.dry, hRange: [8, 15], wScale: 0.52 }
+  function generateChunkProps(chunkGroup, cx, cz, lod = 0) {
+    const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
+    const terrainMesh = chunkGroup.children[0];
+    if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
+    const positions = terrainMesh.geometry.attributes.position.array;
+    const treePositions = {
+      conifer: [],
+      broadleaf: [],
+      poplar: [],
+      dry: []
     };
+    const buildingPositions = {
+      supertall: [],
+      highrise: [],
+      office: [],
+      apartment: [],
+      townhouse: [],
+      industrial: []
+    };
+    const boatPositions = [];
+
+    for (let i = 0; i < positions.length; i += 3) {
+      const lx = positions[i];
+      const height = positions[i + 1];
+      const lz = positions[i + 2];
+      const vx = lx + cx * CHUNK_SIZE;
+      const vz = lz + cz * CHUNK_SIZE;
+
+      const distFromRunwayX = Math.abs(vx);
+      const distFromRunwayZ = Math.abs(vz);
+      const cellX = Math.floor(vx / 18);
+      const cellZ = Math.floor(vz / 18);
+      const rng = hash2(cellX, cellZ, 9);
+
+      if (lodCfg.enableBoats && height < -30 && rng > (0.9988 + (1 - lodCfg.propDensity) * 0.0008)) {
+        boatPositions.push({ x: lx, z: lz, rot: hash2(cellX, cellZ, 10) * Math.PI * 2 });
+      }
+
+      if (distFromRunwayX < 250 && distFromRunwayZ < 2800) continue;
+      if (height < -5 || height > 430) continue;
+
+      const macroUrban = (Noise.fractal(vx, vz, 3, 0.5, 0.00035) + 1) * 0.5;
+      const hubUrban = cityHubInfluence(vx, vz);
+      const corridorUrban = Math.max(0, 1 - Math.abs(Math.abs(vx) - 1800) / 1800) * Math.max(0, 1 - Math.abs(vz) / 14000);
+      const urbanScore = Math.max(0, Math.min(1, hubUrban * 0.65 + macroUrban * 0.25 + corridorUrban * 0.25));
+      const district = getDistrictProfile(vx, vz, urbanScore, height);
+
+      const warpX = Noise.fractal(vx + 7000, vz - 11000, 2, 0.5, 0.0013) * 60;
+      const warpZ = Noise.fractal(vx - 9000, vz + 13000, 2, 0.5, 0.0013) * 60;
+      const roadSpacing = (90 + (1 - urbanScore) * 140) * district.roadScale;
+      const roadWidth = 4 + urbanScore * 4;
+      const roadX = Math.abs((((vx + warpX) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
+      const roadZ = Math.abs((((vz + warpZ) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
+      const isRoad = roadX < roadWidth || roadZ < roadWidth;
+
+      const parkNoise = (Noise.fractal(vx - 20000, vz + 15000, 3, 0.5, 0.0025) + 1) * 0.5;
+      const isPark = urbanScore > 0.35 && parkNoise > 0.7 && !isRoad;
+      const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
+
+      if (lodCfg.enableBuildings && urbanScore > 0.22 && !isRoad && !isPark) {
+        const lotDensity = district.lotDensity * (0.55 + urbanScore * 0.95);
+        if (rng < lotDensity * lodCfg.propDensity) {
+          const classNoise = hash2(cellX, cellZ, 12);
+          const buildingClass = pickWeighted(classNoise, district.classWeights);
+          const ox = (hash2(cellX, cellZ, 14) - 0.5) * 24;
+          const oz = (hash2(cellX, cellZ, 15) - 0.5) * 24;
+          const px = lx + ox;
+          const pz = lz + oz;
+          const py = getTerrainHeight(vx + ox, vz + oz);
+          if (py > -5 && py < 430) {
+            buildingPositions[buildingClass].push({
+              x: px,
+              y: py,
+              z: pz,
+              angle: Math.floor(hash2(cellX, cellZ, 16) * 4) * (Math.PI / 2),
+              seed: hash2(cellX, cellZ, 17),
+              seed2: hash2(cellX, cellZ, 18),
+              seed3: hash2(cellX, cellZ, 19)
+            });
+          }
+        }
+      } else if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
+        const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore);
+        const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
+        if (rng < treeChance) {
+          const treeType = pickWeighted(hash2(cellX, cellZ, 24), forest.typeWeights);
+          treePositions[treeType].push({
+            x: lx + (hash2(cellX, cellZ, 20) - 0.5) * 20,
+            y: height,
+            z: lz + (hash2(cellX, cellZ, 21) - 0.5) * 20,
+            lean: (hash2(cellX, cellZ, 22) - 0.5) * 0.08,
+            seed: hash2(cellX, cellZ, 23),
+            seed2: hash2(cellX, cellZ, 25)
+          });
+        }
+      }
+    }
 
     for (const [treeType, trees] of Object.entries(treePositions)) {
       if (trees.length === 0) continue;
@@ -659,63 +1004,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       chunkGroup.add(cardA, cardB);
     }
 
-    const classConfigs = {
-      supertall: {
-        height: [180, 380],
-        width: [24, 42],
-        depth: [24, 42],
-        colors: [0x1b2738, 0x111111, 0x202a36, 0x27364a],
-        roof: [0x2d2d2d, 0x353535],
-        podium: true,
-        spire: true
-      },
-      highrise: {
-        height: [80, 190],
-        width: [18, 30],
-        depth: [16, 28],
-        colors: [0x34495e, 0x2c3e50, 0x4a6073, 0x3b4a59],
-        roof: [0x3d3d3d, 0x4a4a4a],
-        podium: true,
-        spire: false
-      },
-      office: {
-        height: [35, 90],
-        width: [14, 26],
-        depth: [12, 24],
-        colors: [0x6e7b85, 0x7a7f89, 0x5e6970, 0x8a8f97],
-        roof: [0x555555, 0x636363],
-        podium: false,
-        spire: false
-      },
-      apartment: {
-        height: [18, 48],
-        width: [12, 20],
-        depth: [10, 18],
-        colors: [0xb6b1a5, 0x9f9a90, 0xc7c2b5, 0xa8a39a],
-        roof: [0x6a5e50, 0x736857],
-        podium: false,
-        spire: false
-      },
-      townhouse: {
-        height: [8, 16],
-        width: [7, 12],
-        depth: [8, 13],
-        colors: [0xe0d7cc, 0xd5cabf, 0xcbc0b3, 0xede4da],
-        roof: [0x6a5035, 0x5a4731],
-        podium: false,
-        spire: false
-      },
-      industrial: {
-        height: [10, 24],
-        width: [18, 34],
-        depth: [16, 30],
-        colors: [0x8b8d8f, 0x7b7d7f, 0x6d7278, 0x9a9ca0],
-        roof: [0x53575e, 0x454a52],
-        podium: false,
-        spire: false
-      }
-    };
-
     for (const [buildingClass, entries] of Object.entries(buildingPositions)) {
       if (entries.length === 0) continue;
 
@@ -724,18 +1012,19 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const roofMesh = new THREE.InstancedMesh(roofCapGeo, roofCapMat, entries.length);
       const podiumMesh = cfg.podium ? new THREE.InstancedMesh(podiumGeo, podiumMat, entries.length) : null;
       const spireMesh = cfg.spire ? new THREE.InstancedMesh(spireGeo, spireMat, entries.length) : null;
+      const buildingShadowsEnabled = lod === 0;
 
-      bldgMesh.castShadow = true;
-      bldgMesh.receiveShadow = true;
-      roofMesh.castShadow = true;
-      roofMesh.receiveShadow = true;
+      bldgMesh.castShadow = buildingShadowsEnabled;
+      bldgMesh.receiveShadow = buildingShadowsEnabled;
+      roofMesh.castShadow = buildingShadowsEnabled;
+      roofMesh.receiveShadow = buildingShadowsEnabled;
       if (podiumMesh) {
-        podiumMesh.castShadow = true;
-        podiumMesh.receiveShadow = true;
+        podiumMesh.castShadow = buildingShadowsEnabled;
+        podiumMesh.receiveShadow = buildingShadowsEnabled;
       }
       if (spireMesh) {
-        spireMesh.castShadow = true;
-        spireMesh.receiveShadow = true;
+        spireMesh.castShadow = buildingShadowsEnabled;
+        spireMesh.receiveShadow = buildingShadowsEnabled;
       }
 
       const baseColor = new THREE.Color();
@@ -814,9 +1103,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       }
       chunkGroup.add(hullMesh, cabinMesh, mastMesh);
     }
-
-    scene.add(chunkGroup);
-    return chunkGroup;
   }
 
   function updateTerrain() {
@@ -855,17 +1141,43 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         pendingQueueDirty = true;
       }
     }
+    for (let i = pendingPropBuilds.length - 1; i >= 0; i--) {
+      const job = pendingPropBuilds[i];
+      if (!activeChunks.has(job.key)) {
+        pendingPropKeys.delete(job.key);
+        pendingPropBuilds.splice(i, 1);
+        pendingPropQueueDirty = true;
+      }
+    }
 
     for (const [key, chunkState] of terrainChunks.entries()) {
       if (!activeChunks.has(key)) {
+        removePendingPropJobs(key);
         disposeChunkGroup(chunkState.group);
         terrainChunks.delete(key);
       }
     }
 
-    const buildBudget = pendingChunkBuilds.length > 160 ? 5 : pendingChunkBuilds.length > 80 ? 3 : 2;
+    const buildBudget = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
+    const propBuildBudget = pendingPropBuilds.length > 160 ? 2 : 1;
     processChunkBuildQueue(buildBudget);
+    processPropBuildQueue(propBuildBudget);
   }
 
-  return { waterMaterial, getTerrainHeight, updateTerrain };
+  function updateTerrainAtmosphere(camera, weatherColor = null) {
+    if (camera) atmosphereCameraPos.copy(camera.position);
+    if (weatherColor) {
+      atmosphereColor.copy(weatherColor);
+    } else {
+      // Fallback to a photoreal haze tone if no weather color is supplied.
+      tmpColorA.setRGB(0.62, 0.66, 0.72);
+      tmpColorB.setRGB(0.78, 0.81, 0.86);
+      atmosphereColor.copy(tmpColorA.lerp(tmpColorB, 0.4));
+    }
+    // Keep water blending slightly closer for smoother coastline transitions.
+    atmosphereUniforms.uAtmosNear.value = 7000.0;
+    atmosphereUniforms.uAtmosFar.value = 62000.0;
+  }
+
+  return { waterMaterial, getTerrainHeight, updateTerrain, updateTerrainAtmosphere };
 }

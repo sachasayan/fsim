@@ -18,7 +18,7 @@ export function createSimulationState({ scene }) {
     gravity: 9.81,
     rho: 1.225,
     dt: 0.016,
-    position: new THREE.Vector3(0, AIRCRAFT.gearHeight, 0),
+    position: new THREE.Vector3(0, AIRCRAFT.gearHeight, 1900),
     velocity: new THREE.Vector3(0, 0, 0),
     quaternion: new THREE.Quaternion(),
     angularVelocity: new THREE.Vector3(0, 0, 0),

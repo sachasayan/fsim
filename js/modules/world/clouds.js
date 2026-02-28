@@ -1,53 +1,13 @@
 import * as THREE from 'three';
-
-function hash2D(x, z, seed = 0) {
-  const n = Math.sin(x * 127.1 + z * 311.7 + seed * 74.7) * 43758.5453123;
-  return n - Math.floor(n);
-}
-
-function smoothstep(t) {
-  return t * t * (3 - 2 * t);
-}
-
-function valueNoise2D(x, z, seed = 0) {
-  const x0 = Math.floor(x);
-  const z0 = Math.floor(z);
-  const x1 = x0 + 1;
-  const z1 = z0 + 1;
-  const tx = smoothstep(x - x0);
-  const tz = smoothstep(z - z0);
-
-  const n00 = hash2D(x0, z0, seed);
-  const n10 = hash2D(x1, z0, seed);
-  const n01 = hash2D(x0, z1, seed);
-  const n11 = hash2D(x1, z1, seed);
-  const nx0 = n00 * (1 - tx) + n10 * tx;
-  const nx1 = n01 * (1 - tx) + n11 * tx;
-  return nx0 * (1 - tz) + nx1 * tz;
-}
-
-function fbm2D(x, z, octaves, lacunarity, gain, seed = 0) {
-  let frequency = 1;
-  let amplitude = 1;
-  let sum = 0;
-  let norm = 0;
-
-  for (let i = 0; i < octaves; i++) {
-    sum += valueNoise2D(x * frequency, z * frequency, seed + i * 17) * amplitude;
-    norm += amplitude;
-    frequency *= lacunarity;
-    amplitude *= gain;
-  }
-
-  return norm > 0 ? sum / norm : 0;
-}
+import { CLOUD_NOISE } from './cloudNoise.js';
 
 export function createCloudSystem({ scene }) {
   const voxelSize = 220;
   const worldHalfExtent = 22000;
   const gridStep = 220;
   const layersMax = 6;
-  const tileSize = 6000;
+  // Use one large tile to avoid transparent per-tile sort boundaries ("vertical panes").
+  const tileSize = worldHalfExtent * 4;
 
   // Rounded low-poly puffs read much less blocky than box voxels at similar cost.
   const voxelGeo = new THREE.SphereGeometry(voxelSize * 0.52, 7, 5);
@@ -75,7 +35,9 @@ export function createCloudSystem({ scene }) {
     uCloudCameraPos: { value: new THREE.Vector3() },
     uNearFadeStart: { value: cloudTuning.nearFadeStart },
     uNearFadeEnd: { value: cloudTuning.nearFadeEnd },
-    uCloudMinLight: { value: cloudTuning.minLight }
+    uCloudMinLight: { value: cloudTuning.minLight },
+    uCloudSunDir: { value: new THREE.Vector3(0.25, 0.85, 0.45).normalize() },
+    uCloudPhaseStrength: { value: 0.25 }
   };
 
   voxelMat.onBeforeCompile = (shader) => {
@@ -83,6 +45,8 @@ export function createCloudSystem({ scene }) {
     shader.uniforms.uNearFadeStart = sharedCloudUniforms.uNearFadeStart;
     shader.uniforms.uNearFadeEnd = sharedCloudUniforms.uNearFadeEnd;
     shader.uniforms.uCloudMinLight = sharedCloudUniforms.uCloudMinLight;
+    shader.uniforms.uCloudSunDir = sharedCloudUniforms.uCloudSunDir;
+    shader.uniforms.uCloudPhaseStrength = sharedCloudUniforms.uCloudPhaseStrength;
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -104,18 +68,27 @@ varying vec3 vCloudWorldPos;
 uniform vec3 uCloudCameraPos;
 uniform float uNearFadeStart;
 uniform float uNearFadeEnd;
-uniform float uCloudMinLight;`
+uniform float uCloudMinLight;
+uniform vec3 uCloudSunDir;
+uniform float uCloudPhaseStrength;`
       )
       .replace(
         '#include <alphatest_fragment>',
         `#include <alphatest_fragment>
 float cloudDist = distance(vCloudWorldPos.xz, uCloudCameraPos.xz);
 float nearFade = 1.0 - smoothstep(uNearFadeStart, uNearFadeEnd, cloudDist);
-diffuseColor.a *= nearFade;`
+float edgeNoise = 0.5 + 0.5 * sin(vCloudWorldPos.x * 0.016 + vCloudWorldPos.z * 0.009 + vCloudWorldPos.y * 0.011);
+float jitter = fract(sin(dot(vCloudWorldPos.xz, vec2(0.0143, 0.0101))) * 43758.5453);
+edgeNoise = mix(0.84, 1.06, edgeNoise) * mix(0.96, 1.04, jitter);
+diffuseColor.a = clamp(diffuseColor.a * nearFade * edgeNoise, 0.0, 1.0);`
       )
       .replace(
         'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
         `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+vec3 viewDir = normalize(uCloudCameraPos - vCloudWorldPos);
+float phase = pow(max(dot(viewDir, normalize(uCloudSunDir)), 0.0), 5.0) * uCloudPhaseStrength;
+float topBoost = smoothstep(1200.0, 5400.0, vCloudWorldPos.y) * 0.12;
+outgoingLight += diffuseColor.rgb * (phase * 0.35 + topBoost);
 outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
       );
   };
@@ -136,20 +109,20 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
   const tint = new THREE.Color();
   for (let x = -worldHalfExtent; x <= worldHalfExtent; x += gridStep) {
     for (let z = -worldHalfExtent; z <= worldHalfExtent; z += gridStep) {
-      const nLarge = fbm2D(x * 0.00018, z * 0.00018, 4, 2.0, 0.5, 11);
-      const nDetail = fbm2D(x * 0.00052, z * 0.00052, 3, 2.1, 0.55, 29);
+      const nLarge = CLOUD_NOISE.fbm2D(x * 0.00018, z * 0.00018, 4, 2.0, 0.5, 11);
+      const nDetail = CLOUD_NOISE.fbm2D(x * 0.00052, z * 0.00052, 3, 2.1, 0.55, 29);
       const density = nLarge * 0.78 + nDetail * 0.22;
       if (density < 0.58) continue;
 
       const baseY = 900 + nLarge * 3200;
       const columnLayers = 1 + Math.floor((density - 0.6) / 0.4 * layersMax);
       const cappedLayers = Math.min(layersMax, Math.max(1, columnLayers));
-      const spread = 1.0 + hash2D(x / gridStep, z / gridStep, 3) * 1.0;
+      const spread = 1.0 + CLOUD_NOISE.hash2D(x / gridStep, z / gridStep, 3) * 1.0;
 
       for (let l = 0; l < cappedLayers; l++) {
-        const jitterX = (hash2D(x + l, z - l, 41) - 0.5) * gridStep * 0.65;
-        const jitterZ = (hash2D(x - l, z + l, 53) - 0.5) * gridStep * 0.65;
-        const jitterY = (hash2D(x + l * 3, z + l * 5, 67) - 0.5) * 55;
+        const jitterX = (CLOUD_NOISE.hash2D(x + l, z - l, 41) - 0.5) * gridStep * 0.65;
+        const jitterZ = (CLOUD_NOISE.hash2D(x - l, z + l, 53) - 0.5) * gridStep * 0.65;
+        const jitterY = (CLOUD_NOISE.hash2D(x + l * 3, z + l * 5, 67) - 0.5) * 55;
         const wx = x + jitterX;
         const wz = z + jitterZ;
         const entry = getTileEntry(wx, wz);
@@ -181,11 +154,11 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
       const c = entry.instances[i];
       dummy.position.set(c.x, c.y, c.z);
       dummy.scale.set(
-        c.s * (1.45 + hash2D(c.x, c.z, 81) * 0.75),
-        c.s * (0.95 + hash2D(c.z, c.x, 82) * 0.55),
-        c.s * (1.25 + hash2D(c.z, c.x, 84) * 0.6)
+        c.s * (1.45 + CLOUD_NOISE.hash2D(c.x, c.z, 81) * 0.75),
+        c.s * (0.95 + CLOUD_NOISE.hash2D(c.z, c.x, 82) * 0.55),
+        c.s * (1.25 + CLOUD_NOISE.hash2D(c.z, c.x, 84) * 0.6)
       );
-      dummy.rotation.set(0, hash2D(c.x, c.z, 83) * Math.PI * 2, 0);
+      dummy.rotation.set(0, CLOUD_NOISE.hash2D(c.x, c.z, 83) * Math.PI * 2, 0);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
       mesh.setColorAt(i, entry.colors[i]);
@@ -194,6 +167,8 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.position.set(entry.ox, 0, entry.oz);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
     clouds.add(mesh);
   }
 
@@ -201,8 +176,10 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
     const uniforms = {
       uTime: { value: 0 },
       uCloudCameraPos: { value: new THREE.Vector3() },
+      uSunDir: { value: new THREE.Vector3(0.25, 0.85, 0.45).normalize() },
       uColor: { value: new THREE.Color(0xffffff) },
       uOpacity: { value: 0.28 },
+      uDomainRadius: { value: 114000.0 },
       uFarFadeStart: { value: cloudTuning.farFadeStart },
       uFarFadeEnd: { value: cloudTuning.farFadeEnd }
     };
@@ -220,8 +197,10 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
       varying vec3 vWorldPos;
       uniform float uTime;
       uniform vec3 uCloudCameraPos;
+      uniform vec3 uSunDir;
       uniform vec3 uColor;
       uniform float uOpacity;
+      uniform float uDomainRadius;
       uniform float uFarFadeStart;
       uniform float uFarFadeEnd;
 
@@ -255,6 +234,11 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
       void main() {
         vec2 wind = vec2(uTime * 0.0012, -uTime * 0.0007);
         vec2 p = (vWorldPos.xz * 0.00007) + wind;
+        vec2 warp = vec2(
+          fbm(p * 0.78 + vec2(9.2, 17.1)),
+          fbm(p * 0.72 - vec2(15.6, 5.1))
+        );
+        p += (warp - 0.5) * 0.55;
         float n = fbm(p);
         float coverage = smoothstep(0.54, 0.78, n);
         float detail = smoothstep(0.44, 0.82, fbm(p * 2.4 + vec2(14.0, 31.0)));
@@ -263,9 +247,20 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
         float dist = distance(vWorldPos.xz, uCloudCameraPos.xz);
         float farFade = smoothstep(uFarFadeStart, uFarFadeEnd, dist);
         alpha *= farFade;
+        float domainFade = 1.0 - smoothstep(uDomainRadius * 0.7, uDomainRadius, dist);
+        alpha *= domainFade;
+
+        // Soft edge rolloff to reduce hard cloud boundaries.
+        float edge = fwidth(alpha) * 1.8 + 0.015;
+        alpha = smoothstep(0.04 - edge, 0.98 + edge, alpha);
+
+        vec3 viewDir = normalize(uCloudCameraPos - vWorldPos);
+        float phase = pow(max(dot(viewDir, normalize(uSunDir)), 0.0), 6.0);
+        vec3 phaseTint = mix(uColor, vec3(1.0, 0.97, 0.88), 0.38);
+        vec3 finalColor = mix(uColor, phaseTint, phase * 0.45);
 
         if (alpha < 0.01) discard;
-        gl_FragColor = vec4(uColor, alpha * uOpacity);
+        gl_FragColor = vec4(finalColor, alpha * uOpacity);
       }
     `;
 
@@ -283,16 +278,21 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
   const farCloudLayer = new THREE.Mesh(new THREE.PlaneGeometry(240000, 240000, 1, 1), farCloudMat);
   farCloudLayer.rotation.x = -Math.PI / 2;
   farCloudLayer.position.y = 3600;
+  farCloudLayer.renderOrder = 1;
   scene.add(farCloudLayer);
 
   const farColor = new THREE.Color();
 
-  function updateClouds(dt, camera, weather = null, cloudTint = null) {
+  function updateClouds(dt, camera, weather = null, cloudTint = null, sunDir = null) {
     if (camera) {
       sharedCloudUniforms.uCloudCameraPos.value.copy(camera.position);
       farCloudMat.uniforms.uCloudCameraPos.value.copy(camera.position);
       farCloudLayer.position.x = camera.position.x;
       farCloudLayer.position.z = camera.position.z;
+    }
+    if (sunDir) {
+      sharedCloudUniforms.uCloudSunDir.value.copy(sunDir).normalize();
+      farCloudMat.uniforms.uSunDir.value.copy(sunDir).normalize();
     }
 
     farCloudMat.uniforms.uTime.value += dt;

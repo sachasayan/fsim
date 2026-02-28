@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
@@ -22,7 +23,9 @@ scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015);
 
 const gameHeight = window.innerHeight * 0.75;
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / gameHeight, 1, 100000);
-const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true });
+const BASELINE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
+renderer.setPixelRatio(BASELINE_PIXEL_RATIO);
 renderer.setSize(window.innerWidth, gameHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -31,6 +34,8 @@ renderer.toneMappingExposure = 0.85;
 container.appendChild(renderer.domElement);
 
 const renderScene = new RenderPass(scene, camera);
+const pixelRatio = renderer.getPixelRatio();
+const smaaPass = new SMAAPass(window.innerWidth * pixelRatio, gameHeight * pixelRatio);
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, gameHeight), 1.5, 0.4, 0.85);
 bloomPass.threshold = 5.0;
 bloomPass.strength = 0.8;
@@ -38,6 +43,7 @@ bloomPass.radius = 0.4;
 
 const composer = new EffectComposer(renderer);
 composer.addPass(renderScene);
+composer.addPass(smaaPass);
 composer.addPass(bloomPass);
 
 const { AIRCRAFT, PHYSICS, WEATHER, keys, runtime } = createSimulationState({ scene });
@@ -61,12 +67,17 @@ const tmpHdgEuler = new THREE.Euler();
 const tmpCrashStep = new THREE.Vector3();
 const tmpCrashSpinEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const tmpCrashSpinQuat = new THREE.Quaternion();
+const tmpSunDir = new THREE.Vector3();
+const tmpShadowSunDir = new THREE.Vector3();
+const tmpLightingSunDir = new THREE.Vector3();
 let lastTerrainChunkX = Number.POSITIVE_INFINITY;
 let lastTerrainChunkZ = Number.POSITIVE_INFINITY;
 let lastTerrainUpdateMs = 0;
 const TERRAIN_UPDATE_INTERVAL_MS = 120;
 let prevAlsTargetIndex = -1;
 let prevPapiKey = '';
+let prevShadowExtent = -1;
+const prevShadowCenter = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
 
 // ==========================================
 // 4. WORLD OBJECTS
@@ -81,6 +92,7 @@ const {
   strobeMatOff,
   getTerrainHeight,
   updateTerrain,
+  updateTerrainAtmosphere,
   clouds,
   cloudMaterial,
   updateClouds,
@@ -725,7 +737,7 @@ window.triggerCrash = function (reason) {
 
 window.resetFlight = function () {
     PHYSICS.crashed = false;
-    PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
+    PHYSICS.position.set(0, AIRCRAFT.gearHeight, 1900);
     PHYSICS.velocity.set(0, 0, 0);
     PHYSICS.quaternion.identity();
     PHYSICS.angularVelocity.set(0, 0, 0);
@@ -761,6 +773,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / newGameHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, newGameHeight);
+    smaaPass.setSize(window.innerWidth * renderer.getPixelRatio(), newGameHeight * renderer.getPixelRatio());
     composer.setSize(window.innerWidth, newGameHeight); // Update Bloom resolution
 });
 
@@ -786,10 +799,19 @@ function animate() {
     currentWeatherColor.lerpColors(clearWeatherColor, stormWeatherColor, WEATHER.transition);
     scene.background = currentWeatherColor;
     scene.fog.color = currentWeatherColor;
+    if (updateTerrainAtmosphere) updateTerrainAtmosphere(camera, currentWeatherColor);
 
-    // Dim the lighting to match the overcast skies
-    hemiLight.intensity = WEATHER.lightAmbientBase * (1.0 - WEATHER.transition * 0.55);
-    dirLight.intensity = WEATHER.lightDirectBase * (1.0 - WEATHER.transition * 0.9);
+    // Preserve low-sun readability without flattening mood.
+    tmpLightingSunDir.copy(dirLight.position).normalize();
+    const sunElev = THREE.MathUtils.clamp((tmpLightingSunDir.y + 0.06) / 0.74, 0, 1);
+    const lowSun = 1.0 - sunElev;
+    const lowSunWeight = lowSun * (1.0 - WEATHER.transition * 0.45);
+
+    hemiLight.intensity = WEATHER.lightAmbientBase * (1.0 - WEATHER.transition * 0.55) * (1.0 + lowSunWeight * 0.26);
+    dirLight.intensity = WEATHER.lightDirectBase * (1.0 - WEATHER.transition * 0.9) * (1.0 + lowSunWeight * 0.1);
+    renderer.toneMappingExposure = WEATHER.exposure * (1.0 + lowSunWeight * 0.12);
+    bloomPass.threshold = WEATHER.bloomThreshold + lowSunWeight * 0.4;
+    bloomPass.strength = WEATHER.bloomStrength * (1.0 - lowSunWeight * 0.2);
 
     if (cloudMaterial) {
         currentCloudColor.lerpColors(clearCloudColor, stormCloudColor, WEATHER.transition);
@@ -799,7 +821,7 @@ function animate() {
     }
 
     if (updateClouds) {
-        updateClouds(dt, camera, WEATHER, currentCloudColor);
+        updateClouds(dt, camera, WEATHER, currentCloudColor, tmpSunDir.copy(dirLight.position).normalize());
     }
 
     // Animate Storm Rain Physics
@@ -1064,6 +1086,31 @@ function animate() {
         planeGroup.quaternion.copy(PHYSICS.quaternion);
     }
 
+    // Keep directional shadow coverage centered around the aircraft to maximize useful texels.
+    tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
+    const shadowCenter = planeGroup.position;
+    dirLight.target.position.copy(shadowCenter);
+    dirLight.target.updateMatrixWorld();
+    dirLight.position.copy(shadowCenter).addScaledVector(tmpShadowSunDir, 2000);
+    const shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
+    const shadowMoved =
+      Math.abs(shadowCenter.x - prevShadowCenter.x) > 6 ||
+      Math.abs(shadowCenter.y - prevShadowCenter.y) > 6 ||
+      Math.abs(shadowCenter.z - prevShadowCenter.z) > 6;
+    const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 3;
+    if (shadowMoved || shadowExtentChanged) {
+        const shadowCam = dirLight.shadow.camera;
+        shadowCam.left = -shadowExtent;
+        shadowCam.right = shadowExtent;
+        shadowCam.top = shadowExtent;
+        shadowCam.bottom = -shadowExtent;
+        shadowCam.near = 40;
+        shadowCam.far = 5200;
+        shadowCam.updateProjectionMatrix();
+        prevShadowCenter.copy(shadowCenter);
+        prevShadowExtent = shadowExtent;
+    }
+
     const chunkX = Math.floor(PHYSICS.position.x / 4000);
     const chunkZ = Math.floor(PHYSICS.position.z / 4000);
     const terrainDue = (now - lastTerrainUpdateMs) >= TERRAIN_UPDATE_INTERVAL_MS;
@@ -1113,7 +1160,7 @@ setTimeout(() => {
         setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
 
         // Position at runway start
-        PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
+        PHYSICS.position.set(0, AIRCRAFT.gearHeight, 1900);
         PHYSICS.velocity.set(0, 0, 0);
         PHYSICS.angularVelocity.set(0, 0, 0);
         PHYSICS.externalForce.set(0, 0, 0);
