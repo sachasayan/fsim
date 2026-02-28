@@ -39,17 +39,9 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   skyUniforms['mieCoefficient'].value = WEATHER?.skyMieCoefficient ?? 0.05;
   skyUniforms['mieDirectionalG'].value = WEATHER?.skyMieDirectionalG ?? 0.4;
 
-  const phi = THREE.MathUtils.degToRad(WEATHER?.sunPhiDeg ?? 82.0);
-  const theta = THREE.MathUtils.degToRad(WEATHER?.sunThetaDeg ?? 150.0);
-  sun.setFromSphericalCoords(1, phi, theta);
-  sky.material.uniforms['sunPosition'].value.copy(sun);
-  dirLight.position.copy(sun).multiplyScalar(2000);
-
-  // --- GLOBAL ENVIRONMENT REFLECTIONS (PMREM) ---
-  // Captures the sky gradient and applies it to all shiny surfaces as a realistic reflection map
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
   pmremGenerator.compileEquirectangularShader();
-  scene.environment = pmremGenerator.fromScene(sky).texture;
+  let environmentTexture = null;
 
   // Far horizon haze dome for depth layering
   const hazeGeo = new THREE.SphereGeometry(180000, 24, 24);
@@ -76,17 +68,47 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   }
   const starGeo = new THREE.BufferGeometry();
   starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  const starsMat = new THREE.PointsMaterial({
+    color: 0xcad8ff,
+    size: 140,
+    transparent: true,
+    opacity: WEATHER?.starOpacity ?? 0.3,
+    depthWrite: false
+  });
   const stars = new THREE.Points(
     starGeo,
-    new THREE.PointsMaterial({
-      color: 0xcad8ff,
-      size: 140,
-      transparent: true,
-      opacity: WEATHER?.starOpacity ?? 0.3,
-      depthWrite: false
-    })
+    starsMat
   );
   scene.add(stars);
 
-  return { hemiLight, dirLight };
+  function applyEnvironmentFromWeather(weather, options = {}) {
+    const { refreshEnvironmentMap = false } = options;
+    hemiLight.color.setHex(weather?.hemiSkyColor ?? 0x444455);
+    hemiLight.groundColor.setHex(weather?.hemiGroundColor ?? 0x111118);
+    dirLight.color.setHex(weather?.dirColor ?? 0xff9a66);
+    skyUniforms.turbidity.value = weather?.skyTurbidity ?? 10.0;
+    skyUniforms.rayleigh.value = weather?.skyRayleigh ?? 2.5;
+    skyUniforms.mieCoefficient.value = weather?.skyMieCoefficient ?? 0.05;
+    skyUniforms.mieDirectionalG.value = weather?.skyMieDirectionalG ?? 0.4;
+
+    const phi = THREE.MathUtils.degToRad(weather?.sunPhiDeg ?? 82.0);
+    const theta = THREE.MathUtils.degToRad(weather?.sunThetaDeg ?? 150.0);
+    sun.setFromSphericalCoords(1, phi, theta);
+    sky.material.uniforms.sunPosition.value.copy(sun);
+    dirLight.position.copy(sun).multiplyScalar(2000);
+
+    hazeMat.color.setHex(weather?.hazeColor ?? 0x2f2736);
+    hazeMat.opacity = weather?.hazeOpacity ?? 0.12;
+    starsMat.opacity = weather?.starOpacity ?? 0.3;
+
+    if (refreshEnvironmentMap) {
+      if (environmentTexture) environmentTexture.dispose();
+      environmentTexture = pmremGenerator.fromScene(sky).texture;
+      scene.environment = environmentTexture;
+    }
+  }
+
+  applyEnvironmentFromWeather(WEATHER, { refreshEnvironmentMap: true });
+
+  return { hemiLight, dirLight, applyEnvironmentFromWeather };
 }

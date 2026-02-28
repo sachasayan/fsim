@@ -9,7 +9,8 @@ import { calculateAerodynamics } from './physics/updatePhysics.js';
 import { createPhysicsAdapter } from './physics/physicsAdapter.js';
 import { createCameraController } from './camera/updateCamera.js';
 import { createHUD } from './ui/hud.js';
-import { getWeatherModeConfig } from './lighting.js';
+import GUI from 'lil-gui';
+import { LIGHTING_PRESETS, getWeatherModeConfig } from './lighting.js';
 
 // ==========================================
 // 2. CORE SETUP & GLOBALS
@@ -76,6 +77,10 @@ const {
   updateTerrain,
   clouds,
   cloudMaterial,
+  updateClouds,
+  getCloudTuning,
+  setCloudTuning,
+  applyEnvironmentFromWeather,
   MAX_PARTICLES,
   particleMesh,
   particles,
@@ -109,6 +114,319 @@ const cameraController = createCameraController({
 
 const hud = createHUD({ PHYSICS, WEATHER, getTerrainHeight });
 
+function colorNumberToHex(value) {
+  return `#${(value >>> 0).toString(16).padStart(6, '0')}`;
+}
+
+function colorHexToNumber(value) {
+  return Number.parseInt(value.replace('#', ''), 16);
+}
+
+function syncDerivedWeatherCache() {
+  clearWeatherColor.setHex(WEATHER.clearColor);
+  stormWeatherColor.setHex(WEATHER.stormColor);
+  clearCloudColor.setHex(WEATHER.cloudColorClear);
+  stormCloudColor.setHex(WEATHER.cloudColorStorm);
+  renderer.toneMappingExposure = WEATHER.exposure;
+  bloomPass.threshold = WEATHER.bloomThreshold;
+  bloomPass.strength = WEATHER.bloomStrength;
+  bloomPass.radius = WEATHER.bloomRadius;
+}
+
+function applyLightingPresetToWeather(presetId) {
+  const preset = LIGHTING_PRESETS[presetId];
+  if (!preset) return;
+
+  WEATHER.lightingPresetId = presetId;
+  WEATHER.clearColor = preset.clearColor;
+  WEATHER.stormColor = preset.stormColor;
+  WEATHER.lightAmbientBase = preset.ambientBase;
+  WEATHER.lightDirectBase = preset.directBase;
+  WEATHER.hemiSkyColor = preset.hemiSkyColor;
+  WEATHER.hemiGroundColor = preset.hemiGroundColor;
+  WEATHER.dirColor = preset.dirColor;
+  WEATHER.sunPhiDeg = preset.sunPhiDeg;
+  WEATHER.sunThetaDeg = preset.sunThetaDeg;
+  WEATHER.skyTurbidity = preset.skyTurbidity;
+  WEATHER.skyRayleigh = preset.skyRayleigh;
+  WEATHER.skyMieCoefficient = preset.skyMieCoefficient;
+  WEATHER.skyMieDirectionalG = preset.skyMieDirectionalG;
+  WEATHER.hazeColor = preset.hazeColor;
+  WEATHER.hazeOpacity = preset.hazeOpacity;
+  WEATHER.starOpacity = preset.starOpacity;
+  WEATHER.exposure = preset.exposure;
+  WEATHER.bloomThreshold = preset.bloom.threshold;
+  WEATHER.bloomStrength = preset.bloom.strength;
+  WEATHER.bloomRadius = preset.bloom.radius;
+  WEATHER.cloudColorClear = preset.cloudColorClear;
+  WEATHER.cloudColorStorm = preset.cloudColorStorm;
+  WEATHER.cloudOpacityBase = preset.cloudOpacityBase;
+  WEATHER.cloudOpacityStorm = preset.cloudOpacityStorm;
+  WEATHER.cloudEmissiveBase = preset.cloudEmissiveBase;
+  WEATHER.cloudEmissiveStorm = preset.cloudEmissiveStorm;
+  syncDerivedWeatherCache();
+  if (applyEnvironmentFromWeather) {
+    applyEnvironmentFromWeather(WEATHER, { refreshEnvironmentMap: true });
+  }
+}
+
+const weatherModeLabels = {
+  clear: 0,
+  overcast: 1,
+  storm: 2
+};
+const weatherModeNames = ['clear', 'overcast', 'storm'];
+const cloudTuningState = getCloudTuning ? getCloudTuning() : {
+  nearFadeStart: 13000,
+  nearFadeEnd: 18000,
+  minLight: 0.5,
+  farFadeStart: 9000,
+  farFadeEnd: 14500,
+  farOpacityScale: 0.7
+};
+
+const envGuiState = {
+  presetId: WEATHER.lightingPresetId,
+  weatherMode: weatherModeNames[WEATHER.mode] ?? 'clear',
+  clearColor: colorNumberToHex(WEATHER.clearColor),
+  stormColor: colorNumberToHex(WEATHER.stormColor),
+  hemiSkyColor: colorNumberToHex(WEATHER.hemiSkyColor),
+  hemiGroundColor: colorNumberToHex(WEATHER.hemiGroundColor),
+  dirColor: colorNumberToHex(WEATHER.dirColor),
+  hazeColor: colorNumberToHex(WEATHER.hazeColor),
+  sunPhiDeg: WEATHER.sunPhiDeg,
+  sunThetaDeg: WEATHER.sunThetaDeg,
+  skyTurbidity: WEATHER.skyTurbidity,
+  skyRayleigh: WEATHER.skyRayleigh,
+  skyMieCoefficient: WEATHER.skyMieCoefficient,
+  skyMieDirectionalG: WEATHER.skyMieDirectionalG,
+  lightAmbientBase: WEATHER.lightAmbientBase,
+  lightDirectBase: WEATHER.lightDirectBase,
+  hazeOpacity: WEATHER.hazeOpacity,
+  starOpacity: WEATHER.starOpacity,
+  exposure: WEATHER.exposure,
+  bloomThreshold: WEATHER.bloomThreshold,
+  bloomStrength: WEATHER.bloomStrength,
+  bloomRadius: WEATHER.bloomRadius,
+  cloudColorClear: colorNumberToHex(WEATHER.cloudColorClear),
+  cloudColorStorm: colorNumberToHex(WEATHER.cloudColorStorm),
+  cloudOpacityBase: WEATHER.cloudOpacityBase,
+  cloudOpacityStorm: WEATHER.cloudOpacityStorm,
+  cloudEmissiveBase: WEATHER.cloudEmissiveBase,
+  cloudEmissiveStorm: WEATHER.cloudEmissiveStorm,
+  nearFadeStart: cloudTuningState.nearFadeStart,
+  nearFadeEnd: cloudTuningState.nearFadeEnd,
+  minLight: cloudTuningState.minLight,
+  farFadeStart: cloudTuningState.farFadeStart,
+  farFadeEnd: cloudTuningState.farFadeEnd,
+  farOpacityScale: cloudTuningState.farOpacityScale,
+  resetToPreset: () => {
+    applyLightingPresetToWeather(envGuiState.presetId);
+    if (setCloudTuning) setCloudTuning({ nearFadeStart: 13000, nearFadeEnd: 18000, minLight: 0.5, farFadeStart: 9000, farFadeEnd: 14500, farOpacityScale: 0.7 });
+    syncGuiStateFromWeather();
+    updateGuiDisplays();
+  },
+  copyPresetJson: async () => {
+    const payload = {
+      clearColor: WEATHER.clearColor,
+      stormColor: WEATHER.stormColor,
+      hemiSkyColor: WEATHER.hemiSkyColor,
+      hemiGroundColor: WEATHER.hemiGroundColor,
+      dirColor: WEATHER.dirColor,
+      ambientBase: WEATHER.lightAmbientBase,
+      directBase: WEATHER.lightDirectBase,
+      sunPhiDeg: WEATHER.sunPhiDeg,
+      sunThetaDeg: WEATHER.sunThetaDeg,
+      skyTurbidity: WEATHER.skyTurbidity,
+      skyRayleigh: WEATHER.skyRayleigh,
+      skyMieCoefficient: WEATHER.skyMieCoefficient,
+      skyMieDirectionalG: WEATHER.skyMieDirectionalG,
+      exposure: WEATHER.exposure,
+      bloom: {
+        threshold: WEATHER.bloomThreshold,
+        strength: WEATHER.bloomStrength,
+        radius: WEATHER.bloomRadius
+      },
+      hazeColor: WEATHER.hazeColor,
+      hazeOpacity: WEATHER.hazeOpacity,
+      starOpacity: WEATHER.starOpacity,
+      cloudColorClear: WEATHER.cloudColorClear,
+      cloudColorStorm: WEATHER.cloudColorStorm,
+      cloudOpacityBase: WEATHER.cloudOpacityBase,
+      cloudOpacityStorm: WEATHER.cloudOpacityStorm,
+      cloudEmissiveBase: WEATHER.cloudEmissiveBase,
+      cloudEmissiveStorm: WEATHER.cloudEmissiveStorm,
+      cloudTuning: getCloudTuning ? getCloudTuning() : null
+    };
+    const json = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      console.log('Copied active environment preset JSON to clipboard');
+    } catch (err) {
+      console.log(json);
+    }
+  }
+};
+
+function syncGuiStateFromWeather() {
+  envGuiState.presetId = WEATHER.lightingPresetId;
+  envGuiState.weatherMode = weatherModeNames[WEATHER.mode] ?? 'clear';
+  envGuiState.clearColor = colorNumberToHex(WEATHER.clearColor);
+  envGuiState.stormColor = colorNumberToHex(WEATHER.stormColor);
+  envGuiState.hemiSkyColor = colorNumberToHex(WEATHER.hemiSkyColor);
+  envGuiState.hemiGroundColor = colorNumberToHex(WEATHER.hemiGroundColor);
+  envGuiState.dirColor = colorNumberToHex(WEATHER.dirColor);
+  envGuiState.hazeColor = colorNumberToHex(WEATHER.hazeColor);
+  envGuiState.sunPhiDeg = WEATHER.sunPhiDeg;
+  envGuiState.sunThetaDeg = WEATHER.sunThetaDeg;
+  envGuiState.skyTurbidity = WEATHER.skyTurbidity;
+  envGuiState.skyRayleigh = WEATHER.skyRayleigh;
+  envGuiState.skyMieCoefficient = WEATHER.skyMieCoefficient;
+  envGuiState.skyMieDirectionalG = WEATHER.skyMieDirectionalG;
+  envGuiState.lightAmbientBase = WEATHER.lightAmbientBase;
+  envGuiState.lightDirectBase = WEATHER.lightDirectBase;
+  envGuiState.hazeOpacity = WEATHER.hazeOpacity;
+  envGuiState.starOpacity = WEATHER.starOpacity;
+  envGuiState.exposure = WEATHER.exposure;
+  envGuiState.bloomThreshold = WEATHER.bloomThreshold;
+  envGuiState.bloomStrength = WEATHER.bloomStrength;
+  envGuiState.bloomRadius = WEATHER.bloomRadius;
+  envGuiState.cloudColorClear = colorNumberToHex(WEATHER.cloudColorClear);
+  envGuiState.cloudColorStorm = colorNumberToHex(WEATHER.cloudColorStorm);
+  envGuiState.cloudOpacityBase = WEATHER.cloudOpacityBase;
+  envGuiState.cloudOpacityStorm = WEATHER.cloudOpacityStorm;
+  envGuiState.cloudEmissiveBase = WEATHER.cloudEmissiveBase;
+  envGuiState.cloudEmissiveStorm = WEATHER.cloudEmissiveStorm;
+  if (getCloudTuning) {
+    const t = getCloudTuning();
+    envGuiState.nearFadeStart = t.nearFadeStart;
+    envGuiState.nearFadeEnd = t.nearFadeEnd;
+    envGuiState.minLight = t.minLight;
+    envGuiState.farFadeStart = t.farFadeStart;
+    envGuiState.farFadeEnd = t.farFadeEnd;
+    envGuiState.farOpacityScale = t.farOpacityScale;
+  }
+}
+
+function applyGuiStateToWorld(refreshEnvironmentMap = false) {
+  WEATHER.clearColor = colorHexToNumber(envGuiState.clearColor);
+  WEATHER.stormColor = colorHexToNumber(envGuiState.stormColor);
+  WEATHER.hemiSkyColor = colorHexToNumber(envGuiState.hemiSkyColor);
+  WEATHER.hemiGroundColor = colorHexToNumber(envGuiState.hemiGroundColor);
+  WEATHER.dirColor = colorHexToNumber(envGuiState.dirColor);
+  WEATHER.hazeColor = colorHexToNumber(envGuiState.hazeColor);
+  WEATHER.sunPhiDeg = envGuiState.sunPhiDeg;
+  WEATHER.sunThetaDeg = envGuiState.sunThetaDeg;
+  WEATHER.skyTurbidity = envGuiState.skyTurbidity;
+  WEATHER.skyRayleigh = envGuiState.skyRayleigh;
+  WEATHER.skyMieCoefficient = envGuiState.skyMieCoefficient;
+  WEATHER.skyMieDirectionalG = envGuiState.skyMieDirectionalG;
+  WEATHER.lightAmbientBase = envGuiState.lightAmbientBase;
+  WEATHER.lightDirectBase = envGuiState.lightDirectBase;
+  WEATHER.hazeOpacity = envGuiState.hazeOpacity;
+  WEATHER.starOpacity = envGuiState.starOpacity;
+  WEATHER.exposure = envGuiState.exposure;
+  WEATHER.bloomThreshold = envGuiState.bloomThreshold;
+  WEATHER.bloomStrength = envGuiState.bloomStrength;
+  WEATHER.bloomRadius = envGuiState.bloomRadius;
+  WEATHER.cloudColorClear = colorHexToNumber(envGuiState.cloudColorClear);
+  WEATHER.cloudColorStorm = colorHexToNumber(envGuiState.cloudColorStorm);
+  WEATHER.cloudOpacityBase = envGuiState.cloudOpacityBase;
+  WEATHER.cloudOpacityStorm = envGuiState.cloudOpacityStorm;
+  WEATHER.cloudEmissiveBase = envGuiState.cloudEmissiveBase;
+  WEATHER.cloudEmissiveStorm = envGuiState.cloudEmissiveStorm;
+
+  if (setCloudTuning) {
+    setCloudTuning({
+      nearFadeStart: envGuiState.nearFadeStart,
+      nearFadeEnd: envGuiState.nearFadeEnd,
+      minLight: envGuiState.minLight,
+      farFadeStart: envGuiState.farFadeStart,
+      farFadeEnd: envGuiState.farFadeEnd,
+      farOpacityScale: envGuiState.farOpacityScale
+    });
+  }
+  syncDerivedWeatherCache();
+  if (applyEnvironmentFromWeather) {
+    applyEnvironmentFromWeather(WEATHER, { refreshEnvironmentMap });
+  }
+}
+
+const gui = new GUI({ title: 'Daytime + Clouds', width: 330 });
+gui.close();
+const guiControllers = [];
+function bind(controller, refreshEnvironmentMap = false) {
+  guiControllers.push(controller);
+  controller.onChange(() => applyGuiStateToWorld(false));
+  if (refreshEnvironmentMap) {
+    controller.onFinishChange(() => applyGuiStateToWorld(true));
+  }
+  return controller;
+}
+function updateGuiDisplays() {
+  for (const c of guiControllers) c.updateDisplay();
+}
+
+guiControllers.push(gui.add(envGuiState, 'presetId', Object.keys(LIGHTING_PRESETS)).name('Preset').onChange((id) => {
+  applyLightingPresetToWeather(id);
+  syncGuiStateFromWeather();
+  updateGuiDisplays();
+}));
+guiControllers.push(gui.add(envGuiState, 'weatherMode', Object.keys(weatherModeLabels)).name('Weather Mode').onChange((modeName) => {
+  const nextMode = weatherModeLabels[modeName];
+  WEATHER.mode = nextMode;
+  const cfg = getWeatherModeConfig(nextMode);
+  WEATHER.modeName = cfg.name;
+  WEATHER.targetFog = cfg.fog;
+  WEATHER.targetTransition = cfg.intensity;
+}));
+
+const dayFolder = gui.addFolder('Daytime');
+bind(dayFolder.add(envGuiState, 'sunPhiDeg', 0, 95, 0.1).name('Sun Phi'), true);
+bind(dayFolder.add(envGuiState, 'sunThetaDeg', 0, 360, 0.1).name('Sun Theta'), true);
+bind(dayFolder.add(envGuiState, 'skyTurbidity', 1, 20, 0.01).name('Sky Turbidity'), true);
+bind(dayFolder.add(envGuiState, 'skyRayleigh', 0, 6, 0.01).name('Sky Rayleigh'), true);
+bind(dayFolder.add(envGuiState, 'skyMieCoefficient', 0, 0.12, 0.0005).name('Sky Mie Coef'), true);
+bind(dayFolder.add(envGuiState, 'skyMieDirectionalG', 0, 0.99, 0.001).name('Sky Mie G'), true);
+bind(dayFolder.add(envGuiState, 'hazeOpacity', 0, 0.4, 0.001).name('Haze Opacity'));
+bind(dayFolder.add(envGuiState, 'starOpacity', 0, 0.7, 0.001).name('Star Opacity'));
+
+const lightFolder = gui.addFolder('Lighting');
+bind(lightFolder.add(envGuiState, 'lightAmbientBase', 0.05, 1.2, 0.005).name('Ambient Base'));
+bind(lightFolder.add(envGuiState, 'lightDirectBase', 0.05, 2.2, 0.005).name('Direct Base'));
+bind(lightFolder.add(envGuiState, 'exposure', 0.3, 1.6, 0.005).name('Exposure'));
+bind(lightFolder.add(envGuiState, 'bloomThreshold', 0.5, 8.0, 0.01).name('Bloom Threshold'));
+bind(lightFolder.add(envGuiState, 'bloomStrength', 0.0, 1.8, 0.01).name('Bloom Strength'));
+bind(lightFolder.add(envGuiState, 'bloomRadius', 0.0, 1.0, 0.01).name('Bloom Radius'));
+
+const colorFolder = gui.addFolder('Colors');
+bind(colorFolder.addColor(envGuiState, 'clearColor').name('Sky Clear'));
+bind(colorFolder.addColor(envGuiState, 'stormColor').name('Sky Storm'));
+bind(colorFolder.addColor(envGuiState, 'hemiSkyColor').name('Hemi Sky'));
+bind(colorFolder.addColor(envGuiState, 'hemiGroundColor').name('Hemi Ground'));
+bind(colorFolder.addColor(envGuiState, 'dirColor').name('Sun Light'));
+bind(colorFolder.addColor(envGuiState, 'hazeColor').name('Haze'));
+
+const cloudFolder = gui.addFolder('Clouds');
+bind(cloudFolder.addColor(envGuiState, 'cloudColorClear').name('Cloud Clear'));
+bind(cloudFolder.addColor(envGuiState, 'cloudColorStorm').name('Cloud Storm'));
+bind(cloudFolder.add(envGuiState, 'cloudOpacityBase', 0.05, 0.95, 0.001).name('Cloud Opacity Clear'));
+bind(cloudFolder.add(envGuiState, 'cloudOpacityStorm', 0.05, 0.99, 0.001).name('Cloud Opacity Storm'));
+bind(cloudFolder.add(envGuiState, 'cloudEmissiveBase', 0.0, 0.4, 0.001).name('Cloud Emissive Clear'));
+bind(cloudFolder.add(envGuiState, 'cloudEmissiveStorm', 0.0, 0.4, 0.001).name('Cloud Emissive Storm'));
+bind(cloudFolder.add(envGuiState, 'nearFadeStart', 2000, 30000, 10).name('Near Fade Start'));
+bind(cloudFolder.add(envGuiState, 'nearFadeEnd', 3000, 40000, 10).name('Near Fade End'));
+bind(cloudFolder.add(envGuiState, 'minLight', 0.0, 1.0, 0.001).name('Near Min Light'));
+bind(cloudFolder.add(envGuiState, 'farFadeStart', 1000, 30000, 10).name('Far Fade Start'));
+bind(cloudFolder.add(envGuiState, 'farFadeEnd', 2000, 40000, 10).name('Far Fade End'));
+bind(cloudFolder.add(envGuiState, 'farOpacityScale', 0.0, 1.5, 0.001).name('Far Opacity Scale'));
+
+guiControllers.push(gui.add(envGuiState, 'resetToPreset').name('Reset to Preset'));
+guiControllers.push(gui.add(envGuiState, 'copyPresetJson').name('Copy JSON'));
+
+syncGuiStateFromWeather();
+updateGuiDisplays();
+
 window.addEventListener('keydown', (e) => {
   if (Object.prototype.hasOwnProperty.call(keys, e.key.toLowerCase()) || Object.prototype.hasOwnProperty.call(keys, e.key)) {
     const k = Object.prototype.hasOwnProperty.call(keys, e.key) ? e.key : e.key.toLowerCase();
@@ -117,6 +435,9 @@ window.addEventListener('keydown', (e) => {
 
   if (e.key.toLowerCase() === 'c') cameraController.cycleMode();
   if (e.key.toLowerCase() === 'm') PHYSICS.egpwsMode = !PHYSICS.egpwsMode;
+  if (e.key.toLowerCase() === 'g') {
+    gui.domElement.style.display = gui.domElement.style.display === 'none' ? '' : 'none';
+  }
 
   if (e.key.toLowerCase() === 'r') {
     WEATHER.mode = (WEATHER.mode + 1) % 3;
@@ -124,6 +445,8 @@ window.addEventListener('keydown', (e) => {
     WEATHER.modeName = cfg.name;
     WEATHER.targetFog = cfg.fog;
     WEATHER.targetTransition = cfg.intensity;
+    syncGuiStateFromWeather();
+    updateGuiDisplays();
   }
 });
 
@@ -467,6 +790,10 @@ function animate() {
         cloudMaterial.color.copy(currentCloudColor);
         cloudMaterial.opacity = WEATHER.cloudOpacityBase + (WEATHER.cloudOpacityStorm - WEATHER.cloudOpacityBase) * WEATHER.transition;
         cloudMaterial.emissiveIntensity = WEATHER.cloudEmissiveBase + (WEATHER.cloudEmissiveStorm - WEATHER.cloudEmissiveBase) * WEATHER.transition;
+    }
+
+    if (updateClouds) {
+        updateClouds(dt, camera, WEATHER, currentCloudColor);
     }
 
     // Animate Storm Rain Physics
