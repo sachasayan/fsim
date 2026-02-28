@@ -987,11 +987,14 @@ function animate() {
     const dist2D = Math.sqrt(distX * distX + activeDist * activeDist);
     const angleDeg = Math.atan2(PHYSICS.position.y - 1.5, dist2D) * (180 / Math.PI);
 
+    // Standard ICAO PAPI: 3° nominal glideslope, ±0.5° bands.
+    // >3.5° = all white (too high), <2.0° = all red (too low)
     let whiteCount = 0;
-    if (angleDeg > 3.5) whiteCount = 4;
-    else if (angleDeg > 3.2) whiteCount = 3;
-    else if (angleDeg > 2.8) whiteCount = 2;
-    else if (angleDeg > 2.5) whiteCount = 1;
+    if (angleDeg > 3.5) whiteCount = 4; // All white — too high
+    else if (angleDeg > 3.0) whiteCount = 3; // 3W 1R — slightly high
+    else if (angleDeg > 2.5) whiteCount = 2; // 2W 2R — on glidepath
+    else if (angleDeg > 2.0) whiteCount = 1; // 1W 3R — slightly low
+    // else whiteCount = 0               // All red — too low
     const activeKey = `${activeSet === papi36 ? '36' : '18'}:${whiteCount}`;
     if (activeKey !== prevPapiKey) {
       for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
@@ -1031,6 +1034,7 @@ function animate() {
         )
       ).normalize();
 
+      // Cache terrain height — reused in the floor clamp below to avoid a second query.
       const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z);
       if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
         PHYSICS.position.y = terrainY + AIRCRAFT.gearHeight;
@@ -1048,7 +1052,10 @@ function animate() {
     physicsSteps++;
 
     physicsAdapter.step(PHYSICS_STEP);
-    const terrainFloorY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z) + AIRCRAFT.gearHeight;
+    // During a crash we already called getTerrainHeight above; in normal flight this is the only call.
+    const terrainFloorY = (PHYSICS.crashed && PHYSICS.onGround)
+      ? PHYSICS.position.y  // Already clamped — floor is wherever we just put it
+      : getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z) + AIRCRAFT.gearHeight;
     if (PHYSICS.position.y < terrainFloorY) {
       PHYSICS.position.y = terrainFloorY;
       if (PHYSICS.velocity.y < 0) PHYSICS.velocity.y = 0;

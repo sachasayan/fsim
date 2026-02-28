@@ -174,7 +174,9 @@ export function calculateAerodynamics(ctx) {
 
     // Lift
     let cl = aoaDeg * currentClSlope;
-    if (p.isStalling) cl *= Math.exp(-(Math.abs(aoaDeg) - currentStallAngle) * 0.1);
+    // Post-stall CL decay: steeper exponent = more realistic sudden departure.
+    // At 10° past stall: exp(-2.2) ≈ 0.11 residual lift (was 0.37 with exponent 0.1).
+    if (p.isStalling) cl *= Math.exp(-(Math.abs(aoaDeg) - currentStallAngle) * 0.22);
     let liftMag = dynPressure * AIRCRAFT.wingArea * cl;
     liftMag *= (1.0 + groundEffect * 0.15);
 
