@@ -6,6 +6,7 @@ import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
 import { createWorldObjects } from './world/objects.js';
 import { calculateAerodynamics } from './physics/updatePhysics.js';
+import { createPhysicsAdapter } from './physics/physicsAdapter.js';
 import { createCameraController } from './camera/updateCamera.js';
 import { createHUD } from './ui/hud.js';
 import { getWeatherModeConfig } from './lighting.js';
@@ -39,6 +40,8 @@ composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
 const { AIRCRAFT, PHYSICS, WEATHER, keys, runtime } = createSimulationState({ scene });
+const physicsAdapter = createPhysicsAdapter({ PHYSICS, AIRCRAFT });
+physicsAdapter.init();
 scene.background = new THREE.Color(WEATHER.clearColor);
 scene.fog = new THREE.FogExp2(WEATHER.clearColor, WEATHER.currentFog);
 const clearWeatherColor = new THREE.Color(WEATHER.clearColor);
@@ -88,6 +91,13 @@ const {
   beacons
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
+const tmpTouchOffsetL = new THREE.Vector3();
+const tmpTouchOffsetR = new THREE.Vector3();
+const tmpTouchPosL = new THREE.Vector3();
+const tmpTouchPosR = new THREE.Vector3();
+const tmpTouchVel = new THREE.Vector3();
+const tmpTipVel = new THREE.Vector3();
+
 const cameraController = createCameraController({
   camera,
   planeGroup,
@@ -127,13 +137,30 @@ window.addEventListener('keyup', (e) => {
 // --- PROCEDURAL WEB AUDIO ENGINE (ZEN / RELAXING MODE) ---
 const ProceduralAudio = {
     ctx: null,
-    engineGain: null,
-    engineOsc: null,
-    jetNoiseFilter: null,
-    windGain: null,
-    windFilter: null,
-    rainGain: null,
+    masterGain: null,
+    perspectiveFilter: null,
+    limiter: null,
+    engineBus: null,
+    windBus: null,
+    weatherBus: null,
+    fxBus: null,
+    reverb: null,
+    reverbSendEngine: null,
+    reverbSendWind: null,
+    reverbSendWeather: null,
+    reverbReturn: null,
+    engineRumbleGain: null,
+    engineTurbineGain: null,
+    engineRumbleFilter: null,
+    engineTurbineFilter: null,
+    windBodyGain: null,
+    windRushGain: null,
+    windBodyFilter: null,
+    windRushFilter: null,
     rainFilter: null,
+    rainGain: null,
+    cabinAirGain: null,
+    cabinAirFilter: null,
     initialized: false,
 
     init: function () {
@@ -148,37 +175,106 @@ const ProceduralAudio = {
         const output = noiseBuffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
 
-        // 2. Wind System (Gentle, ASMR-style breeze)
-        const windSrc = this.ctx.createBufferSource();
-        windSrc.buffer = noiseBuffer;
-        windSrc.loop = true;
-        this.windFilter = this.ctx.createBiquadFilter();
-        this.windFilter.type = 'lowpass';
-        this.windGain = this.ctx.createGain();
-        this.windGain.gain.value = 0;
-        windSrc.connect(this.windFilter).connect(this.windGain).connect(this.ctx.destination);
-        windSrc.start();
+        // Master chain: perspective EQ -> soft limiter -> destination
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.68;
+        this.perspectiveFilter = this.ctx.createBiquadFilter();
+        this.perspectiveFilter.type = 'lowpass';
+        this.perspectiveFilter.frequency.value = 7000;
+        this.limiter = this.ctx.createDynamicsCompressor();
+        this.limiter.threshold.value = -12;
+        this.limiter.knee.value = 14;
+        this.limiter.ratio.value = 6;
+        this.limiter.attack.value = 0.004;
+        this.limiter.release.value = 0.2;
+        this.masterGain.connect(this.perspectiveFilter).connect(this.limiter).connect(this.ctx.destination);
 
-        // 3. Jet Engine Roar (Deep, muffled low-frequency rumble)
-        const jetNoiseSrc = this.ctx.createBufferSource();
-        jetNoiseSrc.buffer = noiseBuffer;
-        jetNoiseSrc.loop = true;
-        this.jetNoiseFilter = this.ctx.createBiquadFilter();
-        this.jetNoiseFilter.type = 'lowpass';
-        this.engineGain = this.ctx.createGain();
-        this.engineGain.gain.value = 0;
-        jetNoiseSrc.connect(this.jetNoiseFilter).connect(this.engineGain).connect(this.ctx.destination);
-        jetNoiseSrc.start();
+        // Buses
+        this.engineBus = this.ctx.createGain();
+        this.windBus = this.ctx.createGain();
+        this.weatherBus = this.ctx.createGain();
+        this.fxBus = this.ctx.createGain();
+        this.engineBus.connect(this.masterGain);
+        this.windBus.connect(this.masterGain);
+        this.weatherBus.connect(this.masterGain);
+        this.fxBus.connect(this.masterGain);
 
-        // 4. Engine Fan Whine (Smooth sine wave hum instead of harsh sawtooth)
-        this.engineOsc = this.ctx.createOscillator();
-        this.engineOsc.type = 'sine';
-        const oscGain = this.ctx.createGain();
-        oscGain.gain.value = 0.08; // Very soft blend behind the rumble
-        this.engineOsc.connect(oscGain).connect(this.engineGain);
-        this.engineOsc.start();
+        // Light reverb for ambient glue
+        const ir = this.ctx.createBuffer(2, Math.floor(this.ctx.sampleRate * 1.2), this.ctx.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+            const data = ir.getChannelData(ch);
+            for (let i = 0; i < data.length; i++) {
+                const d = i / data.length;
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - d, 2.4);
+            }
+        }
+        this.reverb = this.ctx.createConvolver();
+        this.reverb.buffer = ir;
+        this.reverbReturn = this.ctx.createGain();
+        this.reverbReturn.gain.value = 0.1;
+        this.reverb.connect(this.reverbReturn).connect(this.masterGain);
 
-        // 5. Storm Rain System (Soft hiss)
+        this.reverbSendEngine = this.ctx.createGain();
+        this.reverbSendWind = this.ctx.createGain();
+        this.reverbSendWeather = this.ctx.createGain();
+        this.reverbSendEngine.gain.value = 0.05;
+        this.reverbSendWind.gain.value = 0.14;
+        this.reverbSendWeather.gain.value = 0.2;
+        this.reverbSendEngine.connect(this.reverb);
+        this.reverbSendWind.connect(this.reverb);
+        this.reverbSendWeather.connect(this.reverb);
+
+        // Engine layers: rumble + turbine (no tonal whine layer)
+        const engNoiseRumble = this.ctx.createBufferSource();
+        engNoiseRumble.buffer = noiseBuffer;
+        engNoiseRumble.loop = true;
+        this.engineRumbleFilter = this.ctx.createBiquadFilter();
+        this.engineRumbleFilter.type = 'lowpass';
+        this.engineRumbleGain = this.ctx.createGain();
+        this.engineRumbleGain.gain.value = 0;
+        engNoiseRumble.connect(this.engineRumbleFilter).connect(this.engineRumbleGain);
+        this.engineRumbleGain.connect(this.engineBus);
+        this.engineRumbleGain.connect(this.reverbSendEngine);
+        engNoiseRumble.start();
+
+        const engNoiseTurbine = this.ctx.createBufferSource();
+        engNoiseTurbine.buffer = noiseBuffer;
+        engNoiseTurbine.loop = true;
+        this.engineTurbineFilter = this.ctx.createBiquadFilter();
+        this.engineTurbineFilter.type = 'bandpass';
+        this.engineTurbineGain = this.ctx.createGain();
+        this.engineTurbineGain.gain.value = 0;
+        engNoiseTurbine.connect(this.engineTurbineFilter).connect(this.engineTurbineGain);
+        this.engineTurbineGain.connect(this.engineBus);
+        this.engineTurbineGain.connect(this.reverbSendEngine);
+        engNoiseTurbine.start();
+
+        // Wind layers: body + rush
+        const windNoiseBody = this.ctx.createBufferSource();
+        windNoiseBody.buffer = noiseBuffer;
+        windNoiseBody.loop = true;
+        this.windBodyFilter = this.ctx.createBiquadFilter();
+        this.windBodyFilter.type = 'lowpass';
+        this.windBodyGain = this.ctx.createGain();
+        this.windBodyGain.gain.value = 0;
+        windNoiseBody.connect(this.windBodyFilter).connect(this.windBodyGain);
+        this.windBodyGain.connect(this.windBus);
+        this.windBodyGain.connect(this.reverbSendWind);
+        windNoiseBody.start();
+
+        const windNoiseRush = this.ctx.createBufferSource();
+        windNoiseRush.buffer = noiseBuffer;
+        windNoiseRush.loop = true;
+        this.windRushFilter = this.ctx.createBiquadFilter();
+        this.windRushFilter.type = 'bandpass';
+        this.windRushGain = this.ctx.createGain();
+        this.windRushGain.gain.value = 0;
+        windNoiseRush.connect(this.windRushFilter).connect(this.windRushGain);
+        this.windRushGain.connect(this.windBus);
+        this.windRushGain.connect(this.reverbSendWind);
+        windNoiseRush.start();
+
+        // Weather + cabin bed
         const rainSrc = this.ctx.createBufferSource();
         rainSrc.buffer = noiseBuffer;
         rainSrc.loop = true;
@@ -186,43 +282,67 @@ const ProceduralAudio = {
         this.rainFilter.type = 'lowpass';
         this.rainGain = this.ctx.createGain();
         this.rainGain.gain.value = 0;
-        rainSrc.connect(this.rainFilter).connect(this.rainGain).connect(this.ctx.destination);
+        rainSrc.connect(this.rainFilter).connect(this.rainGain);
+        this.rainGain.connect(this.weatherBus);
+        this.rainGain.connect(this.reverbSendWeather);
         rainSrc.start();
+
+        const cabinAirSrc = this.ctx.createBufferSource();
+        cabinAirSrc.buffer = noiseBuffer;
+        cabinAirSrc.loop = true;
+        this.cabinAirFilter = this.ctx.createBiquadFilter();
+        this.cabinAirFilter.type = 'bandpass';
+        this.cabinAirGain = this.ctx.createGain();
+        this.cabinAirGain.gain.value = 0;
+        cabinAirSrc.connect(this.cabinAirFilter).connect(this.cabinAirGain).connect(this.weatherBus);
+        cabinAirSrc.start();
     },
 
-    update: function (throttle, airspeed, spoilers, cameraMode, weatherMode, gForce, angularVelocity) {
+    update: function (throttle, airspeed, spoilers, cameraMode, weatherMode, gForce, angularVelocity, aoa, slip) {
         if (!this.initialized || this.ctx.state === 'suspended') return;
 
         const t = this.ctx.currentTime;
-        // Camera dampening (Cockpit is highly insulated, exterior is louder but still smooth)
-        const masterVol = cameraMode === 1 ? 0.35 : 0.8;
-
-        // Engine Physics (Ultra-slow, soft transitions for a calmer vibe)
-        // INCREASED: Engine base presence and throttle scaling
-        this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.45) * masterVol, t, 1.0);
-        this.jetNoiseFilter.frequency.setTargetAtTime(60 + throttle * 150, t, 1.0); // Deep, soothing bass
-        this.engineOsc.frequency.setTargetAtTime(80 + throttle * 80, t, 1.0); // Low, stable hum
-
-        // Wind Physics (Dynamic based on G-force and maneuvers)
-        const speedFactor = Math.max(0, airspeed / 250);
-        const spoilerDrag = (spoilers && airspeed > 30) ? 0.15 : 0;
-
-        // Calculate structural / maneuver stress
-        const gStress = Math.abs(gForce - 1.0); // 0 when flying level, >0 when pulling/pushing Gs
+        const inside = cameraMode === 1;
+        const outsideMix = inside ? 0.0 : 1.0;
+        const insideMix = inside ? 1.0 : 0.0;
+        const speedFactor = Math.max(0, Math.min(1.4, airspeed / 250));
+        const spoilerDrag = (spoilers && airspeed > 30) ? 0.16 : 0.0;
+        const gStress = Math.abs(gForce - 1.0);
         const rotStress = Math.abs(angularVelocity.x) + Math.abs(angularVelocity.y) + Math.abs(angularVelocity.z);
-        const maneuverStress = Math.min(1.0, (gStress + rotStress) * 0.8);
+        const maneuverStress = Math.min(1.0, (gStress + rotStress) * 0.7);
+        const aoaStress = Math.min(1.0, Math.abs(aoa || 0) / (22 * Math.PI / 180));
+        const slipStress = Math.min(1.0, Math.abs(slip || 0) / (16 * Math.PI / 180));
 
-        // DECREASED: Base wind volume is now much quieter relative to the engines
-        const windVol = (Math.pow(speedFactor, 2) * 0.04 + maneuverStress * 0.25 + spoilerDrag);
-        this.windGain.gain.setTargetAtTime(windVol * masterVol, t, 0.5);
+        // Perspective and master smoothness
+        this.masterGain.gain.setTargetAtTime(inside ? 0.58 : 0.8, t, 1.5);
+        this.perspectiveFilter.frequency.setTargetAtTime(inside ? (1300 + speedFactor * 1200) : 11200, t, 1.0);
+        this.reverbReturn.gain.setTargetAtTime(inside ? 0.07 : 0.12, t, 1.2);
 
-        // Filter opens up during maneuvers for a realistic "rushing" sound
-        this.windFilter.frequency.setTargetAtTime(100 + speedFactor * 300 + maneuverStress * 800 + (spoilers ? 400 : 0), t, 0.5);
+        // Engine (cinematic, soft, and less droning)
+        const spool = Math.min(1.0, throttle * 0.85 + speedFactor * 0.2);
+        const engineDrift = Math.sin(t * 0.23) * 0.06 + Math.sin(t * 0.11 + 1.7) * 0.04;
+        this.engineRumbleGain.gain.setTargetAtTime((0.06 + spool * 0.2 + engineDrift * 0.03) * (inside ? 0.62 : 1.0), t, 1.1);
+        this.engineRumbleFilter.frequency.setTargetAtTime(85 + spool * 140 + engineDrift * 18, t, 1.2);
 
-        // Rain Audio Physics (Gentle drizzle)
-        const targetRainVol = (weatherMode === 2) ? 0.15 * masterVol : 0;
-        this.rainGain.gain.setTargetAtTime(targetRainVol, t, 1.0); // Slow fade in/out
-        this.rainFilter.frequency.setTargetAtTime(300 + (airspeed * 1.5), t, 0.5);
+        this.engineTurbineGain.gain.setTargetAtTime((0.012 + spool * 0.075) * (inside ? 0.45 : 0.88), t, 1.1);
+        this.engineTurbineFilter.frequency.setTargetAtTime(260 + spool * 620 + speedFactor * 200 + engineDrift * 35, t, 1.0);
+
+        // Airframe/wind
+        const windBody = (Math.pow(speedFactor, 2) * 0.048 + maneuverStress * 0.05 + spoilerDrag * 0.8);
+        const windRush = (Math.pow(speedFactor, 2.1) * 0.018 + aoaStress * 0.035 + slipStress * 0.04 + spoilerDrag * 0.5);
+        this.windBodyGain.gain.setTargetAtTime(windBody * (inside ? 0.42 : 0.92), t, 0.85);
+        this.windRushGain.gain.setTargetAtTime(windRush * (inside ? 0.28 : 0.85), t, 0.7);
+        this.windBodyFilter.frequency.setTargetAtTime(150 + speedFactor * 620 + maneuverStress * 240, t, 0.75);
+        this.windRushFilter.frequency.setTargetAtTime(620 + speedFactor * 1500 + slipStress * 420, t, 0.6);
+
+        // Rain and cabin ambience
+        const rainTarget = weatherMode === 2 ? (0.03 + speedFactor * 0.06) : 0;
+        this.rainGain.gain.setTargetAtTime(rainTarget * (inside ? 0.78 : 1.0), t, 1.35);
+        this.rainFilter.frequency.setTargetAtTime(820 + speedFactor * 1600, t, 0.8);
+
+        const cabinBed = (0.01 + speedFactor * 0.015 + (weatherMode === 2 ? 0.006 : 0)) * insideMix;
+        this.cabinAirGain.gain.setTargetAtTime(cabinBed + (outsideMix * 0.0025), t, 1.4);
+        this.cabinAirFilter.frequency.setTargetAtTime(220 + speedFactor * 330, t, 1.2);
     },
 
     touchdown: function () {
@@ -240,7 +360,7 @@ const ProceduralAudio = {
         gain.gain.setValueAtTime(0.5, t);
         gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
 
-        osc.connect(gain).connect(this.ctx.destination);
+        osc.connect(gain).connect(this.fxBus || this.ctx.destination);
         osc.start(t);
         osc.stop(t + 0.4);
     }
@@ -280,6 +400,8 @@ window.resetFlight = function () {
     PHYSICS.velocity.set(0, 0, 0);
     PHYSICS.quaternion.identity();
     PHYSICS.angularVelocity.set(0, 0, 0);
+    PHYSICS.externalForce.set(0, 0, 0);
+    PHYSICS.externalTorque.set(0, 0, 0);
     PHYSICS.heading = 0;
     PHYSICS.airspeed = 0;
     PHYSICS.throttle = 0;
@@ -298,6 +420,7 @@ window.resetFlight = function () {
 
     planeGroup.position.copy(PHYSICS.position);
     planeGroup.quaternion.copy(PHYSICS.quaternion);
+    physicsAdapter.syncFromState();
 };
 
 
@@ -432,12 +555,14 @@ function animate() {
         ProceduralAudio.touchdown();
 
         for (let i = 0; i < 40; i++) {
-            let offsetL = new THREE.Vector3(-4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
-            let offsetR = new THREE.Vector3(4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
-            let posL = offsetL.applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-            let posR = offsetR.applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+            tmpTouchOffsetL.set(-4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
+            tmpTouchOffsetR.set(4.5 + (Math.random() - 0.5) * 2, -3.5, 3 + (Math.random() - 0.5) * 2);
+            const posL = tmpTouchPosL.copy(tmpTouchOffsetL).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
+            const posR = tmpTouchPosR.copy(tmpTouchOffsetR).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
 
-            let pVel = PHYSICS.velocity.clone().multiplyScalar(0.4).add(new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 8, (Math.random() - 0.5) * 8));
+            const pVel = tmpTouchVel.copy(PHYSICS.velocity).multiplyScalar(0.4).add(
+                tmpTipVel.set((Math.random() - 0.5) * 8, Math.random() * 8, (Math.random() - 0.5) * 8)
+            );
 
             spawnParticle(posL, pVel, 3 + Math.random() * 2, 8, 1.5, 0.7, 0.7, 0.7);
             spawnParticle(posR, pVel, 3 + Math.random() * 2, 8, 1.5, 0.7, 0.7, 0.7);
@@ -445,35 +570,7 @@ function animate() {
     }
     runtime.wasOnGround = PHYSICS.onGround;
 
-    // 2. Wingtip Vortices (High G, Spoilers, or heavy Flaps)
-    let intensity = (PHYSICS.gForce - 1.2) * 2.0 + (PHYSICS.spoilers ? 0.8 : 0) + (PHYSICS.flaps * 0.5);
-    if (!PHYSICS.onGround && intensity > 0.1 && PHYSICS.airspeed > 40) {
-        let tipL = new THREE.Vector3(-21, 2, 14).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-        let tipR = new THREE.Vector3(21, 2, 14).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-        let pVel = PHYSICS.velocity.clone().multiplyScalar(0.8);
-
-        let iClamp = Math.min(1.0, intensity);
-        spawnParticle(tipL, pVel, 1.5, 4, 0.8, iClamp, iClamp, iClamp);
-        spawnParticle(tipR, pVel, 1.5, 4, 0.8, iClamp, iClamp, iClamp);
-    }
-
-    // 3. High Altitude Engine Contrails
-    if (PHYSICS.throttle > 0.2 && PHYSICS.airspeed > 50) {
-        let engL = new THREE.Vector3(-7.5, -2.2, 5).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-        let engR = new THREE.Vector3(7.5, -2.2, 5).applyQuaternion(planeGroup.quaternion).add(planeGroup.position);
-        let pVel = PHYSICS.velocity.clone().multiplyScalar(0.7);
-
-        // Fade in at higher altitudes (starts > 1500m, peaks > 4500m)
-        let altFactor = Math.max(0, Math.min(1, (PHYSICS.position.y - 1500) / 3000));
-        let heatIntensity = altFactor * 0.8 * PHYSICS.throttle;
-
-        if (heatIntensity > 0.05) {
-            spawnParticle(engL, pVel, 2.0, 5, 2.5, heatIntensity, heatIntensity, heatIntensity);
-            spawnParticle(engR, pVel, 2.0, 5, 2.5, heatIntensity, heatIntensity, heatIntensity);
-        }
-    }
-
-    // 4. Update & Render Particles
+    // 2. Update & Render Particles (touchdown/crash smoke only)
     for (let i = 0; i < MAX_PARTICLES; i++) {
         const p = particles[i];
         if (!p.active) continue;
@@ -564,7 +661,17 @@ function animate() {
     while (runtime.physicsAccumulator >= PHYSICS_STEP && physicsSteps < MAX_PHYSICS_STEPS_PER_FRAME) {
         PHYSICS.dt = PHYSICS_STEP;
         if (!PHYSICS.crashed) {
-            calculateAerodynamics({ THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight, gearGroup, planeGroup, Noise });
+            calculateAerodynamics({
+                THREE,
+                PHYSICS,
+                AIRCRAFT,
+                WEATHER,
+                keys,
+                getTerrainHeight,
+                gearGroup,
+                planeGroup,
+                Noise
+            });
         } else if (!PHYSICS.onGround) {
             // WRECKAGE PHYSICS: Let gravity pull the wreckage down if destroyed mid-air
             PHYSICS.velocity.y -= PHYSICS.gravity * PHYSICS_STEP;
@@ -586,8 +693,25 @@ function animate() {
             planeGroup.position.copy(PHYSICS.position);
             planeGroup.quaternion.copy(PHYSICS.quaternion);
         }
+        if (PHYSICS.crashed) {
+            PHYSICS.externalForce.set(0, 0, 0);
+            PHYSICS.externalTorque.set(0, 0, 0);
+        }
         runtime.physicsAccumulator -= PHYSICS_STEP;
         physicsSteps++;
+
+        physicsAdapter.step(PHYSICS_STEP);
+        const terrainFloorY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z) + AIRCRAFT.gearHeight;
+        if (PHYSICS.position.y < terrainFloorY) {
+            PHYSICS.position.y = terrainFloorY;
+            if (PHYSICS.velocity.y < 0) PHYSICS.velocity.y = 0;
+            physicsAdapter.syncFromState();
+        }
+        const agl = PHYSICS.position.y - terrainFloorY;
+        const stickyGround = PHYSICS.onGround && agl < 0.45 && PHYSICS.velocity.y <= 1.2;
+        PHYSICS.onGround = agl < 0.25 || stickyGround;
+        planeGroup.position.copy(PHYSICS.position);
+        planeGroup.quaternion.copy(PHYSICS.quaternion);
     }
 
     updateTerrain();
@@ -602,7 +726,9 @@ function animate() {
         cameraController.getMode(),
         WEATHER.mode,
         PHYSICS.gForce,
-        PHYSICS.angularVelocity
+        PHYSICS.angularVelocity,
+        PHYSICS.aoa,
+        PHYSICS.slip
     );
 
     composer.render(); // Replaced renderer.render with the Post-Processing Composer
@@ -629,6 +755,11 @@ setTimeout(() => {
 
         // Position at runway start
         PHYSICS.position.set(0, AIRCRAFT.gearHeight, -1000);
+        PHYSICS.velocity.set(0, 0, 0);
+        PHYSICS.angularVelocity.set(0, 0, 0);
+        PHYSICS.externalForce.set(0, 0, 0);
+        PHYSICS.externalTorque.set(0, 0, 0);
+        physicsAdapter.syncFromState();
         animate();
     });
 }, 1500);

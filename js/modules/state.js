@@ -22,6 +22,8 @@ export function createSimulationState({ scene }) {
     velocity: new THREE.Vector3(0, 0, 0),
     quaternion: new THREE.Quaternion(),
     angularVelocity: new THREE.Vector3(0, 0, 0),
+    externalForce: new THREE.Vector3(0, 0, 0),
+    externalTorque: new THREE.Vector3(0, 0, 0),
     throttle: 0,
     elevator: 0,
     aileron: 0,
