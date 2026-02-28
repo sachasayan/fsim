@@ -287,6 +287,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
   const pendingPropBuilds = [];
   const pendingPropKeys = new Set();
   let pendingPropQueueDirty = false;
+  const chunkPools = [[], [], [], []]; // LOD-specific pools
   const terrainGrassDetailTex = createTerrainDetailTexture('grass');
   const terrainRockDetailTex = createTerrainDetailTexture('rock');
   const terrainMaterial = new THREE.MeshStandardMaterial({
@@ -831,11 +832,23 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
 
   function disposeChunkGroup(chunkGroup) {
     scene.remove(chunkGroup);
-    chunkGroup.traverse((child) => {
-      if (child.isMesh || child.isInstancedMesh) {
-        child.geometry.dispose();
+    const lod = chunkGroup.userData.lod;
+    if (lod !== undefined && chunkPools[lod]) {
+      // Cleanup props before pooling
+      while (chunkGroup.children.length > 2) {
+        const child = chunkGroup.children.pop();
+        if (child.dispose) child.dispose();
+        if (child.geometry) child.geometry.dispose();
+        // Materials are shared, don't dispose them
       }
-    });
+      chunkPools[lod].push(chunkGroup);
+    } else {
+      chunkGroup.traverse((child) => {
+        if (child.isMesh || child.isInstancedMesh) {
+          child.geometry.dispose();
+        }
+      });
+    }
   }
 
   function enqueueChunkBuild(cx, cz, lod, priority) {
@@ -919,15 +932,36 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
 
   function generateChunkBase(cx, cz, lod = 0) {
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
-    const chunkGroup = new THREE.Group();
+    let chunkGroup;
+    let terrainMesh, waterMesh;
+
+    if (chunkPools[lod] && chunkPools[lod].length > 0) {
+      chunkGroup = chunkPools[lod].pop();
+      terrainMesh = chunkGroup.children[0];
+      waterMesh = chunkGroup.children[1];
+    } else {
+      chunkGroup = new THREE.Group();
+      const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.terrainRes, lodCfg.terrainRes);
+      geometry.rotateX(-Math.PI / 2);
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
+      terrainMesh = new THREE.Mesh(geometry, terrainMaterial);
+      terrainMesh.receiveShadow = true;
+      chunkGroup.add(terrainMesh);
+
+      const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
+      waterGeo.rotateX(-Math.PI / 2);
+      waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
+      waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
+      waterMesh.receiveShadow = true;
+      chunkGroup.add(waterMesh);
+    }
+
     chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
     chunkGroup.userData.lod = lod;
 
-    const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.terrainRes, lodCfg.terrainRes);
-    geometry.rotateX(-Math.PI / 2); // Lay flat
-
+    const geometry = terrainMesh.geometry;
     const positions = geometry.attributes.position.array;
-    const colors = [];
+    const colorsArr = geometry.attributes.color.array;
     const colorObj = new THREE.Color();
 
     for (let i = 0; i < positions.length; i += 3) {
@@ -955,21 +989,19 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
         let snowBlend = Math.min(1.0, (height - 600) / 100);
         colorObj.lerpColors(terrainColorRock, terrainColorSnow, snowBlend);
       }
-      colors.push(colorObj.r, colorObj.g, colorObj.b);
+      colorsArr[i] = colorObj.r;
+      colorsArr[i + 1] = colorObj.g;
+      colorsArr[i + 2] = colorObj.b;
     }
 
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
     geometry.computeVertexNormals();
 
-    const terrainMesh = new THREE.Mesh(geometry, terrainMaterial);
-    terrainMesh.receiveShadow = true;
-    chunkGroup.add(terrainMesh);
-
-    // --- Generate Procedural Water Chunk ---
-    const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
-    waterGeo.rotateX(-Math.PI / 2);
+    // --- Update Procedural Water Chunk ---
+    const waterGeo = waterMesh.geometry;
     const wPos = waterGeo.attributes.position.array;
-    const wCols = [];
+    const wCols = waterGeo.attributes.color.array;
     const wColObj = new THREE.Color();
 
     for (let i = 0; i < wPos.length; i += 3) {
@@ -990,12 +1022,13 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       } else {
         wColObj.copy(waterColorDeep);
       }
-      wCols.push(wColObj.r, wColObj.g, wColObj.b);
+      wCols[i] = wColObj.r;
+      wCols[i + 1] = wColObj.g;
+      wCols[i + 2] = wColObj.b;
     }
-    waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(wCols, 3));
-    const waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
-    waterMesh.receiveShadow = true;
-    chunkGroup.add(waterMesh);
+    waterGeo.attributes.position.needsUpdate = true;
+    waterGeo.attributes.color.needsUpdate = true;
+
     scene.add(chunkGroup);
     return chunkGroup;
   }
