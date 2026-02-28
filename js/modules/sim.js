@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import Stats from 'three/addons/libs/stats.module.js';
 import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
 import { createWorldObjects } from './world/objects.js';
@@ -33,6 +34,9 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.85;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
+
+const stats = new Stats();
+document.body.appendChild(stats.dom);
 
 const renderScene = new RenderPass(scene, camera);
 const pixelRatio = renderer.getPixelRatio();
@@ -776,6 +780,7 @@ window.addEventListener('resize', () => {
 
 function animate() {
   requestAnimationFrame(animate);
+  stats.update();
 
   const now = performance.now();
   let dt = (now - runtime.lastTime) / 1000;
