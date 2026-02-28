@@ -1,6 +1,32 @@
 
 
 export const LIGHTING_PRESETS = {
+  daytime: {
+    clearColor: 0x87bfdf,
+    stormColor: 0x4a5566,
+    hemiSkyColor: 0xd0e8ff,
+    hemiGroundColor: 0x283a1a,
+    dirColor: 0xfff8ee,
+    ambientBase: 0.55,
+    directBase: 1.6,
+    sunPhiDeg: 52,
+    sunThetaDeg: 130,
+    skyTurbidity: 4.5,
+    skyRayleigh: 1.4,
+    skyMieCoefficient: 0.003,
+    skyMieDirectionalG: 0.82,
+    exposure: 0.95,
+    bloom: { threshold: 5.0, strength: 0.55, radius: 0.35 },
+    hazeColor: 0x8ab0cc,
+    hazeOpacity: 0.07,
+    starOpacity: 0.0,
+    cloudColorClear: 0xffffff,
+    cloudColorStorm: 0xd0d8e4,
+    cloudOpacityBase: 0.38,
+    cloudOpacityStorm: 0.50,
+    cloudEmissiveBase: 0.08,
+    cloudEmissiveStorm: 0.03
+  },
   dawn: {
     clearColor: 0x7f8db3,
     stormColor: 0x2f3646,

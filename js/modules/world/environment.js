@@ -16,14 +16,14 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   const dirLight = new THREE.DirectionalLight(WEATHER?.dirColor ?? 0xff9a66, dirBase);
   dirLight.position.set(-1000, 2000, 1000);
   dirLight.castShadow = true;
-  dirLight.shadow.camera.top = 200;
-  dirLight.shadow.camera.bottom = -200;
-  dirLight.shadow.camera.left = -200;
-  dirLight.shadow.camera.right = 200;
+  dirLight.shadow.camera.top = 280;
+  dirLight.shadow.camera.bottom = -280;
+  dirLight.shadow.camera.left = -280;
+  dirLight.shadow.camera.right = 280;
   dirLight.shadow.camera.near = 0.1;
   dirLight.shadow.camera.far = 5000;
-  dirLight.shadow.mapSize.width = 1024;
-  dirLight.shadow.mapSize.height = 1024;
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
   dirLight.shadow.bias = -0.0005;
   scene.add(dirLight);
 
