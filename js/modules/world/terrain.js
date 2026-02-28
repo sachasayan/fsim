@@ -441,15 +441,134 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
   const baseBuildingGeo = new THREE.BoxGeometry(1, 1, 1);
   baseBuildingGeo.translate(0, 0.5, 0); // Base at y=0
   const baseBuildingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
+
+  function createDetailedBuildingMat(style) {
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>\nvBldgObjPos = position;\nvBldgNormal = normal;\nvBldgScale = vec3(\n    length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),\n    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),\n    length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))\n);`
+        );
+
+      let colorFragment = '';
+      let roughFragment = '';
+
+      if (style === 'commercial') {
+        colorFragment = `
+        vec3 absBldgNorm = abs(vBldgNormal);
+        if (absBldgNorm.y < 0.9) {
+            vec2 wallUv;
+            if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+            
+            float winX = fract(wallUv.x * 0.4);
+            float winY = fract(wallUv.y * 0.33);
+            
+            if (winX > 0.15 && winY > 0.25) {
+                diffuseColor.rgb *= 0.15;
+                diffuseColor.rgb += vec3(0.02, 0.05, 0.1); 
+            } else {
+                diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.15); 
+            }
+        }`;
+        roughFragment = `
+        if (abs(vBldgNormal.y) < 0.9) {
+            vec2 wallUv;
+            if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+            float winX = fract(wallUv.x * 0.4);
+            float winY = fract(wallUv.y * 0.33);
+            if (winX > 0.15 && winY > 0.25) {
+                roughnessFactor = 0.1;
+            }
+        }`;
+      } else if (style === 'residential') {
+        colorFragment = `
+        vec3 absBldgNorm = abs(vBldgNormal);
+        if (absBldgNorm.y < 0.9) {
+            vec2 wallUv;
+            if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+            
+            float winX = fract(wallUv.x * 0.25);
+            float winY = fract(wallUv.y * 0.25);
+            
+            if (winX > 0.4 && winX < 0.8 && winY > 0.4 && winY < 0.8) {
+                diffuseColor.rgb *= 0.05;
+                diffuseColor.rgb += vec3(0.01, 0.02, 0.03); 
+            }
+        }`;
+        roughFragment = `
+        if (abs(vBldgNormal.y) < 0.9) {
+            vec2 wallUv;
+            if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+            float winX = fract(wallUv.x * 0.25);
+            float winY = fract(wallUv.y * 0.25);
+            if (winX > 0.4 && winX < 0.8 && winY > 0.4 && winY < 0.8) {
+                roughnessFactor = 0.15;
+            }
+        }`;
+      } else if (style === 'industrial') {
+        colorFragment = `
+        vec3 absBldgNorm = abs(vBldgNormal);
+        if (absBldgNorm.y < 0.9) {
+            vec2 wallUv;
+            if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+            
+            float ribY = fract(wallUv.y * 2.0);
+            diffuseColor.rgb *= mix(0.85, 1.0, ribY);
+            
+            if (wallUv.y > 0.8 && fract(wallUv.x * 0.1) > 0.2 && fract(wallUv.x * 0.1) < 0.8) {
+                diffuseColor.rgb *= 0.2;
+                diffuseColor.rgb += vec3(0.02, 0.03, 0.04);
+            }
+        }`;
+        roughFragment = `
+        if (abs(vBldgNormal.y) < 0.9) {
+            vec2 wallUv;
+            if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+            if (wallUv.y > 0.8 && fract(wallUv.x * 0.1) > 0.2 && fract(wallUv.x * 0.1) < 0.8) {
+                roughnessFactor = 0.2;
+            }
+        }`;
+      }
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${colorFragment}`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${roughFragment}`);
+    };
+    mat.customProgramCacheKey = () => `detailed-building-mat-${style}`;
+    return mat;
+  }
+
+  const detailedBuildingMats = {
+    commercial: createDetailedBuildingMat('commercial'),
+    residential: createDetailedBuildingMat('residential'),
+    industrial: createDetailedBuildingMat('industrial')
+  };
+
   const roofCapGeo = new THREE.BoxGeometry(1.06, 0.18, 1.06);
   roofCapGeo.translate(0, 0.09, 0);
-  const roofCapMat = new THREE.MeshStandardMaterial({ color: 0x3f3f3f, roughness: 0.8, metalness: 0.1 });
+  const roofCapMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.1 });
   const podiumGeo = new THREE.BoxGeometry(1.02, 1, 1.02);
   podiumGeo.translate(0, 0.5, 0);
-  const podiumMat = new THREE.MeshStandardMaterial({ color: 0x585858, roughness: 0.78, metalness: 0.12 });
+  const podiumMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78, metalness: 0.12 });
   const spireGeo = new THREE.CylinderGeometry(0.06, 0.12, 1, 8);
   spireGeo.translate(0, 0.5, 0);
   const spireMat = new THREE.MeshStandardMaterial({ color: 0xc7c7c7, roughness: 0.3, metalness: 0.9 });
+
+  const hvacGeo = new THREE.BoxGeometry(1, 1, 1);
+  hvacGeo.translate(0, 0.5, 0);
+  const hvacMat = new THREE.MeshStandardMaterial({ color: 0x909090, roughness: 0.7, metalness: 0.4 });
   const treeTypeConfigs = {
     conifer: { mat: treeBillboardMats.conifer, hRange: [14, 24], wScale: 0.45 },
     broadleaf: { mat: treeBillboardMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
@@ -458,6 +577,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
   };
   const classConfigs = {
     supertall: {
+      style: 'commercial',
       height: [180, 380],
       width: [24, 42],
       depth: [24, 42],
@@ -467,6 +587,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       spire: true
     },
     highrise: {
+      style: 'commercial',
       height: [80, 190],
       width: [18, 30],
       depth: [16, 28],
@@ -476,6 +597,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       spire: false
     },
     office: {
+      style: 'commercial',
       height: [35, 90],
       width: [14, 26],
       depth: [12, 24],
@@ -485,6 +607,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       spire: false
     },
     apartment: {
+      style: 'residential',
       height: [18, 48],
       width: [12, 20],
       depth: [10, 18],
@@ -494,6 +617,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       spire: false
     },
     townhouse: {
+      style: 'residential',
       height: [8, 16],
       width: [7, 12],
       depth: [8, 13],
@@ -503,6 +627,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       spire: false
     },
     industrial: {
+      style: 'industrial',
       height: [10, 24],
       width: [18, 34],
       depth: [16, 30],
@@ -714,7 +839,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
   }
 
   function enqueueChunkBuild(cx, cz, lod, priority) {
-    const key = `${cx},${cz}`;
+    const key = `${cx}, ${cz}`;
     if (pendingChunkKeys.has(key)) return;
     pendingChunkKeys.add(key);
     pendingChunkBuilds.push({ cx, cz, lod, key, priority });
@@ -1008,11 +1133,20 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       if (entries.length === 0) continue;
 
       const cfg = classConfigs[buildingClass];
-      const bldgMesh = new THREE.InstancedMesh(baseBuildingGeo, baseBuildingMat, entries.length);
+      const buildingMat = lod === 0 ? detailedBuildingMats[cfg.style] : baseBuildingMat;
+      const bldgMesh = new THREE.InstancedMesh(baseBuildingGeo, buildingMat, entries.length);
       const roofMesh = new THREE.InstancedMesh(roofCapGeo, roofCapMat, entries.length);
       const podiumMesh = cfg.podium ? new THREE.InstancedMesh(podiumGeo, podiumMat, entries.length) : null;
       const spireMesh = cfg.spire ? new THREE.InstancedMesh(spireGeo, spireMat, entries.length) : null;
       const buildingShadowsEnabled = lod === 0;
+
+      let hvacMesh = null;
+      let hvacIdx = 0;
+      if (lod === 0) {
+        hvacMesh = new THREE.InstancedMesh(hvacGeo, hvacMat, entries.length * 3);
+        hvacMesh.castShadow = true;
+        hvacMesh.receiveShadow = true;
+      }
 
       bldgMesh.castShadow = buildingShadowsEnabled;
       bldgMesh.receiveShadow = buildingShadowsEnabled;
@@ -1068,6 +1202,22 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
           dummy.updateMatrix();
           spireMesh.setMatrixAt(j, dummy.matrix);
         }
+
+        if (hvacMesh) {
+          const numHvacs = Math.floor(bp.seed3 * 4); // 0 to 3
+          for (let k = 0; k < numHvacs; k++) {
+            const hx = bp.x + (hash2(bp.seed, k, 1) - 0.5) * (w * 0.7);
+            const hz = bp.z + (hash2(bp.seed, k, 2) - 0.5) * (d * 0.7);
+            const size = 0.8 + hash2(bp.seed, k, 3) * 1.5;
+            const height = 1.0 + hash2(bp.seed, k, 4) * 1.0;
+            const rot = hash2(bp.seed, k, 5) * Math.PI;
+            dummy.position.set(hx, bp.y + h, hz);
+            dummy.scale.set(size, height, size);
+            dummy.rotation.set(0, rot, 0);
+            dummy.updateMatrix();
+            hvacMesh.setMatrixAt(hvacIdx++, dummy.matrix);
+          }
+        }
       }
 
       bldgMesh.instanceColor.needsUpdate = true;
@@ -1079,6 +1229,10 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       }
       if (spireMesh) {
         chunkGroup.add(spireMesh);
+      }
+      if (hvacMesh && hvacIdx > 0) {
+        hvacMesh.count = hvacIdx;
+        chunkGroup.add(hvacMesh);
       }
     }
 
@@ -1115,7 +1269,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       for (let dz = -renderDistance; dz <= renderDistance; dz++) {
         const cx = px + dx;
         const cz = pz + dz;
-        const key = `${cx},${cz}`;
+        const key = `${cx}, ${cz}`;
         const ringDistance = Math.max(Math.abs(dx), Math.abs(dz));
         const currentLod = terrainChunks.has(key) ? terrainChunks.get(key).lod : null;
         const lod = getLodForRingDistance(ringDistance, currentLod);
