@@ -226,6 +226,9 @@ const envGuiState = {
   cloudOpacityStorm: WEATHER.cloudOpacityStorm,
   cloudEmissiveBase: WEATHER.cloudEmissiveBase,
   cloudEmissiveStorm: WEATHER.cloudEmissiveStorm,
+  // Wind: meteorological convention — direction wind is blowing FROM, in degrees (0=N, 90=E)
+  windSpeed: 0,
+  windDir: 270,  // Default: westerly (blowing toward east)
   nearFadeStart: cloudTuningState.nearFadeStart,
   nearFadeEnd: cloudTuningState.nearFadeEnd,
   minLight: cloudTuningState.minLight,
@@ -235,6 +238,8 @@ const envGuiState = {
   resetToPreset: () => {
     applyLightingPresetToWeather(envGuiState.presetId);
     if (setCloudTuning) setCloudTuning({ nearFadeStart: 13000, nearFadeEnd: 18000, minLight: 0.5, farFadeStart: 9000, farFadeEnd: 14500, farOpacityScale: 0.7 });
+    envGuiState.windSpeed = 0; envGuiState.windDir = 270;
+    applyWind();
     syncGuiStateFromWeather();
     updateGuiDisplays();
   },
@@ -317,6 +322,12 @@ function syncGuiStateFromWeather() {
     envGuiState.farFadeEnd = t.farFadeEnd;
     envGuiState.farOpacityScale = t.farOpacityScale;
   }
+  // Derive wind polar from current XZ components.
+  const wx = WEATHER.windX ?? 0;
+  const wz = WEATHER.windZ ?? 0;
+  envGuiState.windSpeed = Math.sqrt(wx * wx + wz * wz);
+  // Direction wind is blowing FROM (meteorological)
+  envGuiState.windDir = (Math.atan2(-wx, -wz) * 180 / Math.PI + 360) % 360;
 }
 
 function applyGuiStateToWorld(refreshEnvironmentMap = false) {
@@ -357,6 +368,7 @@ function applyGuiStateToWorld(refreshEnvironmentMap = false) {
       farOpacityScale: envGuiState.farOpacityScale
     });
   }
+  applyWind();
   syncDerivedWeatherCache();
   if (applyEnvironmentFromWeather) {
     applyEnvironmentFromWeather(WEATHER, { refreshEnvironmentMap });
@@ -366,6 +378,15 @@ function applyGuiStateToWorld(refreshEnvironmentMap = false) {
 const gui = new GUI({ title: 'Daytime + Clouds', width: 330 });
 gui.close();
 const guiControllers = [];
+
+// Convert GUI wind polar → WEATHER XZ components used by the physics solver.
+function applyWind() {
+  const dirRad = (envGuiState.windDir ?? 270) * Math.PI / 180;
+  // "FROM" convention: wind blowing FROM dirRad toward (dirRad + 180)
+  WEATHER.windX = -(envGuiState.windSpeed ?? 0) * Math.sin(dirRad);
+  WEATHER.windZ = -(envGuiState.windSpeed ?? 0) * Math.cos(dirRad);
+}
+
 function bind(controller, refreshEnvironmentMap = false) {
   guiControllers.push(controller);
   controller.onChange(() => applyGuiStateToWorld(false));
@@ -426,6 +447,10 @@ bind(cloudFolder.add(envGuiState, 'farOpacityScale', 0.0, 1.5, 0.001).name('Far 
 
 guiControllers.push(gui.add(envGuiState, 'resetToPreset').name('Reset to Preset'));
 guiControllers.push(gui.add(envGuiState, 'copyPresetJson').name('Copy JSON'));
+
+const windFolder = gui.addFolder('Wind');
+bind(windFolder.add(envGuiState, 'windSpeed', 0, 40, 0.5).name('Speed (m/s)'));
+bind(windFolder.add(envGuiState, 'windDir', 0, 359, 1).name('Direction (° FROM)'));
 
 syncGuiStateFromWeather();
 updateGuiDisplays();
@@ -881,6 +906,7 @@ function animate() {
   runtime.wasOnGround = PHYSICS.onGround;
 
   // 2. Update & Render Particles (touchdown/crash smoke only)
+  let particleDirty = false;
   for (let i = 0; i < MAX_PARTICLES; i++) {
     const p = particles[i];
     if (!p.active) continue;
@@ -891,6 +917,7 @@ function animate() {
       pDummy.scale.set(0, 0, 0);
       pDummy.updateMatrix();
       particleMesh.setMatrixAt(i, pDummy.matrix);
+      particleDirty = true;
       continue;
     }
 
@@ -910,9 +937,13 @@ function animate() {
     let fade = progress * progress;
     pColor.setRGB(p.r * fade, p.g * fade, p.b * fade);
     particleMesh.setColorAt(i, pColor);
+    particleDirty = true;
   }
-  particleMesh.instanceMatrix.needsUpdate = true;
-  if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
+  // Only upload buffer to GPU when something actually changed.
+  if (particleDirty) {
+    particleMesh.instanceMatrix.needsUpdate = true;
+    if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
+  }
 
   // --- PAPI LIGHTS UPDATE (RWY 36 / RWY 18) ---
   const allPapiLights = PAPI.lights || [];

@@ -39,8 +39,6 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   skyUniforms['mieCoefficient'].value = WEATHER?.skyMieCoefficient ?? 0.05;
   skyUniforms['mieDirectionalG'].value = WEATHER?.skyMieDirectionalG ?? 0.4;
 
-  const pmremGenerator = new THREE.PMREMGenerator(renderer);
-  pmremGenerator.compileEquirectangularShader();
   let environmentTexture = null;
 
   // Far horizon haze dome for depth layering
@@ -103,7 +101,12 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
 
     if (refreshEnvironmentMap) {
       if (environmentTexture) environmentTexture.dispose();
-      environmentTexture = pmremGenerator.fromScene(sky).texture;
+      // Create, use, and immediately dispose the generator — it holds
+      // large render targets and is only needed for the brief bake.
+      const gen = new THREE.PMREMGenerator(renderer);
+      gen.compileEquirectangularShader();
+      environmentTexture = gen.fromScene(sky).texture;
+      gen.dispose();
       scene.environment = environmentTexture;
     }
   }

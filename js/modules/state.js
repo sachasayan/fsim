@@ -81,7 +81,9 @@ export function createSimulationState({ scene }) {
     cloudOpacityStorm: preset.cloudOpacityStorm,
     cloudEmissiveBase: preset.cloudEmissiveBase,
     cloudEmissiveStorm: preset.cloudEmissiveStorm,
-    cloudEmissiveStorm: preset.cloudEmissiveStorm
+    // Wind (m/s) in world XZ axes. Positive X = east, positive Z = south.
+    windX: 0,
+    windZ: 0
   };
 
 

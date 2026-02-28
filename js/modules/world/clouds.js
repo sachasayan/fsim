@@ -282,6 +282,8 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
   scene.add(farCloudLayer);
 
   const farColor = new THREE.Color();
+  const clearFarColor = new THREE.Color();
+  const stormFarColor = new THREE.Color();
 
   function updateClouds(dt, camera, weather = null, cloudTint = null, sunDir = null) {
     if (camera) {
@@ -300,8 +302,10 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
     if (cloudTint) {
       farCloudMat.uniforms.uColor.value.copy(cloudTint);
     } else if (weather) {
-      farColor.set(weather.cloudColorClear).lerp(new THREE.Color(weather.cloudColorStorm), weather.transition);
-      farCloudMat.uniforms.uColor.value.copy(farColor);
+      // Use pre-allocated Colors to avoid per-frame heap allocation.
+      clearFarColor.set(weather.cloudColorClear);
+      stormFarColor.set(weather.cloudColorStorm);
+      farCloudMat.uniforms.uColor.value.lerpColors(clearFarColor, stormFarColor, weather.transition);
     }
 
     if (weather) {

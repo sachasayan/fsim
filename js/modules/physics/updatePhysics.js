@@ -31,6 +31,7 @@ function getTmp(THREE) {
         accel: new THREE.Vector3(),
         specific: new THREE.Vector3(),
         gravityVec: new THREE.Vector3(),
+        airVel: new THREE.Vector3(),
         torqueLocal: new THREE.Vector3(),
         torqueWorld: new THREE.Vector3(),
         angVelLocal: new THREE.Vector3(),
@@ -136,11 +137,18 @@ export function calculateAerodynamics(ctx) {
     const right = t.right.set(1, 0, 0).applyQuaternion(p.quaternion);
     const up = t.up.set(0, 1, 0).applyQuaternion(p.quaternion);
 
-    p.airspeed = p.velocity.length();
+    // Air-relative velocity: subtract wind from aircraft velocity before all aero calculations.
+    // Wind lives in WEATHER.windX / WEATHER.windZ (m/s in world XZ, no vertical component).
+    const airVel = t.airVel.set(
+        p.velocity.x - (WEATHER.windX ?? 0),
+        p.velocity.y,
+        p.velocity.z - (WEATHER.windZ ?? 0)
+    );
+    p.airspeed = airVel.length();
 
-    // Local velocity to find AoA and Slip
+    // Local air-relative velocity to find AoA and sideslip.
     const invQ = t.invQ.copy(p.quaternion).invert();
-    const localVel = t.localVel.copy(p.velocity).applyQuaternion(invQ);
+    const localVel = t.localVel.copy(airVel).applyQuaternion(invQ);
 
     if (p.airspeed > 1.0) {
         p.aoa = Math.atan2(-localVel.y, -localVel.z);
@@ -199,7 +207,8 @@ export function calculateAerodynamics(ctx) {
     let dragMag = dynPressure * AIRCRAFT.wingArea * cd;
     let dragForce = t.drag;
     if (p.airspeed > 0.1) {
-        dragForce.copy(p.velocity).multiplyScalar(-dragMag / p.airspeed);
+        // Drag opposes air-relative motion, not ground-relative motion.
+        dragForce.copy(airVel).multiplyScalar(-dragMag / p.airspeed);
     } else {
         dragForce.set(0, 0, 0);
     }
