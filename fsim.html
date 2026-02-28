@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hyper-Realistic Airline Simulator</title>
-        <link rel="stylesheet" href="./styles/app.css">
+    <link rel="stylesheet" href="./styles/app.css">
     <!-- Import Three.js -->
     <script type="importmap">
         {
@@ -97,7 +97,8 @@
             <div class="instrument-row"><span>AOA</span><span class="instrument-value" id="hud-aoa">0.0°</span></div>
             <div class="instrument-row"><span>G-FORCE</span><span class="instrument-value" id="hud-gforce">1.0</span>
             </div>
-            <div class="instrument-row"><span>GEAR</span><span class="instrument-value hud-gear-down" id="hud-gear">DOWN</span></div>
+            <div class="instrument-row"><span>GEAR</span><span class="instrument-value hud-gear-down"
+                    id="hud-gear">DOWN</span></div>
             <div class="instrument-row"><span>FLAPS</span><span class="instrument-value" id="hud-flaps">0%</span></div>
             <div class="instrument-row"><span>SPOILERS</span><span class="instrument-value"
                     id="hud-spoilers">RETRACTED</span></div>
@@ -111,12 +112,14 @@
             <h3>FLIGHT CONTROLS</h3>
             <div><span class="key">Z</span> / <span class="key">A</span> Thrust Down/Up</div>
             <div class="control-row control-row-spaced"><span class="key">Arrows</span> Pitch & Roll</div>
-            <div class="control-row control-row-spaced"><span class="key">Q</span> / <span class="key">E</span> Yaw (Rudder)</div>
+            <div class="control-row control-row-spaced"><span class="key">Q</span> / <span class="key">E</span> Yaw
+                (Rudder)</div>
 
             <div class="control-row control-row-spaced"><span class="key">R</span> Cycle Weather</div>
             <div class="control-row control-row-spaced"><span class="key">G</span> Toggle Env Tuner</div>
             <div class="control-row control-row-spaced"><span class="key">C</span> Camera View</div>
-            <div class="control-row control-row-spaced"><span class="key">Drag</span> Free Look <span class="key">Scroll</span> Zoom
+            <div class="control-row control-row-spaced"><span class="key">Drag</span> Free Look <span
+                    class="key">Scroll</span> Zoom
             </div>
             <div class="control-note">GEAR & FLAPS: AUTOMATIC
             </div>
@@ -125,7 +128,7 @@
         </div>
     </div>
 
-        <script type="module" src="./js/main.js"></script>
+    <script type="module" src="./js/modules/sim.js"></script>
 </body>
 
 </html>

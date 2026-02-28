@@ -133,12 +133,12 @@ async function main() {
         throw new Error('GET / did not return HTML content');
       }
 
-      const app = await request('/js/main.js');
+      const app = await request('/js/modules/sim.js');
       if (app.statusCode !== 200) {
-        throw new Error(`GET /js/main.js failed with status ${app.statusCode}`);
+        throw new Error(`GET /js/modules/sim.js failed with status ${app.statusCode}`);
       }
-      if (!app.body.includes("import './modules/sim.js';")) {
-        throw new Error('main.js content check failed');
+      if (!app.body.includes("import * as THREE from 'three';")) {
+        throw new Error('sim.js content check failed');
       }
 
       const css = await request('/styles/app.css');

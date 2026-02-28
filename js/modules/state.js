@@ -3,7 +3,6 @@ import { LIGHTING_PRESETS, pickLightingPresetId } from './lighting.js';
 
 export function createSimulationState({ scene }) {
   const AIRCRAFT = {
-    model: 'aircraft1',
     mass: 50000,
     wingArea: 180,
     maxThrust: 800000,
