@@ -200,8 +200,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   };
   const tmpColorA = new THREE.Color();
   const tmpColorB = new THREE.Color();
-  const terrainHeightCache = new Map();
-  const MAX_CACHE_SIZE = 16384;
 
   function applyDistanceAtmosphereToMaterial(material, programKey, strength = 0.5, desat = 0.0) {
     material.onBeforeCompile = (shader) => {
@@ -782,9 +780,6 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
   }
 
   function getTerrainHeight(x, z, octaves = 6) {
-    const cacheKey = `${Math.round(x)},${Math.round(z)},${octaves}`;
-    if (terrainHeightCache.has(cacheKey)) return terrainHeightCache.get(cacheKey);
-
     let noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
 
     let distFromRunwayZ = Math.abs(z);
@@ -801,11 +796,6 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       result = noiseVal * runwayMask;
     }
 
-    if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
-      const firstKey = terrainHeightCache.keys().next().value;
-      terrainHeightCache.delete(firstKey);
-    }
-    terrainHeightCache.set(cacheKey, result);
     return result;
   }
 

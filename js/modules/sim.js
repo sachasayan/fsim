@@ -797,7 +797,10 @@ function animate() {
       ).normalize();
 
       // Cache terrain height — reused in the floor clamp below to avoid a second query.
-      const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z, 6);
+      let terrainY = 0;
+      if (PHYSICS.position.y < 1000) {
+        terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z, 6);
+      }
       if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
         PHYSICS.position.y = terrainY + AIRCRAFT.gearHeight;
         PHYSICS.onGround = true;

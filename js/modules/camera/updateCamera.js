@@ -78,7 +78,10 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
 
       camera.fov = 60 + (PHYSICS.airspeed / 340) * 15;
 
-      const camTerrainY = getTerrainHeight(camera.position.x, camera.position.z);
+      let camTerrainY = 0;
+      if (camera.position.y < 1000) {
+        camTerrainY = getTerrainHeight(camera.position.x, camera.position.z);
+      }
       const minHeight = Math.max(camTerrainY + 2, -8);
       if (camera.position.y < minHeight) {
         camera.position.y = minHeight;

@@ -67,7 +67,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             for (let px = 0; px < mapW; px += samplePx) {
                 const wx = centerWorldX + (px - centerX) / pixelsPerWorld;
                 const wz = centerWorldZ + (py - centerY) / pixelsPerWorld;
-                mapCacheCtx.fillStyle = terrainColor(getTerrainHeight(wx, wz));
+                mapCacheCtx.fillStyle = terrainColor(getTerrainHeight(wx, wz, 3));
                 mapCacheCtx.fillRect(px, py, samplePx + 1, samplePx + 1);
             }
         }
@@ -81,7 +81,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             for (let px = 0; px < mapW; px += coastlineStepX) {
                 const wx = centerWorldX + (px - centerX) / pixelsPerWorld;
                 const wz = centerWorldZ + (py - centerY) / pixelsPerWorld;
-                const h = getTerrainHeight(wx, wz);
+                const h = getTerrainHeight(wx, wz, 3);
                 if (h > -8 && h < 6) {
                     if (!started) {
                         mapCacheCtx.moveTo(px, py);
