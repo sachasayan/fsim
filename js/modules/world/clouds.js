@@ -9,8 +9,8 @@ export function createCloudSystem({ scene }) {
   // Use one large tile to avoid transparent per-tile sort boundaries ("vertical panes").
   const tileSize = worldHalfExtent * 4;
 
-  // Rounded low-poly puffs read much less blocky than box voxels at similar cost.
-  const voxelGeo = new THREE.SphereGeometry(voxelSize * 0.52, 7, 5);
+  // Replace spheres with quads. 1x1 base size, scaled per-instance.
+  const voxelGeo = new THREE.PlaneGeometry(1, 1);
   const voxelMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     transparent: true,
@@ -20,8 +20,9 @@ export function createCloudSystem({ scene }) {
     emissive: 0xffffff,
     emissiveIntensity: 0.18
   });
+  voxelMat.alphaTest = 0.05;
   voxelMat.depthWrite = false;
-  voxelMat.premultipliedAlpha = true;
+  voxelMat.premultipliedAlpha = false; // Changed to false for better standard alpha blending with alphaTest
 
   const cloudTuning = {
     nearFadeStart: 13000.0,
@@ -52,12 +53,34 @@ export function createCloudSystem({ scene }) {
       .replace(
         '#include <common>',
         `#include <common>
-varying vec3 vCloudWorldPos;`
+varying vec3 vCloudWorldPos;
+varying vec2 vCloudUv;`
       )
       .replace(
         '#include <worldpos_vertex>',
-        `#include <worldpos_vertex>
-vCloudWorldPos = worldPosition.xyz;`
+        `
+        vCloudUv = uv;
+        
+        // Correct Instance World Mapping
+        vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        vec4 worldPosition = modelMatrix * instancePos;
+        vCloudWorldPos = worldPosition.xyz;
+        
+        // Spherical Billboarding: Force the instance to face the camera in View Space
+        // We use the instance's view-space center
+        mvPosition = viewMatrix * worldPosition;
+        
+        // Extract instance scale from the instanceMatrix
+        vec2 instanceScale = vec2(
+          length(vec3(instanceMatrix[0].xyz)), 
+          length(vec3(instanceMatrix[1].xyz))
+        );
+        
+        // Expand the quad in view-space xy
+        mvPosition.xy += position.xy * instanceScale;
+        
+        gl_Position = projectionMatrix * mvPosition;
+        `
       );
 
     shader.fragmentShader = shader.fragmentShader
@@ -65,6 +88,7 @@ vCloudWorldPos = worldPosition.xyz;`
         '#include <common>',
         `#include <common>
 varying vec3 vCloudWorldPos;
+varying vec2 vCloudUv;
 uniform vec3 uCloudCameraPos;
 uniform float uNearFadeStart;
 uniform float uNearFadeEnd;
@@ -76,11 +100,12 @@ uniform float uCloudPhaseStrength;`
         '#include <alphatest_fragment>',
         `#include <alphatest_fragment>
 float cloudDist = distance(vCloudWorldPos.xz, uCloudCameraPos.xz);
+float radialMask = 1.0 - smoothstep(0.35, 0.5, length(vCloudUv - 0.5));
 float nearFade = 1.0 - smoothstep(uNearFadeStart, uNearFadeEnd, cloudDist);
 float edgeNoise = 0.5 + 0.5 * sin(vCloudWorldPos.x * 0.016 + vCloudWorldPos.z * 0.009 + vCloudWorldPos.y * 0.011);
 float jitter = fract(sin(dot(vCloudWorldPos.xz, vec2(0.0143, 0.0101))) * 43758.5453);
 edgeNoise = mix(0.84, 1.06, edgeNoise) * mix(0.96, 1.04, jitter);
-diffuseColor.a = clamp(diffuseColor.a * nearFade * edgeNoise, 0.0, 1.0);`
+diffuseColor.a = clamp(diffuseColor.a * nearFade * edgeNoise * radialMask, 0.0, 1.0);`
       )
       .replace(
         'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
@@ -154,9 +179,9 @@ outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
       const c = entry.instances[i];
       dummy.position.set(c.x, c.y, c.z);
       dummy.scale.set(
-        c.s * (1.45 + CLOUD_NOISE.hash2D(c.x, c.z, 81) * 0.75),
-        c.s * (0.95 + CLOUD_NOISE.hash2D(c.z, c.x, 82) * 0.55),
-        c.s * (1.25 + CLOUD_NOISE.hash2D(c.z, c.x, 84) * 0.6)
+        voxelSize * c.s * (1.65 + CLOUD_NOISE.hash2D(c.x, c.z, 81) * 0.75),
+        voxelSize * c.s * (1.65 + CLOUD_NOISE.hash2D(c.z, c.x, 82) * 0.55),
+        1.0 // Plane depth doesn't matter, it's billboarded
       );
       dummy.rotation.set(0, CLOUD_NOISE.hash2D(c.x, c.z, 83) * Math.PI * 2, 0);
       dummy.updateMatrix();
