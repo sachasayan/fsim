@@ -131,5 +131,35 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     camera.updateProjectionMatrix();
   }
 
-  return { cycleMode, getMode, updateCamera };
+  function snapToTarget() {
+    // Force synchronous update of vectors based on current plane state
+    forward.set(0, 0, -1).applyQuaternion(planeGroup.quaternion);
+    up.set(0, 1, 0).applyQuaternion(planeGroup.quaternion);
+
+    if (cameraMode === 0) {
+      localOffset.set(0, 0, cameraParams.distance);
+      localOffset.applyAxisAngle(axisX, camRotY);
+      localOffset.applyAxisAngle(axisY, camRotX);
+      localOffset.applyQuaternion(planeGroup.quaternion);
+
+      idealPosition.copy(planeGroup.position).add(localOffset).addScaledVector(up, cameraParams.height);
+      camera.position.copy(idealPosition);
+
+      lookTarget.copy(planeGroup.position).addScaledVector(forward, 10).addScaledVector(up, 5);
+      camera.lookAt(lookTarget);
+    } else if (cameraMode === 1) {
+      cockpitPos.copy(planeGroup.position).addScaledVector(forward, 15).addScaledVector(up, 1.5);
+      camera.position.copy(cockpitPos);
+
+      lookEuler.set(camRotY - 0.1, camRotX, 0, 'YXZ');
+      lookQuat.setFromEuler(lookEuler);
+      camera.quaternion.copy(planeGroup.quaternion).multiply(lookQuat);
+    } else if (cameraMode === 2) {
+      camera.position.copy(towerPos);
+      camera.lookAt(planeGroup.position);
+    }
+    camera.updateProjectionMatrix();
+  }
+
+  return { cycleMode, getMode, updateCamera, snapToTarget };
 }

@@ -118,6 +118,8 @@ const {
   strobes,
   beacons
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
+planeGroup.position.copy(PHYSICS.position);
+planeGroup.quaternion.copy(PHYSICS.quaternion);
 
 const tmpTouchOffsetL = new THREE.Vector3();
 const tmpTouchOffsetR = new THREE.Vector3();
@@ -529,6 +531,7 @@ window.resetFlight = function () {
   planeGroup.position.copy(PHYSICS.position);
   planeGroup.quaternion.copy(PHYSICS.quaternion);
   physicsAdapter.syncFromState();
+  cameraController.snapToTarget();
 };
 
 
@@ -912,7 +915,10 @@ setTimeout(() => {
     PHYSICS.angularVelocity.set(0, 0, 0);
     PHYSICS.externalForce.set(0, 0, 0);
     PHYSICS.externalTorque.set(0, 0, 0);
+    planeGroup.position.copy(PHYSICS.position);
+    planeGroup.quaternion.copy(PHYSICS.quaternion);
     physicsAdapter.syncFromState();
+    cameraController.snapToTarget();
     animate();
   });
 }, 1500);
