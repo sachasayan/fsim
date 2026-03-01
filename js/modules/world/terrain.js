@@ -200,6 +200,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   };
   const tmpColorA = new THREE.Color();
   const tmpColorB = new THREE.Color();
+  const terrainHeightCache = new Map();
+  const MAX_CACHE_SIZE = 1024;
 
   function applyDistanceAtmosphereToMaterial(material, programKey, strength = 0.5, desat = 0.0) {
     material.onBeforeCompile = (shader) => {
@@ -280,6 +282,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
       enableBoats: false
     }
   ];
+  const LOD_OCTAVES = [6, 4, 3, 2];
   const terrainChunks = new Map();
   const pendingChunkBuilds = [];
   const pendingChunkKeys = new Set();
@@ -778,26 +781,32 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
     };
   }
 
-  function getTerrainHeight(x, z) {
+  function getTerrainHeight(x, z, octaves = 6) {
+    const cacheKey = `${Math.round(x * 100)},${Math.round(z * 100)},${octaves}`;
+    if (terrainHeightCache.has(cacheKey)) return terrainHeightCache.get(cacheKey);
+
+    let noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
+
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
-
-    // Base noise averages around 0, multiply and add 100 so land is naturally elevated above water
-    let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
+    let result = noiseVal;
 
     // Flatten for runway (centered at origin, extending along Z)
-    let runwayMask = 1.0;
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-      return 0; // Lock runway exactly to Y=0
+      result = 0;
     } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-      // Smooth radial transition — Math.max avoids the additive corner crease
       let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
       let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-      runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-      return noiseVal * runwayMask;
+      let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
+      result = noiseVal * runwayMask;
     }
 
-    return noiseVal;
+    if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = terrainHeightCache.keys().next().value;
+      terrainHeightCache.delete(firstKey);
+    }
+    terrainHeightCache.set(cacheKey, result);
+    return result;
   }
 
   function getLodForRingDistance(ringDistance, currentLod = null) {
@@ -973,7 +982,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       let vx = lx + cx * CHUNK_SIZE;
       let vz = lz + cz * CHUNK_SIZE;
 
-      let height = getTerrainHeight(vx, vz);
+      let height = getTerrainHeight(vx, vz, LOD_OCTAVES[lod]);
       positions[i + 1] = height;
 
       // Natural terrain coloring
@@ -1010,7 +1019,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
     for (let i = 0; i < wPos.length; i += 3) {
       let vx = wPos[i] + cx * CHUNK_SIZE;
       let vz = wPos[i + 2] + cz * CHUNK_SIZE;
-      let th = getTerrainHeight(vx, vz); // Terrain depth
+      let th = getTerrainHeight(vx, vz, LOD_OCTAVES[lod]); // Terrain depth
 
       wPos[i + 1] = -10; // Flat water level
 
@@ -1104,7 +1113,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
           const oz = (hash2(cellX, cellZ, 15) - 0.5) * 24;
           const px = lx + ox;
           const pz = lz + oz;
-          const py = getTerrainHeight(vx + ox, vz + oz);
+          const py = getTerrainHeight(vx + ox, vz + oz, LOD_OCTAVES[lod]);
           if (py > -5 && py < 430) {
             buildingPositions[buildingClass].push({
               x: px,
@@ -1146,7 +1155,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
 
       for (let j = 0; j < trees.length; j++) {
         const tp = trees[j];
-        const exactY = lod <= 1 ? getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE) : tp.y;
+        const exactY = lod <= 1 ? getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE, LOD_OCTAVES[lod]) : tp.y;
         const heading = tp.seed * Math.PI * 2;
         const treeHeight = cfg.hRange[0] + tp.seed * (cfg.hRange[1] - cfg.hRange[0]);
         const treeWidth = treeHeight * cfg.wScale * (0.92 + tp.seed2 * 0.3);

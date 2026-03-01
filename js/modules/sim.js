@@ -799,7 +799,7 @@ function animate() {
       ).normalize();
 
       // Cache terrain height — reused in the floor clamp below to avoid a second query.
-      const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z);
+      const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z, 6);
       if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
         PHYSICS.position.y = terrainY + AIRCRAFT.gearHeight;
         PHYSICS.onGround = true;
@@ -819,7 +819,7 @@ function animate() {
     // During a crash we already called getTerrainHeight above; in normal flight this is the only call.
     const terrainFloorY = (PHYSICS.crashed && PHYSICS.onGround)
       ? PHYSICS.position.y  // Already clamped — floor is wherever we just put it
-      : getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z) + AIRCRAFT.gearHeight;
+      : getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z, 6) + AIRCRAFT.gearHeight;
     if (PHYSICS.position.y < terrainFloorY) {
       PHYSICS.position.y = terrainFloorY;
       if (PHYSICS.velocity.y < 0) PHYSICS.velocity.y = 0;
