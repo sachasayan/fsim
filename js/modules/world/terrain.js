@@ -287,7 +287,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const terrainRockDetailTex = createTerrainDetailTexture('rock');
   const terrainMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.78,
+    roughness: 0.92, // Increased from 0.78 for a more matte, gritty look
     metalness: 0.02,
     flatShading: false
   });
@@ -369,27 +369,28 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       float rockMask = max(slopeMask, heightMask);
       
       float detailLuma = mix(grassDetail, rockDetail, rockMask);
-      float detailBoost = mix(0.66, 1.45, detailLuma);
+      float detailBoost = mix(0.45, 1.75, detailLuma); // Widened from 0.66-1.45 for much higher contrast
       
       diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
       
       float terrainDist = distance(vTerrainWorldPos, uAtmosCameraPos);
       float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, terrainDist);
       float foliageEligible = (1.0 - rockMask) * foliageFade;
-      float tuft = smoothstep(0.12, 0.88, grassDetail);
+      float tuft = smoothstep(0.1, 0.9, grassDetail); // Slightly more aggressive threshold
       float foliage = foliageEligible * tuft * uTerrainFoliageStrength;
       
-      float micro = sin(vTerrainWorldPos.x * 12.0 + vTerrainWorldPos.z * 10.5);
-      float blade = smoothstep(0.02, 0.98, abs(micro));
-      diffuseColor.rgb *= mix(1.0, 0.88 + 0.16 * blade, foliage * 0.7);
-      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.015, 0.035, 0.01), foliage * 0.5);
+      // Much higher frequency micro-pattern for "coarse" look
+      float micro = sin(vTerrainWorldPos.x * 24.0 + vTerrainWorldPos.z * 21.0);
+      float blade = smoothstep(0.01, 0.99, abs(micro));
+      diffuseColor.rgb *= mix(1.0, 0.75 + 0.35 * blade, foliage * 0.85); // Deeper shadows and brighter highlights
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.045, 0.015), foliage * 0.6);
       
       float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, terrainDist) * uTerrainAtmosStrength;
       diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);
       `
     );
   };
-  terrainMaterial.customProgramCacheKey = () => 'terrain-detail-v5';
+  terrainMaterial.customProgramCacheKey = () => 'terrain-detail-v7';
 
   // Instanced Tree Resources: crossed low-poly billboard cards
   const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
