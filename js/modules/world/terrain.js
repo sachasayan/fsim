@@ -453,8 +453,8 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
           `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`
         )
         .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>\nvBldgObjPos = position;\nvBldgNormal = normal;\nvBldgScale = vec3(\n    length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),\n    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),\n    length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))\n);`
+          '#include <project_vertex>',
+          `#include <project_vertex>\nvBldgObjPos = position;\nvBldgNormal = normal;\nvBldgScale = vec3(\n    length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),\n    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),\n    length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))\n);`
         );
 
       let colorFragment = '';
