@@ -49,73 +49,63 @@ export function createCloudSystem({ scene }) {
     shader.uniforms.uCloudSunDir = sharedCloudUniforms.uCloudSunDir;
     shader.uniforms.uCloudPhaseStrength = sharedCloudUniforms.uCloudPhaseStrength;
 
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-varying vec3 vCloudWorldPos;
-varying vec2 vCloudUv;`
-      )
-      .replace(
-        '#include <worldpos_vertex>',
-        `
-        vCloudUv = uv;
-        
-        // Correct Instance World Mapping
-        vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        vec4 worldPosition = modelMatrix * instancePos;
-        vCloudWorldPos = worldPosition.xyz;
-        
-        // Spherical Billboarding: Force the instance to face the camera in View Space
-        // We use the instance's view-space center
-        mvPosition = viewMatrix * worldPosition;
-        
-        // Extract instance scale from the instanceMatrix
-        vec2 instanceScale = vec2(
-          length(vec3(instanceMatrix[0].xyz)), 
-          length(vec3(instanceMatrix[1].xyz))
-        );
-        
-        // Expand the quad in view-space xy
-        mvPosition.xy += position.xy * instanceScale;
-        
-        gl_Position = projectionMatrix * mvPosition;
-        `
+    shader.vertexShader = `
+      varying vec3 vCloudWorldPos;
+      varying vec2 vCloudUv;
+    ` + shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `
+      vCloudUv = uv;
+      
+      // Correct Instance World Mapping
+      vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      vec4 worldPos = modelMatrix * instancePos;
+      vCloudWorldPos = worldPos.xyz;
+      
+      // Spherical Billboarding: Force the instance to face the camera in View Space
+      mvPosition = viewMatrix * worldPos;
+      
+      // Extract instance scale from the instanceMatrix
+      vec2 instanceScale = vec2(
+        length(vec3(instanceMatrix[0].xyz)), 
+        length(vec3(instanceMatrix[1].xyz))
       );
+      
+      // Expand the quad in view-space xy
+      mvPosition.xy += position.xy * instanceScale;
+      
+      gl_Position = projectionMatrix * mvPosition;
+      `
+    );
 
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-varying vec3 vCloudWorldPos;
-varying vec2 vCloudUv;
-uniform vec3 uCloudCameraPos;
-uniform float uNearFadeStart;
-uniform float uNearFadeEnd;
-uniform float uCloudMinLight;
-uniform vec3 uCloudSunDir;
-uniform float uCloudPhaseStrength;`
-      )
-      .replace(
-        '#include <alphatest_fragment>',
-        `#include <alphatest_fragment>
-float cloudDist = distance(vCloudWorldPos.xz, uCloudCameraPos.xz);
-float radialMask = 1.0 - smoothstep(0.35, 0.5, length(vCloudUv - 0.5));
-float nearFade = 1.0 - smoothstep(uNearFadeStart, uNearFadeEnd, cloudDist);
-float edgeNoise = 0.5 + 0.5 * sin(vCloudWorldPos.x * 0.016 + vCloudWorldPos.z * 0.009 + vCloudWorldPos.y * 0.011);
-float jitter = fract(sin(dot(vCloudWorldPos.xz, vec2(0.0143, 0.0101))) * 43758.5453);
-edgeNoise = mix(0.84, 1.06, edgeNoise) * mix(0.96, 1.04, jitter);
-diffuseColor.a = clamp(diffuseColor.a * nearFade * edgeNoise * radialMask, 0.0, 1.0);`
-      )
-      .replace(
-        'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
-        `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
-vec3 viewDir = normalize(uCloudCameraPos - vCloudWorldPos);
-float phase = pow(max(dot(viewDir, normalize(uCloudSunDir)), 0.0), 5.0) * uCloudPhaseStrength;
-float topBoost = smoothstep(1200.0, 5400.0, vCloudWorldPos.y) * 0.12;
-outgoingLight += diffuseColor.rgb * (phase * 0.35 + topBoost);
-outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
-      );
+    shader.fragmentShader = `
+      varying vec3 vCloudWorldPos;
+      varying vec2 vCloudUv;
+      uniform vec3 uCloudCameraPos;
+      uniform float uNearFadeStart;
+      uniform float uNearFadeEnd;
+      uniform float uCloudMinLight;
+      uniform vec3 uCloudSunDir;
+      uniform float uCloudPhaseStrength;
+    ` + shader.fragmentShader.replace(
+      '#include <alphatest_fragment>',
+      `#include <alphatest_fragment>
+      float cloudDist = distance(vCloudWorldPos.xz, uCloudCameraPos.xz);
+      float radialMask = 1.0 - smoothstep(0.35, 0.5, length(vCloudUv - 0.5));
+      float nearFade = 1.0 - smoothstep(uNearFadeStart, uNearFadeEnd, cloudDist);
+      float edgeNoise = 0.5 + 0.5 * sin(vCloudWorldPos.x * 0.016 + vCloudWorldPos.z * 0.009 + vCloudWorldPos.y * 0.011);
+      float jitter = fract(sin(dot(vCloudWorldPos.xz, vec2(0.0143, 0.0101))) * 43758.5453);
+      edgeNoise = mix(0.84, 1.06, edgeNoise) * mix(0.96, 1.04, jitter);
+      diffuseColor.a = clamp(diffuseColor.a * nearFade * edgeNoise * radialMask, 0.0, 1.0);`
+    ).replace(
+      'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
+      `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+      vec3 viewDir = normalize(uCloudCameraPos - vCloudWorldPos);
+      float phase = pow(max(dot(viewDir, normalize(uCloudSunDir)), 0.0), 5.0) * uCloudPhaseStrength;
+      float topBoost = smoothstep(1200.0, 5400.0, vCloudWorldPos.y) * 0.12;
+      outgoingLight += diffuseColor.rgb * (phase * 0.35 + topBoost);
+      outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
+    );
   };
 
   const tiles = new Map();

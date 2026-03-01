@@ -208,39 +208,33 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       shader.uniforms.uAtmosNear = atmosphereUniforms.uAtmosNear;
       shader.uniforms.uAtmosFar = atmosphereUniforms.uAtmosFar;
 
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-varying vec3 vAtmosWorldPos;`
-        )
-        .replace(
-          '#include <worldpos_vertex>',
-          `#include <worldpos_vertex>
-vAtmosWorldPos = worldPosition.xyz;`
-        );
+      shader.vertexShader = `
+        varying vec3 vAtmosWorldPos;
+      ` + shader.vertexShader.replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+        vAtmosWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+      );
 
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-varying vec3 vAtmosWorldPos;
-uniform vec3 uAtmosCameraPos;
-uniform vec3 uAtmosColor;
-uniform float uAtmosNear;
-uniform float uAtmosFar;`
-        )
-        .replace(
-          'vec4 diffuseColor = vec4( diffuse, opacity );',
-          `vec4 diffuseColor = vec4( diffuse, opacity );
-float atmosDist = distance(vAtmosWorldPos, uAtmosCameraPos);
-float atmosMix = smoothstep(uAtmosNear, uAtmosFar, atmosDist) * ${strength.toFixed(4)};
-float atmosLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(atmosLuma), ${desat.toFixed(4)} * atmosMix);
-diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
-        );
+      shader.fragmentShader = `
+        varying vec3 vAtmosWorldPos;
+        uniform vec3 uAtmosCameraPos;
+        uniform vec3 uAtmosColor;
+        uniform float uAtmosNear;
+        uniform float uAtmosFar;
+      ` + shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `
+        #include <color_fragment>
+        float atmosDist = distance(vAtmosWorldPos, uAtmosCameraPos);
+        float atmosMix = smoothstep(uAtmosNear, uAtmosFar, atmosDist) * ${strength.toFixed(4)};
+        float atmosLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(atmosLuma), ${desat.toFixed(4)} * atmosMix);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);
+        `
+      );
     };
-    material.customProgramCacheKey = () => `atmos-${programKey}`;
+    material.customProgramCacheKey = () => `atmos-v2-${programKey}`;
   }
 
   applyDistanceAtmosphereToMaterial(waterMaterial, 'water', 0.74, 0.08);
@@ -300,16 +294,16 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
   const terrainDetailUniforms = {
     uTerrainGrassDetailTex: { value: terrainGrassDetailTex },
     uTerrainRockDetailTex: { value: terrainRockDetailTex },
-    uTerrainDetailScale: { value: 0.0006 },
-    uTerrainDetailStrength: { value: 0.62 },
+    uTerrainDetailScale: { value: 0.12 },
+    uTerrainDetailStrength: { value: 2.0 },
     uTerrainSlopeStart: { value: 0.26 },
     uTerrainSlopeEnd: { value: 0.62 },
     uTerrainRockHeightStart: { value: 220.0 },
     uTerrainRockHeightEnd: { value: 560.0 },
     uTerrainAtmosStrength: { value: 0.44 },
     uTerrainFoliageNearStart: { value: 50.0 },
-    uTerrainFoliageNearEnd: { value: 320.0 },
-    uTerrainFoliageStrength: { value: 0.14 }
+    uTerrainFoliageNearEnd: { value: 1600.0 },
+    uTerrainFoliageStrength: { value: 0.65 }
   };
   terrainMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.uTerrainGrassDetailTex = terrainDetailUniforms.uTerrainGrassDetailTex;
@@ -329,77 +323,73 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
     shader.uniforms.uTerrainFoliageNearEnd = terrainDetailUniforms.uTerrainFoliageNearEnd;
     shader.uniforms.uTerrainFoliageStrength = terrainDetailUniforms.uTerrainFoliageStrength;
 
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-varying vec3 vTerrainWorldPos;
-varying vec3 vTerrainWorldNormal;`
-      )
-      .replace(
-        '#include <worldpos_vertex>',
-        `#include <worldpos_vertex>
-vTerrainWorldPos = worldPosition.xyz;
-vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);`
-      );
+    shader.vertexShader = `
+      varying vec3 vTerrainWorldPos;
+      varying vec3 vTerrainWorldNormal;
+    ` + shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+      vTerrainWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);
+      `
+    );
 
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-varying vec3 vTerrainWorldPos;
-varying vec3 vTerrainWorldNormal;
-uniform sampler2D uTerrainGrassDetailTex;
-uniform sampler2D uTerrainRockDetailTex;
-uniform float uTerrainDetailScale;
-uniform float uTerrainDetailStrength;
-uniform float uTerrainSlopeStart;
-uniform float uTerrainSlopeEnd;
-uniform float uTerrainRockHeightStart;
-uniform float uTerrainRockHeightEnd;
-uniform vec3 uAtmosCameraPos;
-uniform vec3 uAtmosColor;
-uniform float uAtmosNear;
-uniform float uAtmosFar;
-uniform float uTerrainAtmosStrength;
-uniform float uTerrainFoliageNearStart;
-uniform float uTerrainFoliageNearEnd;
-uniform float uTerrainFoliageStrength;`
-      )
-      .replace(
-        'vec4 diffuseColor = vec4( diffuse, opacity );',
-        `vec4 diffuseColor = vec4( diffuse, opacity );
-vec2 terrainUvA = vTerrainWorldPos.xz * uTerrainDetailScale;
-vec2 terrainUvB = vTerrainWorldPos.xz * (uTerrainDetailScale * 0.28);
-float grassDetail = mix(texture2D(uTerrainGrassDetailTex, terrainUvA).g, texture2D(uTerrainGrassDetailTex, terrainUvB).g, 0.32);
-float rockDetail = mix(texture2D(uTerrainRockDetailTex, terrainUvA).r, texture2D(uTerrainRockDetailTex, terrainUvB).r, 0.4);
-float slope = 1.0 - clamp(abs(dot(normalize(vTerrainWorldNormal), vec3(0.0, 1.0, 0.0))), 0.0, 1.0);
-float slopeMask = smoothstep(uTerrainSlopeStart, uTerrainSlopeEnd, slope);
-float heightMask = smoothstep(uTerrainRockHeightStart, uTerrainRockHeightEnd, vTerrainWorldPos.y);
-float rockMask = max(slopeMask, heightMask);
-float detailLuma = mix(grassDetail, rockDetail, rockMask);
-float detailBoost = mix(0.76, 1.22, detailLuma);
-diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
-float terrainDist = distance(vTerrainWorldPos, uAtmosCameraPos);
-float nearMid = 1.0 - smoothstep(140.0, 1700.0, terrainDist);
-float macroA = sin(vTerrainWorldPos.x * 0.0022 + vTerrainWorldPos.z * 0.0016);
-float macroB = sin(vTerrainWorldPos.x * 0.0014 - vTerrainWorldPos.z * 0.0020);
-float macro = 0.5 + 0.5 * (macroA * 0.6 + macroB * 0.4);
-float macroShade = mix(0.88, 1.12, macro);
-diffuseColor.rgb *= mix(1.0, macroShade, nearMid * (1.0 - rockMask * 0.35));
-float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, terrainDist);
-float foliageEligible = (1.0 - rockMask) * foliageFade;
-float tuft = smoothstep(0.48, 0.86, grassDetail);
-float foliage = foliageEligible * tuft * uTerrainFoliageStrength;
-float micro = sin(vTerrainWorldPos.x * 0.42 + vTerrainWorldPos.z * 0.35);
-float blade = smoothstep(0.2, 0.95, abs(micro));
-diffuseColor.rgb *= mix(1.0, 0.92 + 0.1 * blade, foliage * 0.55);
-diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.01, 0.026, 0.008), foliage * 0.45);
-float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, terrainDist) * uTerrainAtmosStrength;
-diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
-      );
+    shader.fragmentShader = `
+      varying vec3 vTerrainWorldPos;
+      varying vec3 vTerrainWorldNormal;
+      uniform sampler2D uTerrainGrassDetailTex;
+      uniform sampler2D uTerrainRockDetailTex;
+      uniform float uTerrainDetailScale;
+      uniform float uTerrainDetailStrength;
+      uniform float uTerrainSlopeStart;
+      uniform float uTerrainSlopeEnd;
+      uniform float uTerrainRockHeightStart;
+      uniform float uTerrainRockHeightEnd;
+      uniform vec3 uAtmosCameraPos;
+      uniform vec3 uAtmosColor;
+      uniform float uAtmosNear;
+      uniform float uAtmosFar;
+      uniform float uTerrainAtmosStrength;
+      uniform float uTerrainFoliageNearStart;
+      uniform float uTerrainFoliageNearEnd;
+      uniform float uTerrainFoliageStrength;
+    ` + shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `
+      #include <color_fragment>
+      
+      vec2 terrainUvA = vTerrainWorldPos.xz * uTerrainDetailScale;
+      vec2 terrainUvB = vTerrainWorldPos.xz * (uTerrainDetailScale * 0.28);
+      float grassDetail = mix(texture2D(uTerrainGrassDetailTex, terrainUvA).g, texture2D(uTerrainGrassDetailTex, terrainUvB).g, 0.32);
+      float rockDetail = mix(texture2D(uTerrainRockDetailTex, terrainUvA).r, texture2D(uTerrainRockDetailTex, terrainUvB).r, 0.4);
+      
+      float slope = 1.0 - clamp(abs(dot(normalize(vTerrainWorldNormal), vec3(0.0, 1.0, 0.0))), 0.0, 1.0);
+      float slopeMask = smoothstep(uTerrainSlopeStart, uTerrainSlopeEnd, slope);
+      float heightMask = smoothstep(uTerrainRockHeightStart, uTerrainRockHeightEnd, vTerrainWorldPos.y);
+      float rockMask = max(slopeMask, heightMask);
+      
+      float detailLuma = mix(grassDetail, rockDetail, rockMask);
+      float detailBoost = mix(0.66, 1.45, detailLuma);
+      
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
+      
+      float terrainDist = distance(vTerrainWorldPos, uAtmosCameraPos);
+      float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, terrainDist);
+      float foliageEligible = (1.0 - rockMask) * foliageFade;
+      float tuft = smoothstep(0.12, 0.88, grassDetail);
+      float foliage = foliageEligible * tuft * uTerrainFoliageStrength;
+      
+      float micro = sin(vTerrainWorldPos.x * 12.0 + vTerrainWorldPos.z * 10.5);
+      float blade = smoothstep(0.02, 0.98, abs(micro));
+      diffuseColor.rgb *= mix(1.0, 0.88 + 0.16 * blade, foliage * 0.7);
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.015, 0.035, 0.01), foliage * 0.5);
+      
+      float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, terrainDist) * uTerrainAtmosStrength;
+      diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);
+      `
+    );
   };
-  terrainMaterial.customProgramCacheKey = () => 'terrain-detail-v3';
+  terrainMaterial.customProgramCacheKey = () => 'terrain-detail-v5';
 
   // Instanced Tree Resources: crossed low-poly billboard cards
   const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
@@ -447,15 +437,21 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
   function createDetailedBuildingMat(style) {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
     mat.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          '#include <common>',
-          `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`
-        )
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>\nvBldgObjPos = position;\nvBldgNormal = normal;\nvBldgScale = vec3(\n    length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),\n    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),\n    length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))\n);`
-        );
+      shader.vertexShader = `
+        varying vec3 vBldgObjPos;
+        varying vec3 vBldgScale;
+        varying vec3 vBldgNormal;
+      ` + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vBldgObjPos = position;
+        vBldgNormal = normal;
+        vBldgScale = vec3(
+            length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
+            length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),
+            length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))
+        );`
+      );
 
       let colorFragment = '';
       let roughFragment = '';
@@ -543,12 +539,19 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
         }`;
       }
 
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`)
-        .replace('#include <color_fragment>', `#include <color_fragment>\n${colorFragment}`)
-        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${roughFragment}`);
+      shader.fragmentShader = `
+        varying vec3 vBldgObjPos;
+        varying vec3 vBldgScale;
+        varying vec3 vBldgNormal;
+      ` + shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>\n${colorFragment}`
+      ).replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>\n${roughFragment}`
+      );
     };
-    mat.customProgramCacheKey = () => `detailed-building-mat-${style}`;
+    mat.customProgramCacheKey = () => `detailed-building-mat-v2-${style}`;
     return mat;
   }
 
