@@ -269,18 +269,6 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         mmCtx.clearRect(0, 0, mapW, mapH);
         mmCtx.drawImage(mapCacheCanvas, 0, 0);
 
-        // Distance rings
-        mmCtx.strokeStyle = 'rgba(120, 170, 215, 0.28)';
-        mmCtx.lineWidth = 1.5;
-        mmCtx.beginPath();
-        mmCtx.arc(centerX, centerY, 45, 0, Math.PI * 2);
-        mmCtx.stroke();
-        mmCtx.beginPath();
-        mmCtx.arc(centerX, centerY, 90, 0, Math.PI * 2);
-        mmCtx.stroke();
-        mmCtx.beginPath();
-        mmCtx.arc(centerX, centerY, 135, 0, Math.PI * 2);
-        mmCtx.stroke();
 
         // Aircraft icon rotates on north-up map
         mmCtx.save();
