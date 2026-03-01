@@ -64,11 +64,7 @@ export function calculateAerodynamics(ctx) {
     const t = getTmp(THREE);
 
     // Ground Interaction setup (needed early for ground effect)
-    // Optimization: Skip expensive noise sampling if high above terrain.
-    let _terrainY = 0;
-    if (p.position.y < 1000) {
-        _terrainY = getTerrainHeight(p.position.x, p.position.z, 6);
-    }
+    let _terrainY = getTerrainHeight(p.position.x, p.position.z);
     const groundY = _terrainY + AIRCRAFT.gearHeight;
     const heightAgl = p.position.y - groundY;
     p.heightAgl = Math.max(0, heightAgl);
@@ -243,13 +239,7 @@ export function calculateAerodynamics(ctx) {
     for (let i = 0; i < gearPoints.length; i++) {
         const gp = gearPoints[i];
         const wp = gp.world.copy(gp.local).applyQuaternion(p.quaternion).add(p.position);
-
-        // Skip sampling if high enough that gear contact is impossible
-        let terrainWheelY = 0;
-        if (wp.y < 1000) {
-            terrainWheelY = getTerrainHeight(wp.x, wp.z, 6);
-        }
-
+        const terrainWheelY = getTerrainHeight(wp.x, wp.z);
         cachedTerrainY[i] = terrainWheelY;
         const penetration = (terrainWheelY + gearLoadClearance) - wp.y;
         if (penetration <= 0) continue;
