@@ -447,15 +447,14 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
   function createDetailedBuildingMat(style) {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
     mat.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          '#include <common>',
-          `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`
-        )
-        .replace(
-          '#include <project_vertex>',
-          `#include <project_vertex>\nvBldgObjPos = position;\nvBldgNormal = normal;\nvBldgScale = vec3(\n    length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),\n    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),\n    length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))\n);`
-        );
+      shader.vertexShader = `
+        varying vec3 vBldgObjPos;
+        varying vec3 vBldgScale;
+        varying vec3 vBldgNormal;
+      ` + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>\n        vBldgObjPos = position;\n        vBldgNormal = normal;\n        vBldgScale = vec3(\n            length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),\n            length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),\n            length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))\n        );`
+      );
 
       let colorFragment = '';
       let roughFragment = '';
@@ -543,12 +542,19 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
         }`;
       }
 
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nvarying vec3 vBldgObjPos;\nvarying vec3 vBldgScale;\nvarying vec3 vBldgNormal;`)
-        .replace('#include <color_fragment>', `#include <color_fragment>\n${colorFragment}`)
-        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${roughFragment}`);
+      shader.fragmentShader = `
+        varying vec3 vBldgObjPos;
+        varying vec3 vBldgScale;
+        varying vec3 vBldgNormal;
+      ` + shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>\n${colorFragment}`
+      ).replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>\n${roughFragment}`
+      );
     };
-    mat.customProgramCacheKey = () => `detailed-building-mat-${style}`;
+    mat.customProgramCacheKey = () => `detailed-building-mat-v2-${style}`;
     return mat;
   }
 
@@ -831,7 +837,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
     return 3;
   }
 
-  
+
   function getPooledInstancedMesh(geometry, material, count) {
     const key = geometry.uuid + '_' + material.uuid;
     let pool = instancedMeshPools.get(key);
@@ -839,47 +845,47 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
       pool = [];
       instancedMeshPools.set(key, pool);
     }
-    
+
     // Find a mesh that's big enough, ideally not massively oversized
     let bestIdx = -1;
     for (let i = 0; i < pool.length; i++) {
-        if (pool[i].instanceMatrix.count >= count) {
-            if (bestIdx === -1 || pool[i].instanceMatrix.count < pool[bestIdx].instanceMatrix.count) {
-                bestIdx = i;
-            }
+      if (pool[i].instanceMatrix.count >= count) {
+        if (bestIdx === -1 || pool[i].instanceMatrix.count < pool[bestIdx].instanceMatrix.count) {
+          bestIdx = i;
         }
+      }
     }
-    
+
     if (bestIdx !== -1) {
-        const mesh = pool.splice(bestIdx, 1)[0];
-        mesh.count = count;
-        return mesh;
+      const mesh = pool.splice(bestIdx, 1)[0];
+      mesh.count = count;
+      return mesh;
     }
-    
+
     // Create new with some headroom to avoid frequent reallocations if count fluctuates
-    const capacity = Math.max(count, 32); 
+    const capacity = Math.max(count, 32);
     const isColorable = (
-        geometry === baseBuildingGeo || geometry === roofCapGeo || 
-        geometry === podiumGeo || geometry === spireGeo
+      geometry === baseBuildingGeo || geometry === roofCapGeo ||
+      geometry === podiumGeo || geometry === spireGeo
     );
-    
+
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     if (!mesh.instanceColor && isColorable) {
-        // Pre-allocate color buffer if needed later
-        const colorArray = new Float32Array(capacity * 3);
-        mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
+      // Pre-allocate color buffer if needed later
+      const colorArray = new Float32Array(capacity * 3);
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
     }
     mesh.count = count;
     return mesh;
   }
 
   function returnToPool(mesh) {
-      if (!mesh || !mesh.isInstancedMesh) return;
-      const key = mesh.geometry.uuid + '_' + mesh.material.uuid;
-      let pool = instancedMeshPools.get(key);
-      if (pool) {
-          pool.push(mesh);
-      }
+    if (!mesh || !mesh.isInstancedMesh) return;
+    const key = mesh.geometry.uuid + '_' + mesh.material.uuid;
+    let pool = instancedMeshPools.get(key);
+    if (pool) {
+      pool.push(mesh);
+    }
   }
   function disposeChunkGroup(chunkGroup) {
     scene.remove(chunkGroup);
