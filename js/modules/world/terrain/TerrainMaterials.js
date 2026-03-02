@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphereUniforms, strength = 0.5, desat = 0.0) {
     material.onBeforeCompile = (shader) => {
         shader.uniforms.uAtmosCameraPos = atmosphereUniforms.uAtmosCameraPos;
