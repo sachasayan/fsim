@@ -65,7 +65,6 @@ const {
   pDummy,
   pColor,
   planeGroup,
-  engineFans,
   movableSurfaces,
   gearGroup,
   strobes,
@@ -205,9 +204,6 @@ function animate() {
     waterMaterial.normalMap.offset.y += dt * 0.02;
   }
 
-  // 3. Engine & Control Surfaces
-  const fanSpeed = 0.1 + (PHYSICS.throttle * 0.8);
-  engineFans.forEach(f => f.rotation.z -= fanSpeed);
 
   movableSurfaces.flaps.forEach(f => f.rotation.x = PHYSICS.flaps * 0.6);
   movableSurfaces.aileronsL.forEach(a => a.rotation.x = -PHYSICS.aileron * 0.5);
