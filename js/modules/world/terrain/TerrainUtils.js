@@ -127,12 +127,12 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
     };
 }
 
-export function getTerrainHeight(x, z, Noise) {
+export function getTerrainHeight(x, z, Noise, octaves = 6) {
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
 
     // Base noise averages around 0, multiply and add 100 so land is naturally elevated above water
-    let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
+    let noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
 
     // Flatten for runway (centered at origin, extending along Z)
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {

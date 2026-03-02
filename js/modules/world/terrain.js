@@ -286,6 +286,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     atmosphereUniforms.uAtmosFar.value = 62000.0;
   }
 
-  const getTerrainHeightWithNoise = (x, z) => getTerrainHeight(x, z, Noise);
+  const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
   return { waterMaterial, getTerrainHeight: getTerrainHeightWithNoise, updateTerrain, updateTerrainAtmosphere };
 }

@@ -29,8 +29,8 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const mapH = minimapCanvas.height;
     const centerX = mapW * 0.5;
     const centerY = mapH * 0.5;
-    const pixelsPerWorld = 0.045;
-    const samplePx = 4;
+    const pixelsPerWorld = 0.0225;
+    const samplePx = 8;
     const coastlineStepY = samplePx * 3;
     const coastlineStepX = samplePx * 2;
     const mapCacheCanvas = document.createElement('canvas');
@@ -104,7 +104,6 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         mapCacheCtx.fillStyle = 'rgba(245, 245, 245, 0.95)';
         mapCacheCtx.fillRect(rwCenterX - 1.5, rwCenterY - rwL * 0.48, 3, rwL * 0.96);
 
-        // Airport tower marker (matches world/tower.js coords)
         const twX = centerX + (-190 - centerWorldX) * pixelsPerWorld;
         const twY = centerY + (-300 - centerWorldZ) * pixelsPerWorld;
         mapCacheCtx.fillStyle = '#ffd26f';
