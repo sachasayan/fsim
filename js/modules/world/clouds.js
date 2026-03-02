@@ -49,27 +49,36 @@ export function createCloudSystem({ scene }) {
     shader.uniforms.uCloudSunDir = sharedCloudUniforms.uCloudSunDir;
     shader.uniforms.uCloudPhaseStrength = sharedCloudUniforms.uCloudPhaseStrength;
 
-    shader.vertexShader = `
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>
       varying vec3 vCloudWorldPos;
-      varying vec2 vCloudUv;
-    ` + shader.vertexShader.replace(
+      varying vec2 vCloudUv;`
+    ).replace(
       '#include <worldpos_vertex>',
       `
       vCloudUv = uv;
       
-      // Correct Instance World Mapping
-      vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-      vec4 worldPos = modelMatrix * instancePos;
-      vCloudWorldPos = worldPos.xyz;
+      // Correct Instance World Mapping - Name it worldPosition for compatibility with other Three.js chunks
+      #ifdef USE_INSTANCING
+        vec4 worldPosition = modelMatrix * (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0));
+      #else
+        vec4 worldPosition = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      #endif
+      vCloudWorldPos = worldPosition.xyz;
       
       // Spherical Billboarding: Force the instance to face the camera in View Space
-      mvPosition = viewMatrix * worldPos;
+      mvPosition = viewMatrix * worldPosition;
       
-      // Extract instance scale from the instanceMatrix
-      vec2 instanceScale = vec2(
-        length(vec3(instanceMatrix[0].xyz)), 
-        length(vec3(instanceMatrix[1].xyz))
-      );
+      // Extract instance scale
+      #ifdef USE_INSTANCING
+        vec2 instanceScale = vec2(
+          length(vec3(instanceMatrix[0].xyz)), 
+          length(vec3(instanceMatrix[1].xyz))
+        );
+      #else
+        vec2 instanceScale = vec2(1.0);
+      #endif
       
       // Expand the quad in view-space xy
       mvPosition.xy += position.xy * instanceScale;
@@ -78,7 +87,9 @@ export function createCloudSystem({ scene }) {
       `
     );
 
-    shader.fragmentShader = `
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>
       varying vec3 vCloudWorldPos;
       varying vec2 vCloudUv;
       uniform vec3 uCloudCameraPos;
@@ -86,8 +97,8 @@ export function createCloudSystem({ scene }) {
       uniform float uNearFadeEnd;
       uniform float uCloudMinLight;
       uniform vec3 uCloudSunDir;
-      uniform float uCloudPhaseStrength;
-    ` + shader.fragmentShader.replace(
+      uniform float uCloudPhaseStrength;`
+    ).replace(
       '#include <alphatest_fragment>',
       `#include <alphatest_fragment>
       float cloudDist = distance(vCloudWorldPos.xz, uCloudCameraPos.xz);
