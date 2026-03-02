@@ -1,20 +1,41 @@
 import * as THREE from 'three';
-import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight } from './TerrainUtils.js';
 
-export const TREE_DENSITY_MULTIPLIER = 4.0;
 export const CHUNK_SIZE = 4000;
+export const TREE_DENSITY_MULTIPLIER = 4.0;
 
-export const terrainColorSand = new THREE.Color(0xc2b280);
-export const terrainColorLowland = new THREE.Color(0x355e3b);
-export const terrainColorForest = new THREE.Color(0x2a4b2a);
-export const terrainColorRock = new THREE.Color(0x555555);
-export const terrainColorSnow = new THREE.Color(0xffffff);
+const maxWorkers = navigator.hardwareConcurrency ? Math.min(navigator.hardwareConcurrency, 4) : 2;
+const workers = [];
+for (let i = 0; i < maxWorkers; i++) {
+    workers.push(new Worker(new URL('./TerrainWorker.js', import.meta.url), { type: 'module' }));
+}
+let workerIdx = 0;
+let jobIdCounter = 0;
+const pendingJobs = new Map();
 
-export const waterColorFoam = new THREE.Color(0xffffff);
-export const waterColorBlue = new THREE.Color(0x0077be);
-export const waterColorDeep = new THREE.Color(0x003377);
+for (const worker of workers) {
+    worker.onmessage = (e) => {
+        const { jobId, type, result, error } = e.data;
+        if (pendingJobs.has(jobId)) {
+            const { resolve, reject } = pendingJobs.get(jobId);
+            pendingJobs.delete(jobId);
+            if (error) reject(new Error(error));
+            else resolve(result);
+        }
+    };
+    worker.onerror = (e) => console.error("TerrainWorker Error: ", e);
+}
 
-export const classConfigs = {
+function dispatchWorker(type, payload, transferables = []) {
+    return new Promise((resolve, reject) => {
+        const jobId = jobIdCounter++;
+        pendingJobs.set(jobId, { resolve, reject });
+        const worker = workers[workerIdx];
+        workerIdx = (workerIdx + 1) % workers.length;
+        worker.postMessage({ type, payload, jobId }, transferables);
+    });
+}
+
+const classConfigs = {
     supertall: {
         style: 'commercial',
         height: [180, 380],
@@ -77,8 +98,8 @@ export const classConfigs = {
     }
 };
 
-export function generateChunkBase(cx, cz, lod, ctx) {
-    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, Noise, scene } = ctx;
+export async function generateChunkBase(cx, cz, lod, ctx) {
+    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, scene } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     let chunkGroup;
     let terrainMesh, waterMesh;
@@ -106,85 +127,65 @@ export function generateChunkBase(cx, cz, lod, ctx) {
 
     chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
     chunkGroup.userData.lod = lod;
+    chunkGroup.userData.chunkKey = `${cx},${cz}`;
 
-    const geometry = terrainMesh.geometry;
-    const positions = geometry.attributes.position.array;
-    const colorsArr = geometry.attributes.color.array;
-    const colorObj = new THREE.Color();
+    const tGeo = terrainMesh.geometry;
+    const wGeo = waterMesh.geometry;
 
-    for (let i = 0; i < positions.length; i += 3) {
-        let lx = positions[i];
-        let lz = positions[i + 2];
-        let vx = lx + cx * CHUNK_SIZE;
-        let vz = lz + cz * CHUNK_SIZE;
+    const tPos = tGeo.attributes.position.array;
+    const tCol = tGeo.attributes.color.array;
+    const wPos = wGeo.attributes.position.array;
+    const wCol = wGeo.attributes.color.array;
 
-        let height = getTerrainHeight(vx, vz, Noise);
-        positions[i + 1] = height;
+    const payload = {
+        cx, cz, lodCfg,
+        positions: tPos.slice(),
+        colors: new Float32Array(tCol.length),
+        wPos: wPos.slice(),
+        wCols: new Float32Array(wCol.length)
+    };
 
-        // Natural terrain coloring
-        if (height < -5) {
-            colorObj.copy(terrainColorSand);
-        } else if (height < 25) {
-            colorObj.copy(terrainColorLowland);
-        } else if (height < 150) {
-            colorObj.copy(terrainColorForest);
-        } else if (height < 400) {
-            let rockBlend = (height - 150) / 250;
-            colorObj.lerpColors(terrainColorForest, terrainColorRock, rockBlend);
-        } else if (height < 600) {
-            colorObj.copy(terrainColorRock);
-        } else {
-            let snowBlend = Math.min(1.0, (height - 600) / 100);
-            colorObj.lerpColors(terrainColorRock, terrainColorSnow, snowBlend);
-        }
-        colorsArr[i] = colorObj.r;
-        colorsArr[i + 1] = colorObj.g;
-        colorsArr[i + 2] = colorObj.b;
+    const transferables = [
+        payload.positions.buffer,
+        payload.colors.buffer,
+        payload.wPos.buffer,
+        payload.wCols.buffer
+    ];
+
+    const result = await dispatchWorker('chunkBase', payload, transferables);
+
+    // After async return, ensure chunk wasn't repurposed or disposed
+    if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) {
+        return chunkGroup;
     }
 
-    geometry.attributes.position.needsUpdate = true;
-    geometry.attributes.color.needsUpdate = true;
-    geometry.computeVertexNormals();
+    tGeo.attributes.position.array.set(result.positions);
+    tGeo.attributes.position.needsUpdate = true;
+    tGeo.attributes.color.array.set(result.colors);
+    tGeo.attributes.color.needsUpdate = true;
+    tGeo.computeVertexNormals();
 
-    // --- Update Procedural Water Chunk ---
-    const waterGeo = waterMesh.geometry;
-    const wPos = waterGeo.attributes.position.array;
-    const wCols = waterGeo.attributes.color.array;
-    const wColObj = new THREE.Color();
+    wGeo.attributes.position.array.set(result.wPos);
+    wGeo.attributes.position.needsUpdate = true;
+    wGeo.attributes.color.array.set(result.wCols);
+    wGeo.attributes.color.needsUpdate = true;
 
-    for (let i = 0; i < wPos.length; i += 3) {
-        let vx = wPos[i] + cx * CHUNK_SIZE;
-        let vz = wPos[i + 2] + cz * CHUNK_SIZE;
-        let th = getTerrainHeight(vx, vz, Noise);
-
-        wPos[i + 1] = -10;
-
-        let waveNoise = Noise.fractal(vx / 30, vz / 30, 2, 0.5, 1);
-        let depth = -10 - th + waveNoise * 4.0;
-
-        if (depth < 2) {
-            wColObj.copy(waterColorFoam);
-        } else if (depth < 25) {
-            let blend = (depth - 2) / 23;
-            wColObj.lerpColors(waterColorFoam, waterColorBlue, Math.pow(blend, 0.6));
-        } else {
-            wColObj.copy(waterColorDeep);
-        }
-        wCols[i] = wColObj.r;
-        wCols[i + 1] = wColObj.g;
-        wCols[i + 2] = wColObj.b;
+    // Check if the chunk group hasn't been disposed before adding
+    if (!chunkGroup.parent && chunkGroup.userData.lod === lod) {
+        scene.add(chunkGroup);
     }
-    waterGeo.attributes.position.needsUpdate = true;
-    waterGeo.attributes.color.needsUpdate = true;
-
-    scene.add(chunkGroup);
     return chunkGroup;
 }
 
-export function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
+// Simple deterministic hash matching what's in utils if needed, or we just trust the arrays matching
+function hash2Local(seed, k, p) {
+    const n = Math.sin(seed * 127.1 + k * 311.7 + p * 74.7) * 43758.5453123;
+    return n - Math.floor(n);
+}
+
+export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const {
-        LOD_LEVELS, Noise,
-        treeBillboardGeo, treeTypeConfigs,
+        LOD_LEVELS, treeBillboardGeo, treeTypeConfigs,
         detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
         roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat,
         hvacGeo, hvacMat, getPooledInstancedMesh,
@@ -196,84 +197,19 @@ export function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const terrainMesh = chunkGroup.children[0];
     if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
     const positions = terrainMesh.geometry.attributes.position.array;
-    const treePositions = { conifer: [], broadleaf: [], poplar: [], dry: [] };
-    const buildingPositions = { supertall: [], highrise: [], office: [], apartment: [], townhouse: [], industrial: [] };
-    const boatPositions = [];
 
-    for (let i = 0; i < positions.length; i += 3) {
-        const lx = positions[i];
-        const height = positions[i + 1];
-        const lz = positions[i + 2];
-        const vx = lx + cx * CHUNK_SIZE;
-        const vz = lz + cz * CHUNK_SIZE;
+    const payload = {
+        cx, cz, lod, lodCfg,
+        positions: positions.slice()
+    };
+    const transferables = [payload.positions.buffer];
 
-        const distFromRunwayX = Math.abs(vx);
-        const distFromRunwayZ = Math.abs(vz);
-        const cellX = Math.floor(vx / 18);
-        const cellZ = Math.floor(vz / 18);
-        const rng = hash2(cellX, cellZ, 9);
+    const result = await dispatchWorker('chunkProps', payload, transferables);
 
-        if (lodCfg.enableBoats && height < -30 && rng > (0.9988 + (1 - lodCfg.propDensity) * 0.0008)) {
-            boatPositions.push({ x: lx, z: lz, rot: hash2(cellX, cellZ, 10) * Math.PI * 2 });
-        }
+    // Ensure chunk wasn't disposed or repurposed while awaiting
+    if (chunkGroup.userData.chunkKey !== `${cx},${cz}` || !chunkGroup.parent) return;
 
-        if (distFromRunwayX < 250 && distFromRunwayZ < 2800) continue;
-        if (height < -5 || height > 430) continue;
-
-        const macroUrban = (Noise.fractal(vx, vz, 3, 0.5, 0.00035) + 1) * 0.5;
-        const hubUrban = cityHubInfluence(vx, vz);
-        const corridorUrban = Math.max(0, 1 - Math.abs(Math.abs(vx) - 1800) / 1800) * Math.max(0, 1 - Math.abs(vz) / 14000);
-        const urbanScore = Math.max(0, Math.min(1, hubUrban * 0.65 + macroUrban * 0.25 + corridorUrban * 0.25));
-        const district = getDistrictProfile(vx, vz, urbanScore, height);
-
-        const warpX = Noise.fractal(vx + 7000, vz - 11000, 2, 0.5, 0.0013) * 60;
-        const warpZ = Noise.fractal(vx - 9000, vz + 13000, 2, 0.5, 0.0013) * 60;
-        const roadSpacing = (90 + (1 - urbanScore) * 140) * district.roadScale;
-        const roadWidth = 4 + urbanScore * 4;
-        const roadX = Math.abs((((vx + warpX) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
-        const roadZ = Math.abs((((vz + warpZ) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
-        const isRoad = roadX < roadWidth || roadZ < roadWidth;
-
-        const parkNoise = (Noise.fractal(vx - 20000, vz + 15000, 3, 0.5, 0.0025) + 1) * 0.5;
-        const isPark = urbanScore > 0.35 && parkNoise > 0.7 && !isRoad;
-        const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
-
-        if (lodCfg.enableBuildings && urbanScore > 0.22 && !isRoad && !isPark) {
-            const lotDensity = district.lotDensity * (0.55 + urbanScore * 0.95);
-            if (rng < lotDensity * lodCfg.propDensity) {
-                const classNoise = hash2(cellX, cellZ, 12);
-                const buildingClass = pickWeighted(classNoise, district.classWeights);
-                const ox = (hash2(cellX, cellZ, 14) - 0.5) * 24;
-                const oz = (hash2(cellX, cellZ, 15) - 0.5) * 24;
-                const px = lx + ox;
-                const pz = lz + oz;
-                const py = getTerrainHeight(vx + ox, vz + oz, Noise);
-                if (py > -5 && py < 430) {
-                    buildingPositions[buildingClass].push({
-                        x: px, y: py, z: pz,
-                        angle: Math.floor(hash2(cellX, cellZ, 16) * 4) * (Math.PI / 2),
-                        seed: hash2(cellX, cellZ, 17),
-                        seed2: hash2(cellX, cellZ, 18),
-                        seed3: hash2(cellX, cellZ, 19)
-                    });
-                }
-            }
-        } else if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
-            const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise);
-            const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
-            if (rng < treeChance) {
-                const treeType = pickWeighted(hash2(cellX, cellZ, 24), forest.typeWeights);
-                treePositions[treeType].push({
-                    x: lx + (hash2(cellX, cellZ, 20) - 0.5) * 20,
-                    y: height,
-                    z: lz + (hash2(cellX, cellZ, 21) - 0.5) * 20,
-                    lean: (hash2(cellX, cellZ, 22) - 0.5) * 0.08,
-                    seed: hash2(cellX, cellZ, 23),
-                    seed2: hash2(cellX, cellZ, 25)
-                });
-            }
-        }
-    }
+    const { treePositions, buildingPositions, boatPositions } = result;
 
     for (const [treeType, trees] of Object.entries(treePositions)) {
         if (trees.length === 0) continue;
@@ -285,12 +221,11 @@ export function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
         for (let j = 0; j < trees.length; j++) {
             const tp = trees[j];
-            const exactY = lod <= 1 ? getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE, Noise) : tp.y;
             const heading = tp.seed * Math.PI * 2;
             const treeHeight = cfg.hRange[0] + tp.seed * (cfg.hRange[1] - cfg.hRange[0]);
             const treeWidth = treeHeight * cfg.wScale * (0.92 + tp.seed2 * 0.3);
 
-            dummy.position.set(tp.x, exactY, tp.z);
+            dummy.position.set(tp.x, tp.y, tp.z);
             dummy.rotation.set(tp.lean * 0.5, heading, 0);
             dummy.scale.set(treeWidth, treeHeight, 1);
             dummy.updateMatrix();
@@ -303,6 +238,7 @@ export function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         chunkGroup.add(cardA, cardB);
     }
 
+    // Buildings
     for (const [buildingClass, entries] of Object.entries(buildingPositions)) {
         if (entries.length === 0) continue;
         const cfg = classConfigs[buildingClass];
@@ -371,11 +307,11 @@ export function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
             if (hvacMesh) {
                 const numHvacs = Math.floor(bp.seed3 * 4);
                 for (let k = 0; k < numHvacs; k++) {
-                    const hx = bp.x + (hash2(bp.seed, k, 1) - 0.5) * (w * 0.7);
-                    const hz = bp.z + (hash2(bp.seed, k, 2) - 0.5) * (d * 0.7);
-                    const size = 0.8 + hash2(bp.seed, k, 3) * 1.5;
-                    const heightHVAC = 1.0 + hash2(bp.seed, k, 4) * 1.0;
-                    const rot = hash2(bp.seed, k, 5) * Math.PI;
+                    const hx = bp.x + (hash2Local(bp.seed, k, 1) - 0.5) * (w * 0.7);
+                    const hz = bp.z + (hash2Local(bp.seed, k, 2) - 0.5) * (d * 0.7);
+                    const size = 0.8 + hash2Local(bp.seed, k, 3) * 1.5;
+                    const heightHVAC = 1.0 + hash2Local(bp.seed, k, 4) * 1.0;
+                    const rot = hash2Local(bp.seed, k, 5) * Math.PI;
                     dummy.position.set(hx, bp.y + h, hz);
                     dummy.scale.set(size, heightHVAC, size);
                     dummy.rotation.set(0, rot, 0);

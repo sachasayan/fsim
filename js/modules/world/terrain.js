@@ -154,6 +154,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   }
 
   function disposeChunkGroup(chunkGroup) {
+    if (!chunkGroup) return;
     scene.remove(chunkGroup);
     const lod = chunkGroup.userData.lod;
     if (lod !== undefined && chunkPools[lod]) {
@@ -175,7 +176,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   }
 
   function generateChunkProps(chunkGroup, cx, cz, lod = 0) {
-    genProps(chunkGroup, cx, cz, lod, {
+    return genProps(chunkGroup, cx, cz, lod, {
       LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy
@@ -215,14 +216,24 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       pendingChunkKeys.delete(job.key);
       const existing = terrainChunks.get(job.key);
       if (existing && existing.lod === job.lod) {
-        if (!existing.propsBuilt) enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group);
+        if (!existing.propsBuilt && existing.state !== 'building_props') enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group);
         builds++; continue;
       }
-      if (existing) { removePendingPropJobs(job.key); disposeChunkGroup(existing.group); terrainChunks.delete(job.key); }
-      const group = generateChunkBase(job.cx, job.cz, job.lod);
-      terrainChunks.set(job.key, { group, lod: job.lod, propsBuilt: false });
-      enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
+      if (existing) { removePendingPropJobs(job.key); existing.group && disposeChunkGroup(existing.group); terrainChunks.delete(job.key); }
+
+      terrainChunks.set(job.key, { group: null, lod: job.lod, propsBuilt: false, state: 'building_base' });
       builds++;
+
+      generateChunkBase(job.cx, job.cz, job.lod).then(group => {
+        const current = terrainChunks.get(job.key);
+        if (current && current.lod === job.lod && current.state === 'building_base') {
+          current.group = group;
+          current.state = 'base_done';
+          enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
+        } else {
+          disposeChunkGroup(group);
+        }
+      });
     }
   }
 
@@ -234,9 +245,18 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const job = pendingPropBuilds.pop();
       pendingPropKeys.delete(job.key);
       const state = terrainChunks.get(job.key);
-      if (!state || state.group !== job.groupRef || state.lod !== job.lod || state.propsBuilt) { builds++; continue; }
-      generateChunkProps(state.group, job.cx, job.cz, job.lod);
-      state.propsBuilt = true; builds++;
+      if (!state || state.group !== job.groupRef || state.lod !== job.lod || state.propsBuilt || state.state === 'building_props' || state.state === 'building_base') { builds++; continue; }
+
+      state.state = 'building_props';
+      builds++;
+
+      generateChunkProps(state.group, job.cx, job.cz, job.lod).then(() => {
+        const current = terrainChunks.get(job.key);
+        if (current && current.group === job.groupRef && current.lod === job.lod && current.state === 'building_props') {
+          current.propsBuilt = true;
+          current.state = 'done';
+        }
+      });
     }
   }
 

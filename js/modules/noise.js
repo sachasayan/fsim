@@ -1,8 +1,17 @@
 export const Noise = {
   permutation: new Uint8Array(512),
-  init(seed) {
+  init(seed = 12345) {
     let p = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) p[i] = Math.floor(Math.random() * 256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+
+    let s = seed;
+    for (let i = 255; i > 0; i--) {
+      s = Math.imul(1664525, s) + 1013904223 | 0;
+      let rand = Math.floor((((s >>> 8) & 0xfffff) / 0x100000) * (i + 1));
+      let temp = p[i];
+      p[i] = p[rand];
+      p[rand] = temp;
+    }
     for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
   },
   fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
