@@ -723,6 +723,10 @@ function animate() {
 
   // --- PAPI LIGHTS UPDATE (RWY 36 / RWY 18) ---
   if (runtime.frameCount % 6 === 0) {
+    const hdgEuler = tmpHdgEuler.setFromQuaternion(PHYSICS.quaternion, 'YXZ');
+    let headingDeg = -hdgEuler.y * (180 / Math.PI);
+    if (headingDeg < 0) headingDeg += 360;
+
     const allPapiLights = PAPI.lights || [];
     const papi36 = PAPI.lights36 || [];
     const papi18 = PAPI.lights18 || [];
