@@ -247,28 +247,25 @@ export function createCloudSystem({ scene }) {
 
       float fbm(vec2 p) {
         float sum = 0.0;
-        float amp = 0.55;
+        float amp = 0.6;
         float freq = 1.0;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 3; i++) {
           sum += noise2(p * freq) * amp;
-          freq *= 2.05;
-          amp *= 0.52;
+          freq *= 2.1;
+          amp *= 0.45;
         }
         return sum;
       }
 
       void main() {
         vec2 wind = vec2(uTime * 0.0012, -uTime * 0.0007);
-        vec2 p = (vWorldPos.xz * 0.00007) + wind;
-        vec2 warp = vec2(
-          fbm(p * 0.78 + vec2(9.2, 17.1)),
-          fbm(p * 0.72 - vec2(15.6, 5.1))
-        );
-        p += (warp - 0.5) * 0.55;
-        float n = fbm(p);
-        float coverage = smoothstep(0.54, 0.78, n);
-        float detail = smoothstep(0.44, 0.82, fbm(p * 2.4 + vec2(14.0, 31.0)));
-        float alpha = coverage * mix(0.7, 1.0, detail);
+        vec2 p = (vWorldPos.xz * 0.00008) + wind;
+        
+        // Simplified warping: one FBM call instead of two nested ones
+        float n = fbm(p + fbm(p * 0.5) * 0.3);
+        
+        float coverage = smoothstep(0.58, 0.82, n);
+        float alpha = coverage;
 
         float dist = distance(vWorldPos.xz, uCloudCameraPos.xz);
         float farFade = smoothstep(uFarFadeStart, uFarFadeEnd, dist);
@@ -276,9 +273,9 @@ export function createCloudSystem({ scene }) {
         float domainFade = 1.0 - smoothstep(uDomainRadius * 0.7, uDomainRadius, dist);
         alpha *= domainFade;
 
-        // Soft edge rolloff to reduce hard cloud boundaries.
-        float edge = fwidth(alpha) * 1.8 + 0.015;
-        alpha = smoothstep(0.04 - edge, 0.98 + edge, alpha);
+        // Soft edge rolloff.
+        float edge = fwidth(alpha) * 2.0 + 0.02;
+        alpha = smoothstep(0.05 - edge, 1.0 + edge, alpha);
 
         vec3 viewDir = normalize(uCloudCameraPos - vWorldPos);
         float phase = pow(max(dot(viewDir, normalize(uSunDir)), 0.0), 6.0);

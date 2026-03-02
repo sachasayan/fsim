@@ -489,12 +489,29 @@ export function createAircraftSystem({ scene, renderer }) {
 
   planeGroup.add(gearGroup);
 
+  function updateAircraftLOD(camera) {
+    if (!camera) return;
+    const dist = planeGroup.position.distanceTo(camera.position);
+
+    // Hide high-detail parts when far away (> 4000 units)
+    const isNear = dist < 4000;
+
+    if (gearGroup.visible !== isNear) {
+      gearGroup.visible = isNear;
+      // Also hide movable surfaces if far
+      Object.values(movableSurfaces).forEach(group => {
+        group.forEach(mesh => mesh.visible = isNear);
+      });
+    }
+  }
+
   return {
     planeGroup,
     engineExhausts,
     movableSurfaces,
     gearGroup,
     strobes,
-    beacons
+    beacons,
+    updateAircraftLOD
   };
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export function createAirportSystems({ PAPI, alsStrobes, strobeMatOn, strobeMatOff }) {
+export function createAirportSystems({ PAPI, alsStrobes, strobeColorOn, strobeColorOff }) {
     let prevAlsTargetIndex = -1;
     let prevPapiKey = '';
     const tmpHdgEuler = new THREE.Euler();
@@ -10,12 +10,6 @@ export function createAirportSystems({ PAPI, alsStrobes, strobeMatOn, strobeMatO
         while (d > 180) d -= 360;
         while (d < -180) d += 360;
         return Math.abs(d);
-    }
-
-    function setPapiColors(lights, whiteCount) {
-        for (let i = 0; i < lights.length; i++) {
-            lights[i].material = (i >= (4 - whiteCount)) ? PAPI.matWhite : PAPI.matRed;
-        }
     }
 
     function updateALS(now) {
@@ -30,10 +24,14 @@ export function createAirportSystems({ PAPI, alsStrobes, strobeMatOn, strobeMatO
         }
         if (targetIdx !== prevAlsTargetIndex) {
             if (prevAlsTargetIndex >= 0 && prevAlsTargetIndex < alsStrobes.length) {
-                alsStrobes[prevAlsTargetIndex].mesh.material = strobeMatOff;
+                const s = alsStrobes[prevAlsTargetIndex];
+                s.mesh.setColorAt(s.index, strobeColorOff);
+                s.mesh.instanceColor.needsUpdate = true;
             }
             if (targetIdx >= 0 && targetIdx < alsStrobes.length) {
-                alsStrobes[targetIdx].mesh.material = strobeMatOn;
+                const s = alsStrobes[targetIdx];
+                s.mesh.setColorAt(s.index, strobeColorOn);
+                s.mesh.instanceColor.needsUpdate = true;
             }
             prevAlsTargetIndex = targetIdx;
         }
@@ -46,7 +44,7 @@ export function createAirportSystems({ PAPI, alsStrobes, strobeMatOn, strobeMatO
         let headingDeg = -hdgEuler.y * (180 / Math.PI);
         if (headingDeg < 0) headingDeg += 360;
 
-        const allPapiLights = PAPI.lights || [];
+        const allPapiPoints = PAPI.lights || [];
         const papi36 = PAPI.lights36 || [];
         const papi18 = PAPI.lights18 || [];
 
@@ -81,12 +79,26 @@ export function createAirportSystems({ PAPI, alsStrobes, strobeMatOn, strobeMatO
 
             const activeKey = `${activeSet === papi36 ? '36' : '18'}:${whiteCount}`;
             if (activeKey !== prevPapiKey) {
-                for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
-                setPapiColors(activeSet, whiteCount);
+                // Clear all PAPI lights
+                for (let i = 0; i < allPapiPoints.length; i++) {
+                    const p = allPapiPoints[i];
+                    p.mesh.setColorAt(p.index, PAPI.matOff);
+                }
+                // Set active set colors
+                for (let i = 0; i < activeSet.length; i++) {
+                    const p = activeSet[i];
+                    const color = (i >= (4 - whiteCount)) ? PAPI.matWhite : PAPI.matRed;
+                    p.mesh.setColorAt(p.index, color);
+                }
+                if (allPapiPoints.length > 0) allPapiPoints[0].mesh.instanceColor.needsUpdate = true;
                 prevPapiKey = activeKey;
             }
         } else if (prevPapiKey !== '') {
-            for (let i = 0; i < allPapiLights.length; i++) allPapiLights[i].material = PAPI.matOff;
+            for (let i = 0; i < allPapiPoints.length; i++) {
+                const p = allPapiPoints[i];
+                p.mesh.setColorAt(p.index, PAPI.matOff);
+            }
+            if (allPapiPoints.length > 0) allPapiPoints[0].mesh.instanceColor.needsUpdate = true;
             prevPapiKey = '';
         }
     }

@@ -202,149 +202,246 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
 
   // SCALED UP ALL EMISSIVE INTENSITIES SO THEY PIERCE THE NEW BLOOM THRESHOLD
   const PAPI = {
-    lights: [],
-    lights36: [],
-    lights18: [],
-    matRed: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 30 * RUNWAY_LIGHT_PAPI_SCALE }),
-    matWhite: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 30 * RUNWAY_LIGHT_PAPI_SCALE }),
-    matOff: new THREE.MeshBasicMaterial({ color: 0x111111 })
+    lights: [], // Now stores { mesh, index }
+    lights36: [], // Now stores { mesh, index }
+    lights18: [], // Now stores { mesh, index }
+    matRed: new THREE.Color(0xff0000),
+    matWhite: new THREE.Color(0xffffff),
+    matOff: new THREE.Color(0x111111)
   };
 
   // Global arrays for ALSF-2 Animation
-  const alsStrobes = [];
-  const strobeMatOn = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 60 * RUNWAY_LIGHT_STROBE_SCALE });
-  const strobeMatOff = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  const alsStrobes = []; // Now stores { mesh, index, dist, dir }
+  const strobeColorOn = new THREE.Color(0xffffff);
+  const strobeColorOff = new THREE.Color(0x111111);
+
+  function createInstancedLightMaterial(baseEmissive, intensity) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x000000,
+      emissive: baseEmissive,
+      emissiveIntensity: intensity,
+      roughness: 1.0,
+      metalness: 0.0
+    });
+
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <common>',
+        `#include <common>
+         varying vec3 vInstanceColor;`
+      ).replace(
+        '#include <color_vertex>',
+        `#include <color_vertex>
+         #ifdef USE_INSTANCING_COLOR
+           vInstanceColor = instanceColor;
+         #else
+           vInstanceColor = vec3(1.0);
+         #endif`
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <common>',
+        `#include <common>
+         varying vec3 vInstanceColor;`
+      ).replace(
+        'vec3 totalEmissiveRadiance = emissive;',
+        `vec3 totalEmissiveRadiance = emissive * vInstanceColor;`
+      );
+    };
+    return mat;
+  }
 
   // Runway Lighting
   function createRunwayLights() {
     const lightGroup = new THREE.Group();
-    const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffddaa, emissiveIntensity: 15 * RUNWAY_LIGHT_GLOW_SCALE });
-    const centerMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 15 * RUNWAY_LIGHT_GLOW_SCALE });
-    const endMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 15 * RUNWAY_LIGHT_GLOW_SCALE });
+    const dummy = new THREE.Object3D();
+
+    // Materials
+    const edgeMat = createInstancedLightMaterial(0xffddaa, 15 * RUNWAY_LIGHT_GLOW_SCALE);
+    const centerMat = createInstancedLightMaterial(0xffffff, 15 * RUNWAY_LIGHT_GLOW_SCALE);
+    const endMat = createInstancedLightMaterial(0xff0000, 15 * RUNWAY_LIGHT_GLOW_SCALE);
+    const alsWhiteMat = createInstancedLightMaterial(0xffffee, 20 * RUNWAY_LIGHT_GLOW_SCALE);
+    const alsRedMat = createInstancedLightMaterial(0xff0000, 20 * RUNWAY_LIGHT_GLOW_SCALE);
+    const strobeMat = createInstancedLightMaterial(0xffffff, 60 * RUNWAY_LIGHT_STROBE_SCALE);
+    const papiMat = createInstancedLightMaterial(0xffffff, 30 * RUNWAY_LIGHT_PAPI_SCALE);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+
+    // Geometries
     const lightGeo = new THREE.SphereGeometry(0.5 * RUNWAY_LIGHT_SIZE_SCALE, 4, 4);
     const baseGeo = new THREE.CylinderGeometry(0.24 * RUNWAY_LIGHT_SIZE_SCALE, 0.24 * RUNWAY_LIGHT_SIZE_SCALE, 0.28 * RUNWAY_LIGHT_SIZE_SCALE, 8);
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
+    const papiLightGeo = new THREE.SphereGeometry(2.5 * RUNWAY_LIGHT_SIZE_SCALE, 8, 8);
+    const papiBaseGeo = new THREE.BoxGeometry(2.6 * RUNWAY_LIGHT_SIZE_SCALE, 0.4 * RUNWAY_LIGHT_SIZE_SCALE, 1.2 * RUNWAY_LIGHT_SIZE_SCALE);
+    const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, 1); // Height scaled per instance
+
+    // counts for instancing
+    const edgeCount = 2 * (4000 / 50 + 1);
+    const centerCount = (4000 / 100 + 1);
+    const edgeMesh = new THREE.InstancedMesh(lightGeo, edgeMat, edgeCount);
+    const endMesh = new THREE.InstancedMesh(lightGeo, endMat, 8); // 4 each end
+    const centerMesh = new THREE.InstancedMesh(lightGeo, centerMat, centerCount);
+    const baseMesh = new THREE.InstancedMesh(baseGeo, baseMat, edgeCount + centerCount);
+
+    let edgeIdx = 0, endIdx = 0, centerIdx = 0, baseIdx = 0;
 
     for (let z = -2000; z <= 2000; z += 50) {
-      // Edge lights
-      let leftEdge = new THREE.Mesh(lightGeo, Math.abs(z) > 1950 ? endMaterial : edgeMaterial);
-      leftEdge.position.set(-25, 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      let rightEdge = new THREE.Mesh(lightGeo, Math.abs(z) > 1950 ? endMaterial : edgeMaterial);
-      rightEdge.position.set(25, 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      lightGroup.add(leftEdge, rightEdge);
-      const leftBase = new THREE.Mesh(baseGeo, baseMat);
-      leftBase.position.set(-25, 0.14 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      const rightBase = new THREE.Mesh(baseGeo, baseMat);
-      rightBase.position.set(25, 0.14 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      lightGroup.add(leftBase, rightBase);
+      const isEnd = Math.abs(z) > 1950;
 
-      // Centerline lights
+      // Left Edge
+      dummy.position.set(-25, 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      if (isEnd) {
+        endMesh.setMatrixAt(endIdx++, dummy.matrix);
+      } else {
+        edgeMesh.setMatrixAt(edgeIdx++, dummy.matrix);
+      }
+
+      dummy.position.set(-25, 0.14 * RUNWAY_LIGHT_SIZE_SCALE, z);
+      dummy.updateMatrix();
+      baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
+
+      // Right Edge
+      dummy.position.set(25, 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
+      dummy.updateMatrix();
+      if (isEnd) {
+        endMesh.setMatrixAt(endIdx++, dummy.matrix);
+      } else {
+        edgeMesh.setMatrixAt(edgeIdx++, dummy.matrix);
+      }
+
+      dummy.position.set(25, 0.14 * RUNWAY_LIGHT_SIZE_SCALE, z);
+      dummy.updateMatrix();
+      baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
+
+      // Centerline
       if (z % 100 === 0) {
-        let centerLight = new THREE.Mesh(lightGeo, centerMaterial);
-        centerLight.position.set(0, 0.1 * RUNWAY_LIGHT_SIZE_SCALE, z);
-        lightGroup.add(centerLight);
-        const centerBase = new THREE.Mesh(baseGeo, baseMat);
-        centerBase.position.set(0, -0.16 * RUNWAY_LIGHT_SIZE_SCALE, z);
-        lightGroup.add(centerBase);
+        dummy.position.set(0, 0.1 * RUNWAY_LIGHT_SIZE_SCALE, z);
+        dummy.updateMatrix();
+        centerMesh.setMatrixAt(centerIdx++, dummy.matrix);
+
+        dummy.position.set(0, -0.16 * RUNWAY_LIGHT_SIZE_SCALE, z);
+        dummy.updateMatrix();
+        baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
       }
     }
 
-    // --- PAPI System (Precision Approach Path Indicator) ---
-    // RWY 36 (touchdown Z=1000), left side for northbound approach.
-    for (let i = 0; i < 4; i++) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5 * RUNWAY_LIGHT_SIZE_SCALE, 8, 8), PAPI.matWhite);
-      mesh.position.set(-45 - i * 12, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1000);
-      mesh.scale.z = 0.2;
-      lightGroup.add(mesh);
-      const papiBase = new THREE.Mesh(
-        new THREE.BoxGeometry(2.6 * RUNWAY_LIGHT_SIZE_SCALE, 0.4 * RUNWAY_LIGHT_SIZE_SCALE, 1.2 * RUNWAY_LIGHT_SIZE_SCALE),
-        baseMat
-      );
-      papiBase.position.set(-45 - i * 12, 0.3 * RUNWAY_LIGHT_SIZE_SCALE, 1000);
-      lightGroup.add(papiBase);
-      PAPI.lights36.push(mesh);
-      PAPI.lights.push(mesh);
-    }
-    // RWY 18 (touchdown Z=-1000), left side for southbound approach.
-    for (let i = 0; i < 4; i++) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5 * RUNWAY_LIGHT_SIZE_SCALE, 8, 8), PAPI.matWhite);
-      mesh.position.set(45 + i * 12, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, -1000);
-      mesh.scale.z = 0.2;
-      lightGroup.add(mesh);
-      const papiBase = new THREE.Mesh(
-        new THREE.BoxGeometry(2.6 * RUNWAY_LIGHT_SIZE_SCALE, 0.4 * RUNWAY_LIGHT_SIZE_SCALE, 1.2 * RUNWAY_LIGHT_SIZE_SCALE),
-        baseMat
-      );
-      papiBase.position.set(45 + i * 12, 0.3 * RUNWAY_LIGHT_SIZE_SCALE, -1000);
-      lightGroup.add(papiBase);
-      PAPI.lights18.push(mesh);
-      PAPI.lights.push(mesh);
-    }
+    lightGroup.add(edgeMesh, endMesh, centerMesh, baseMesh);
 
-    // --- ALSF-2 Approach Lighting System ("The Rabbit") ---
-    const alsWhiteMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffee, emissiveIntensity: 20 * RUNWAY_LIGHT_GLOW_SCALE });
-    const alsRedMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 20 * RUNWAY_LIGHT_GLOW_SCALE });
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+    // PAPI
+    const papiLightMesh = new THREE.InstancedMesh(papiLightGeo, papiMat, 8);
+    const papiBaseMesh = new THREE.InstancedMesh(papiBaseGeo, baseMat, 8);
+    let pIdx = 0;
+
+    // RWY 36 (South side, takeoff facing North)
+    for (let i = 0; i < 4; i++) {
+      dummy.position.set(-45 - i * 12, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1000);
+      dummy.scale.set(1, 1, 0.2);
+      dummy.updateMatrix();
+      papiLightMesh.setMatrixAt(pIdx, dummy.matrix);
+      papiLightMesh.setColorAt(pIdx, PAPI.matWhite);
+      PAPI.lights36.push({ mesh: papiLightMesh, index: pIdx });
+      PAPI.lights.push({ mesh: papiLightMesh, index: pIdx });
+
+      dummy.position.set(-45 - i * 12, 0.3 * RUNWAY_LIGHT_SIZE_SCALE, 1000);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      papiBaseMesh.setMatrixAt(pIdx++, dummy.matrix);
+    }
+    // RWY 18 (North side, takeoff facing South)
+    for (let i = 0; i < 4; i++) {
+      dummy.position.set(45 + i * 12, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, -1000);
+      dummy.scale.set(1, 1, 0.2);
+      dummy.updateMatrix();
+      papiLightMesh.setMatrixAt(pIdx, dummy.matrix);
+      papiLightMesh.setColorAt(pIdx, PAPI.matWhite);
+      PAPI.lights18.push({ mesh: papiLightMesh, index: pIdx });
+      PAPI.lights.push({ mesh: papiLightMesh, index: pIdx });
+
+      dummy.position.set(45 + i * 12, 0.3 * RUNWAY_LIGHT_SIZE_SCALE, -1000);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      papiBaseMesh.setMatrixAt(pIdx++, dummy.matrix);
+    }
+    lightGroup.add(papiLightMesh, papiBaseMesh);
+
+    // ALS
+    const alsWhiteMesh = new THREE.InstancedMesh(lightGeo, alsWhiteMat, 400); // Guessed max
+    const alsRedMesh = new THREE.InstancedMesh(lightGeo, alsRedMat, 100);
+    const strobeMesh = new THREE.InstancedMesh(lightGeo, strobeMat, 40);
+    const poleMesh = new THREE.InstancedMesh(poleGeo, poleMat, 100);
+
+    let awIdx = 0, arIdx = 0, asIdx = 0, apIdx = 0;
 
     function buildALS(thresholdZ, direction) {
       for (let dist = 30; dist <= 900; dist += 30) {
         let z = thresholdZ + dist * direction;
         let ty = getTerrainHeight(0, z);
-        let rowY = ty + 1.5; // Lights elevated 1.5m above local terrain
+        let rowY = ty + 1.5;
 
-        // Add vertical pole structure connecting to the ground
+        // Pole
         if (rowY - ty > 0.1) {
-          let pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, rowY - ty), poleMat);
-          pole.position.set(0, ty + (rowY - ty) / 2, z);
-          lightGroup.add(pole);
+          const h = rowY - ty;
+          dummy.position.set(0, ty + h / 2, z);
+          dummy.scale.set(1, h, 1);
+          dummy.updateMatrix();
+          poleMesh.setMatrixAt(apIdx++, dummy.matrix);
         }
 
-        // Centerline white bar (5 lights)
+        // Center white bars
         for (let x = -6; x <= 6; x += 3) {
-          let mesh = new THREE.Mesh(lightGeo, alsWhiteMat);
-          mesh.position.set(x, rowY, z);
-          mesh.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
-          lightGroup.add(mesh);
+          dummy.position.set(x, rowY, z);
+          dummy.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
+          dummy.updateMatrix();
+          alsWhiteMesh.setMatrixAt(awIdx++, dummy.matrix);
         }
 
-        // 1000ft Crossbar
+        // Crossbar
         if (Math.abs(dist - 300) <= 15) {
           for (let x = -24; x <= 24; x += 3) {
             if (Math.abs(x) > 6) {
-              let mesh = new THREE.Mesh(lightGeo, alsWhiteMat);
-              mesh.position.set(x, rowY, z);
-              mesh.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
-              lightGroup.add(mesh);
+              dummy.position.set(x, rowY, z);
+              dummy.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
+              dummy.updateMatrix();
+              alsWhiteMesh.setMatrixAt(awIdx++, dummy.matrix);
             }
           }
         }
 
-        // Red side row bars (Inner 300m)
+        // Red side rows
         if (dist <= 300) {
           for (let x of [-12, -9, 9, 12]) {
-            let redL = new THREE.Mesh(lightGeo, alsRedMat);
-            redL.position.set(x, rowY, z);
-            redL.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
-            lightGroup.add(redL);
+            dummy.position.set(x, rowY, z);
+            dummy.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
+            dummy.updateMatrix();
+            alsRedMesh.setMatrixAt(arIdx++, dummy.matrix);
           }
         }
 
-        // Sequenced Flashing Lights "The Rabbit" (Outer 600m)
+        // Rabbit Strobes
         if (dist > 300) {
-          let strobe = new THREE.Mesh(lightGeo, strobeMatOff);
-          strobe.position.set(0, rowY + 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
-          strobe.scale.set(3 * RUNWAY_LIGHT_SIZE_SCALE, 3 * RUNWAY_LIGHT_SIZE_SCALE, 3 * RUNWAY_LIGHT_SIZE_SCALE); // Make the flash very large
-          lightGroup.add(strobe);
-          alsStrobes.push({ mesh: strobe, dist: dist, dir: direction });
+          dummy.position.set(0, rowY + 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
+          dummy.scale.set(3 * RUNWAY_LIGHT_SIZE_SCALE, 3 * RUNWAY_LIGHT_SIZE_SCALE, 3 * RUNWAY_LIGHT_SIZE_SCALE);
+          dummy.updateMatrix();
+          strobeMesh.setMatrixAt(asIdx, dummy.matrix);
+          strobeMesh.setColorAt(asIdx, strobeColorOff);
+          alsStrobes.push({ mesh: strobeMesh, index: asIdx++, dist: dist, dir: direction });
         }
       }
     }
-    buildALS(1950, 1);   // Approach from the South
-    buildALS(-1950, -1); // Approach from the North
 
+    buildALS(1950, 1);
+    buildALS(-1950, -1);
+
+    alsWhiteMesh.count = awIdx;
+    alsRedMesh.count = arIdx;
+    strobeMesh.count = asIdx;
+    poleMesh.count = apIdx;
+
+    lightGroup.add(alsWhiteMesh, alsRedMesh, strobeMesh, poleMesh);
     scene.add(lightGroup);
   }
   createRunwayLights();
 
-  return { PAPI, alsStrobes, strobeMatOn, strobeMatOff };
+  return { PAPI, alsStrobes, strobeColorOn, strobeColorOff };
 }

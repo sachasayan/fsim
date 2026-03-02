@@ -49,8 +49,8 @@ const {
   waterMaterial,
   PAPI,
   alsStrobes,
-  strobeMatOn,
-  strobeMatOff,
+  strobeColorOn,
+  strobeColorOff,
   getTerrainHeight,
   updateTerrain,
   updateTerrainAtmosphere,
@@ -68,7 +68,8 @@ const {
   movableSurfaces,
   gearGroup,
   strobes,
-  beacons
+  beacons,
+  updateAircraftLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
 // ==========================================
@@ -90,8 +91,8 @@ const weatherManager = createWeatherManager({
 const airportSystems = createAirportSystems({
   PAPI,
   alsStrobes,
-  strobeMatOn,
-  strobeMatOff
+  strobeColorOn,
+  strobeColorOff
 });
 
 const cameraController = createCameraController({
@@ -233,6 +234,9 @@ function animate() {
   // 5. Airport Systems (ALS, PAPI)
   airportSystems.updateALS(now);
   airportSystems.updatePAPI(PHYSICS, runtime.frameCount);
+
+  // 5b. Aircraft LOD
+  updateAircraftLOD(camera);
 
   // 6. Audio Update
   ProceduralAudio.update(
