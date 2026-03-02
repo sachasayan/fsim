@@ -22,8 +22,8 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
   dirLight.shadow.camera.right = 280;
   dirLight.shadow.camera.near = 40; // Matches the value set dynamically in the main loop
   dirLight.shadow.camera.far = 5000;
-  dirLight.shadow.mapSize.width = 2048;
-  dirLight.shadow.mapSize.height = 2048;
+  dirLight.shadow.mapSize.width = 512;
+  dirLight.shadow.mapSize.height = 512;
   dirLight.shadow.bias = -0.0005;
   scene.add(dirLight);
 
