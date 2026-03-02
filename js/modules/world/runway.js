@@ -3,7 +3,6 @@ import * as THREE from 'three';
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
   const RUNWAY_LIGHT_GLOW_SCALE = 0.38;
-  const RUNWAY_LIGHT_PAPI_SCALE = 0.32;
   const RUNWAY_LIGHT_STROBE_SCALE = 0.42;
 
   // High-Res Procedural Runway Mesh
@@ -200,15 +199,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   }
   createRunwayMesh();
 
-  // SCALED UP ALL EMISSIVE INTENSITIES SO THEY PIERCE THE NEW BLOOM THRESHOLD
-  const PAPI = {
-    lights: [], // Now stores { mesh, index }
-    lights36: [], // Now stores { mesh, index }
-    lights18: [], // Now stores { mesh, index }
-    matRed: new THREE.Color(0xff0000),
-    matWhite: new THREE.Color(0xffffff),
-    matOff: new THREE.Color(0x111111)
-  };
+
 
   // Global arrays for ALSF-2 Animation
   const alsStrobes = []; // Now stores { mesh, index, dist, dir }
@@ -263,15 +254,12 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     const alsWhiteMat = createInstancedLightMaterial(0xffffee, 20 * RUNWAY_LIGHT_GLOW_SCALE);
     const alsRedMat = createInstancedLightMaterial(0xff0000, 20 * RUNWAY_LIGHT_GLOW_SCALE);
     const strobeMat = createInstancedLightMaterial(0xffffff, 60 * RUNWAY_LIGHT_STROBE_SCALE);
-    const papiMat = createInstancedLightMaterial(0xffffff, 30 * RUNWAY_LIGHT_PAPI_SCALE);
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
 
     // Geometries
     const lightGeo = new THREE.SphereGeometry(0.5 * RUNWAY_LIGHT_SIZE_SCALE, 4, 4);
     const baseGeo = new THREE.CylinderGeometry(0.24 * RUNWAY_LIGHT_SIZE_SCALE, 0.24 * RUNWAY_LIGHT_SIZE_SCALE, 0.28 * RUNWAY_LIGHT_SIZE_SCALE, 8);
-    const papiLightGeo = new THREE.SphereGeometry(2.5 * RUNWAY_LIGHT_SIZE_SCALE, 8, 8);
-    const papiBaseGeo = new THREE.BoxGeometry(2.6 * RUNWAY_LIGHT_SIZE_SCALE, 0.4 * RUNWAY_LIGHT_SIZE_SCALE, 1.2 * RUNWAY_LIGHT_SIZE_SCALE);
     const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, 1); // Height scaled per instance
 
     // counts for instancing
@@ -328,42 +316,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
 
     lightGroup.add(edgeMesh, endMesh, centerMesh, baseMesh);
 
-    // PAPI
-    const papiLightMesh = new THREE.InstancedMesh(papiLightGeo, papiMat, 8);
-    const papiBaseMesh = new THREE.InstancedMesh(papiBaseGeo, baseMat, 8);
-    let pIdx = 0;
 
-    // RWY 36 (South side, takeoff facing North)
-    for (let i = 0; i < 4; i++) {
-      dummy.position.set(-45 - i * 12, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1000);
-      dummy.scale.set(1, 1, 0.2);
-      dummy.updateMatrix();
-      papiLightMesh.setMatrixAt(pIdx, dummy.matrix);
-      papiLightMesh.setColorAt(pIdx, PAPI.matWhite);
-      PAPI.lights36.push({ mesh: papiLightMesh, index: pIdx });
-      PAPI.lights.push({ mesh: papiLightMesh, index: pIdx });
-
-      dummy.position.set(-45 - i * 12, 0.3 * RUNWAY_LIGHT_SIZE_SCALE, 1000);
-      dummy.scale.set(1, 1, 1);
-      dummy.updateMatrix();
-      papiBaseMesh.setMatrixAt(pIdx++, dummy.matrix);
-    }
-    // RWY 18 (North side, takeoff facing South)
-    for (let i = 0; i < 4; i++) {
-      dummy.position.set(45 + i * 12, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, -1000);
-      dummy.scale.set(1, 1, 0.2);
-      dummy.updateMatrix();
-      papiLightMesh.setMatrixAt(pIdx, dummy.matrix);
-      papiLightMesh.setColorAt(pIdx, PAPI.matWhite);
-      PAPI.lights18.push({ mesh: papiLightMesh, index: pIdx });
-      PAPI.lights.push({ mesh: papiLightMesh, index: pIdx });
-
-      dummy.position.set(45 + i * 12, 0.3 * RUNWAY_LIGHT_SIZE_SCALE, -1000);
-      dummy.scale.set(1, 1, 1);
-      dummy.updateMatrix();
-      papiBaseMesh.setMatrixAt(pIdx++, dummy.matrix);
-    }
-    lightGroup.add(papiLightMesh, papiBaseMesh);
 
     // ALS
     const alsWhiteMesh = new THREE.InstancedMesh(lightGeo, alsWhiteMat, 400); // Guessed max
@@ -443,5 +396,5 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   }
   createRunwayLights();
 
-  return { PAPI, alsStrobes, strobeColorOn, strobeColorOff };
+  return { alsStrobes, strobeColorOn, strobeColorOff };
 }

@@ -47,7 +47,6 @@ const {
   hemiLight,
   dirLight,
   waterMaterial,
-  PAPI,
   alsStrobes,
   strobeColorOn,
   strobeColorOff,
@@ -89,7 +88,6 @@ const weatherManager = createWeatherManager({
 });
 
 const airportSystems = createAirportSystems({
-  PAPI,
   alsStrobes,
   strobeColorOn,
   strobeColorOff
@@ -231,9 +229,8 @@ function animate() {
     if (b.children[0]) b.children[0].visible = beaconFlash;
   });
 
-  // 5. Airport Systems (ALS, PAPI)
+  // 5. Airport Systems (ALS)
   airportSystems.updateALS(now);
-  airportSystems.updatePAPI(PHYSICS, runtime.frameCount);
 
   // 5b. Aircraft LOD
   updateAircraftLOD(camera);
