@@ -170,10 +170,7 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     wGeo.attributes.color.array.set(result.wCols);
     wGeo.attributes.color.needsUpdate = true;
 
-    // Check if the chunk group hasn't been disposed before adding
-    if (!chunkGroup.parent && chunkGroup.userData.lod === lod) {
-        scene.add(chunkGroup);
-    }
+    // Do not add to scene yet, await props generation in terrain.js
     return chunkGroup;
 }
 
@@ -207,7 +204,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const result = await dispatchWorker('chunkProps', payload, transferables);
 
     // Ensure chunk wasn't disposed or repurposed while awaiting
-    if (chunkGroup.userData.chunkKey !== `${cx},${cz}` || !chunkGroup.parent) return;
+    if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) return;
 
     const { treePositions, buildingPositions, boatPositions } = result;
 

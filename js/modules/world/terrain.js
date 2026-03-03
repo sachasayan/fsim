@@ -215,19 +215,29 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const job = pendingChunkBuilds.pop();
       pendingChunkKeys.delete(job.key);
       const existing = terrainChunks.get(job.key);
+
       if (existing && existing.lod === job.lod) {
-        if (!existing.propsBuilt && existing.state !== 'building_props') enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group);
+        // If it's already at this LOD, but failed to complete props previously, try again
+        if (!existing.propsBuilt && existing.state !== 'building_props') {
+          enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group || existing.pendingGroup);
+        }
         builds++; continue;
       }
-      if (existing) { removePendingPropJobs(job.key); existing.group && disposeChunkGroup(existing.group); terrainChunks.delete(job.key); }
 
-      terrainChunks.set(job.key, { group: null, lod: job.lod, propsBuilt: false, state: 'building_base' });
+      let oldGroup = null;
+      if (existing) {
+        removePendingPropJobs(job.key);
+        oldGroup = existing.group; // Save old group to keep it visible during async build
+        if (existing.pendingGroup) disposeChunkGroup(existing.pendingGroup);
+      }
+
+      terrainChunks.set(job.key, { group: oldGroup, pendingGroup: null, lod: job.lod, propsBuilt: false, state: 'building_base' });
       builds++;
 
       generateChunkBase(job.cx, job.cz, job.lod).then(group => {
         const current = terrainChunks.get(job.key);
         if (current && current.lod === job.lod && current.state === 'building_base') {
-          current.group = group;
+          current.pendingGroup = group;
           current.state = 'base_done';
           enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
         } else {
@@ -245,14 +255,26 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const job = pendingPropBuilds.pop();
       pendingPropKeys.delete(job.key);
       const state = terrainChunks.get(job.key);
-      if (!state || state.group !== job.groupRef || state.lod !== job.lod || state.propsBuilt || state.state === 'building_props' || state.state === 'building_base') { builds++; continue; }
+
+      const targetGroup = state ? (state.pendingGroup || state.group) : null;
+      if (!state || targetGroup !== job.groupRef || state.lod !== job.lod || state.propsBuilt || state.state === 'building_props') { builds++; continue; }
 
       state.state = 'building_props';
       builds++;
 
-      generateChunkProps(state.group, job.cx, job.cz, job.lod).then(() => {
+      generateChunkProps(targetGroup, job.cx, job.cz, job.lod).then(() => {
         const current = terrainChunks.get(job.key);
-        if (current && current.group === job.groupRef && current.lod === job.lod && current.state === 'building_props') {
+        if (current && (current.pendingGroup === job.groupRef || current.group === job.groupRef) && current.lod === job.lod && current.state === 'building_props') {
+          // Both base and props are definitively built for the new LOD
+          if (current.pendingGroup) {
+            if (current.group) disposeChunkGroup(current.group); // Dispose the old LOD
+            current.group = current.pendingGroup; // Promote the new LOD
+            scene.add(current.group); // Reveal it to the camera
+            current.pendingGroup = null;
+          } else if (current.group && !current.group.parent) {
+            // Initial load where pendingGroup wasn't needed
+            scene.add(current.group);
+          }
           current.propsBuilt = true;
           current.state = 'done';
         }
@@ -287,7 +309,12 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       if (!activeChunks.has(job.key)) { pendingPropKeys.delete(job.key); pendingPropBuilds.splice(i, 1); pendingPropQueueDirty = true; }
     }
     for (const [key, chunkState] of terrainChunks.entries()) {
-      if (!activeChunks.has(key)) { removePendingPropJobs(key); disposeChunkGroup(chunkState.group); terrainChunks.delete(key); }
+      if (!activeChunks.has(key)) {
+        removePendingPropJobs(key);
+        if (chunkState.group) disposeChunkGroup(chunkState.group);
+        if (chunkState.pendingGroup) disposeChunkGroup(chunkState.pendingGroup);
+        terrainChunks.delete(key);
+      }
     }
     const buildBudget = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
     const propBuildBudget = pendingPropBuilds.length > 160 ? 2 : 1;
