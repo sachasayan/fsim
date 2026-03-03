@@ -99,7 +99,7 @@ const classConfigs = {
 };
 
 export async function generateChunkBase(cx, cz, lod, ctx) {
-    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, scene } = ctx;
+    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial, scene } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     let chunkGroup;
     let terrainMesh, waterMesh;
@@ -120,7 +120,7 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
         waterGeo.rotateX(-Math.PI / 2);
         waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
-        waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
+        waterMesh = new THREE.Mesh(waterGeo, lod === 0 ? waterMaterial : waterFarMaterial);
         waterMesh.receiveShadow = true;
         chunkGroup.add(waterMesh);
     }
@@ -169,6 +169,7 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     wGeo.attributes.position.needsUpdate = true;
     wGeo.attributes.color.array.set(result.wCols);
     wGeo.attributes.color.needsUpdate = true;
+    wGeo.computeVertexNormals();
 
     // Do not add to scene yet, await props generation in terrain.js
     return chunkGroup;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createWaterNormalMap, createTreeBillboardTexture, createPackedTerrainDetailTexture } from './terrain/TerrainTextures.js';
 import {
   applyDistanceAtmosphereToMaterial,
+  applyWaterDualScrollToMaterial,
   makeTreeBillboardMaterial,
   createDetailedBuildingMat,
   setupTerrainMaterial
@@ -19,13 +20,10 @@ import {
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
     roughness: 0.62,
     metalness: 0.05,
-    envMapIntensity: 0.22,
     normalMap: createWaterNormalMap(Noise),
-    normalScale: new THREE.Vector2(0.36, 0.36)
+    normalScale: new THREE.Vector2(1.5, 1.5)
   });
 
   const atmosphereCameraPos = new THREE.Vector3();
@@ -39,13 +37,22 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const tmpColorA = new THREE.Color();
   const tmpColorB = new THREE.Color();
 
+  const waterFarMaterial = new THREE.MeshBasicMaterial({
+    vertexColors: true
+  });
+
+  const waterTimeUniform = { value: 0 };
+  waterMaterial.userData.timeUniform = waterTimeUniform;
+
   applyDistanceAtmosphereToMaterial(waterMaterial, 'water', atmosphereUniforms, 0.74, 0.08);
+  applyWaterDualScrollToMaterial(waterMaterial, waterTimeUniform);
+  applyDistanceAtmosphereToMaterial(waterFarMaterial, 'water-far', atmosphereUniforms, 0.74, 0.08);
 
   const LOD_LEVELS = [
     { terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true },
-    { terrainRes: 64, waterRes: 40, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false },
-    { terrainRes: 28, waterRes: 20, propDensity: 0.2, enableBuildings: true, enableTrees: true, enableBoats: false },
-    { terrainRes: 12, waterRes: 10, propDensity: 0.0, enableBuildings: false, enableTrees: false, enableBoats: false }
+    { terrainRes: 32, waterRes: 16, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false },
+    { terrainRes: 12, waterRes: 4, propDensity: 0.2, enableBuildings: true, enableTrees: true, enableBoats: false },
+    { terrainRes: 2, waterRes: 2, propDensity: 0.0, enableBuildings: false, enableTrees: false, enableBoats: false }
   ];
 
   const terrainChunks = new Map();
@@ -72,7 +79,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     uTerrainSlopeEnd: { value: 0.62 },
     uTerrainRockHeightStart: { value: 220.0 },
     uTerrainRockHeightEnd: { value: 560.0 },
-    uTerrainAtmosStrength: { value: 0.44 },
+    uTerrainAtmosStrength: { value: 0.25 },
     uTerrainFoliageNearStart: { value: 120.0 },
     uTerrainFoliageNearEnd: { value: 1200.0 },
     uTerrainFoliageStrength: { value: 0.38 }
@@ -172,7 +179,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   }
 
   function generateChunkBase(cx, cz, lod = 0) {
-    return genBase(cx, cz, lod, { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, Noise, scene });
+    return genBase(cx, cz, lod, { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial, Noise, scene });
   }
 
   function generateChunkProps(chunkGroup, cx, cz, lod = 0) {
@@ -329,8 +336,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       tmpColorA.setRGB(0.62, 0.66, 0.72); tmpColorB.setRGB(0.78, 0.81, 0.86);
       atmosphereColor.copy(tmpColorA.lerp(tmpColorB, 0.4));
     }
-    atmosphereUniforms.uAtmosNear.value = 7000.0;
-    atmosphereUniforms.uAtmosFar.value = 62000.0;
+    atmosphereUniforms.uAtmosNear.value = 15000.0;
+    atmosphereUniforms.uAtmosFar.value = 90000.0;
   }
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);

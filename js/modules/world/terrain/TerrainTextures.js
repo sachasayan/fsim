@@ -16,15 +16,15 @@ export function createWaterNormalMap(Noise) {
             let hx = Noise.fractal(((x + 1) / size) * scale, (y / size) * scale, 3, 0.5, 1);
             let hy = Noise.fractal((x / size) * scale, ((y + 1) / size) * scale, 3, 0.5, 1);
 
-            let dx = (hx - h0) * 5.0; // Gentler slope
-            let dy = (hy - h0) * 5.0;
+            let dx = (hx - h0) * 15.0; // Much steeper slope for higher contrast
+            let dy = (hy - h0) * 15.0;
             let dz = 1.0;
             let len = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
             let idx = (y * size + x) * 4;
             imgData.data[idx] = Math.floor(((dx / len) * 0.5 + 0.5) * 255);
             imgData.data[idx + 1] = Math.floor(((dy / len) * 0.5 + 0.5) * 255);
-            imgData.data[idx + 2] = 255;
+            imgData.data[idx + 2] = Math.floor(((dz / len) * 0.5 + 0.5) * 255);
             imgData.data[idx + 3] = 255;
         }
     }
@@ -33,7 +33,7 @@ export function createWaterNormalMap(Noise) {
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(4, 4); // Minimal repetition to remove the grid effect
+    tex.repeat.set(256, 256); // Minimal repetition to remove the grid effect
     return tex;
 }
 

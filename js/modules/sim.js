@@ -198,9 +198,8 @@ function animate() {
   weatherManager.update(dt, runtime.frameCount, camera);
 
   // 2. Water Animation
-  if (waterMaterial.normalMap) {
-    waterMaterial.normalMap.offset.x -= dt * 0.01;
-    waterMaterial.normalMap.offset.y += dt * 0.02;
+  if (waterMaterial.userData.timeUniform) {
+    waterMaterial.userData.timeUniform.value += dt;
   }
 
 

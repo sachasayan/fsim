@@ -40,6 +40,66 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`
     material.customProgramCacheKey = () => `atmos-${programKey}`;
 }
 
+export function applyWaterDualScrollToMaterial(material, timeUniform) {
+    const prevCompile = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+        if (prevCompile) prevCompile(shader, renderer);
+
+        shader.uniforms.uTime = timeUniform;
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <common>',
+            `#include <common>
+uniform float uTime;`
+        ).replace(
+            '#include <normal_fragment_maps>',
+            `
+#ifdef USE_NORMALMAP
+    vec2 normalUv1 = vNormalMapUv + vec2(uTime * 0.12, uTime * 0.08);
+    vec2 normalUv2 = vNormalMapUv * 1.5 + vec2(uTime * -0.08, uTime * 0.12);
+    
+    vec3 map1 = texture2D( normalMap, normalUv1 ).xyz;
+    vec3 map2 = texture2D( normalMap, normalUv2 ).xyz;
+    
+    vec3 normal1 = map1 * 2.0 - 1.0;
+    vec3 normal2 = map2 * 2.0 - 1.0;
+    
+    vec3 baseNormal = normalize(normal1 + normal2);
+    baseNormal.xy *= normalScale;
+    
+    // Compute TBN matrix from derivatives
+    vec3 q0_ds = dFdx( - vViewPosition.xyz );
+    vec3 q1_ds = dFdy( - vViewPosition.xyz );
+    vec2 st0_ds = dFdx( vNormalMapUv.st );
+    vec2 st1_ds = dFdy( vNormalMapUv.st );
+    
+    vec3 N_ds = normalize( normal );
+    vec3 q1perp_ds = cross( q1_ds, N_ds );
+    vec3 q0perp_ds = cross( N_ds, q0_ds );
+    
+    vec3 T_ds = q1perp_ds * st0_ds.x + q0perp_ds * st1_ds.x;
+    vec3 B_ds = q1perp_ds * st0_ds.y + q0perp_ds * st1_ds.y;
+    
+    float det_ds = max( dot( T_ds, T_ds ), dot( B_ds, B_ds ) );
+    float scale_ds = ( det_ds == 0.0 ) ? 0.0 : inversesqrt( det_ds );
+    
+    vec3 T_n_ds = T_ds * scale_ds;
+    vec3 B_n_ds = B_ds * scale_ds;
+    mat3 tbn_ds = mat3( T_n_ds, B_n_ds, N_ds );
+    
+    normal = normalize( tbn_ds * baseNormal );
+#else
+    #include <normal_fragment_maps>
+#endif`
+        );
+    };
+
+    const prevCacheKey = material.customProgramCacheKey;
+    material.customProgramCacheKey = () => {
+        return (prevCacheKey ? prevCacheKey() : '') + '-dualscroll';
+    };
+}
+
 export function makeTreeBillboardMaterial(texture, tint) {
     return new THREE.MeshStandardMaterial({
         map: texture,

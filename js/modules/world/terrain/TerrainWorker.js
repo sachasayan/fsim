@@ -87,8 +87,8 @@ const terrainColorRock = hexToLinear(0x555555);
 const terrainColorSnow = hexToLinear(0xffffff);
 
 const waterColorFoam = hexToLinear(0xffffff);
-const waterColorBlue = hexToLinear(0x0077be);
-const waterColorDeep = hexToLinear(0x003377);
+const waterColorBlue = hexToLinear(0x2F86DE);
+const waterColorDeep = hexToLinear(0x1A62C4);
 
 function lerpColor(c1, c2, t) {
     return {
