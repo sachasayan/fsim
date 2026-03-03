@@ -1,9 +1,6 @@
 import * as THREE from 'three';
 
 export function createAirportSystems({ alsStrobes, strobeColorOn, strobeColorOff }) {
-    let prevAlsTargetIndex = -1;
-    const tmpHdgEuler = new THREE.Euler();
-
     function getHeadingDiff(headingDeg, targetDeg) {
         let d = headingDeg - targetDeg;
         while (d > 180) d -= 360;
@@ -12,28 +9,24 @@ export function createAirportSystems({ alsStrobes, strobeColorOn, strobeColorOff
     }
 
     function updateALS(now) {
-        let rabbitCycle = (now / 500) % 1.0; // Loops every 0.5s
-        let targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
-        let targetIdx = -1;
+        const rabbitCycle = (now / 500) % 1.0; // Loops every 0.5s
+        const targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
+
+        const meshesToUpdate = new Set();
         for (let i = 0; i < alsStrobes.length; i++) {
-            if (Math.abs(alsStrobes[i].dist - targetDist) < 40) {
-                targetIdx = i;
-                break;
+            const s = alsStrobes[i];
+            const shouldBeOn = Math.abs(s.dist - targetDist) < 45;
+
+            if (s.lastState !== shouldBeOn) {
+                s.mesh.setColorAt(s.index, shouldBeOn ? strobeColorOn : strobeColorOff);
+                meshesToUpdate.add(s.mesh);
+                s.lastState = shouldBeOn;
             }
         }
-        if (targetIdx !== prevAlsTargetIndex) {
-            if (prevAlsTargetIndex >= 0 && prevAlsTargetIndex < alsStrobes.length) {
-                const s = alsStrobes[prevAlsTargetIndex];
-                s.mesh.setColorAt(s.index, strobeColorOff);
-                s.mesh.instanceColor.needsUpdate = true;
-            }
-            if (targetIdx >= 0 && targetIdx < alsStrobes.length) {
-                const s = alsStrobes[targetIdx];
-                s.mesh.setColorAt(s.index, strobeColorOn);
-                s.mesh.instanceColor.needsUpdate = true;
-            }
-            prevAlsTargetIndex = targetIdx;
-        }
+
+        meshesToUpdate.forEach(mesh => {
+            mesh.instanceColor.needsUpdate = true;
+        });
     }
 
     return {

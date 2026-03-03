@@ -16,8 +16,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     ctx.fillStyle = '#30343b';
     ctx.fillRect(0, 0, 1024, 4096);
 
-    // Asphalt Noise — 50k iterations gives near-identical results to 200k at a quarter of the cost
-    for (let i = 0; i < 50000; i++) {
+    // Asphalt Noise — 15k iterations for better surface detail at low altitudes
+    for (let i = 0; i < 15000; i++) {
       ctx.fillStyle = Math.random() > 0.5 ? '#434a53' : '#2a3038';
       ctx.fillRect(Math.random() * 1024, Math.random() * 4096, 2, 2);
     }
@@ -163,7 +163,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     }
 
     const roughnessCanvas = createRoughnessMapFromAlbedo(canvas);
-    const bumpCanvas = createRunwayBumpMap(512, 2048);
+    const bumpCanvas = createRunwayBumpMap(256, 1024); // Further reduced resolution for bump map
 
     const tex = new THREE.CanvasTexture(canvas);
     const roughnessTex = new THREE.CanvasTexture(roughnessCanvas);
@@ -199,27 +199,24 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   }
   createRunwayMesh();
 
-
-
   // Global arrays for ALSF-2 Animation
   const alsStrobes = []; // Now stores { mesh, index, dist, dir }
   const strobeColorOn = new THREE.Color(0xffffff);
   const strobeColorOff = new THREE.Color(0x111111);
 
   function createInstancedLightMaterial(baseEmissive, intensity) {
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x000000,
-      emissive: baseEmissive,
-      emissiveIntensity: intensity,
-      roughness: 1.0,
-      metalness: 0.0
+    const mat = new THREE.MeshBasicMaterial({
+      color: baseEmissive, // Basic material uses 'color' for its brightness, not 'emissive'. We manually boost it in the shader.
     });
 
     mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uIntensity = { value: intensity };
+
       shader.vertexShader = shader.vertexShader.replace(
         '#include <common>',
         `#include <common>
-         varying vec3 vInstanceColor;`
+         varying vec3 vInstanceColor;
+         varying float vDist;`
       ).replace(
         '#include <color_vertex>',
         `#include <color_vertex>
@@ -228,15 +225,23 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
          #else
            vInstanceColor = vec3(1.0);
          #endif`
+      ).replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+         vDist = - mvPosition.z;`
       );
 
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <common>',
         `#include <common>
-         varying vec3 vInstanceColor;`
+         uniform float uIntensity;
+         varying vec3 vInstanceColor;
+         varying float vDist;`
       ).replace(
-        'vec3 totalEmissiveRadiance = emissive;',
-        `vec3 totalEmissiveRadiance = emissive * vInstanceColor;`
+        'vec4 diffuseColor = vec4( diffuse, opacity );',
+        `if (vDist > 20000.0) discard;
+         float lodFade = smoothstep(12000.0, 8000.0, vDist);
+         vec4 diffuseColor = vec4( diffuse * vInstanceColor * uIntensity * lodFade, opacity );`
       );
     };
     return mat;
@@ -248,12 +253,12 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     const dummy = new THREE.Object3D();
 
     // Materials
-    const edgeMat = createInstancedLightMaterial(0xffddaa, 15 * RUNWAY_LIGHT_GLOW_SCALE);
-    const centerMat = createInstancedLightMaterial(0xffffff, 15 * RUNWAY_LIGHT_GLOW_SCALE);
-    const endMat = createInstancedLightMaterial(0xff0000, 15 * RUNWAY_LIGHT_GLOW_SCALE);
-    const alsWhiteMat = createInstancedLightMaterial(0xffffee, 20 * RUNWAY_LIGHT_GLOW_SCALE);
-    const alsRedMat = createInstancedLightMaterial(0xff0000, 20 * RUNWAY_LIGHT_GLOW_SCALE);
-    const strobeMat = createInstancedLightMaterial(0xffffff, 60 * RUNWAY_LIGHT_STROBE_SCALE);
+    const edgeMat = createInstancedLightMaterial(0xffddaa, 30 * RUNWAY_LIGHT_GLOW_SCALE);
+    const centerMat = createInstancedLightMaterial(0xffffff, 30 * RUNWAY_LIGHT_GLOW_SCALE);
+    const endMat = createInstancedLightMaterial(0xff0000, 40 * RUNWAY_LIGHT_GLOW_SCALE);
+    const alsWhiteMat = createInstancedLightMaterial(0xffffee, 50 * RUNWAY_LIGHT_GLOW_SCALE);
+    const alsRedMat = createInstancedLightMaterial(0xff0000, 50 * RUNWAY_LIGHT_GLOW_SCALE);
+    const strobeMat = createInstancedLightMaterial(0xffffff, 180 * RUNWAY_LIGHT_STROBE_SCALE);
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
 
@@ -315,8 +320,6 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     }
 
     lightGroup.add(edgeMesh, endMesh, centerMesh, baseMesh);
-
-
 
     // ALS
     const alsWhiteMesh = new THREE.InstancedMesh(lightGeo, alsWhiteMat, 400); // Guessed max
