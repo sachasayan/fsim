@@ -36,13 +36,14 @@ export function createCloudSystem({ scene }) {
     map: cloudTexture,
     vertexColors: true,
     transparent: true,
-    opacity: 0.35, // Boosted slightly because the texture brings alpha down
+    opacity: 0.35,
     roughness: 0.88,
     metalness: 0.0,
     emissive: 0xffffff,
-    emissiveIntensity: 0.18
+    emissiveIntensity: 0.18,
+    fog: false // Prevent scene ground fog from flat-tinting the clouds
   });
-  voxelMat.alphaTest = 0.02; // Reduced slightly
+  voxelMat.alphaTest = 0.02;
   voxelMat.depthWrite = false;
   voxelMat.premultipliedAlpha = false;
 
@@ -131,19 +132,23 @@ export function createCloudSystem({ scene }) {
       `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
       vec3 lightDir = normalize(uCloudSunDir);
       vec3 viewDir = normalize(uCloudCameraPos - vCloudWorldPos);
-      float cosTheta = dot(viewDir, lightDir);
+      float cosTheta = dot(viewDir, -lightDir); // Negative lightDir for correct forward scattering
       
       // Dual-lobe Henyey-Greenstein phase function for forward (silver-lining) and backward scattering
       float g1 = 0.65; // High forward scattering
       float g2 = -0.15; // Slight backward scattering
       float phase1 = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosTheta, 1.5);
       float phase2 = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * cosTheta, 1.5);
-      float phase = mix(phase1, phase2, 0.4) * uCloudPhaseStrength * 0.15;
+      float phase = mix(phase1, phase2, 0.4) * uCloudPhaseStrength;
       
       // Top boost to simulate in-scattering from the sky dome
       float topBoost = smoothstep(1200.0, 5400.0, vCloudWorldPos.y) * 0.12;
       
-      outgoingLight += diffuseColor.rgb * (phase + topBoost);
+      // Add bright sun scattering instead of just brightening the base color
+      vec3 sunScatterColor = vec3(1.0, 0.97, 0.88);
+      vec3 scatterLight = mix(diffuseColor.rgb, sunScatterColor, 0.7) * phase * 0.25;
+      
+      outgoingLight += scatterLight + (diffuseColor.rgb * topBoost);
       outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
     );
   };
@@ -273,17 +278,18 @@ export function createCloudSystem({ scene }) {
 
         vec3 lightDir = normalize(uSunDir);
         vec3 viewDir = normalize(uCloudCameraPos - vWorldPos);
-        float cosTheta = dot(viewDir, lightDir);
+        float cosTheta = dot(viewDir, -lightDir);
         
         // Dual-lobe Henyey-Greenstein phase function for forward and backward scattering
         float g1 = 0.65;
         float g2 = -0.15;
         float phase1 = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosTheta, 1.5);
         float phase2 = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * cosTheta, 1.5);
-        float phase = mix(phase1, phase2, 0.4);
+        float phase = mix(phase1, phase2, 0.4) * 0.25;
         
-        vec3 phaseTint = mix(uColor, vec3(1.0, 0.97, 0.88), 0.38);
-        vec3 finalColor = mix(uColor, phaseTint, phase * 0.15);
+        vec3 sunScatterColor = vec3(1.0, 0.97, 0.88);
+        vec3 phaseTint = mix(uColor, sunScatterColor, 0.8);
+        vec3 finalColor = mix(uColor, phaseTint, clamp(phase, 0.0, 1.0));
 
         if (alpha < 0.01) discard;
         gl_FragColor = vec4(finalColor, alpha * uOpacity);
