@@ -103,11 +103,6 @@ export function createCloudSystem({ scene }) {
       mvPosition.xy += position.xy * instanceScale;
       
       gl_Position = projectionMatrix * mvPosition;
-      
-      // Override the normal to always face the camera so we don't get harsh directional shading on flat planes
-      #ifndef FLAT_SHADED
-        vNormal = normalize( ( modelViewMatrix * vec4( 0.0, 0.0, 1.0, 0.0 ) ).xyz );
-      #endif
       `
     );
 
