@@ -166,8 +166,8 @@ function buildChunkProps(job) {
 
         const distFromRunwayX = Math.abs(vx);
         const distFromRunwayZ = Math.abs(vz);
-        const cellX = Math.floor(vx / 18);
-        const cellZ = Math.floor(vz / 18);
+        const cellX = Math.floor(vx / 12);
+        const cellZ = Math.floor(vz / 12);
         const rng = hash2(cellX, cellZ, 9);
 
         if (lodCfg.enableBoats && height < -30 && rng > (0.9988 + (1 - lodCfg.propDensity) * 0.0008)) {
@@ -200,8 +200,8 @@ function buildChunkProps(job) {
             if (rng < lotDensity * lodCfg.propDensity) {
                 const classNoise = hash2(cellX, cellZ, 12);
                 const buildingClass = pickWeighted(classNoise, district.classWeights);
-                const ox = (hash2(cellX, cellZ, 14) - 0.5) * 24;
-                const oz = (hash2(cellX, cellZ, 15) - 0.5) * 24;
+                const ox = (hash2(cellX, cellZ, 14) - 0.5) * 16;
+                const oz = (hash2(cellX, cellZ, 15) - 0.5) * 16;
                 const px = lx + ox;
                 const pz = lz + oz;
                 const py = getTerrainHeight(vx + ox, vz + oz, Noise);

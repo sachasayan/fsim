@@ -15,13 +15,11 @@ export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphe
             .replace(
                 '#include <worldpos_vertex>',
                 `#include <worldpos_vertex>
-        #if !defined( USE_ENVMAP ) && !defined( DISTANCE ) && !defined ( USE_SHADOWMAP ) && !defined ( USE_TRANSMISSION )
-          vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
-          #ifdef USE_INSTANCING
-            worldPosition = instanceMatrix * worldPosition;
-          #endif
+        vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+            worldPos = instanceMatrix * worldPos;
         #endif
-        vAtmosWorldPos = worldPosition.xyz;`
+        vAtmosWorldPos = worldPos.xyz;`
             );
 
         shader.fragmentShader = shader.fragmentShader
@@ -214,15 +212,13 @@ uniform vec3 uAtmosCameraPos;`
             .replace(
                 '#include <worldpos_vertex>',
                 `#include <worldpos_vertex>
-        #if !defined( USE_ENVMAP ) && !defined( DISTANCE ) && !defined ( USE_SHADOWMAP ) && !defined ( USE_TRANSMISSION )
-          vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
-          #ifdef USE_INSTANCING
-            worldPosition = instanceMatrix * worldPosition;
-          #endif
+        vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+            worldPos = instanceMatrix * worldPos;
         #endif
-        vTerrainWorldPos = worldPosition.xyz;
+        vTerrainWorldPos = worldPos.xyz;
         vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);
-        vTerrainDist = distance(worldPosition.xyz, uAtmosCameraPos);
+        vTerrainDist = distance(worldPos.xyz, uAtmosCameraPos);
         vTerrainSlope = 1.0 - clamp(abs(vTerrainWorldNormal.y), 0.0, 1.0);`
             );
 

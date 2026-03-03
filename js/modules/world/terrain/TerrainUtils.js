@@ -52,7 +52,7 @@ export function getDistrictProfile(vx, vz, urbanScore, height) {
         return {
             kind: 'financial_core',
             roadScale: 0.72,
-            lotDensity: 0.18,
+            lotDensity: 0.22,
             classWeights: { supertall: 0.22, highrise: 0.44, office: 0.27, apartment: 0.07 }
         };
     }
@@ -60,7 +60,7 @@ export function getDistrictProfile(vx, vz, urbanScore, height) {
         return {
             kind: 'waterfront_mixed',
             roadScale: 0.9,
-            lotDensity: 0.13,
+            lotDensity: 0.16,
             classWeights: { highrise: 0.2, office: 0.23, apartment: 0.33, townhouse: 0.2, industrial: 0.04 }
         };
     }
@@ -68,7 +68,7 @@ export function getDistrictProfile(vx, vz, urbanScore, height) {
         return {
             kind: 'industrial_belt',
             roadScale: 1.12,
-            lotDensity: 0.1,
+            lotDensity: 0.14,
             classWeights: { industrial: 0.54, office: 0.22, apartment: 0.1, townhouse: 0.14 }
         };
     }
@@ -76,14 +76,14 @@ export function getDistrictProfile(vx, vz, urbanScore, height) {
         return {
             kind: 'mixed_use',
             roadScale: 0.96,
-            lotDensity: 0.12,
+            lotDensity: 0.15,
             classWeights: { highrise: 0.18, office: 0.3, apartment: 0.34, townhouse: 0.14, industrial: 0.04 }
         };
     }
     return {
         kind: 'residential_ring',
         roadScale: 1.15,
-        lotDensity: 0.08,
+        lotDensity: 0.12,
         classWeights: { apartment: 0.26, townhouse: 0.56, industrial: 0.18 }
     };
 }

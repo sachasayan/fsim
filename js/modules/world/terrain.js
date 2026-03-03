@@ -43,8 +43,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
 
   const LOD_LEVELS = [
     { terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true },
-    { terrainRes: 64, waterRes: 40, propDensity: 0.48, enableBuildings: true, enableTrees: true, enableBoats: false },
-    { terrainRes: 28, waterRes: 20, propDensity: 0.16, enableBuildings: false, enableTrees: true, enableBoats: false },
+    { terrainRes: 64, waterRes: 40, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false },
+    { terrainRes: 28, waterRes: 20, propDensity: 0.2, enableBuildings: true, enableTrees: true, enableBoats: false },
     { terrainRes: 12, waterRes: 10, propDensity: 0.0, enableBuildings: false, enableTrees: false, enableBoats: false }
   ];
 
