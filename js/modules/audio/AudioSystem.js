@@ -27,142 +27,157 @@ export const ProceduralAudio = {
     initialized: false,
 
     init: function () {
-        if (this.initialized) return;
-        this.initialized = true;
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new AudioContext();
+        if (this.initialized || this.ctx) return;
 
-        // 1. Create a shared White Noise Buffer
-        const bufferSize = this.ctx.sampleRate * 2;
-        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            this.ctx = new AudioContext();
 
-        // Master chain: perspective EQ -> soft limiter -> destination
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.68;
-        this.perspectiveFilter = this.ctx.createBiquadFilter();
-        this.perspectiveFilter.type = 'lowpass';
-        this.perspectiveFilter.frequency.value = 7000;
-        this.limiter = this.ctx.createDynamicsCompressor();
-        this.limiter.threshold.value = -12;
-        this.limiter.knee.value = 14;
-        this.limiter.ratio.value = 6;
-        this.limiter.attack.value = 0.004;
-        this.limiter.release.value = 0.2;
-        this.masterGain.connect(this.perspectiveFilter).connect(this.limiter).connect(this.ctx.destination);
+            // 1. Create a shared White Noise Buffer
+            const bufferSize = this.ctx.sampleRate * 2;
+            const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
 
-        // Buses
-        this.engineBus = this.ctx.createGain();
-        this.windBus = this.ctx.createGain();
-        this.weatherBus = this.ctx.createGain();
-        this.fxBus = this.ctx.createGain();
-        this.engineBus.connect(this.masterGain);
-        this.windBus.connect(this.masterGain);
-        this.weatherBus.connect(this.masterGain);
-        this.fxBus.connect(this.masterGain);
+            // Master chain: perspective EQ -> soft limiter -> destination
+            this.masterGain = this.ctx.createGain();
+            this.masterGain.gain.value = 0.68;
+            this.perspectiveFilter = this.ctx.createBiquadFilter();
+            this.perspectiveFilter.type = 'lowpass';
+            this.perspectiveFilter.frequency.value = 7000;
+            this.limiter = this.ctx.createDynamicsCompressor();
+            this.limiter.threshold.value = -12;
+            this.limiter.knee.value = 14;
+            this.limiter.ratio.value = 6;
+            this.limiter.attack.value = 0.004;
+            this.limiter.release.value = 0.2;
+            this.masterGain.connect(this.perspectiveFilter).connect(this.limiter).connect(this.ctx.destination);
 
-        // Light reverb for ambient glue
-        const ir = this.ctx.createBuffer(2, Math.floor(this.ctx.sampleRate * 1.2), this.ctx.sampleRate);
-        for (let ch = 0; ch < 2; ch++) {
-            const data = ir.getChannelData(ch);
-            for (let i = 0; i < data.length; i++) {
-                const d = i / data.length;
-                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - d, 2.4);
+            // Buses
+            this.engineBus = this.ctx.createGain();
+            this.windBus = this.ctx.createGain();
+            this.weatherBus = this.ctx.createGain();
+            this.fxBus = this.ctx.createGain();
+            this.engineBus.connect(this.masterGain);
+            this.windBus.connect(this.masterGain);
+            this.weatherBus.connect(this.masterGain);
+            this.fxBus.connect(this.masterGain);
+
+            // Light reverb for ambient glue
+            const ir = this.ctx.createBuffer(2, Math.floor(this.ctx.sampleRate * 1.2), this.ctx.sampleRate);
+            for (let ch = 0; ch < 2; ch++) {
+                const data = ir.getChannelData(ch);
+                for (let i = 0; i < data.length; i++) {
+                    const d = i / data.length;
+                    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - d, 2.4);
+                }
             }
+            this.reverb = this.ctx.createConvolver();
+            this.reverb.buffer = ir;
+            this.reverbReturn = this.ctx.createGain();
+            this.reverbReturn.gain.value = 0.1;
+            this.reverb.connect(this.reverbReturn).connect(this.masterGain);
+
+            this.reverbSendEngine = this.ctx.createGain();
+            this.reverbSendWind = this.ctx.createGain();
+            this.reverbSendWeather = this.ctx.createGain();
+            this.reverbSendEngine.gain.value = 0.05;
+            this.reverbSendWind.gain.value = 0.14;
+            this.reverbSendWeather.gain.value = 0.2;
+            this.reverbSendEngine.connect(this.reverb);
+            this.reverbSendWind.connect(this.reverb);
+            this.reverbSendWeather.connect(this.reverb);
+
+            // Engine layers: rumble + turbine (no tonal whine layer)
+            const engNoiseRumble = this.ctx.createBufferSource();
+            engNoiseRumble.buffer = noiseBuffer;
+            engNoiseRumble.loop = true;
+            this.engineRumbleFilter = this.ctx.createBiquadFilter();
+            this.engineRumbleFilter.type = 'lowpass';
+            this.engineRumbleGain = this.ctx.createGain();
+            this.engineRumbleGain.gain.value = 0;
+            engNoiseRumble.connect(this.engineRumbleFilter).connect(this.engineRumbleGain);
+            this.engineRumbleGain.connect(this.engineBus);
+            this.engineRumbleGain.connect(this.reverbSendEngine);
+            engNoiseRumble.start();
+
+            const engNoiseTurbine = this.ctx.createBufferSource();
+            engNoiseTurbine.buffer = noiseBuffer;
+            engNoiseTurbine.loop = true;
+            this.engineTurbineFilter = this.ctx.createBiquadFilter();
+            this.engineTurbineFilter.type = 'bandpass';
+            this.engineTurbineGain = this.ctx.createGain();
+            this.engineTurbineGain.gain.value = 0;
+            engNoiseTurbine.connect(this.engineTurbineFilter).connect(this.engineTurbineGain);
+            this.engineTurbineGain.connect(this.engineBus);
+            this.engineTurbineGain.connect(this.reverbSendEngine);
+            engNoiseTurbine.start();
+
+            // Wind layers: body + rush
+            const windNoiseBody = this.ctx.createBufferSource();
+            windNoiseBody.buffer = noiseBuffer;
+            windNoiseBody.loop = true;
+            this.windBodyFilter = this.ctx.createBiquadFilter();
+            this.windBodyFilter.type = 'lowpass';
+            this.windBodyGain = this.ctx.createGain();
+            this.windBodyGain.gain.value = 0;
+            windNoiseBody.connect(this.windBodyFilter).connect(this.windBodyGain);
+            this.windBodyGain.connect(this.windBus);
+            this.windBodyGain.connect(this.reverbSendWind);
+            windNoiseBody.start();
+
+            const windNoiseRush = this.ctx.createBufferSource();
+            windNoiseRush.buffer = noiseBuffer;
+            windNoiseRush.loop = true;
+            this.windRushFilter = this.ctx.createBiquadFilter();
+            this.windRushFilter.type = 'bandpass';
+            this.windRushGain = this.ctx.createGain();
+            this.windRushGain.gain.value = 0;
+            windNoiseRush.connect(this.windRushFilter).connect(this.windRushGain);
+            this.windRushGain.connect(this.windBus);
+            this.windRushGain.connect(this.reverbSendWind);
+            windNoiseRush.start();
+
+            // Weather + cabin bed
+            const rainSrc = this.ctx.createBufferSource();
+            rainSrc.buffer = noiseBuffer;
+            rainSrc.loop = true;
+            this.rainFilter = this.ctx.createBiquadFilter();
+            this.rainFilter.type = 'lowpass';
+            this.rainGain = this.ctx.createGain();
+            this.rainGain.gain.value = 0;
+            rainSrc.connect(this.rainFilter).connect(this.rainGain);
+            this.rainGain.connect(this.weatherBus);
+            this.rainGain.connect(this.reverbSendWeather);
+            rainSrc.start();
+
+            const cabinAirSrc = this.ctx.createBufferSource();
+            cabinAirSrc.buffer = noiseBuffer;
+            cabinAirSrc.loop = true;
+            this.cabinAirFilter = this.ctx.createBiquadFilter();
+            this.cabinAirFilter.type = 'bandpass';
+            this.cabinAirGain = this.ctx.createGain();
+            this.cabinAirGain.gain.value = 0;
+            cabinAirSrc.connect(this.cabinAirFilter).connect(this.cabinAirGain).connect(this.weatherBus);
+            cabinAirSrc.start();
+
+            this.initialized = true;
+        } catch (e) {
+            console.error("ProceduralAudio init failed:", e);
         }
-        this.reverb = this.ctx.createConvolver();
-        this.reverb.buffer = ir;
-        this.reverbReturn = this.ctx.createGain();
-        this.reverbReturn.gain.value = 0.1;
-        this.reverb.connect(this.reverbReturn).connect(this.masterGain);
-
-        this.reverbSendEngine = this.ctx.createGain();
-        this.reverbSendWind = this.ctx.createGain();
-        this.reverbSendWeather = this.ctx.createGain();
-        this.reverbSendEngine.gain.value = 0.05;
-        this.reverbSendWind.gain.value = 0.14;
-        this.reverbSendWeather.gain.value = 0.2;
-        this.reverbSendEngine.connect(this.reverb);
-        this.reverbSendWind.connect(this.reverb);
-        this.reverbSendWeather.connect(this.reverb);
-
-        // Engine layers: rumble + turbine (no tonal whine layer)
-        const engNoiseRumble = this.ctx.createBufferSource();
-        engNoiseRumble.buffer = noiseBuffer;
-        engNoiseRumble.loop = true;
-        this.engineRumbleFilter = this.ctx.createBiquadFilter();
-        this.engineRumbleFilter.type = 'lowpass';
-        this.engineRumbleGain = this.ctx.createGain();
-        this.engineRumbleGain.gain.value = 0;
-        engNoiseRumble.connect(this.engineRumbleFilter).connect(this.engineRumbleGain);
-        this.engineRumbleGain.connect(this.engineBus);
-        this.engineRumbleGain.connect(this.reverbSendEngine);
-        engNoiseRumble.start();
-
-        const engNoiseTurbine = this.ctx.createBufferSource();
-        engNoiseTurbine.buffer = noiseBuffer;
-        engNoiseTurbine.loop = true;
-        this.engineTurbineFilter = this.ctx.createBiquadFilter();
-        this.engineTurbineFilter.type = 'bandpass';
-        this.engineTurbineGain = this.ctx.createGain();
-        this.engineTurbineGain.gain.value = 0;
-        engNoiseTurbine.connect(this.engineTurbineFilter).connect(this.engineTurbineGain);
-        this.engineTurbineGain.connect(this.engineBus);
-        this.engineTurbineGain.connect(this.reverbSendEngine);
-        engNoiseTurbine.start();
-
-        // Wind layers: body + rush
-        const windNoiseBody = this.ctx.createBufferSource();
-        windNoiseBody.buffer = noiseBuffer;
-        windNoiseBody.loop = true;
-        this.windBodyFilter = this.ctx.createBiquadFilter();
-        this.windBodyFilter.type = 'lowpass';
-        this.windBodyGain = this.ctx.createGain();
-        this.windBodyGain.gain.value = 0;
-        windNoiseBody.connect(this.windBodyFilter).connect(this.windBodyGain);
-        this.windBodyGain.connect(this.windBus);
-        this.windBodyGain.connect(this.reverbSendWind);
-        windNoiseBody.start();
-
-        const windNoiseRush = this.ctx.createBufferSource();
-        windNoiseRush.buffer = noiseBuffer;
-        windNoiseRush.loop = true;
-        this.windRushFilter = this.ctx.createBiquadFilter();
-        this.windRushFilter.type = 'bandpass';
-        this.windRushGain = this.ctx.createGain();
-        this.windRushGain.gain.value = 0;
-        windNoiseRush.connect(this.windRushFilter).connect(this.windRushGain);
-        this.windRushGain.connect(this.windBus);
-        this.windRushGain.connect(this.reverbSendWind);
-        windNoiseRush.start();
-
-        // Weather + cabin bed
-        const rainSrc = this.ctx.createBufferSource();
-        rainSrc.buffer = noiseBuffer;
-        rainSrc.loop = true;
-        this.rainFilter = this.ctx.createBiquadFilter();
-        this.rainFilter.type = 'lowpass';
-        this.rainGain = this.ctx.createGain();
-        this.rainGain.gain.value = 0;
-        rainSrc.connect(this.rainFilter).connect(this.rainGain);
-        this.rainGain.connect(this.weatherBus);
-        this.rainGain.connect(this.reverbSendWeather);
-        rainSrc.start();
-
-        const cabinAirSrc = this.ctx.createBufferSource();
-        cabinAirSrc.buffer = noiseBuffer;
-        cabinAirSrc.loop = true;
-        this.cabinAirFilter = this.ctx.createBiquadFilter();
-        this.cabinAirFilter.type = 'bandpass';
-        this.cabinAirGain = this.ctx.createGain();
-        this.cabinAirGain.gain.value = 0;
-        cabinAirSrc.connect(this.cabinAirFilter).connect(this.cabinAirGain).connect(this.weatherBus);
-        cabinAirSrc.start();
     },
 
+    resume: async function () {
+        if (!this.initialized) this.init();
+        if (this.ctx && this.ctx.state === 'suspended') {
+            await this.ctx.resume();
+        }
+    },
+
+
     update: function (throttle, airspeed, spoilers, cameraMode, weatherMode, gForce, angularVelocity, aoa, slip) {
-        if (!this.initialized || this.ctx.state === 'suspended') return;
+        if (!this.initialized || !this.ctx || this.ctx.state === 'suspended') return;
 
         const t = this.ctx.currentTime;
         const inside = cameraMode === 1;
@@ -205,7 +220,7 @@ export const ProceduralAudio = {
     },
 
     touchdown: function () {
-        if (!this.initialized || this.ctx.state === 'suspended') return;
+        if (!this.initialized || !this.ctx || this.ctx.state === 'suspended') return;
         const t = this.ctx.currentTime;
 
         // Gentle, low-pitched suspension thud instead of tire screech

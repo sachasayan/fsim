@@ -12,8 +12,22 @@ import { createHUD } from './ui/hud.js';
 import { createRendererManager } from './core/RendererManager.js';
 import { createWeatherManager } from './core/WeatherManager.js';
 import { createInputHandler } from './core/InputHandler.js';
-import { ProceduralAudio } from './audio/AudioSystem.js';
 import { createAirportSystems } from './sim/AirportSystems.js';
+import { ProceduralAudio } from './audio/AudioSystem.js';
+
+// Initialize audio nodes early (will be suspended until gesture)
+ProceduralAudio.init();
+
+// Handle browser audio suspension policy
+const resumeAudio = () => {
+  ProceduralAudio.resume();
+  window.removeEventListener('mousedown', resumeAudio);
+  window.removeEventListener('keydown', resumeAudio);
+  window.removeEventListener('touchstart', resumeAudio);
+};
+window.addEventListener('mousedown', resumeAudio);
+window.addEventListener('keydown', resumeAudio);
+window.addEventListener('touchstart', resumeAudio);
 
 // ==========================================
 // 1. CORE SETUP & GLOBALS
@@ -397,10 +411,8 @@ function animate() {
 
 // Initialization complete
 setTimeout(() => {
-  ProceduralAudio.init();
-  if (ProceduralAudio.ctx && ProceduralAudio.ctx.state === 'suspended') {
-    ProceduralAudio.ctx.resume();
-  }
+  // Final attempt to resume if not already done
+  ProceduralAudio.resume();
 
   const loader = document.getElementById('loader');
   if (loader) {
