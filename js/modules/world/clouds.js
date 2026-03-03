@@ -9,20 +9,42 @@ export function createCloudSystem({ scene }) {
   // Use one large tile to avoid transparent per-tile sort boundaries ("vertical panes").
   const tileSize = worldHalfExtent * 4;
 
+  // Creating a procedural soft brush texture for the clouds
+  const texSize = 64;
+  const texData = new Uint8Array(texSize * texSize * 4);
+  for (let y = 0; y < texSize; y++) {
+    for (let x = 0; x < texSize; x++) {
+      const dx = (x - texSize / 2) / (texSize / 2);
+      const dy = (y - texSize / 2) / (texSize / 2);
+      const distSq = dx * dx + dy * dy;
+      let alpha = 1 - Math.sqrt(distSq);
+      alpha = Math.max(0, Math.min(1, alpha));
+      alpha = Math.pow(alpha, 1.5); // Slightly sharper falloff
+      const idx = (y * texSize + x) * 4;
+      texData[idx] = 255;
+      texData[idx + 1] = 255;
+      texData[idx + 2] = 255;
+      texData[idx + 3] = Math.floor(alpha * 255);
+    }
+  }
+  const cloudTexture = new THREE.DataTexture(texData, texSize, texSize, THREE.RGBAFormat);
+  cloudTexture.needsUpdate = true;
+
   // Replace spheres with quads. 1x1 base size, scaled per-instance.
   const voxelGeo = new THREE.PlaneGeometry(1, 1);
   const voxelMat = new THREE.MeshStandardMaterial({
+    map: cloudTexture,
     vertexColors: true,
     transparent: true,
-    opacity: 0.24,
+    opacity: 0.35, // Boosted slightly because the texture brings alpha down
     roughness: 0.88,
     metalness: 0.0,
     emissive: 0xffffff,
     emissiveIntensity: 0.18
   });
-  voxelMat.alphaTest = 0.05;
+  voxelMat.alphaTest = 0.02; // Reduced slightly
   voxelMat.depthWrite = false;
-  voxelMat.premultipliedAlpha = false; // Changed to false for better standard alpha blending with alphaTest
+  voxelMat.premultipliedAlpha = false;
 
   const cloudTuning = {
     nearFadeStart: 13000.0,
@@ -102,12 +124,8 @@ export function createCloudSystem({ scene }) {
       '#include <alphatest_fragment>',
       `#include <alphatest_fragment>
       float cloudDist = distance(vCloudWorldPos.xz, uCloudCameraPos.xz);
-      float radialMask = 1.0 - smoothstep(0.35, 0.5, length(vCloudUv - 0.5));
       float nearFade = 1.0 - smoothstep(uNearFadeStart, uNearFadeEnd, cloudDist);
-      float edgeNoise = 0.5 + 0.5 * sin(vCloudWorldPos.x * 0.016 + vCloudWorldPos.z * 0.009 + vCloudWorldPos.y * 0.011);
-      float jitter = fract(sin(dot(vCloudWorldPos.xz, vec2(0.0143, 0.0101))) * 43758.5453);
-      edgeNoise = mix(0.84, 1.06, edgeNoise) * mix(0.96, 1.04, jitter);
-      diffuseColor.a = clamp(diffuseColor.a * nearFade * edgeNoise * radialMask, 0.0, 1.0);`
+      diffuseColor.a = clamp(diffuseColor.a * nearFade, 0.0, 1.0);`
     ).replace(
       'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
       `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
@@ -119,84 +137,49 @@ export function createCloudSystem({ scene }) {
     );
   };
 
-  const tiles = new Map();
-  function getTileEntry(worldX, worldZ) {
-    const tx = Math.floor((worldX + worldHalfExtent) / tileSize);
-    const tz = Math.floor((worldZ + worldHalfExtent) / tileSize);
-    const key = `${tx},${tz}`;
-    if (!tiles.has(key)) {
-      const ox = -worldHalfExtent + tx * tileSize;
-      const oz = -worldHalfExtent + tz * tileSize;
-      tiles.set(key, { ox, oz, instances: [], colors: [] });
-    }
-    return tiles.get(key);
-  }
+  const clouds = new THREE.Group();
+  scene.add(clouds);
 
-  const tint = new THREE.Color();
-  for (let x = -worldHalfExtent; x <= worldHalfExtent; x += gridStep) {
-    for (let z = -worldHalfExtent; z <= worldHalfExtent; z += gridStep) {
-      const nLarge = CLOUD_NOISE.fbm2D(x * 0.00018, z * 0.00018, 4, 2.0, 0.5, 11);
-      const nDetail = CLOUD_NOISE.fbm2D(x * 0.00052, z * 0.00052, 3, 2.1, 0.55, 29);
-      const density = nLarge * 0.78 + nDetail * 0.22;
-      if (density < 0.58) continue;
+  // Initialize Web Worker
+  const cloudWorker = new Worker(new URL('./CloudWorker.js', import.meta.url), { type: 'module' });
 
-      const baseY = 900 + nLarge * 3200;
-      const columnLayers = 1 + Math.floor((density - 0.6) / 0.4 * layersMax);
-      const cappedLayers = Math.min(layersMax, Math.max(1, columnLayers));
-      const spread = 1.0 + CLOUD_NOISE.hash2D(x / gridStep, z / gridStep, 3) * 1.0;
+  cloudWorker.onmessage = function (e) {
+    if (e.data.type === 'CLOUDS_GENERATED') {
+      const dummy = new THREE.Object3D();
 
-      for (let l = 0; l < cappedLayers; l++) {
-        const jitterX = (CLOUD_NOISE.hash2D(x + l, z - l, 41) - 0.5) * gridStep * 0.65;
-        const jitterZ = (CLOUD_NOISE.hash2D(x - l, z + l, 53) - 0.5) * gridStep * 0.65;
-        const jitterY = (CLOUD_NOISE.hash2D(x + l * 3, z + l * 5, 67) - 0.5) * 55;
-        const wx = x + jitterX;
-        const wz = z + jitterZ;
-        const entry = getTileEntry(wx, wz);
+      for (const tile of e.data.tiles) {
+        const mesh = new THREE.InstancedMesh(voxelGeo, voxelMat, tile.count);
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
 
-        entry.instances.push({
-          x: wx - entry.ox,
-          y: baseY + l * voxelSize * 0.3 + jitterY,
-          z: wz - entry.oz,
-          s: spread * (0.86 + l * 0.08)
-        });
+        for (let i = 0; i < tile.count; i++) {
+          dummy.position.set(tile.positions[i * 3], tile.positions[i * 3 + 1], tile.positions[i * 3 + 2]);
+          dummy.scale.set(tile.scales[i * 2], tile.scales[i * 2 + 1], 1.0);
+          dummy.rotation.set(0, tile.rotations[i], 0);
+          dummy.updateMatrix();
 
-        const shade = 0.97 + (density - 0.58) * 0.1 + l * 0.01;
-        tint.setRGB(Math.min(1, shade), Math.min(1, shade), Math.min(1, shade));
-        entry.colors.push(tint.clone());
+          mesh.setMatrixAt(i, dummy.matrix);
+          mesh.setColorAt(i, new THREE.Color(tile.colors[i * 3], tile.colors[i * 3 + 1], tile.colors[i * 3 + 2]));
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.position.set(tile.ox, 0, tile.oz);
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 2; // Keep in front of far clouds
+        clouds.add(mesh);
       }
     }
-  }
+  };
 
-  const dummy = new THREE.Object3D();
-  const clouds = new THREE.Group();
-  for (const entry of tiles.values()) {
-    if (entry.instances.length === 0) continue;
-
-    const mesh = new THREE.InstancedMesh(voxelGeo, voxelMat, entry.instances.length);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-
-    for (let i = 0; i < entry.instances.length; i++) {
-      const c = entry.instances[i];
-      dummy.position.set(c.x, c.y, c.z);
-      dummy.scale.set(
-        voxelSize * c.s * (1.65 + CLOUD_NOISE.hash2D(c.x, c.z, 81) * 0.75),
-        voxelSize * c.s * (1.65 + CLOUD_NOISE.hash2D(c.z, c.x, 82) * 0.55),
-        1.0 // Plane depth doesn't matter, it's billboarded
-      );
-      dummy.rotation.set(0, CLOUD_NOISE.hash2D(c.x, c.z, 83) * Math.PI * 2, 0);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      mesh.setColorAt(i, entry.colors[i]);
-    }
-
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.position.set(entry.ox, 0, entry.oz);
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 2;
-    clouds.add(mesh);
-  }
+  // Kick off generation
+  cloudWorker.postMessage({
+    worldHalfExtent,
+    gridStep,
+    layersMax,
+    tileSize,
+    voxelSize
+  });
 
   function makeFarCloudMaterial() {
     const uniforms = {
@@ -356,6 +339,6 @@ export function createCloudSystem({ scene }) {
     farCloudMat.uniforms.uFarFadeEnd.value = cloudTuning.farFadeEnd;
   }
 
-  scene.add(clouds);
+
   return { clouds, cloudMaterial: voxelMat, updateClouds, getCloudTuning, setCloudTuning };
 }
