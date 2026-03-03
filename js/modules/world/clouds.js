@@ -34,7 +34,6 @@ export function createCloudSystem({ scene }) {
   const voxelGeo = new THREE.PlaneGeometry(1, 1);
   const voxelMat = new THREE.MeshBasicMaterial({
     map: cloudTexture,
-    vertexColors: true,
     transparent: true,
     opacity: 0.35,
     fog: false // Prevent scene ground fog from flat-tinting the clouds
