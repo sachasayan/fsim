@@ -129,10 +129,21 @@ export function createCloudSystem({ scene }) {
     ).replace(
       'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
       `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+      vec3 lightDir = normalize(uCloudSunDir);
       vec3 viewDir = normalize(uCloudCameraPos - vCloudWorldPos);
-      float phase = pow(max(dot(viewDir, normalize(uCloudSunDir)), 0.0), 5.0) * uCloudPhaseStrength;
+      float cosTheta = dot(viewDir, lightDir);
+      
+      // Dual-lobe Henyey-Greenstein phase function for forward (silver-lining) and backward scattering
+      float g1 = 0.65; // High forward scattering
+      float g2 = -0.15; // Slight backward scattering
+      float phase1 = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosTheta, 1.5);
+      float phase2 = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * cosTheta, 1.5);
+      float phase = mix(phase1, phase2, 0.4) * uCloudPhaseStrength * 0.15;
+      
+      // Top boost to simulate in-scattering from the sky dome
       float topBoost = smoothstep(1200.0, 5400.0, vCloudWorldPos.y) * 0.12;
-      outgoingLight += diffuseColor.rgb * (phase * 0.35 + topBoost);
+      
+      outgoingLight += diffuseColor.rgb * (phase + topBoost);
       outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
     );
   };
@@ -260,10 +271,19 @@ export function createCloudSystem({ scene }) {
         float edge = fwidth(alpha) * 2.0 + 0.02;
         alpha = smoothstep(0.05 - edge, 1.0 + edge, alpha);
 
+        vec3 lightDir = normalize(uSunDir);
         vec3 viewDir = normalize(uCloudCameraPos - vWorldPos);
-        float phase = pow(max(dot(viewDir, normalize(uSunDir)), 0.0), 6.0);
+        float cosTheta = dot(viewDir, lightDir);
+        
+        // Dual-lobe Henyey-Greenstein phase function for forward and backward scattering
+        float g1 = 0.65;
+        float g2 = -0.15;
+        float phase1 = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosTheta, 1.5);
+        float phase2 = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * cosTheta, 1.5);
+        float phase = mix(phase1, phase2, 0.4);
+        
         vec3 phaseTint = mix(uColor, vec3(1.0, 0.97, 0.88), 0.38);
-        vec3 finalColor = mix(uColor, phaseTint, phase * 0.45);
+        vec3 finalColor = mix(uColor, phaseTint, phase * 0.15);
 
         if (alpha < 0.01) discard;
         gl_FragColor = vec4(finalColor, alpha * uOpacity);
