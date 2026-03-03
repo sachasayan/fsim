@@ -107,6 +107,11 @@ export function createCloudSystem({ scene }) {
       mvPosition.xy += position.xy * instanceScale;
       
       gl_Position = projectionMatrix * mvPosition;
+      
+      // Override the normal to always face the camera so we don't get harsh directional shading on flat planes
+      #ifndef FLAT_SHADED
+        vNormal = normalize( ( modelViewMatrix * vec4( 0.0, 0.0, 1.0, 0.0 ) ).xyz );
+      #endif
       `
     );
 
@@ -146,10 +151,13 @@ export function createCloudSystem({ scene }) {
       
       // Add bright sun scattering instead of just brightening the base color
       vec3 sunScatterColor = vec3(1.0, 0.97, 0.88);
-      vec3 scatterLight = mix(diffuseColor.rgb, sunScatterColor, 0.7) * phase * 0.25;
+      vec3 scatterLight = mix(vec3(1.0), sunScatterColor, 0.7) * phase;
       
-      outgoingLight += scatterLight + (diffuseColor.rgb * topBoost);
-      outgoingLight = max(outgoingLight, diffuseColor.rgb * uCloudMinLight);`
+      // Base color should be fully lit by ambient, plus scatter light
+      outgoingLight = diffuseColor.rgb + scatterLight + (diffuseColor.rgb * topBoost);
+      
+      // Ensure we never go completely dark
+      outgoingLight = max(outgoingLight, diffuseColor.rgb * max(uCloudMinLight, 0.3));`
     );
   };
 
