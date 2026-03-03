@@ -398,27 +398,22 @@ function animate() {
 
 // Initialization complete
 setTimeout(() => {
-  document.querySelector('.spinner').style.display = 'none';
-  document.getElementById('loader-text').innerText = 'READY FOR TAKEOFF';
-
-  const startBtn = document.getElementById('start-btn');
-  if (startBtn) {
-    startBtn.style.display = 'block';
-    startBtn.addEventListener('click', () => {
-      ProceduralAudio.init();
-      if (ProceduralAudio.ctx && ProceduralAudio.ctx.state === 'suspended') {
-        ProceduralAudio.ctx.resume();
-      }
-      document.getElementById('loader').style.opacity = '0';
-      setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
-
-      PHYSICS.position.set(0, AIRCRAFT.gearHeight, 1900);
-      PHYSICS.velocity.set(0, 0, 0);
-      PHYSICS.angularVelocity.set(0, 0, 0);
-      PHYSICS.externalForce.set(0, 0, 0);
-      PHYSICS.externalTorque.set(0, 0, 0);
-      physicsAdapter.syncFromState();
-      animate();
-    });
+  ProceduralAudio.init();
+  if (ProceduralAudio.ctx && ProceduralAudio.ctx.state === 'suspended') {
+    ProceduralAudio.ctx.resume();
   }
+
+  const loader = document.getElementById('loader');
+  if (loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => loader.style.display = 'none', 1000);
+  }
+
+  PHYSICS.position.set(0, AIRCRAFT.gearHeight, 1900);
+  PHYSICS.velocity.set(0, 0, 0);
+  PHYSICS.angularVelocity.set(0, 0, 0);
+  PHYSICS.externalForce.set(0, 0, 0);
+  PHYSICS.externalTorque.set(0, 0, 0);
+  physicsAdapter.syncFromState();
+  animate();
 }, 1500);
