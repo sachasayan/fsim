@@ -32,15 +32,11 @@ export function createCloudSystem({ scene }) {
 
   // Replace spheres with quads. 1x1 base size, scaled per-instance.
   const voxelGeo = new THREE.PlaneGeometry(1, 1);
-  const voxelMat = new THREE.MeshStandardMaterial({
+  const voxelMat = new THREE.MeshBasicMaterial({
     map: cloudTexture,
     vertexColors: true,
     transparent: true,
     opacity: 0.35,
-    roughness: 0.88,
-    metalness: 0.0,
-    emissive: 0xffffff,
-    emissiveIntensity: 0.18,
     fog: false // Prevent scene ground fog from flat-tinting the clouds
   });
   voxelMat.alphaTest = 0.02;
@@ -133,8 +129,8 @@ export function createCloudSystem({ scene }) {
       float nearFade = 1.0 - smoothstep(uNearFadeStart, uNearFadeEnd, cloudDist);
       diffuseColor.a = clamp(diffuseColor.a * nearFade, 0.0, 1.0);`
     ).replace(
-      'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
-      `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+      '#include <opaque_fragment>',
+      `
       vec3 lightDir = normalize(uCloudSunDir);
       vec3 viewDir = normalize(uCloudCameraPos - vCloudWorldPos);
       float cosTheta = dot(viewDir, -lightDir); // Negative lightDir for correct forward scattering
@@ -153,11 +149,15 @@ export function createCloudSystem({ scene }) {
       vec3 sunScatterColor = vec3(1.0, 0.97, 0.88);
       vec3 scatterLight = mix(vec3(1.0), sunScatterColor, 0.7) * phase;
       
-      // Base color should be fully lit by ambient, plus scatter light
+      // Base color should be fully lit by ambient (which is just diffuseColor since we're unlit Basic material)
+      // We add scatter light, and a fake top boost
       outgoingLight = diffuseColor.rgb + scatterLight + (diffuseColor.rgb * topBoost);
       
-      // Ensure we never go completely dark
-      outgoingLight = max(outgoingLight, diffuseColor.rgb * max(uCloudMinLight, 0.3));`
+      // Apply our manual cloud minimum brightness curve
+      outgoingLight = max(outgoingLight, diffuseColor.rgb * max(uCloudMinLight, 0.3));
+      
+      #include <opaque_fragment>
+      `
     );
   };
 
