@@ -213,7 +213,9 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     normalTex.repeat.set(2, 2);
     tex.colorSpace = THREE.SRGBColorSpace;
 
-    const runwayGeo = new THREE.PlaneGeometry(100, 4000);
+    const runwayGroup = new THREE.Group();
+    const NUM_SEGMENTS = 10;
+    const segmentLength = 4000 / NUM_SEGMENTS;
     const runwayMat = new THREE.MeshStandardMaterial({
       map: tex,
       roughnessMap: roughnessTex,
@@ -223,11 +225,32 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       normalScale: new THREE.Vector2(0.5, 0.5),
       envMapIntensity: 0.32
     });
-    const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
-    runwayMesh.rotation.x = -Math.PI / 2;
-    runwayMesh.position.set(0, 0.2, 0); // Slightly above terrain to prevent z-fighting
-    runwayMesh.receiveShadow = true;
-    scene.add(runwayMesh);
+
+    for (let i = 0; i < NUM_SEGMENTS; i++) {
+      const segGeo = new THREE.PlaneGeometry(100, segmentLength);
+
+      // Update UVs to map mapping to the giant runway texture.
+      // Plane rotates -PI/2 on x, meaning its top (+y, v=1) points to -z,
+      // and its bottom (-y, v=0) points to +z. 
+      // i=0 is from z=-2000 to z=-1600.
+      const uv = segGeo.attributes.uv;
+      const vTop = 1.0 - (i / NUM_SEGMENTS);
+      const vBottom = 1.0 - ((i + 1) / NUM_SEGMENTS);
+
+      for (let j = 0; j < uv.count; j++) {
+        const currentV = uv.getY(j);
+        const newV = currentV > 0.5 ? vTop : vBottom;
+        uv.setY(j, newV);
+      }
+
+      const mesh = new THREE.Mesh(segGeo, runwayMat);
+      mesh.rotation.x = -Math.PI / 2;
+      const zOffset = -2000 + (segmentLength / 2) + i * segmentLength;
+      mesh.position.set(0, 0.2, zOffset);
+      mesh.receiveShadow = true;
+      runwayGroup.add(mesh);
+    }
+    scene.add(runwayGroup);
   }
   createRunwayMesh();
 
