@@ -294,8 +294,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
          varying float vDist;`
       ).replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
-        `if (vDist > 20000.0) discard;
-         float lodFade = smoothstep(12000.0, 8000.0, vDist);
+        `float lodFade = smoothstep(12000.0, 8000.0, vDist);
          vec4 diffuseColor = vec4( diffuse * vInstanceColor * uIntensity * lodFade, opacity );`
       );
     };
