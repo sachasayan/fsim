@@ -1,0 +1,107 @@
+<?xml version="1.0"?>
+<PropertyList include="737-model-common.xml">
+  <path>737-800.ac</path>
+  <animation n="0">
+    <texture>737-800.png</texture>
+  </animation>
+  <model n="100">
+    <name>Cockpit</name>
+    <offsets>
+      <x-m>-18.32</x-m>
+      <y-m>0.0</y-m>
+      <z-m>0.0</z-m>
+      <pitch-deg>0</pitch-deg>
+    </offsets>
+  </model>
+  <model n="110">
+    <name>Pushback</name>
+    <offsets>
+      <x-m>-16.5</x-m>
+      <y-m>0</y-m>
+      <z-m>-2.75</z-m>
+    </offsets>
+  </model>
+  <!-- Lights -->
+  <model n="200">
+    <name>flashtail</name>
+    <offsets>
+      <x-m> 18.62</x-m>
+      <y-m>0.0</y-m>
+      <z-m> 2.06</z-m>
+    </offsets>
+  </model>
+  <model n="201">
+    <name>NoseGearLandinglight</name>
+    <offsets>
+      <x-m>-15.73</x-m>
+      <y-m>  0.00</y-m>
+      <z-m> -1.60</z-m>
+    </offsets>
+  </model>
+  <model n="202">
+    <name>Beaconlight.bottom</name>
+    <offsets>
+      <x-m>0.0</x-m>
+      <y-m> 0.00</y-m>
+      <z-m>-1.50</z-m>
+    </offsets>
+  </model>
+  
+
+<!-- Tyre Smoke -->
+
+<model>
+	<path>Aircraft/737-800/Models/Effects/tyre-smoke-nose.xml</path>
+	<name>tyre-smoke-n</name>
+	<offsets>
+		<x-m>-18.00</x-m>
+		<y-m>0.0</y-m>
+		<z-m>-5.50</z-m>
+	</offsets>
+</model>
+
+
+<model>
+	<path>Aircraft/737-800/Models/Effects/tyre-smoke-left.xml</path>
+	<name>tyre-smoke-l</name>
+	<offsets>
+		<x-m>-4.83</x-m>
+		<y-m>-2.14</y-m>
+		<z-m>-0.51</z-m>
+	</offsets>
+</model>
+
+<model>
+	<path>Aircraft/737-800/Models/Effects/tyre-smoke-right.xml</path>
+	<name>tyre-smoke-r</name>
+	<offsets>
+		<x-m>-4.83</x-m>
+		<y-m>2.14</y-m>
+		<z-m>0.51</z-m>
+	</offsets>
+</model>
+
+<!-- reverser -->
+ <animation>
+  <type>translate</type>
+  <object-name>No2reverser_1</object-name>
+  <object-name>lreverserib_1</object-name>
+  <property>engines/engine/reverser-pos-norm</property>
+  <interpolation>
+    <entry>
+      <ind>0</ind>
+    <dep>0.0</dep>
+    </entry>
+    <entry>
+      <ind>1</ind>
+      <dep>0.3</dep>
+    </entry>
+  </interpolation>
+  <axis>
+    <x>1</x>
+    <y>0</y>
+    <z>0</z>
+  </axis>
+</animation>
+
+</PropertyList>

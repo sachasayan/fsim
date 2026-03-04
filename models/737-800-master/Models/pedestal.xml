@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<PropertyList>
+    <path>pedestal.ac</path>
+    <animation>
+        <type>select</type>
+        <object-name>EICAS2</object-name>
+        <condition>
+            <property>sim/current-view/internal</property>
+        </condition>
+    </animation>
+
+    <model>
+        <name>EICAS2</name>
+        <path>Models/Instruments/EICAS/eicas.xml</path>
+        <offsets>
+            <x-m>0.426</x-m>
+            <y-m>-0.021</y-m>
+            <z-m>0.738</z-m>
+            <pitch-deg>299.5</pitch-deg>
+        </offsets>
+    </model>
+    <model>
+        <name>CDU1</name>
+        <path>Aircraft/Instruments-3d/cdu2/boeing.xml</path>
+        <offsets>
+            <x-m>0.460</x-m>
+            <y-m>-0.203</y-m>
+            <z-m>0.725</z-m>
+            <pitch-deg>299.5</pitch-deg>
+        </offsets>
+        <overlay>
+            <texture>boeing_grey.png</texture>
+        </overlay>
+
+    </model>
+
+    <model>
+        <name>CDU2</name>
+        <path>Aircraft/Instruments-3d/cdu2/boeing.xml</path>
+        <offsets>
+            <x-m>0.460</x-m>
+            <y-m>0.162</y-m>
+            <z-m>0.725</z-m>
+            <pitch-deg>299.5</pitch-deg>
+        </offsets>
+        <overlay>
+            <texture>boeing_grey.png</texture>
+        </overlay>
+    </model>
+
+</PropertyList>
