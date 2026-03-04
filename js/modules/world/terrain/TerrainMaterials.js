@@ -201,6 +201,11 @@ vec4 mvPosition = vec4( transformed, 1.0 );
                               length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])));
                               
     vec3 cameraDir = uMainCameraPos - (modelMatrix * vec4(instancePos, 1.0)).xyz;
+    
+    // Distance-based shadow culling to prevent ALPHATEST discard overdraw
+    float distToCamera = length(cameraDir);
+    float shadowScale = 1.0 - smoothstep(600.0, 800.0, distToCamera);
+
     // Don't pitch trees up/down towards the camera
     cameraDir.y = 0.0;
     cameraDir = normalize(cameraDir);
@@ -212,7 +217,7 @@ vec4 mvPosition = vec4( transformed, 1.0 );
             0.0,     1.0, 0.0,
             cameraDir.x, 0.0, cameraDir.z
         );
-        mvPosition.xyz = alignMat * (mvPosition.xyz * vec3(instanceScale.x, instanceScale.y, 1.0)) + instancePos;
+        mvPosition.xyz = alignMat * (mvPosition.xyz * vec3(instanceScale.x * shadowScale, instanceScale.y * shadowScale, 1.0)) + instancePos;
     } else {
         mvPosition = instanceMatrix * mvPosition;
     }
