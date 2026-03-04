@@ -4,9 +4,12 @@ import {
   applyDistanceAtmosphereToMaterial,
   applyWaterDualScrollToMaterial,
   makeTreeBillboardMaterial,
+  makeTreeDepthMaterial,
   createDetailedBuildingMat,
   setupTerrainMaterial
 } from './terrain/TerrainMaterials.js';
+
+const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
   getTerrainHeight,
   getLodForRingDistance
@@ -102,11 +105,17 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     poplar: makeTreeBillboardMaterial(treeTextures.poplar, 0xafc093),
     dry: makeTreeBillboardMaterial(treeTextures.dry, 0xc6b696)
   };
+  const treeDepthMats = {
+    conifer: makeTreeDepthMaterial(treeTextures.conifer, tempMainCameraPosUniform),
+    broadleaf: makeTreeDepthMaterial(treeTextures.broadleaf, tempMainCameraPosUniform),
+    poplar: makeTreeDepthMaterial(treeTextures.poplar, tempMainCameraPosUniform),
+    dry: makeTreeDepthMaterial(treeTextures.dry, tempMainCameraPosUniform)
+  };
   const treeTypeConfigs = {
-    conifer: { mat: treeBillboardMats.conifer, hRange: [14, 24], wScale: 0.45 },
-    broadleaf: { mat: treeBillboardMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
-    poplar: { mat: treeBillboardMats.poplar, hRange: [13, 23], wScale: 0.42 },
-    dry: { mat: treeBillboardMats.dry, hRange: [8, 15], wScale: 0.52 }
+    conifer: { mat: treeBillboardMats.conifer, depthMat: treeDepthMats.conifer, hRange: [14, 24], wScale: 0.45 },
+    broadleaf: { mat: treeBillboardMats.broadleaf, depthMat: treeDepthMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
+    poplar: { mat: treeBillboardMats.poplar, depthMat: treeDepthMats.poplar, hRange: [13, 23], wScale: 0.42 },
+    dry: { mat: treeBillboardMats.dry, depthMat: treeDepthMats.dry, hRange: [8, 15], wScale: 0.52 }
   };
 
   const hullGeo = new THREE.BoxGeometry(2.5, 1.2, 8); hullGeo.translate(0, 0.6, 0);
@@ -330,7 +339,20 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   }
 
   function updateTerrainAtmosphere(camera, weatherColor = null) {
-    if (camera) atmosphereCameraPos.copy(camera.position);
+    if (camera) {
+      atmosphereCameraPos.copy(camera.position);
+      terrainMaterial.uniforms.uAtmosCameraPos.value.copy(camera.position);
+
+      const f = activeLODs.length > 0 ? (activeLODs[activeLODs.length - 1].far + activeLODs[0].far * 0.5) : 38000;
+      terrainMaterial.uniforms.uAtmosFar.value = f;
+
+      treeBillboardMats.conifer.uniforms.uMainCameraPos = { value: camera.position };
+      treeBillboardMats.broadleaf.uniforms.uMainCameraPos = { value: camera.position };
+      treeBillboardMats.poplar.uniforms.uMainCameraPos = { value: camera.position };
+      treeBillboardMats.dry.uniforms.uMainCameraPos = { value: camera.position };
+
+      tempMainCameraPosUniform.value.copy(camera.position);
+    }
     if (weatherColor) atmosphereColor.copy(weatherColor);
     else {
       tmpColorA.setRGB(0.62, 0.66, 0.72); tmpColorB.setRGB(0.78, 0.81, 0.86);

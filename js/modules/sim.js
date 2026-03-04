@@ -373,8 +373,8 @@ function animate() {
   dirLight.position.copy(shadowCenter).addScaledVector(tmpShadowSunDir, 2000);
 
   const shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
-  const shadowMoved = Math.abs(shadowCenter.x - prevShadowCenter.x) > 6 || Math.abs(shadowCenter.y - prevShadowCenter.y) > 6 || Math.abs(shadowCenter.z - prevShadowCenter.z) > 6;
-  const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 3;
+  const shadowMoved = Math.abs(shadowCenter.x - prevShadowCenter.x) > 20 || Math.abs(shadowCenter.y - prevShadowCenter.y) > 20 || Math.abs(shadowCenter.z - prevShadowCenter.z) > 20;
+  const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 15;
   if (shadowMoved || shadowExtentChanged) {
     const shadowCam = dirLight.shadow.camera;
     shadowCam.left = -shadowExtent;

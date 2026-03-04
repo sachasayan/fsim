@@ -5,6 +5,13 @@ import { Noise } from '../../noise.js';
 const TREE_DENSITY_MULTIPLIER = 4.0;
 const CHUNK_SIZE = 4000;
 
+const treeSizes = {
+    conifer: { hRange: [14, 24], wScale: 0.45 },
+    broadleaf: { hRange: [11, 19], wScale: 0.6 },
+    poplar: { hRange: [13, 23], wScale: 0.42 },
+    dry: { hRange: [8, 15], wScale: 0.52 }
+};
+
 const classConfigs = {
     supertall: {
         style: 'commercial',
@@ -233,14 +240,30 @@ function buildChunkProps(job) {
     }
 
     // Process trees
+    const treeMatrices = {};
     for (const [treeType, trees] of Object.entries(treePositions)) {
-        for (let j = 0; j < trees.length; j++) {
+        const count = trees.length;
+        if (count === 0) continue;
+        const matrices = new Float32Array(count * 16);
+        const cfg = treeSizes[treeType];
+
+        for (let j = 0; j < count; j++) {
             const tp = trees[j];
             tp.y = lod <= 1 ? getTerrainHeight(tp.x + cx * CHUNK_SIZE, tp.z + cz * CHUNK_SIZE, Noise) : tp.y;
+
+            const treeHeight = cfg.hRange[0] + tp.seed * (cfg.hRange[1] - cfg.hRange[0]);
+            const treeWidth = treeHeight * cfg.wScale * (0.92 + tp.seed2 * 0.3);
+
+            const offset = j * 16;
+            matrices[offset + 0] = treeWidth; matrices[offset + 1] = 0; matrices[offset + 2] = 0; matrices[offset + 3] = 0;
+            matrices[offset + 4] = 0; matrices[offset + 5] = treeHeight; matrices[offset + 6] = 0; matrices[offset + 7] = 0;
+            matrices[offset + 8] = 0; matrices[offset + 9] = 0; matrices[offset + 10] = 1; matrices[offset + 11] = 0;
+            matrices[offset + 12] = tp.x; matrices[offset + 13] = tp.y; matrices[offset + 14] = tp.z; matrices[offset + 15] = 1;
         }
+        treeMatrices[treeType] = matrices;
     }
 
-    return { cx, cz, treePositions, buildingPositions, boatPositions };
+    return { cx, cz, treeMatrices, buildingPositions, boatPositions };
 }
 
 self.onmessage = function (e) {
@@ -256,11 +279,15 @@ self.onmessage = function (e) {
             }, [result.positions.buffer, result.colors.buffer, result.wPos.buffer, result.wCols.buffer]);
         } else if (type === 'chunkProps') {
             const result = buildChunkProps(payload);
+            const transferables = [];
+            for (const key of Object.keys(result.treeMatrices)) {
+                transferables.push(result.treeMatrices[key].buffer);
+            }
             self.postMessage({
                 jobId,
                 type: 'chunkProps_done',
                 result: result
-            }); // Prop calculation sends back arrays of lightweight objects, acceptable to copy. matrices will be generated on main thread based on layout parameters.
+            }, transferables);
         }
     } catch (err) {
         self.postMessage({ jobId, error: err.message, stack: err.stack });

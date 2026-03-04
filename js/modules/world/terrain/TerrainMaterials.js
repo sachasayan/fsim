@@ -101,15 +101,130 @@ uniform float uTime;`
 }
 
 export function makeTreeBillboardMaterial(texture, tint) {
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
         map: texture,
         color: tint,
         transparent: true,
         alphaTest: 0.12,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide, // FrontSide only for billboard
         roughness: 1.0,
         metalness: 0.0
     });
+
+    mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <beginnormal_vertex>',
+            `
+#include <beginnormal_vertex>
+#ifdef USE_INSTANCING
+    vec3 cameraDirN = cameraPosition - (modelMatrix * vec4(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2], 1.0)).xyz;
+    cameraDirN.y = 0.0;
+    cameraDirN = normalize(cameraDirN);
+    if(length(cameraDirN) > 0.0) {
+        vec3 rightN = normalize(cross(vec3(0.0, 1.0, 0.0), cameraDirN));
+        mat3 alignMatN = mat3(
+            rightN.x, 0.0, rightN.z,
+            0.0,      1.0, 0.0,
+            cameraDirN.x, 0.0, cameraDirN.z
+        );
+        objectNormal = alignMatN * objectNormal;
+    }
+#endif
+            `
+        ).replace(
+            '#include <project_vertex>',
+            `
+vec4 mvPosition = vec4( transformed, 1.0 );
+#ifdef USE_BATCHING
+	mvPosition = batchingMatrix * mvPosition;
+#endif
+#ifdef USE_INSTANCING
+    vec3 instancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    vec2 instanceScale = vec2(length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
+                              length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])));
+                              
+    vec3 cameraDir = cameraPosition - (modelMatrix * vec4(instancePos, 1.0)).xyz;
+    cameraDir.y = 0.0;
+    cameraDir = normalize(cameraDir);
+    
+    if(length(cameraDir) > 0.0) {
+        vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), cameraDir));
+        mat3 alignMat = mat3(
+            right.x, 0.0, right.z,
+            0.0,     1.0, 0.0,
+            cameraDir.x, 0.0, cameraDir.z
+        );
+        mvPosition.xyz = alignMat * (mvPosition.xyz * vec3(instanceScale.x, instanceScale.y, 1.0)) + instancePos;
+    } else {
+        mvPosition = instanceMatrix * mvPosition;
+    }
+#endif
+mvPosition = modelViewMatrix * mvPosition;
+gl_Position = projectionMatrix * mvPosition;
+            `
+        );
+    };
+
+    mat.customProgramCacheKey = () => 'treeBillboard';
+    return mat;
+}
+
+export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
+    const mat = new THREE.MeshDepthMaterial({
+        depthPacking: THREE.RGBADepthPacking,
+        alphaMap: texture,
+        alphaTest: 0.12,
+        side: THREE.DoubleSide
+    });
+
+    mat.onBeforeCompile = (shader) => {
+        // We MUST define DEPTH_PACKING for the depth shader to work if we modify it
+        shader.defines = shader.defines || {};
+        shader.defines.DEPTH_PACKING = 3201; // THREE.RGBADepthPacking enum value
+
+        shader.uniforms.uMainCameraPos = mainCameraPosUniform;
+
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <common>',
+            `#include <common>
+            uniform vec3 uMainCameraPos;`
+        ).replace(
+            '#include <project_vertex>',
+            `
+vec4 mvPosition = vec4( transformed, 1.0 );
+#ifdef USE_BATCHING
+	mvPosition = batchingMatrix * mvPosition;
+#endif
+#ifdef USE_INSTANCING
+    vec3 instancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    vec2 instanceScale = vec2(length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
+                              length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])));
+                              
+    vec3 cameraDir = uMainCameraPos - (modelMatrix * vec4(instancePos, 1.0)).xyz;
+    // Don't pitch trees up/down towards the camera
+    cameraDir.y = 0.0;
+    cameraDir = normalize(cameraDir);
+    
+    if(length(cameraDir) > 0.0) {
+        vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), cameraDir));
+        mat3 alignMat = mat3(
+            right.x, 0.0, right.z,
+            0.0,     1.0, 0.0,
+            cameraDir.x, 0.0, cameraDir.z
+        );
+        mvPosition.xyz = alignMat * (mvPosition.xyz * vec3(instanceScale.x, instanceScale.y, 1.0)) + instancePos;
+    } else {
+        mvPosition = instanceMatrix * mvPosition;
+    }
+#endif
+mvPosition = modelViewMatrix * mvPosition;
+gl_Position = projectionMatrix * mvPosition;
+            `
+        );
+    };
+
+    mat.customProgramCacheKey = () => 'treeDepthBillboard_v3';
+    return mat;
 }
 
 export function createDetailedBuildingMat(style) {
@@ -120,21 +235,21 @@ export function createDetailedBuildingMat(style) {
             `#include <common>
         varying vec3 vBldgObjPos;
         varying vec3 vBldgScale;
-        varying vec3 vBldgNormal;`
+        varying vec3 vBldgNormal; `
         ).replace(
             '#include <begin_vertex>',
             `#include <begin_vertex>
         vBldgObjPos = position;
-        vBldgNormal = normal;
-        #ifdef USE_INSTANCING
-          vBldgScale = vec3(
-              length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
-              length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),
-              length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))
-          );
-        #else
-          vBldgScale = vec3(1.0);
-        #endif`
+    vBldgNormal = normal;
+    #ifdef USE_INSTANCING
+    vBldgScale = vec3(
+        length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
+        length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])),
+        length(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]))
+    );
+    #else
+    vBldgScale = vec3(1.0);
+    #endif`
         );
 
         let colorFragment = '';
@@ -143,84 +258,84 @@ export function createDetailedBuildingMat(style) {
         if (style === 'commercial') {
             colorFragment = `
         vec3 absBldgNorm = abs(vBldgNormal);
-        if (absBldgNorm.y < 0.9) {
+    if (absBldgNorm.y < 0.9) {
             vec2 wallUv;
-            if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
-            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+        if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+        else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
             
             float winX = fract(wallUv.x * 0.4);
             float winY = fract(wallUv.y * 0.33);
-            
-            if (winX > 0.15 && winY > 0.25) {
-                diffuseColor.rgb *= 0.15;
-                diffuseColor.rgb += vec3(0.02, 0.05, 0.1); 
-            } else {
-                diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.15); 
-            }
-        }`;
+
+        if (winX > 0.15 && winY > 0.25) {
+            diffuseColor.rgb *= 0.15;
+            diffuseColor.rgb += vec3(0.02, 0.05, 0.1);
+        } else {
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.15);
+        }
+    } `;
             roughFragment = `
-        if (abs(vBldgNormal.y) < 0.9) {
+    if (abs(vBldgNormal.y) < 0.9) {
             vec2 wallUv;
-            if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
-            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+        if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+        else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
             float winX = fract(wallUv.x * 0.4);
             float winY = fract(wallUv.y * 0.33);
-            if (winX > 0.15 && winY > 0.25) {
-                roughnessFactor = 0.1;
-            }
-        }`;
+        if (winX > 0.15 && winY > 0.25) {
+            roughnessFactor = 0.1;
+        }
+    } `;
         } else if (style === 'residential') {
             colorFragment = `
         vec3 absBldgNorm = abs(vBldgNormal);
-        if (absBldgNorm.y < 0.9) {
+    if (absBldgNorm.y < 0.9) {
             vec2 wallUv;
-            if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
-            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+        if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+        else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
             
             float winX = fract(wallUv.x * 0.25);
             float winY = fract(wallUv.y * 0.25);
-            
-            if (winX > 0.4 && winX < 0.8 && winY > 0.4 && winY < 0.8) {
-                diffuseColor.rgb *= 0.05;
-                diffuseColor.rgb += vec3(0.01, 0.02, 0.03); 
-            }
-        }`;
+
+        if (winX > 0.4 && winX < 0.8 && winY > 0.4 && winY < 0.8) {
+            diffuseColor.rgb *= 0.05;
+            diffuseColor.rgb += vec3(0.01, 0.02, 0.03);
+        }
+    } `;
             roughFragment = `
-        if (abs(vBldgNormal.y) < 0.9) {
+    if (abs(vBldgNormal.y) < 0.9) {
             vec2 wallUv;
-            if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
-            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+        if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+        else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
             float winX = fract(wallUv.x * 0.25);
             float winY = fract(wallUv.y * 0.25);
-            if (winX > 0.4 && winX < 0.8 && winY > 0.4 && winY < 0.8) {
-                roughnessFactor = 0.15;
-            }
-        }`;
+        if (winX > 0.4 && winX < 0.8 && winY > 0.4 && winY < 0.8) {
+            roughnessFactor = 0.15;
+        }
+    } `;
         } else if (style === 'industrial') {
             colorFragment = `
         vec3 absBldgNorm = abs(vBldgNormal);
-        if (absBldgNorm.y < 0.9) {
+    if (absBldgNorm.y < 0.9) {
             vec2 wallUv;
-            if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
-            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+        if (absBldgNorm.x > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+        else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
             
             float ribY = fract(wallUv.y * 2.0);
-            diffuseColor.rgb *= mix(0.85, 1.0, ribY);
-            
-            if (wallUv.y > 0.8 && fract(wallUv.x * 0.1) > 0.2 && fract(wallUv.x * 0.1) < 0.8) {
-                diffuseColor.rgb *= 0.2;
-                diffuseColor.rgb += vec3(0.02, 0.03, 0.04);
-            }
-        }`;
+        diffuseColor.rgb *= mix(0.85, 1.0, ribY);
+
+        if (wallUv.y > 0.8 && fract(wallUv.x * 0.1) > 0.2 && fract(wallUv.x * 0.1) < 0.8) {
+            diffuseColor.rgb *= 0.2;
+            diffuseColor.rgb += vec3(0.02, 0.03, 0.04);
+        }
+    } `;
             roughFragment = `
-        if (abs(vBldgNormal.y) < 0.9) {
+    if (abs(vBldgNormal.y) < 0.9) {
             vec2 wallUv;
-            if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
-            else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
-            if (wallUv.y > 0.8 && fract(wallUv.x * 0.1) > 0.2 && fract(wallUv.x * 0.1) < 0.8) {
-                roughnessFactor = 0.2;
-            }
-        }`;
+        if (abs(vBldgNormal.x) > 0.5) wallUv = vec2(vBldgObjPos.z * vBldgScale.z, vBldgObjPos.y * vBldgScale.y);
+        else wallUv = vec2(vBldgObjPos.x * vBldgScale.x, vBldgObjPos.y * vBldgScale.y);
+        if (wallUv.y > 0.8 && fract(wallUv.x * 0.1) > 0.2 && fract(wallUv.x * 0.1) < 0.8) {
+            roughnessFactor = 0.2;
+        }
+    } `;
         }
 
         shader.fragmentShader = shader.fragmentShader.replace(
@@ -237,7 +352,7 @@ export function createDetailedBuildingMat(style) {
             `#include <roughnessmap_fragment>\n${roughFragment}`
         );
     };
-    mat.customProgramCacheKey = () => `detailed-building-mat-v2-${style}`;
+    mat.customProgramCacheKey = () => `detailed - building - mat - v2 - ${style} `;
     return mat;
 }
 
@@ -263,31 +378,31 @@ export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphere
             .replace(
                 '#include <common>',
                 `#include <common>
-varying vec3 vTerrainWorldPos;
-varying vec3 vTerrainWorldNormal;
-varying float vTerrainDist;
-varying float vTerrainSlope;
-uniform vec3 uAtmosCameraPos;`
+        varying vec3 vTerrainWorldPos;
+        varying vec3 vTerrainWorldNormal;
+        varying float vTerrainDist;
+        varying float vTerrainSlope;
+        uniform vec3 uAtmosCameraPos;`
             )
             .replace(
                 '#include <worldpos_vertex>',
                 `#include <worldpos_vertex>
         vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-            worldPos = instanceMatrix * worldPos;
-        #endif
-        vTerrainWorldPos = worldPos.xyz;
-        vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);
-        vTerrainDist = distance(worldPos.xyz, uAtmosCameraPos);
-        vTerrainSlope = 1.0 - clamp(abs(vTerrainWorldNormal.y), 0.0, 1.0);`
+    #ifdef USE_INSTANCING
+    worldPos = instanceMatrix * worldPos;
+    #endif
+    vTerrainWorldPos = worldPos.xyz;
+    vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vTerrainDist = distance(worldPos.xyz, uAtmosCameraPos);
+    vTerrainSlope = 1.0 - clamp(abs(vTerrainWorldNormal.y), 0.0, 1.0);`
             );
 
         shader.fragmentShader = shader.fragmentShader
             .replace(
                 '#include <common>',
                 `#include <common>
-varying vec3 vTerrainWorldPos;
-varying vec3 vTerrainWorldNormal;
+        varying vec3 vTerrainWorldPos;
+        varying vec3 vTerrainWorldNormal;
 varying float vTerrainDist;
 varying float vTerrainSlope;
 uniform sampler2D uTerrainDetailTex;
@@ -304,11 +419,11 @@ uniform float uAtmosFar;
 uniform float uTerrainAtmosStrength;
 uniform float uTerrainFoliageNearStart;
 uniform float uTerrainFoliageNearEnd;
-uniform float uTerrainFoliageStrength;`
+uniform float uTerrainFoliageStrength; `
             )
             .replace(
                 'vec4 diffuseColor = vec4( diffuse, opacity );',
-                `vec4 diffuseColor = vec4( diffuse, opacity );
+                `vec4 diffuseColor = vec4(diffuse, opacity);
     #ifndef IS_FAR_LOD
     vec2 baseUv = vTerrainWorldPos.xz * uTerrainDetailScale;
     vec4 pNoise = texture2D(uTerrainDetailTex, baseUv * 0.12);
@@ -335,12 +450,12 @@ uniform float uTerrainFoliageStrength;`
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
     #endif
     float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, vTerrainDist) * uTerrainAtmosStrength;
-    diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
+    diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos); `
             );
 
         if (isFarLOD) {
             shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
         }
     };
-    material.customProgramCacheKey = () => `terrain-detail-v4-${isFarLOD ? 'far' : 'near'}`;
+    material.customProgramCacheKey = () => `terrain - detail - v4 - ${isFarLOD ? 'far' : 'near'} `;
 }

@@ -207,33 +207,24 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     // Ensure chunk wasn't disposed or repurposed while awaiting
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) return;
 
-    const { treePositions, buildingPositions, boatPositions } = result;
+    const { treeMatrices, buildingPositions, boatPositions } = result;
 
-    for (const [treeType, trees] of Object.entries(treePositions)) {
-        if (trees.length === 0) continue;
+    for (const [treeType, matrices] of Object.entries(treeMatrices)) {
+        if (!matrices) continue;
+        const count = matrices.length / 16;
+        if (count === 0) continue;
+
         const cfg = treeTypeConfigs[treeType];
-        const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, trees.length);
-        const cardB = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, trees.length);
-        cardA.castShadow = false; cardB.castShadow = false;
-        cardA.receiveShadow = false; cardB.receiveShadow = false;
+        const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, count);
 
-        for (let j = 0; j < trees.length; j++) {
-            const tp = trees[j];
-            const heading = tp.seed * Math.PI * 2;
-            const treeHeight = cfg.hRange[0] + tp.seed * (cfg.hRange[1] - cfg.hRange[0]);
-            const treeWidth = treeHeight * cfg.wScale * (0.92 + tp.seed2 * 0.3);
+        cardA.instanceMatrix.array.set(matrices);
+        cardA.instanceMatrix.needsUpdate = true;
 
-            dummy.position.set(tp.x, tp.y, tp.z);
-            dummy.rotation.set(tp.lean * 0.5, heading, 0);
-            dummy.scale.set(treeWidth, treeHeight, 1);
-            dummy.updateMatrix();
-            cardA.setMatrixAt(j, dummy.matrix);
+        cardA.castShadow = true;
+        cardA.receiveShadow = false;
+        cardA.customDepthMaterial = cfg.depthMat;
 
-            dummy.rotation.set(tp.lean * 0.5, heading + Math.PI * 0.5, 0);
-            dummy.updateMatrix();
-            cardB.setMatrixAt(j, dummy.matrix);
-        }
-        chunkGroup.add(cardA, cardB);
+        chunkGroup.add(cardA);
     }
 
     // Buildings
