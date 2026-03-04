@@ -136,49 +136,81 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       return roughCanvas;
     }
 
-    function createRunwayBumpMap(width, height) {
-      const bumpCanvas = document.createElement('canvas');
-      bumpCanvas.width = width;
-      bumpCanvas.height = height;
-      const bumpCtx = bumpCanvas.getContext('2d');
-      const bumpData = bumpCtx.createImageData(width, height);
+    function createRunwayNormalMap(width, height) {
+      const normalCanvas = document.createElement('canvas');
+      normalCanvas.width = width;
+      normalCanvas.height = height;
+      const normalCtx = normalCanvas.getContext('2d');
+      const normalData = normalCtx.createImageData(width, height);
 
+      // Temporary array to store heights before calculating normals
+      const heights = new Float32Array(width * height);
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-          const i = (y * width + x) * 4;
-          let h = 128;
-          h += Math.sin(x * 0.06 + y * 0.015) * 6;
-          h += Math.sin(x * 0.11 - y * 0.02) * 4;
-          h += (Math.random() - 0.5) * 8;
-          h = Math.max(90, Math.min(170, h));
-          bumpData.data[i] = h;
-          bumpData.data[i + 1] = h;
-          bumpData.data[i + 2] = h;
-          bumpData.data[i + 3] = 255;
+          let h = 0.5; // normalized 0-1
+          h += Math.sin(x * 0.06 + y * 0.015) * 0.02;
+          h += Math.sin(x * 0.11 - y * 0.02) * 0.015;
+          h += (Math.random() - 0.5) * 0.03;
+          heights[y * width + x] = h;
         }
       }
 
-      bumpCtx.putImageData(bumpData, 0, 0);
-      return bumpCanvas;
+      // Calculate normals from height differences
+      const scale = 2.0; // Normal strength
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          // Wrap around for seamless tiling
+          const xLeft = x === 0 ? width - 1 : x - 1;
+          const xRight = x === width - 1 ? 0 : x + 1;
+          const yUp = y === 0 ? height - 1 : y - 1;
+          const yDown = y === height - 1 ? 0 : y + 1;
+
+          const hL = heights[y * width + xLeft];
+          const hR = heights[y * width + xRight];
+          const hU = heights[yUp * width + x];
+          const hD = heights[yDown * width + x];
+
+          // Compute Sobel or simple differences
+          const dx = (hR - hL) * scale;
+          const dy = (hD - hU) * scale;
+          const dz = 1.0;
+
+          // Normalize the vector
+          const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const nx = dx / len;
+          const ny = dy / len;
+          const nz = dz / len;
+
+          // Map [-1, 1] to [0, 255]
+          const i = (y * width + x) * 4;
+          normalData.data[i] = Math.floor((nx * 0.5 + 0.5) * 255);     // R (X)
+          normalData.data[i + 1] = Math.floor((ny * 0.5 + 0.5) * 255); // G (Y)
+          normalData.data[i + 2] = Math.floor((nz * 0.5 + 0.5) * 255); // B (Z)
+          normalData.data[i + 3] = 255;                                // A
+        }
+      }
+
+      normalCtx.putImageData(normalData, 0, 0);
+      return normalCanvas;
     }
 
     const roughnessCanvas = createRoughnessMapFromAlbedo(canvas);
-    const bumpCanvas = createRunwayBumpMap(256, 1024); // Further reduced resolution for bump map
+    const normalCanvas = createRunwayNormalMap(256, 1024);
 
     const tex = new THREE.CanvasTexture(canvas);
     const roughnessTex = new THREE.CanvasTexture(roughnessCanvas);
-    const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+    const normalTex = new THREE.CanvasTexture(normalCanvas);
     const anisotropy = renderer.capabilities.getMaxAnisotropy();
     tex.anisotropy = anisotropy;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    roughnessTex.anisotropy = anisotropy;
+    roughnessTex.anisotropy = Math.min(2, anisotropy);
     roughnessTex.wrapS = THREE.ClampToEdgeWrapping;
     roughnessTex.wrapT = THREE.RepeatWrapping;
-    bumpTex.anisotropy = anisotropy;
-    bumpTex.wrapS = THREE.ClampToEdgeWrapping;
-    bumpTex.wrapT = THREE.RepeatWrapping;
-    bumpTex.repeat.set(2, 2);
+    normalTex.anisotropy = Math.min(2, anisotropy);
+    normalTex.wrapS = THREE.RepeatWrapping;
+    normalTex.wrapT = THREE.RepeatWrapping;
+    normalTex.repeat.set(2, 2);
     tex.colorSpace = THREE.SRGBColorSpace;
 
     const runwayGeo = new THREE.PlaneGeometry(100, 4000);
@@ -187,8 +219,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       roughnessMap: roughnessTex,
       roughness: 0.92,
       metalness: 0.0,
-      bumpMap: bumpTex,
-      bumpScale: 0.16,
+      normalMap: normalTex,
+      normalScale: new THREE.Vector2(0.5, 0.5),
       envMapIntensity: 0.32
     });
     const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
