@@ -21,17 +21,17 @@
 
 <body>
 
-    <div id="loader">
+    <div id="loader" role="status" aria-live="polite">
         <div class="spinner"></div>
         <h2 id="loader-text">INITIALIZING FLIGHT DYNAMICS</h2>
         <p id="loader-subtext">Generating Procedural World...</p>
     </div>
 
     <div id="game-container"></div>
-    <div id="warning-overlay">STALL</div>
+    <div id="warning-overlay" role="alert" aria-live="assertive">STALL</div>
 
     <!-- NEW CRASH SCREEN OVERLAY -->
-    <div id="crash-screen">
+    <div id="crash-screen" role="alert" aria-live="assertive">
         <h1 class="crash-title">AIRCRAFT DESTROYED
         </h1>
         <p id="crash-reason" class="crash-reason"></p>
@@ -46,7 +46,7 @@
 
         <!-- ND (Navigation Display / Minimap) -->
         <div id="nd" class="screen">
-            <canvas id="minimap" width="300" height="300"></canvas>
+            <canvas id="minimap" width="300" height="300" role="img" aria-label="Navigation minimap"></canvas>
         </div>
 
         <!-- EICAS (Telemetry) -->
