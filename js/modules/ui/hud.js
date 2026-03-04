@@ -45,6 +45,9 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         moveThresholdWorld: 120
     };
 
+    // Performance optimization: Instantiate THREE.Euler once and reuse in updateHUD
+    const euler = new THREE.Euler();
+
     function terrainColor(heightValue) {
         if (heightValue < -25) return '#1d4f88';
         if (heightValue < -5) return '#2d72a8';
@@ -165,7 +168,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         const vsFpm = PHYSICS.velocity.y * 196.85;
 
         // Extract Pitch, Roll, Heading from Quaternion
-        const euler = new THREE.Euler().setFromQuaternion(PHYSICS.quaternion, 'YXZ');
+        euler.setFromQuaternion(PHYSICS.quaternion, 'YXZ');
         const pitch = euler.x * (180 / Math.PI);
         const roll = -euler.z * (180 / Math.PI); // Invert for display
         let heading = -euler.y * (180 / Math.PI);
