@@ -9,7 +9,7 @@ export function createAirportSystems({ alsStrobes, strobeColorOn, strobeColorOff
     }
 
     function updateALS(now) {
-        const rabbitCycle = (now / 500) % 1.0; // Loops every 0.5s
+        const rabbitCycle = (now / 1000) % 1.0; // Loops every 1.0s
         const targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
 
         const meshesToUpdate = new Set();

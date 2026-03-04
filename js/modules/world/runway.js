@@ -2,8 +2,8 @@ import * as THREE from 'three';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
-  const RUNWAY_LIGHT_GLOW_SCALE = 0.38;
-  const RUNWAY_LIGHT_STROBE_SCALE = 0.42;
+  const RUNWAY_LIGHT_GLOW_SCALE = 0.28;
+  const RUNWAY_LIGHT_STROBE_SCALE = 0.32;
 
   // High-Res Procedural Runway Mesh
   function createRunwayMesh() {
@@ -285,11 +285,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     const dummy = new THREE.Object3D();
 
     // Materials
-    const edgeMat = createInstancedLightMaterial(0xffddaa, 30 * RUNWAY_LIGHT_GLOW_SCALE);
     const centerMat = createInstancedLightMaterial(0xffffff, 30 * RUNWAY_LIGHT_GLOW_SCALE);
-    const endMat = createInstancedLightMaterial(0xff0000, 40 * RUNWAY_LIGHT_GLOW_SCALE);
     const alsWhiteMat = createInstancedLightMaterial(0xffffee, 50 * RUNWAY_LIGHT_GLOW_SCALE);
-    const alsRedMat = createInstancedLightMaterial(0xff0000, 50 * RUNWAY_LIGHT_GLOW_SCALE);
     const strobeMat = createInstancedLightMaterial(0xffffff, 180 * RUNWAY_LIGHT_STROBE_SCALE);
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
@@ -300,66 +297,32 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, 1); // Height scaled per instance
 
     // counts for instancing
-    const edgeCount = 2 * (4000 / 50 + 1);
-    const centerCount = (4000 / 100 + 1);
-    const edgeMesh = new THREE.InstancedMesh(lightGeo, edgeMat, edgeCount);
-    const endMesh = new THREE.InstancedMesh(lightGeo, endMat, 8); // 4 each end
+    const centerCount = Math.floor(4000 / 100) + 1;
     const centerMesh = new THREE.InstancedMesh(lightGeo, centerMat, centerCount);
-    const baseMesh = new THREE.InstancedMesh(baseGeo, baseMat, edgeCount + centerCount);
+    const baseMesh = new THREE.InstancedMesh(baseGeo, baseMat, centerCount);
 
-    let edgeIdx = 0, endIdx = 0, centerIdx = 0, baseIdx = 0;
+    let centerIdx = 0, baseIdx = 0;
 
-    for (let z = -2000; z <= 2000; z += 50) {
-      const isEnd = Math.abs(z) > 1950;
-
-      // Left Edge
-      dummy.position.set(-25, 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      dummy.scale.set(1, 1, 1);
-      dummy.updateMatrix();
-      if (isEnd) {
-        endMesh.setMatrixAt(endIdx++, dummy.matrix);
-      } else {
-        edgeMesh.setMatrixAt(edgeIdx++, dummy.matrix);
-      }
-
-      dummy.position.set(-25, 0.14 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      dummy.updateMatrix();
-      baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
-
-      // Right Edge
-      dummy.position.set(25, 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      dummy.updateMatrix();
-      if (isEnd) {
-        endMesh.setMatrixAt(endIdx++, dummy.matrix);
-      } else {
-        edgeMesh.setMatrixAt(edgeIdx++, dummy.matrix);
-      }
-
-      dummy.position.set(25, 0.14 * RUNWAY_LIGHT_SIZE_SCALE, z);
-      dummy.updateMatrix();
-      baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
-
+    // Runway Centerline and Threshold Lights
+    for (let z = -2000; z <= 2000; z += 100) {
       // Centerline
-      if (z % 100 === 0) {
-        dummy.position.set(0, 0.1 * RUNWAY_LIGHT_SIZE_SCALE, z);
-        dummy.updateMatrix();
-        centerMesh.setMatrixAt(centerIdx++, dummy.matrix);
+      dummy.position.set(0, 0.1 * RUNWAY_LIGHT_SIZE_SCALE, z);
+      dummy.updateMatrix();
+      centerMesh.setMatrixAt(centerIdx++, dummy.matrix);
 
-        dummy.position.set(0, -0.16 * RUNWAY_LIGHT_SIZE_SCALE, z);
-        dummy.updateMatrix();
-        baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
-      }
+      dummy.position.set(0, -0.16 * RUNWAY_LIGHT_SIZE_SCALE, z);
+      dummy.updateMatrix();
+      baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
     }
 
-    lightGroup.add(edgeMesh, endMesh, centerMesh, baseMesh);
+    lightGroup.add(centerMesh, baseMesh);
 
     // ALS
     const alsWhiteMesh = new THREE.InstancedMesh(lightGeo, alsWhiteMat, 400); // Guessed max
-    const alsRedMesh = new THREE.InstancedMesh(lightGeo, alsRedMat, 100);
     const strobeMesh = new THREE.InstancedMesh(lightGeo, strobeMat, 40);
     const poleMesh = new THREE.InstancedMesh(poleGeo, poleMat, 100);
 
-    let awIdx = 0, arIdx = 0, asIdx = 0, apIdx = 0;
+    let awIdx = 0, asIdx = 0, apIdx = 0;
 
     function buildALS(thresholdZ, direction) {
       for (let dist = 30; dist <= 900; dist += 30) {
@@ -396,16 +359,6 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
           }
         }
 
-        // Red side rows
-        if (dist <= 300) {
-          for (let x of [-12, -9, 9, 12]) {
-            dummy.position.set(x, rowY, z);
-            dummy.scale.set(1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE, 1.5 * RUNWAY_LIGHT_SIZE_SCALE);
-            dummy.updateMatrix();
-            alsRedMesh.setMatrixAt(arIdx++, dummy.matrix);
-          }
-        }
-
         // Rabbit Strobes
         if (dist > 300) {
           dummy.position.set(0, rowY + 0.5 * RUNWAY_LIGHT_SIZE_SCALE, z);
@@ -422,12 +375,12 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     buildALS(-1950, -1);
 
     alsWhiteMesh.count = awIdx;
-    alsRedMesh.count = arIdx;
     strobeMesh.count = asIdx;
     poleMesh.count = apIdx;
 
-    lightGroup.add(alsWhiteMesh, alsRedMesh, strobeMesh, poleMesh);
+    lightGroup.add(alsWhiteMesh, strobeMesh, poleMesh);
     scene.add(lightGroup);
+
   }
   createRunwayLights();
 
