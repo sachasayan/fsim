@@ -82,7 +82,8 @@ const {
   gearGroup,
   strobes,
   beacons,
-  updateAircraftLOD
+  updateAircraftLOD,
+  updateControlSurfaces
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
 // ==========================================
@@ -217,14 +218,8 @@ function animate() {
   }
 
 
-  movableSurfaces.flaps.forEach(f => f.rotation.x = PHYSICS.flaps * 0.6);
-  movableSurfaces.aileronsL.forEach(a => a.rotation.x = -PHYSICS.aileron * 0.5);
-  movableSurfaces.aileronsR.forEach(a => a.rotation.x = PHYSICS.aileron * 0.5);
-  movableSurfaces.elevators.forEach(e => e.rotation.x = -PHYSICS.elevator * 0.5);
-  movableSurfaces.rudder.forEach(r => r.rotation.y = -PHYSICS.rudder * 0.5);
-
-  const targetSpoilerRot = PHYSICS.spoilers ? -0.8 : 0;
-  movableSurfaces.spoilers.forEach(s => s.rotation.x += (targetSpoilerRot - s.rotation.x) * 10 * dt);
+  // 3. Aircraft Control Surfaces
+  updateControlSurfaces(PHYSICS, dt);
 
   // 4. Strobe & Beacon Logic
   runtime.strobeTimer += dt;
