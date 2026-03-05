@@ -128,9 +128,28 @@ export function calculateAerodynamics(ctx) {
     if (p.gearDown && p.gearTransition < 1.0) p.gearTransition = Math.min(1.0, p.gearTransition + p.dt * 0.2);
     if (!p.gearDown && p.gearTransition > 0.0) p.gearTransition = Math.max(0.0, p.gearTransition - p.dt * 0.2);
 
-    gearGroup.position.y = (1.0 - p.gearTransition) * 2; // Move up
-    gearGroup.scale.y = Math.max(0.01, p.gearTransition); // Squash
-    gearGroup.visible = p.gearTransition > 0;
+    const gT = 1.0 - p.gearTransition; // 1.0 when UP, 0.0 when DOWN
+
+    if (AIRCRAFT.movableSurfaces.gears) {
+        AIRCRAFT.movableSurfaces.gears.forEach(g => {
+            let angle = 0;
+            if (g.type === 'nose') angle = gT * 120 * Math.PI / 180;
+            else if (g.type === 'mainLH') angle = gT * 81.5 * Math.PI / 180;
+            else if (g.type === 'mainRH') angle = gT * -81.5 * Math.PI / 180;
+            else if (g.type === 'doorLH') {
+                let doorAmt = 1.0;
+                // Doors open immediately as gear starts dropping (transition 0 to 0.25)
+                if (p.gearTransition < 0.25) doorAmt = p.gearTransition / 0.25;
+                angle = doorAmt * -90 * Math.PI / 180;
+            }
+            else if (g.type === 'doorRH') {
+                let doorAmt = 1.0;
+                if (p.gearTransition < 0.25) doorAmt = p.gearTransition / 0.25;
+                angle = doorAmt * 90 * Math.PI / 180;
+            }
+            g.animGroup.setRotationFromAxisAngle(g.animGroup.userData.hingeAxis, angle);
+        });
+    }
 
     // Kinematics setup
     const forward = t.forward.set(0, 0, -1).applyQuaternion(p.quaternion);

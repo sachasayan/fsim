@@ -7,11 +7,10 @@ export function createAircraftSystem({ scene }) {
   scene.add(planeGroup);
 
   const engineExhausts = [];
-  const movableSurfaces = { flaps: [], aileronsL: [], aileronsR: [], elevators: [], rudder: [], spoilers: [] };
+  const movableSurfaces = { flaps: [], aileronsL: [], aileronsR: [], elevators: [], rudder: [], spoilers: [], gears: [] };
   const pendingPivots = { flaps: [], aileronsL: [], aileronsR: [], elevators: [], rudder: [], spoilers: [] };
   const floatingTabs = { aileronL: null, aileronR: null, elevatorL: null, elevatorR: null };
   const gearGroup = new THREE.Group();
-  const gearElements = [];
   const strobes = [];
   const beacons = [];
 
@@ -34,34 +33,74 @@ export function createAircraftSystem({ scene }) {
   ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf]) => {
     const model = mainGltf.scene;
 
-    const extractGear = (scene, keywords) => {
-      const parts = [];
+    const extractGearCluster = (scene, partsList, center, axis) => {
+      const cluster = new THREE.Group();
+      const extractedChildren = [];
+
+      // Collect first to prevent mutating the graph during traverse
       scene.traverse(child => {
         if (!child.isMesh && !child.isGroup) return;
         const name = child.name ? child.name.toLowerCase() : '';
         if (!name) return;
-        if (keywords.some(k => name.includes(k))) {
-          parts.push(child);
+        if (partsList.some(k => name.includes(k))) {
+          extractedChildren.push(child);
         }
       });
-      parts.forEach(p => {
-        // Clear any leftover local offset from Assimp so it purely relies on the AC3D vertices
-        p.position.set(0, 0, 0);
 
-        // Assimp's Native Coordinates mapping:
-        // [X=Longitudinal, Y=Vertical, Z=Lateral]
-        // Blender's World Coordinates mapping (b738 root):
-        // [X=Lateral, Y=Vertical, Z=Longitudinal]
-        // A -90 degree rotation on the Y-axis swaps X->Z and Z->-X, aligning everything perfectly!
-        p.rotation.set(0, -Math.PI / 2, 0);
-        p.scale.set(1, 1, 1);
-        model.add(p);
+      // Move after traversal is safely finished
+      extractedChildren.forEach(child => {
+        child.position.set(0, 0, 0);
+        child.rotation.set(0, -Math.PI / 2, 0);
+        child.scale.set(1, 1, 1);
+        cluster.add(child);
       });
+
+      const [cx, cy, cz] = center;
+      // Map XML [Long, Lat, Vert] natively to Root Three.js [Lat, Vert, Long] = [cy, cz, cx]
+      const pivotWorld = new THREE.Vector3(cy, cz, cx);
+
+      const restGroup = new THREE.Group();
+      restGroup.position.copy(pivotWorld);
+
+      const animGroup = new THREE.Group();
+      const [ax, ay, az] = axis;
+      animGroup.userData.hingeAxis = new THREE.Vector3(ay, az, ax).normalize();
+
+      restGroup.add(animGroup);
+
+      const meshOffset = new THREE.Group();
+      meshOffset.position.copy(pivotWorld).negate();
+      animGroup.add(meshOffset);
+      meshOffset.add(cluster);
+
+      model.add(restGroup);
+      return animGroup;
     };
 
-    extractGear(noseGltf.scene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar', 'lhngdoor', 'rhngdoor']);
-    extractGear(lwingGltf.scene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag']);
-    extractGear(rwingGltf.scene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag']);
+    movableSurfaces.gears.push({
+      animGroup: extractGearCluster(noseGltf.scene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar'], [-15.5, 0, -1.22], [0, 1, 0]),
+      type: 'nose'
+    });
+
+    movableSurfaces.gears.push({
+      animGroup: extractGearCluster(noseGltf.scene, ['lhngdoor'], [-16.55, -0.53, -1.09], [1, 0, -0.09]),
+      type: 'doorLH'
+    });
+
+    movableSurfaces.gears.push({
+      animGroup: extractGearCluster(noseGltf.scene, ['rhngdoor'], [-16.55, 0.48, -1.09], [1, 0, -0.1]),
+      type: 'doorRH'
+    });
+
+    movableSurfaces.gears.push({
+      animGroup: extractGearCluster(lwingGltf.scene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag'], [-7.2, -2.88, -0.6], [1, 0, 0]),
+      type: 'mainLH'
+    });
+
+    movableSurfaces.gears.push({
+      animGroup: extractGearCluster(rwingGltf.scene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag'], [-7.2, 2.88, -0.6], [1, 0, 0]),
+      type: 'mainRH'
+    });
 
     modelWrapper.add(model);
 
@@ -260,8 +299,13 @@ export function createAircraftSystem({ scene }) {
     if (gearGroup.visible !== isNear) {
       gearGroup.visible = isNear;
       // Also hide movable surfaces if far
-      Object.values(movableSurfaces).forEach(group => {
-        group.forEach(mesh => mesh.visible = isNear);
+      Object.keys(movableSurfaces).forEach(key => {
+        const group = movableSurfaces[key];
+        if (key === 'gears') {
+          group.forEach(g => g.animGroup.visible = isNear);
+        } else {
+          group.forEach(mesh => mesh.visible = isNear);
+        }
       });
     }
   }

@@ -86,6 +86,9 @@ const {
   updateControlSurfaces
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
+// Bind visual surfaces back to physics configuration
+AIRCRAFT.movableSurfaces = movableSurfaces;
+
 // ==========================================
 // 3. MANAGERS
 // ==========================================

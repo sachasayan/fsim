@@ -1,6 +1,5 @@
-
 export const AIRCRAFT_CONFIG = {
-    pivots: {
+    "pivots": {
         "flapI/B": {
             "center": [
                 0.68,
@@ -15,9 +14,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "aftflapI/B": {
             "center": [
-                0.68,
-                -5.62,
-                -0.19
+                1.15,
+                -2.13,
+                -0.68
             ],
             "axis": [
                 0,
@@ -39,9 +38,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "aftflapO/B": {
             "center": [
-                0.68,
-                -5.62,
-                -0.19
+                1.2,
+                -5.5,
+                -0.17
             ],
             "axis": [
                 -0.33,
@@ -183,9 +182,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "sidestrutl": {
             "center": [
-                -7.2,
-                -2.88,
-                -0.6
+                -7.06,
+                -2.89,
+                -1.63
             ],
             "axis": [
                 1,
@@ -195,25 +194,25 @@ export const AIRCRAFT_CONFIG = {
         },
         "mglhlinkupper": {
             "center": [
-                -7.2,
-                -2.88,
-                -0.6
+                0.16,
+                -2.97,
+                -1.92
             ],
             "axis": [
-                1,
                 0,
+                1,
                 0
             ]
         },
         "mglhlinklower": {
             "center": [
-                -7.2,
-                -2.88,
-                -0.6
+                0.16,
+                -2.97,
+                -2.46
             ],
             "axis": [
-                1,
                 0,
+                1,
                 0
             ]
         },
@@ -303,9 +302,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "geardoor": {
             "center": [
-                -7.2,
-                -2.88,
-                -0.6
+                0.49,
+                -2.99,
+                -1.66
             ],
             "axis": [
                 1,
@@ -351,12 +350,12 @@ export const AIRCRAFT_CONFIG = {
         },
         "ailerontablh": {
             "center": [
-                2.46,
+                2.68,
                 -10.58,
                 0.42
             ],
             "axis": [
-                -0.28,
+                -0.3,
                 1,
                 -0.1
             ]
@@ -459,9 +458,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "rhaftflapI/B": {
             "center": [
-                0.68,
-                5.62,
-                -0.19
+                1.15,
+                2.13,
+                -0.68
             ],
             "axis": [
                 0,
@@ -483,9 +482,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "rhaftflapO/B": {
             "center": [
-                0.68,
-                5.62,
-                -0.19
+                1.2,
+                5.88,
+                -0.17
             ],
             "axis": [
                 0.33,
@@ -627,9 +626,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "rhsidestrutl": {
             "center": [
-                -7.2,
-                2.88,
-                -0.6
+                -7.06,
+                2.89,
+                -1.63
             ],
             "axis": [
                 1,
@@ -639,25 +638,25 @@ export const AIRCRAFT_CONFIG = {
         },
         "mgrhlinkupper": {
             "center": [
-                -7.2,
-                2.88,
-                -0.6
+                0.16,
+                2.97,
+                -1.92
             ],
             "axis": [
-                1,
                 0,
+                1,
                 0
             ]
         },
         "mgrhlinklower": {
             "center": [
-                -7.2,
-                2.88,
-                -0.6
+                0.16,
+                2.97,
+                -2.46
             ],
             "axis": [
-                1,
                 0,
+                1,
                 0
             ]
         },
@@ -747,9 +746,9 @@ export const AIRCRAFT_CONFIG = {
         },
         "geardoorrh": {
             "center": [
-                -7.2,
-                2.88,
-                -0.6
+                0.49,
+                2.99,
+                -1.66
             ],
             "axis": [
                 1,
@@ -795,12 +794,12 @@ export const AIRCRAFT_CONFIG = {
         },
         "ailerontabrh": {
             "center": [
-                2.46,
+                2.68,
                 10.58,
                 0.42
             ],
             "axis": [
-                0.28,
+                0.3,
                 1,
                 0.1
             ]
@@ -897,7 +896,7 @@ export const AIRCRAFT_CONFIG = {
             ],
             "axis": [
                 0.33,
-                1.0,
+                1,
                 0.2
             ]
         },
@@ -909,7 +908,7 @@ export const AIRCRAFT_CONFIG = {
             ],
             "axis": [
                 0.29,
-                1.0,
+                1,
                 0.18
             ]
         },
@@ -933,7 +932,7 @@ export const AIRCRAFT_CONFIG = {
             ],
             "axis": [
                 -0.33,
-                1.0,
+                1,
                 -0.2
             ]
         },
@@ -945,7 +944,7 @@ export const AIRCRAFT_CONFIG = {
             ],
             "axis": [
                 -0.29,
-                1.0,
+                1,
                 -0.18
             ]
         },
@@ -1235,6 +1234,174 @@ export const AIRCRAFT_CONFIG = {
                 0,
                 -1,
                 0
+            ]
+        },
+        "collar": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "nlinkupper": {
+            "center": [
+                -15.41,
+                0,
+                -1.8
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "nlinklower": {
+            "center": [
+                -15.41,
+                0,
+                -2.49
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "nlowerstrut": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "noseaxle": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "ngtyrerh": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "ngrimrh": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "ngtyrelh": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "ngrimlh": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "nouterstrut": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "rhsteercyl": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "lhsteercyl": {
+            "center": [
+                -15.5,
+                0,
+                -1.22
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ]
+        },
+        "rhngdoor": {
+            "center": [
+                -16.55,
+                0.48,
+                -1.09
+            ],
+            "axis": [
+                1,
+                0,
+                -0.1
+            ]
+        },
+        "lhngdoor": {
+            "center": [
+                -16.55,
+                -0.53,
+                -1.09
+            ],
+            "axis": [
+                1,
+                0,
+                -0.09
             ]
         }
     }
