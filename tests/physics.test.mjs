@@ -1,0 +1,181 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { calculateAerodynamics } from '../js/modules/physics/updatePhysics.js';
+
+// Minimal aircraft constants matching the real sim
+const AIRCRAFT = {
+    mass: 50000,
+    wingArea: 180,
+    maxThrust: 800000,
+    cdBase: 0.025,
+    clSlope: 0.1,
+    stallAngle: 35,
+    inertia: new THREE.Vector3(100000, 150000, 200000),
+    gearHeight: 3.5,
+    movableSurfaces: {}
+};
+
+function makePhysics(overrides = {}) {
+    return {
+        gravity: 9.81,
+        rho: 1.225,
+        dt: 0.016,
+        position: new THREE.Vector3(0, 200, 0),  // 200 m AGL by default
+        velocity: new THREE.Vector3(0, 0, 0),
+        quaternion: new THREE.Quaternion(),
+        angularVelocity: new THREE.Vector3(0, 0, 0),
+        externalForce: new THREE.Vector3(0, 0, 0),
+        externalTorque: new THREE.Vector3(0, 0, 0),
+        throttle: 0,
+        elevator: 0,
+        aileron: 0,
+        rudder: 0,
+        flaps: 0,
+        targetFlaps: 0,
+        gearDown: true,
+        gearTransition: 1.0,
+        spoilers: false,
+        brakes: false,
+        airspeed: 0,
+        aoa: 0,
+        slip: 0,
+        gForce: 1.0,
+        heightAgl: 0,
+        isStalling: false,
+        onGround: false,
+        crashed: false,
+        ...overrides
+    };
+}
+
+function makeCtx(physicsOverrides = {}, extra = {}) {
+    const PHYSICS = makePhysics(physicsOverrides);
+    return {
+        THREE,
+        PHYSICS,
+        AIRCRAFT,
+        // Flat terrain at y = 0
+        getTerrainHeight: () => 0,
+        WEATHER: { windX: 0, windZ: 0 },
+        keys: {
+            ArrowUp: false, ArrowDown: false,
+            ArrowLeft: false, ArrowRight: false,
+            a: false, z: false, q: false, e: false
+        },
+        gearGroup: null,
+        planeGroup: null,
+        Noise: null,
+        ...extra
+    };
+}
+
+test('calculateAerodynamics – zero throttle produces no thrust', () => {
+    const ctx = makeCtx({ throttle: 0, position: new THREE.Vector3(0, 500, 0) });
+    calculateAerodynamics(ctx);
+    // Net force should be negative Y (gravity dominant) and near-zero X/Z when hovering stationary
+    const fy = ctx.PHYSICS.externalForce.y;
+    assert.ok(fy < 0, `Expected net downward force, got ${fy}`);
+    assert.ok(Math.abs(ctx.PHYSICS.externalForce.x) < 1,
+        `Expected near-zero X force, got ${ctx.PHYSICS.externalForce.x}`);
+    assert.ok(Math.abs(ctx.PHYSICS.externalForce.z) < 1,
+        `Expected near-zero Z force, got ${ctx.PHYSICS.externalForce.z}`);
+});
+
+test('calculateAerodynamics – full throttle produces positive thrust', () => {
+    // Level flight aligned with -Z axis (aircraft forward = -Z in world)
+    const ctx = makeCtx({ throttle: 1.0, position: new THREE.Vector3(0, 500, 0) });
+    calculateAerodynamics(ctx);
+    // Forward thrust is along -Z in world space (quaternion identity, forward = (0,0,-1))
+    const fz = ctx.PHYSICS.externalForce.z;
+    assert.ok(fz < 0, `Expected thrust along -Z, got ${fz}`);
+    // Thrust magnitude should be close to maxThrust
+    assert.ok(Math.abs(fz) > AIRCRAFT.maxThrust * 0.5,
+        `Expected substantial thrust, got ${fz}`);
+});
+
+test('calculateAerodynamics – aircraft far above terrain is not onGround', () => {
+    const ctx = makeCtx({ position: new THREE.Vector3(0, 500, 0) });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.onGround, false);
+});
+
+test('calculateAerodynamics – aircraft at terrain level is onGround', () => {
+    // Position at gear height exactly on the flat terrain (y=0)
+    // Gear penetrates terrain → onGround = true
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, AIRCRAFT.gearHeight, 0),
+        velocity: new THREE.Vector3(0, 0, 0)
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.onGround, true);
+});
+
+test('calculateAerodynamics – high AoA sets isStalling flag', () => {
+    // Tilt nose way up: rotate ~45° pitch up around X in body frame.
+    // In THREE, Y-up world: pitch up = rotate around +X axis.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 4, 0, 0));
+    // Assign sufficient airspeed to get a non-zero AoA calculation
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 500, 0),
+        velocity: new THREE.Vector3(0, 0, -100),   // flying forward
+        quaternion: q,
+        airspeed: 100
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.isStalling, true, 'Expected stall at extreme pitch angle');
+});
+
+test('calculateAerodynamics – straight level cruise below stall angle is not stalling', () => {
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 500, 0),
+        velocity: new THREE.Vector3(0, 0, -200),   // fast cruise
+        airspeed: 200
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.isStalling, false, 'Should not stall in level cruise');
+});
+
+test('calculateAerodynamics – gearTransition increments when gear is down', () => {
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 500, 0),
+        gearDown: true,
+        gearTransition: 0.5   // mid-transition
+    });
+    calculateAerodynamics(ctx);
+    assert.ok(ctx.PHYSICS.gearTransition > 0.5,
+        `gearTransition should increase when gearDown=true, got ${ctx.PHYSICS.gearTransition}`);
+});
+
+test('calculateAerodynamics – gearTransition decrements when gear is up', () => {
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 500, 0),
+        gearDown: false,
+        gearTransition: 0.5   // mid-transition
+    });
+    calculateAerodynamics(ctx);
+    assert.ok(ctx.PHYSICS.gearTransition < 0.5,
+        `gearTransition should decrease when gearDown=false, got ${ctx.PHYSICS.gearTransition}`);
+});
+
+test('calculateAerodynamics – spoilers are auto-deployed on ground at idle', () => {
+    // The onGround branch that auto-deploys spoilers reads `p.onGround` at the *top*
+    // of the function (i.e., the value set on the previous physics tick).  Seed it
+    // true so the idle-ground branch fires, and place the aircraft at gear height so
+    // the wheel spring loop also registers contact within the same call.
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, AIRCRAFT.gearHeight, 0),
+        throttle: 0,
+        velocity: new THREE.Vector3(0, 0, 0),
+        onGround: true   // previous-frame value
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.spoilers, true, 'Spoilers should auto-deploy on ground at idle');
+    assert.equal(ctx.PHYSICS.brakes, true, 'Brakes should auto-apply on ground at idle');
+});
+
+test('calculateAerodynamics – gForce is finite', () => {
+    const ctx = makeCtx({ position: new THREE.Vector3(0, 500, 0) });
+    calculateAerodynamics(ctx);
+    assert.ok(Number.isFinite(ctx.PHYSICS.gForce), `gForce should be finite, got ${ctx.PHYSICS.gForce}`);
+});
