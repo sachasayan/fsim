@@ -5,14 +5,28 @@ export function hash2(x, z, seed = 0) {
 
 export function pickWeighted(value01, weights) {
     let sum = 0;
-    for (const w of Object.values(weights)) sum += w;
-    if (sum <= 0) return Object.keys(weights)[0];
-    let t = value01 * sum;
-    for (const [key, weight] of Object.entries(weights)) {
-        t -= weight;
-        if (t <= 0) return key;
+    let firstKey = null;
+    let lastKey = null;
+
+    // Calculate total sum and record first/last keys to avoid Object.keys() array allocation
+    for (const key in weights) {
+        if (Object.prototype.hasOwnProperty.call(weights, key)) {
+            if (firstKey === null) firstKey = key;
+            lastKey = key;
+            sum += weights[key];
+        }
     }
-    return Object.keys(weights)[Object.keys(weights).length - 1];
+
+    if (sum <= 0) return firstKey;
+
+    let t = value01 * sum;
+    for (const key in weights) {
+        if (Object.prototype.hasOwnProperty.call(weights, key)) {
+            t -= weights[key];
+            if (t <= 0) return key;
+        }
+    }
+    return lastKey;
 }
 
 export function cityHubInfluence(vx, vz) {
