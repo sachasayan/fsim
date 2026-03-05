@@ -427,7 +427,12 @@ setTimeout(() => {
     setTimeout(() => loader.style.display = 'none', 1000);
   }
 
-  PHYSICS.position.set(0, AIRCRAFT.gearHeight, 1900);
+  const urlParams = new URLSearchParams(window.location.search);
+  const spawnX = urlParams.has('x') ? parseFloat(urlParams.get('x')) : 0;
+  const spawnY = urlParams.has('y') ? parseFloat(urlParams.get('y')) : AIRCRAFT.gearHeight;
+  const spawnZ = urlParams.has('z') ? parseFloat(urlParams.get('z')) : 1900;
+
+  PHYSICS.position.set(spawnX, spawnY, spawnZ);
   PHYSICS.velocity.set(0, 0, 0);
   PHYSICS.angularVelocity.set(0, 0, 0);
   PHYSICS.externalForce.set(0, 0, 0);

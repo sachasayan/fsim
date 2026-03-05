@@ -8,6 +8,7 @@
     "start": "node server.js",
     "build:world": "node tools/build-world.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "screenshot": "node scripts/screenshot.mjs",
     "test:unit": "node --test tests/*.test.mjs",
     "test:perf": "node scripts/perf.mjs",
     "test": "npm run test:unit && npm run smoke"
