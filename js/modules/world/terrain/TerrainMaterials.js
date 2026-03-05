@@ -1,4 +1,10 @@
 import * as THREE from 'three';
+import { ShaderLibrary } from './ShaderLibrary.js';
+
+function replaceInclude(shader, includeName, content) {
+    const pattern = new RegExp(`#include\\s*<\\s*${includeName}\\s*>`, 'g');
+    return shader.replace(pattern, content);
+}
 
 export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphereUniforms, strength = 0.5, desat = 0.0) {
     material.onBeforeCompile = (shader) => {
@@ -7,35 +13,24 @@ export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphe
         shader.uniforms.uAtmosNear = atmosphereUniforms.uAtmosNear;
         shader.uniforms.uAtmosFar = atmosphereUniforms.uAtmosFar;
 
-        shader.vertexShader = shader.vertexShader
-            .replace(
-                '#include <common>',
-                `#include <common>\nvarying vec3 vAtmosWorldPos;`
-            )
-            .replace(
-                '#include <worldpos_vertex>',
-                `#include <worldpos_vertex>
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'common', '#include <common>\nvarying vec3 vAtmosWorldPos;');
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'worldpos_vertex', `#include <worldpos_vertex>
     vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
 #ifdef USE_INSTANCING
 worldPos = instanceMatrix * worldPos;
 #endif
-vAtmosWorldPos = worldPos.xyz; `
-            );
+vAtmosWorldPos = worldPos.xyz; `);
 
-        shader.fragmentShader = shader.fragmentShader
-            .replace(
-                '#include <common>',
-                `#include <common>\nvarying vec3 vAtmosWorldPos; \nuniform vec3 uAtmosCameraPos; \nuniform vec3 uAtmosColor; \nuniform float uAtmosNear; \nuniform float uAtmosFar; `
-            )
-            .replace(
-                'vec4 diffuseColor = vec4( diffuse, opacity );',
-                `vec4 diffuseColor = vec4(diffuse, opacity);
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'common', '#include <common>\nvarying vec3 vAtmosWorldPos; \nuniform vec3 uAtmosCameraPos; \nuniform vec3 uAtmosColor; \nuniform float uAtmosNear; \nuniform float uAtmosFar; ');
+        shader.fragmentShader = shader.fragmentShader.replace(
+            'vec4 diffuseColor = vec4( diffuse, opacity );',
+            `vec4 diffuseColor = vec4(diffuse, opacity);
 float atmosDist = distance(vAtmosWorldPos, uAtmosCameraPos);
 float atmosMix = smoothstep(uAtmosNear, uAtmosFar, atmosDist) * ${strength.toFixed(4)};
 float atmosLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(atmosLuma), ${desat.toFixed(4)} * atmosMix);
 diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix); `
-            );
+        );
     };
     material.customProgramCacheKey = () => `atmos-${programKey}`;
 }
@@ -47,13 +42,8 @@ export function applyWaterDualScrollToMaterial(material, timeUniform) {
 
         shader.uniforms.uTime = timeUniform;
 
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <common>',
-            `#include <common>
-    uniform float uTime; `
-        ).replace(
-            '#include <normal_fragment_maps>',
-            `
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'common', `#include <common>\nuniform float uTime; `);
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'normal_fragment_maps', `
 #ifdef USE_NORMALMAP
     vec2 normalUv1 = vNormalMapUv + vec2(uTime * 0.12, uTime * 0.08);
     vec2 normalUv2 = vNormalMapUv * 1.5 + vec2(uTime * -0.08, uTime * 0.12);
@@ -90,8 +80,7 @@ baseNormal.xy *= normalScale;
 normal = normalize(tbn_ds * baseNormal);
 #else
 #include <normal_fragment_maps>
-    #endif`
-        );
+    #endif`);
     };
 
     const prevCacheKey = material.customProgramCacheKey;
@@ -111,17 +100,11 @@ export function setupBuildingPopIn(material, cameraPosUniform, fadeNear = 6800, 
         shader.uniforms.uBldgFadeNear = { value: fadeNear };
         shader.uniforms.uBldgFadeFar = { value: fadeFar };
 
-        shader.vertexShader = shader.vertexShader
-            .replace(
-                '#include <common>',
-                `#include <common>
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'common', `#include <common>
     uniform vec3 uBldgCameraPos;
 uniform float uBldgFadeNear;
-uniform float uBldgFadeFar;`
-            )
-            .replace(
-                '#include <begin_vertex>',
-                `#include <begin_vertex>
+uniform float uBldgFadeFar;`);
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'begin_vertex', `#include <begin_vertex>
     #ifdef USE_INSTANCING
     // World position of this instance's origin
     vec3 bldgInstancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
@@ -129,8 +112,7 @@ uniform float uBldgFadeFar;`
     // Scale: 1 at fadeNear, 0 at fadeFar → smoothly grow in
     float bldgPopInScale = 1.0 - smoothstep(uBldgFadeNear, uBldgFadeFar, bldgDist);
 transformed *= bldgPopInScale;
-#endif`
-            );
+#endif`);
     };
 
     const prevCacheKey = material.customProgramCacheKey;
@@ -150,9 +132,7 @@ export function makeTreeBillboardMaterial(texture, tint) {
     });
 
     mat.onBeforeCompile = (shader) => {
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <beginnormal_vertex>',
-            `
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'beginnormal_vertex', `
 #include <beginnormal_vertex>
     #ifdef USE_INSTANCING
     vec3 cameraDirN = cameraPosition - (modelMatrix * vec4(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2], 1.0)).xyz;
@@ -168,10 +148,8 @@ if (length(cameraDirN) > 0.0) {
     objectNormal = alignMatN * objectNormal;
 }
 #endif
-    `
-        ).replace(
-            '#include <project_vertex>',
-            `
+    `);
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'project_vertex', `
 vec4 mvPosition = vec4(transformed, 1.0);
 #ifdef USE_BATCHING
 mvPosition = batchingMatrix * mvPosition;
@@ -199,8 +177,7 @@ if (length(cameraDir) > 0.0) {
 #endif
 mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;
-`
-        );
+`);
     };
 
     mat.customProgramCacheKey = () => 'treeBillboard';
@@ -222,13 +199,9 @@ export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
 
         shader.uniforms.uMainCameraPos = mainCameraPosUniform;
 
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `#include <common>
-    uniform vec3 uMainCameraPos; `
-        ).replace(
-            '#include <project_vertex>',
-            `
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'common', `#include <common>
+    uniform vec3 uMainCameraPos; `);
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'project_vertex', `
 vec4 mvPosition = vec4(transformed, 1.0);
 #ifdef USE_BATCHING
 mvPosition = batchingMatrix * mvPosition;
@@ -262,8 +235,7 @@ if (length(cameraDir) > 0.0) {
 #endif
 mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;
-`
-        );
+`);
     };
 
     mat.customProgramCacheKey = () => 'treeDepthBillboard_v3';
@@ -279,19 +251,15 @@ export function createDetailedBuildingMat(style, cameraPosUniform = null) {
             shader.uniforms.uBldgFadeFar = { value: 7800 };
         }
 
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `#include <common>
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'common', `#include <common>
     varying vec3 vBldgObjPos;
         varying vec3 vBldgScale;
         varying vec3 vBldgNormal;
 ${cameraPosUniform ? `uniform vec3 uBldgCameraPos;
 uniform float uBldgFadeNear;
 uniform float uBldgFadeFar;` : ''
-            } `
-        ).replace(
-            '#include <begin_vertex>',
-            `#include <begin_vertex>
+            } `);
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'begin_vertex', `#include <begin_vertex>
     vBldgObjPos = position;
 vBldgNormal = normal;
 #ifdef USE_INSTANCING
@@ -309,8 +277,7 @@ ${cameraPosUniform ? `    #ifdef USE_INSTANCING
     float _bldgScale = 1.0 - smoothstep(uBldgFadeNear, uBldgFadeFar, _bldgDist);
     transformed *= _bldgScale;
     #endif` : ''
-            } `
-        );
+            } `);
 
         let colorFragment = '';
         let roughFragment = '';
@@ -398,26 +365,20 @@ if (abs(vBldgNormal.y) < 0.9) {
 } `;
         }
 
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <common>',
-            `#include <common>
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'common', `#include <common>
     varying vec3 vBldgObjPos;
         varying vec3 vBldgScale;
-        varying vec3 vBldgNormal; `
-        ).replace(
-            '#include <color_fragment>',
-            `#include <color_fragment>\n${colorFragment} `
-        ).replace(
-            '#include <roughnessmap_fragment>',
-            `#include <roughnessmap_fragment>\n${roughFragment} `
-        );
+        varying vec3 vBldgNormal; `);
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'color_fragment', `#include <color_fragment>\n${colorFragment} `);
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'roughnessmap_fragment', `#include <roughnessmap_fragment>\n${roughFragment} `);
     };
     mat.customProgramCacheKey = () => `detailed-building-mat-v3-${style}${cameraPosUniform ? '-popin' : ''}`;
     return mat;
 }
 
-export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, isFarLOD = false, cityData = null) {
+export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, timeUniform, isFarLOD = false, cityData = null) {
     material.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = timeUniform;
         shader.uniforms.uTerrainDetailTex = terrainDetailUniforms.uTerrainDetailTex;
         shader.uniforms.uTerrainDetailScale = terrainDetailUniforms.uTerrainDetailScale;
         shader.uniforms.uTerrainDetailStrength = terrainDetailUniforms.uTerrainDetailStrength;
@@ -440,19 +401,13 @@ export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphere
             shader.uniforms.uCityMaskRadius = { value: cityData.maskRadius };
         }
 
-        shader.vertexShader = shader.vertexShader
-            .replace(
-                '#include <common>',
-                `#include <common>
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'common', `#include <common>
     varying vec3 vTerrainWorldPos;
         varying vec3 vTerrainWorldNormal;
         varying float vTerrainDist;
         varying float vTerrainSlope;
-        uniform vec3 uAtmosCameraPos;`
-            )
-            .replace(
-                '#include <worldpos_vertex>',
-                `#include <worldpos_vertex>
+        uniform vec3 uAtmosCameraPos;`);
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'worldpos_vertex', `#include <worldpos_vertex>
     vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
 #ifdef USE_INSTANCING
 worldPos = instanceMatrix * worldPos;
@@ -460,13 +415,9 @@ worldPos = instanceMatrix * worldPos;
 vTerrainWorldPos = worldPos.xyz;
 vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);
 vTerrainDist = distance(worldPos.xyz, uAtmosCameraPos);
-vTerrainSlope = 1.0 - clamp(abs(vTerrainWorldNormal.y), 0.0, 1.0);`
-            );
+vTerrainSlope = 1.0 - clamp(abs(vTerrainWorldNormal.y), 0.0, 1.0);`);
 
-        shader.fragmentShader = shader.fragmentShader
-            .replace(
-                '#include <common>',
-                `#include <common>
+        shader.fragmentShader = replaceInclude(shader.fragmentShader, 'common', `#include <common>
     varying vec3 vTerrainWorldPos;
         varying vec3 vTerrainWorldNormal;
 varying float vTerrainDist;
@@ -488,24 +439,12 @@ uniform float uTerrainFoliageNearEnd;
 uniform float uTerrainFoliageStrength;
 uniform float uTime;
 
-#ifdef HAS_CITY_MASK
-uniform sampler2D uRoadMaskTex;
-uniform vec2 uCityCenter;
-uniform float uCityMaskRadius;
-#endif
-`
-            )
-            .replace(
-                'vec4 diffuseColor = vec4( diffuse, opacity );',
-                `vec4 diffuseColor = vec4(diffuse, opacity);
-    float cityAlpha = 0.0;
-#ifdef HAS_CITY_MASK
-    vec2 cityUv = (vTerrainWorldPos.xz - uCityCenter + vec2(uCityMaskRadius)) / (uCityMaskRadius * 2.0);
-cityUv.y = 1.0 - cityUv.y;
-if (cityUv.x >= 0.0 && cityUv.x <= 1.0 && cityUv.y >= 0.0 && cityUv.y <= 1.0) {
-    cityAlpha = texture2D(uRoadMaskTex, cityUv).r;
-}
-#endif
+${ShaderLibrary.terrain_city_pars_fragment}
+`);
+        shader.fragmentShader = shader.fragmentShader.replace(
+            'vec4 diffuseColor = vec4( diffuse, opacity );',
+            `vec4 diffuseColor = vec4(diffuse, opacity);
+${ShaderLibrary.terrain_city_fragment}
 
 #ifndef IS_FAR_LOD
     vec2 baseUv = vTerrainWorldPos.xz * uTerrainDetailScale;
@@ -539,54 +478,10 @@ diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
 diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
 #endif
 
-#ifdef HAS_CITY_MASK
-        // Pavement from 80/255 (0.31) to 160/255 (0.62)
-        float isUrbanPavement = smoothstep(0.20, 0.40, cityAlpha);
-        // Asphalt from 160/255 (0.62) upwards
-        float isRoadAsphalt = smoothstep(0.55, 0.65, cityAlpha);
-        
-        vec3 pavementColor = vec3(0.55, 0.55, 0.55); // lighter concrete gray so it pops
-        vec3 asphaltColor = vec3(0.20, 0.20, 0.20); // dark asphalt
-
-#ifndef IS_FAR_LOD
-pavementColor *= mix(0.85, 1.15, rockDetail); // add grit
-#endif
-
-        // Dashed center lane markings
-        float isCenter = smoothstep(0.92, 0.98, cityAlpha);
-        float dashPattern = step(0.5, fract(vTerrainWorldPos.x * 0.10 + vTerrainWorldPos.z * 0.10));
-        vec3 markingColor = vec3(0.92, 0.88, 0.72); // warm off-white
-        
-        vec3 finalCityColor = mix(pavementColor, asphaltColor, isRoadAsphalt);
-finalCityColor = mix(finalCityColor, markingColor, isCenter * dashPattern * 0.75);
-
-#ifndef IS_FAR_LOD
-        // Traffic Layer (Headlights & Taillights)
-        // High frequency scrolling patterns on asphalt
-        float trafficAnim = uTime * 1.8;
-        float flowX = fract(vTerrainWorldPos.x * 0.04 + trafficAnim);
-        float flowZ = fract(vTerrainWorldPos.z * 0.04 - trafficAnim);
-
-        // Heads (white/yellow) and Tails (red)
-        float heads = step(0.96, fract(vTerrainWorldPos.x * 0.3 + trafficAnim * 1.2)) +
-    step(0.96, fract(vTerrainWorldPos.z * 0.3 - trafficAnim * 1.2));
-        float tails = step(0.96, fract(vTerrainWorldPos.x * 0.3 + (trafficAnim + 0.5) * 1.2)) +
-    step(0.96, fract(vTerrainWorldPos.z * 0.3 - (trafficAnim + 0.5) * 1.2));
-
-        // Modulate by urban density (high cityAlpha)
-        float trafficDensity = smoothstep(0.65, 0.95, cityAlpha);
-        vec3 headlightCol = vec3(1.0, 0.98, 0.85);
-        vec3 taillightCol = vec3(1.0, 0.1, 0.05);
-
-finalCityColor = mix(finalCityColor, headlightCol, heads * isRoadAsphalt * trafficDensity * 0.9);
-finalCityColor = mix(finalCityColor, taillightCol, tails * isRoadAsphalt * trafficDensity * 0.7);
-#endif
-
-        diffuseColor.rgb = mix(diffuseColor.rgb, finalCityColor, isUrbanPavement);
-        #endif
+${ShaderLibrary.terrain_city_pavement_fragment}
         float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, vTerrainDist) * uTerrainAtmosStrength;
         diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`
-            );
+        );
 
         if (isFarLOD) shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
         if (cityData && cityData.roadMaskTexture) shader.fragmentShader = '#define HAS_CITY_MASK\n' + shader.fragmentShader;

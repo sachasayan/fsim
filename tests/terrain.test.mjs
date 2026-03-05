@@ -4,14 +4,24 @@ import * as THREE from 'three';
 
 // Define globals needed for terrain logic
 global.Worker = class {
-    constructor() {}
-    postMessage() {}
+    constructor() { }
+    postMessage() { }
 };
 
 Object.defineProperty(global, 'navigator', {
-  value: { hardwareConcurrency: 2 },
-  writable: true
+    value: { hardwareConcurrency: 2 },
+    writable: true
 });
+
+global.window = {
+    location: {
+        search: ''
+    }
+};
+global.URLSearchParams = class {
+    constructor(search) { this.search = search; }
+    get(param) { return null; }
+};
 
 global.document = {
     createElement: (tag) => {
@@ -20,25 +30,25 @@ global.document = {
                 width: 0,
                 height: 0,
                 getContext: () => ({
-                    clearRect: () => {},
-                    fillRect: () => {},
-                    beginPath: () => {},
-                    closePath: () => {},
-                    moveTo: () => {},
-                    lineTo: () => {},
-                    fill: () => {},
-                    stroke: () => {},
-                    save: () => {},
-                    restore: () => {},
-                    translate: () => {},
-                    scale: () => {},
-                    rotate: () => {},
-                    arc: () => {},
-                    ellipse: () => {},
+                    clearRect: () => { },
+                    fillRect: () => { },
+                    beginPath: () => { },
+                    closePath: () => { },
+                    moveTo: () => { },
+                    lineTo: () => { },
+                    fill: () => { },
+                    stroke: () => { },
+                    save: () => { },
+                    restore: () => { },
+                    translate: () => { },
+                    scale: () => { },
+                    rotate: () => { },
+                    arc: () => { },
+                    ellipse: () => { },
                     getImageData: () => ({ data: new Uint8Array(1) }),
                     createImageData: () => ({ data: new Uint8Array(1) }),
-                    putImageData: () => {},
-                    drawImage: () => {}
+                    putImageData: () => { },
+                    drawImage: () => { }
                 })
             };
         }
