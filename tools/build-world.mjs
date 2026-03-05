@@ -224,6 +224,39 @@ function classifyRoad(s1, s2, city) {
 const ROAD_WIDTHS = { arterial: 14, collector: 9, local: 5.5 };
 
 // ---------------------------------------------------------------------------
+// Geometry Helpers
+// ---------------------------------------------------------------------------
+function isPointInPolygon(x, z, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const xi = points[i][0], zi = points[i][1];
+        const xj = points[j][0], zj = points[j][1];
+        const intersect = ((zi > z) !== (zj > z)) &&
+            (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function distToSegment(px, pz, x1, z1, x2, z2) {
+    const dx = x2 - x1, dz = z2 - z1;
+    const l2 = dx * dx + dz * dz;
+    if (l2 === 0) return Math.hypot(px - x1, pz - z1);
+    let t = ((px - x1) * dx + (pz - z1) * dz) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), pz - (z1 + t * dz));
+}
+
+function distToPolygon(px, pz, points) {
+    let minDist = Infinity;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const d = distToSegment(px, pz, points[i][0], points[i][1], points[j][0], points[j][1]);
+        minDist = Math.min(minDist, d);
+    }
+    return minDist;
+}
+
+// ---------------------------------------------------------------------------
 // District lookup
 // ---------------------------------------------------------------------------
 const DISTRICT_CLASS_WEIGHTS = {
@@ -270,14 +303,26 @@ function getDistrictWeights(x, z, city) {
     const weights = {};
     let totalWeight = 0;
     for (const d of city.districts) {
-        const dist = Math.hypot(x - d.center[0], z - d.center[1]);
-        // Inverse distance weighting with a soft falloff
-        const w = 1.0 / (1.0 + Math.pow(dist / d.radius, 2));
+        let w = 0;
+        if (d.points) {
+            const inside = isPointInPolygon(x, z, d.points);
+            if (inside) {
+                w = 1.0;
+            } else {
+                const dist = distToPolygon(x, z, d.points);
+                w = 1.0 / (1.0 + Math.pow(dist / 200, 2)); // 200m falloff for polygons
+            }
+        } else {
+            const dist = Math.hypot(x - d.center[0], z - d.center[1]);
+            w = 1.0 / (1.0 + Math.pow(dist / d.radius, 2));
+        }
         weights[d.type] = (weights[d.type] || 0) + w;
         totalWeight += w;
     }
     // Normalize weights
-    for (const type in weights) weights[type] /= totalWeight;
+    if (totalWeight > 0) {
+        for (const type in weights) weights[type] /= totalWeight;
+    }
     return weights || { residential: 1 };
 }
 
@@ -290,8 +335,19 @@ function getUrbanIntensity(x, z, city) {
     let coreBoost = 0;
     for (const d of city.districts) {
         if (d.type === 'financial_core' || d.type === 'commercial') {
-            const dDist = Math.hypot(x - d.center[0], z - d.center[1]);
-            const dNorm = Math.max(0, 1.0 - dDist / d.radius);
+            let dNorm = 0;
+            if (d.points) {
+                const inside = isPointInPolygon(x, z, d.points);
+                if (inside) {
+                    dNorm = 1.0;
+                } else {
+                    const distToE = distToPolygon(x, z, d.points);
+                    dNorm = Math.max(0, 1.0 - distToE / 300); // 300m linear falloff
+                }
+            } else {
+                const dDist = Math.hypot(x - d.center[0], z - d.center[1]);
+                dNorm = Math.max(0, 1.0 - dDist / d.radius);
+            }
             coreBoost = Math.max(coreBoost, dNorm);
         }
     }

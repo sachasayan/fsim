@@ -452,6 +452,10 @@ setTimeout(() => {
     clouds.visible = false;
   }
 
+  if (urlParams.get('hideplane') === '1') {
+    planeGroup.visible = false;
+  }
+
   console.log(`Setting initial position: [${spawnX}, ${spawnY}, ${spawnZ}]`);
   PHYSICS.position.set(spawnX, spawnY, spawnZ);
   PHYSICS.velocity.set(0, 0, 0);

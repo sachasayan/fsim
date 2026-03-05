@@ -36,17 +36,18 @@ async function main() {
     let params = {};
 
     // 1. Check for vantage point first
+    let vantageName = '';
     const vantageArg = args.find(a => a.startsWith('--vantage='));
     if (vantageArg) {
-        const name = vantageArg.split('=')[1];
+        vantageName = vantageArg.split('=')[1];
         const vantagePath = path.join(screenshotsDir, 'vantage_points.json');
         if (fs.existsSync(vantagePath)) {
             const vantages = JSON.parse(fs.readFileSync(vantagePath, 'utf8'));
-            if (vantages[name]) {
-                console.log(`Using vantage point: ${name}`);
-                Object.assign(params, vantages[name]);
+            if (vantages[vantageName]) {
+                console.log(`Using vantage point: ${vantageName}`);
+                Object.assign(params, vantages[vantageName]);
             } else {
-                console.warn(`Vantage point "${name}" not found in ${vantagePath}`);
+                console.warn(`Vantage point "${vantageName}" not found in ${vantagePath}`);
             }
         }
     }
@@ -59,6 +60,7 @@ async function main() {
         if (arg.startsWith('--fog=')) params.fog = arg.split('=')[1];
         if (arg.startsWith('--clouds=')) params.clouds = arg.split('=')[1];
         if (arg.startsWith('--lighting=')) params.lighting = arg.split('=')[1];
+        if (arg.startsWith('--hideplane=')) params.hideplane = arg.split('=')[1];
     });
 
     let queryParams = [];
@@ -172,7 +174,8 @@ async function main() {
         await page.waitForTimeout(2000);
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const screenshotPath = path.join(screenshotsDir, `screenshot-${timestamp}.png`);
+        const vantagePrefix = vantageName ? `${vantageName}_` : '';
+        const screenshotPath = path.join(screenshotsDir, `${vantagePrefix}${timestamp}.png`);
 
         console.log(`Saving screenshot to ${screenshotPath}...`);
         await page.screenshot({ path: screenshotPath });

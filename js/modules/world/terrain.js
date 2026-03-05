@@ -95,8 +95,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     uTerrainFoliageStrength: { value: 0.38 }
   };
 
-  setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, false);
-  setupTerrainMaterial(terrainFarMaterial, terrainDetailUniforms, atmosphereUniforms, true);
+  setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, false);
+  setupTerrainMaterial(terrainFarMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, true);
 
   const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
   treeBillboardGeo.translate(0, 0.5, 0);
