@@ -6,7 +6,8 @@ import {
   makeTreeBillboardMaterial,
   makeTreeDepthMaterial,
   createDetailedBuildingMat,
-  setupTerrainMaterial
+  setupTerrainMaterial,
+  setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
@@ -127,9 +128,9 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
 
   const baseBuildingGeo = new THREE.BoxGeometry(1, 1, 1); baseBuildingGeo.translate(0, 0.5, 0);
   const detailedBuildingMats = {
-    commercial: createDetailedBuildingMat('commercial'),
-    residential: createDetailedBuildingMat('residential'),
-    industrial: createDetailedBuildingMat('industrial')
+    commercial: createDetailedBuildingMat('commercial', tempMainCameraPosUniform),
+    residential: createDetailedBuildingMat('residential', tempMainCameraPosUniform),
+    industrial: createDetailedBuildingMat('industrial', tempMainCameraPosUniform)
   };
   const baseBuildingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
   const roofCapGeo = new THREE.BoxGeometry(1.06, 0.18, 1.06); roofCapGeo.translate(0, 0.09, 0);
@@ -140,6 +141,10 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const spireMat = new THREE.MeshStandardMaterial({ color: 0xc7c7c7, roughness: 0.3, metalness: 0.9 });
   const hvacGeo = new THREE.BoxGeometry(1, 1, 1); hvacGeo.translate(0, 0.5, 0);
   const hvacMat = new THREE.MeshStandardMaterial({ color: 0x909090, roughness: 0.7, metalness: 0.4 });
+
+  // Apply distance-based pop-in to all plain building materials
+  [baseBuildingMat, roofCapMat, podiumMat, spireMat, hvacMat].forEach(mat => setupBuildingPopIn(mat, tempMainCameraPosUniform));
+
 
   const dummy = new THREE.Object3D();
 

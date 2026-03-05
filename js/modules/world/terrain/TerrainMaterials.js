@@ -100,6 +100,44 @@ uniform float uTime;`
     };
 }
 
+// Injects distance-based pop-in scale into a building material's vertex shader.
+// Buildings scale from 0 → 1 over the range [fadeNear, fadeFar] (in world-space units).
+export function setupBuildingPopIn(material, cameraPosUniform, fadeNear = 6800, fadeFar = 7800) {
+    const prevCompile = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+        if (prevCompile) prevCompile(shader, renderer);
+
+        shader.uniforms.uBldgCameraPos = cameraPosUniform;
+        shader.uniforms.uBldgFadeNear = { value: fadeNear };
+        shader.uniforms.uBldgFadeFar = { value: fadeFar };
+
+        shader.vertexShader = shader.vertexShader
+            .replace(
+                '#include <common>',
+                `#include <common>
+uniform vec3 uBldgCameraPos;
+uniform float uBldgFadeNear;
+uniform float uBldgFadeFar;`
+            )
+            .replace(
+                '#include <begin_vertex>',
+                `#include <begin_vertex>
+#ifdef USE_INSTANCING
+    // World position of this instance's origin
+    vec3 bldgInstancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    float bldgDist = distance((modelMatrix * vec4(bldgInstancePos, 1.0)).xyz, uBldgCameraPos);
+    // Scale: 1 at fadeNear, 0 at fadeFar → smoothly grow in
+    float bldgPopInScale = 1.0 - smoothstep(uBldgFadeNear, uBldgFadeFar, bldgDist);
+    transformed *= bldgPopInScale;
+#endif`
+            );
+    };
+
+    const prevCacheKey = material.customProgramCacheKey;
+    material.customProgramCacheKey = () =>
+        (prevCacheKey ? prevCacheKey.call(material) : material.uuid) + `-bldg-popin-${fadeNear}-${fadeFar}`;
+}
+
 export function makeTreeBillboardMaterial(texture, tint) {
     const mat = new THREE.MeshStandardMaterial({
         map: texture,
@@ -232,15 +270,24 @@ gl_Position = projectionMatrix * mvPosition;
     return mat;
 }
 
-export function createDetailedBuildingMat(style) {
+export function createDetailedBuildingMat(style, cameraPosUniform = null) {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
     mat.onBeforeCompile = (shader) => {
+        if (cameraPosUniform) {
+            shader.uniforms.uBldgCameraPos = cameraPosUniform;
+            shader.uniforms.uBldgFadeNear = { value: 6800 };
+            shader.uniforms.uBldgFadeFar = { value: 7800 };
+        }
+
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
         varying vec3 vBldgObjPos;
         varying vec3 vBldgScale;
-        varying vec3 vBldgNormal; `
+        varying vec3 vBldgNormal;
+${cameraPosUniform ? `uniform vec3 uBldgCameraPos;
+uniform float uBldgFadeNear;
+uniform float uBldgFadeFar;` : ''} `
         ).replace(
             '#include <begin_vertex>',
             `#include <begin_vertex>
@@ -254,7 +301,13 @@ export function createDetailedBuildingMat(style) {
     );
     #else
     vBldgScale = vec3(1.0);
-    #endif`
+    #endif
+${cameraPosUniform ? `    #ifdef USE_INSTANCING
+    vec3 _bldgInstPos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    float _bldgDist = distance((modelMatrix * vec4(_bldgInstPos, 1.0)).xyz, uBldgCameraPos);
+    float _bldgScale = 1.0 - smoothstep(uBldgFadeNear, uBldgFadeFar, _bldgDist);
+    transformed *= _bldgScale;
+    #endif` : ''}`
         );
 
         let colorFragment = '';
@@ -357,7 +410,7 @@ export function createDetailedBuildingMat(style) {
             `#include <roughnessmap_fragment>\n${roughFragment}`
         );
     };
-    mat.customProgramCacheKey = () => `detailed - building - mat - v2 - ${style} `;
+    mat.customProgramCacheKey = () => `detailed-building-mat-v3-${style}${cameraPosUniform ? '-popin' : ''}`;
     return mat;
 }
 
