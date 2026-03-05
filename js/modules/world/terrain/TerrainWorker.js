@@ -158,7 +158,20 @@ function buildChunkBase(job) {
 }
 
 function buildChunkProps(job) {
-    const { cx, cz, lod, lodCfg, positions } = job;
+    const { cx, cz, lod, lodCfg, positions, cityZones = [] } = job;
+
+    // Pre-compute city bounding circles as squared radii for fast containment checks
+    const cityCircles = cityZones.map(c => ({
+        cx: c.cx, cz: c.cz, r2: c.radius * c.radius
+    }));
+
+    function inCity(vx, vz) {
+        for (const c of cityCircles) {
+            const dx = vx - c.cx, dz = vz - c.cz;
+            if (dx * dx + dz * dz < c.r2) return true;
+        }
+        return false;
+    }
 
     const treePositions = { conifer: [], broadleaf: [], poplar: [], dry: [] };
     const buildingPositions = { supertall: [], highrise: [], office: [], apartment: [], townhouse: [], industrial: [] };
@@ -203,6 +216,8 @@ function buildChunkProps(job) {
         const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
 
         if (lodCfg.enableBuildings && urbanScore > 0.22 && !isRoad && !isPark) {
+            // Skip noise-based buildings inside pre-compiled city zones
+            if (inCity(vx, vz)) continue;
             const lotDensity = district.lotDensity * (0.55 + urbanScore * 0.95);
             if (rng < lotDensity * lodCfg.propDensity) {
                 const classNoise = hash2(cellX, cellZ, 12);

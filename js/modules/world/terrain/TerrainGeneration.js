@@ -1,7 +1,19 @@
 import * as THREE from 'three';
+import { fetchCityIndex, loadCityChunk, getCityAtPoint, CLASS_NAMES } from './CityChunkLoader.js';
+import { setupTerrainMaterial } from './TerrainMaterials.js';
 
 export const CHUNK_SIZE = 4000;
 export const TREE_DENSITY_MULTIPLIER = 4.0;
+
+// Lazily fetched city index (array of {id, cx, cz, radius})
+let _cityIndex = null;
+async function getCityIndex() {
+    if (!_cityIndex) _cityIndex = await fetchCityIndex();
+    return _cityIndex;
+}
+
+// Radius inflation so a chunk just outside a city boundary still loads its data
+const CITY_CHUNK_MARGIN = CHUNK_SIZE * 0.75;
 
 const maxWorkers = navigator.hardwareConcurrency ? Math.min(navigator.hardwareConcurrency, 4) : 2;
 const workers = [];
@@ -181,6 +193,142 @@ function hash2Local(seed, k, p) {
     return n - Math.floor(n);
 }
 
+/**
+ * Determine if a terrain chunk (cx, cz) overlaps any pre-compiled city zone.
+ * Returns the matching city entry or null.
+ */
+async function getOverlappingCity(cx, cz) {
+    const cityIndex = await getCityIndex();
+    if (!cityIndex || cityIndex.length === 0) return null;
+    // Chunk world-space centre
+    const chunkCX = cx * CHUNK_SIZE;
+    const chunkCZ = cz * CHUNK_SIZE;
+    for (const city of cityIndex) {
+        const dx = chunkCX - city.cx, dz = chunkCZ - city.cz;
+        const distSq = dx * dx + dz * dz;
+        const threshold = city.radius + CITY_CHUNK_MARGIN;
+        if (distSq < threshold * threshold) return city;
+    }
+    return null;
+}
+
+/**
+ * Spawn city buildings from pre-compiled binary data into the given chunk group.
+ * Only installs buildings whose world position falls within this chunk's AABB.
+ */
+function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ctx) {
+    const {
+        detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
+        roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat,
+        hvacGeo, hvacMat, getPooledInstancedMesh, dummy
+    } = ctx;
+
+    const halfChunk = CHUNK_SIZE / 2;
+    const minX = cx * CHUNK_SIZE - halfChunk, maxX = cx * CHUNK_SIZE + halfChunk;
+    const minZ = cz * CHUNK_SIZE - halfChunk, maxZ = cz * CHUNK_SIZE + halfChunk;
+
+    // Bucket buildings by class
+    const byClass = {};
+    for (const className of CLASS_NAMES) byClass[className] = [];
+
+    for (const b of cityData.buildings) {
+        if (b.x < minX || b.x > maxX || b.z < minZ || b.z > maxZ) continue;
+        const className = CLASS_NAMES[b.classId] || 'office';
+        byClass[className].push(b);
+    }
+
+    const buildingShadowsEnabled = lod === 0;
+
+    for (const [buildingClass, entries] of Object.entries(byClass)) {
+        if (entries.length === 0) continue;
+        const cfg = classConfigs[buildingClass];
+        if (!cfg) continue;
+        const buildingMat = lod === 0 ? detailedBuildingMats[cfg.style] : baseBuildingMat;
+
+        const bldgMesh = new THREE.InstancedMesh(baseBuildingGeo, buildingMat, entries.length);
+        const roofMesh = new THREE.InstancedMesh(roofCapGeo, roofCapMat, entries.length);
+        const podiumMesh = cfg.podium ? new THREE.InstancedMesh(podiumGeo, podiumMat, entries.length) : null;
+        const spireMesh = cfg.spire ? new THREE.InstancedMesh(spireGeo, spireMat, entries.length) : null;
+
+        let hvacMesh = null, hvacIdx = 0;
+        if (lod === 0) {
+            hvacMesh = getPooledInstancedMesh(hvacGeo, hvacMat, entries.length * 3);
+            hvacMesh.castShadow = true; hvacMesh.receiveShadow = true;
+        }
+
+        bldgMesh.castShadow = buildingShadowsEnabled; bldgMesh.receiveShadow = buildingShadowsEnabled;
+        roofMesh.castShadow = buildingShadowsEnabled; roofMesh.receiveShadow = buildingShadowsEnabled;
+        if (podiumMesh) { podiumMesh.castShadow = buildingShadowsEnabled; podiumMesh.receiveShadow = buildingShadowsEnabled; }
+        if (spireMesh) { spireMesh.castShadow = buildingShadowsEnabled; spireMesh.receiveShadow = buildingShadowsEnabled; }
+
+        const baseColor = new THREE.Color();
+        const roofColor = new THREE.Color();
+        const podiumColor = new THREE.Color();
+
+        for (let j = 0; j < entries.length; j++) {
+            const bp = entries[j];
+            const { x, y, z, w, h, d, angle, colorIdx } = bp;
+            // Convert from local chunk space (binary stores world coords)
+            const lx = x - cx * CHUNK_SIZE;
+            const lz = z - cz * CHUNK_SIZE;
+
+            dummy.position.set(lx, y, lz);
+            dummy.rotation.set(0, angle, 0);
+            dummy.scale.set(w, h, d);
+            dummy.updateMatrix();
+            bldgMesh.setMatrixAt(j, dummy.matrix);
+            baseColor.setHex(cfg.colors[colorIdx % cfg.colors.length]);
+            bldgMesh.setColorAt(j, baseColor);
+
+            dummy.position.set(lx, y + h, lz);
+            dummy.scale.set(w * 1.04, 1, d * 1.04);
+            dummy.updateMatrix();
+            roofMesh.setMatrixAt(j, dummy.matrix);
+            roofColor.setHex(cfg.roof[colorIdx % cfg.roof.length]);
+            roofMesh.setColorAt(j, roofColor);
+
+            if (podiumMesh) {
+                const podiumH = Math.max(5, h * 0.08);
+                dummy.position.set(lx, y, lz);
+                dummy.scale.set(w * 1.2, podiumH, d * 1.2);
+                dummy.updateMatrix();
+                podiumMesh.setMatrixAt(j, dummy.matrix);
+                podiumColor.copy(baseColor).offsetHSL(0, 0, -0.06);
+                podiumMesh.setColorAt(j, podiumColor);
+            }
+            if (spireMesh) {
+                const spireH = 18 + (colorIdx / 4) * 32;
+                dummy.position.set(lx, y + h, lz);
+                dummy.scale.set(1.6, spireH, 1.6);
+                dummy.updateMatrix();
+                spireMesh.setMatrixAt(j, dummy.matrix);
+            }
+            if (hvacMesh) {
+                const numHvacs = Math.floor(hash2Local(colorIdx, j, 0) * 4);
+                for (let k = 0; k < numHvacs; k++) {
+                    const hx = lx + (hash2Local(colorIdx, k, 1) - 0.5) * (w * 0.7);
+                    const hz = lz + (hash2Local(colorIdx, k, 2) - 0.5) * (d * 0.7);
+                    const size = 0.8 + hash2Local(colorIdx, k, 3) * 1.5;
+                    const heightHVAC = 1.0 + hash2Local(colorIdx, k, 4) * 1.0;
+                    const rot = hash2Local(colorIdx, k, 5) * Math.PI;
+                    dummy.position.set(hx, y + h, hz);
+                    dummy.scale.set(size, heightHVAC, size);
+                    dummy.rotation.set(0, rot, 0);
+                    dummy.updateMatrix();
+                    hvacMesh.setMatrixAt(hvacIdx++, dummy.matrix);
+                }
+            }
+        }
+
+        bldgMesh.instanceColor.needsUpdate = true;
+        roofMesh.instanceColor.needsUpdate = true;
+        chunkGroup.add(bldgMesh, roofMesh);
+        if (podiumMesh) { podiumMesh.instanceColor.needsUpdate = true; chunkGroup.add(podiumMesh); }
+        if (spireMesh) chunkGroup.add(spireMesh);
+        if (hvacMesh && hvacIdx > 0) { hvacMesh.count = hvacIdx; chunkGroup.add(hvacMesh); }
+    }
+}
+
 export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const {
         LOD_LEVELS, treeBillboardGeo, treeTypeConfigs,
@@ -198,9 +346,13 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
     const payload = {
         cx, cz, lod, lodCfg,
-        positions: positions.slice()
+        positions: positions.slice(),
+        cityZones: _cityIndex || []  // embed current index (lightweight)
     };
     const transferables = [payload.positions.buffer];
+
+    // Check city overlap BEFORE dispatching worker (fast async check)
+    const overlappingCity = await getOverlappingCity(cx, cz);
 
     const result = await dispatchWorker('chunkProps', payload, transferables);
 
@@ -208,6 +360,62 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) return;
 
     const { treeMatrices, buildingPositions, boatPositions } = result;
+
+    // --- City chunk injection ---
+    if (overlappingCity) {
+        const cityData = await loadCityChunk(overlappingCity.id);
+        if (cityData && chunkGroup.userData.chunkKey === `${cx},${cz}`) {
+            // Suppress noise-based buildings for the city zone — roads/buildings come from binary
+            spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ctx);
+
+            // Apply road mask shader to terrain
+            if (cityData.roadMaskTexture && !chunkGroup.userData.hasCityMaterial) {
+                const cityTerrainMat = lod === 0 ? ctx.terrainMaterial.clone() : ctx.terrainFarMaterial.clone();
+                cityData.center = [overlappingCity.cx, overlappingCity.cz];
+                cityData.maskRadius = overlappingCity.radius * 1.05;
+                setupTerrainMaterial(cityTerrainMat, ctx.terrainDetailUniforms, ctx.atmosphereUniforms, lod !== 0, cityData);
+                chunkGroup.children[0].material = cityTerrainMat;
+                chunkGroup.userData.hasCityMaterial = true;
+            }
+
+            // Render trees from worker
+            for (const [treeType, matrices] of Object.entries(treeMatrices)) {
+                if (!matrices) continue;
+                const count = matrices.length / 16;
+                if (count === 0) continue;
+                const cfg = treeTypeConfigs[treeType];
+                const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, count);
+                cardA.instanceMatrix.array.set(matrices);
+                cardA.instanceMatrix.needsUpdate = true;
+                cardA.castShadow = true;
+                cardA.receiveShadow = false;
+                cardA.customDepthMaterial = cfg.depthMat;
+                chunkGroup.add(cardA);
+            }
+
+            // Render boats from worker
+            if (lodCfg.enableBoats && boatPositions && boatPositions.length > 0) {
+                const hullMesh = new THREE.InstancedMesh(hullGeo, hullMat, boatPositions.length);
+                const cabinMesh = new THREE.InstancedMesh(cabinGeo, cabinMat, boatPositions.length);
+                const mastMesh = new THREE.InstancedMesh(mastGeo, mastMat, boatPositions.length);
+                hullMesh.castShadow = true; cabinMesh.castShadow = true; mastMesh.castShadow = true;
+
+                for (let j = 0; j < boatPositions.length; j++) {
+                    let bp = boatPositions[j];
+                    dummy.position.set(bp.x, -10.2, bp.z);
+                    dummy.rotation.set(0, bp.rot, 0);
+                    dummy.scale.set(1, 1, 1);
+                    dummy.updateMatrix();
+                    hullMesh.setMatrixAt(j, dummy.matrix);
+                    cabinMesh.setMatrixAt(j, dummy.matrix);
+                    mastMesh.setMatrixAt(j, dummy.matrix);
+                }
+                chunkGroup.add(hullMesh, cabinMesh, mastMesh);
+            }
+
+            return; // Done — city chunk handled
+        }
+    }
 
     for (const [treeType, matrices] of Object.entries(treeMatrices)) {
         if (!matrices) continue;

@@ -414,7 +414,7 @@ ${cameraPosUniform ? `    #ifdef USE_INSTANCING
     return mat;
 }
 
-export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, isFarLOD = false) {
+export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, isFarLOD = false, cityData = null) {
     material.onBeforeCompile = (shader) => {
         shader.uniforms.uTerrainDetailTex = terrainDetailUniforms.uTerrainDetailTex;
         shader.uniforms.uTerrainDetailScale = terrainDetailUniforms.uTerrainDetailScale;
@@ -431,6 +431,12 @@ export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphere
         shader.uniforms.uTerrainFoliageNearStart = terrainDetailUniforms.uTerrainFoliageNearStart;
         shader.uniforms.uTerrainFoliageNearEnd = terrainDetailUniforms.uTerrainFoliageNearEnd;
         shader.uniforms.uTerrainFoliageStrength = terrainDetailUniforms.uTerrainFoliageStrength;
+
+        if (cityData && cityData.roadMaskTexture) {
+            shader.uniforms.uRoadMaskTex = { value: cityData.roadMaskTexture };
+            shader.uniforms.uCityCenter = { value: new THREE.Vector2(cityData.center[0], cityData.center[1]) };
+            shader.uniforms.uCityMaskRadius = { value: cityData.maskRadius };
+        }
 
         shader.vertexShader = shader.vertexShader
             .replace(
@@ -477,7 +483,14 @@ uniform float uAtmosFar;
 uniform float uTerrainAtmosStrength;
 uniform float uTerrainFoliageNearStart;
 uniform float uTerrainFoliageNearEnd;
-uniform float uTerrainFoliageStrength; `
+uniform float uTerrainFoliageStrength; 
+
+#ifdef HAS_CITY_MASK
+uniform sampler2D uRoadMaskTex;
+uniform vec2 uCityCenter;
+uniform float uCityMaskRadius;
+#endif
+`
             )
             .replace(
                 'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -507,13 +520,34 @@ uniform float uTerrainFoliageStrength; `
     diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
     #endif
+
+    #ifdef HAS_CITY_MASK
+    vec2 cityUv = (vTerrainWorldPos.xz - uCityCenter + vec2(uCityMaskRadius)) / (uCityMaskRadius * 2.0);
+    // Flip Y — raster image origin is top-left, GLSL texture2D origin is bottom-left
+    cityUv.y = 1.0 - cityUv.y;
+    if (cityUv.x >= 0.0 && cityUv.x <= 1.0 && cityUv.y >= 0.0 && cityUv.y <= 1.0) {
+        float roadAlpha = texture2D(uRoadMaskTex, cityUv).r;
+        if (roadAlpha > 0.01) {
+            float cleanRoad = smoothstep(0.05, 0.35, roadAlpha);
+            vec3 asphaltColor = vec3(0.26, 0.26, 0.26); // medium dark grey asphalt
+            
+            // Dashed center lane markings
+            float isCenter = smoothstep(0.88, 0.96, roadAlpha);
+            float dashPattern = step(0.5, fract(vTerrainWorldPos.x * 0.10 + vTerrainWorldPos.z * 0.10));
+            vec3 markingColor = vec3(0.92, 0.88, 0.72); // warm off-white
+            vec3 finalRoadColor = mix(asphaltColor, markingColor, isCenter * dashPattern * 0.75);
+
+            diffuseColor.rgb = mix(diffuseColor.rgb, finalRoadColor, cleanRoad);
+        }
+    }
+    #endif
     float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, vTerrainDist) * uTerrainAtmosStrength;
     diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos); `
             );
 
-        if (isFarLOD) {
-            shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
-        }
+        if (isFarLOD) shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
+        if (cityData && cityData.roadMaskTexture) shader.fragmentShader = '#define HAS_CITY_MASK\n' + shader.fragmentShader;
     };
-    material.customProgramCacheKey = () => `terrain - detail - v4 - ${isFarLOD ? 'far' : 'near'} `;
+    const fragId = (isFarLOD ? 'far' : 'near') + (cityData ? '-city' : '');
+    material.customProgramCacheKey = () => `terrain-detail-v5-${fragId}`;
 }

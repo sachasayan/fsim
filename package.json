@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "build:world": "node tools/build-world.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test:unit": "node --test tests/*.test.mjs",
     "test:perf": "node scripts/perf.mjs",
@@ -13,5 +14,9 @@
   },
   "dependencies": {
     "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2",
+    "pngjs": "^7.0.0"
   }
 }

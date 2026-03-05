@@ -1,0 +1,162 @@
+{
+    "_comment": "Hand-authored world map. Edit this file to place cities. Run 'npm run build:world' to compile to binary chunks.",
+    "worldSeed": 12345,
+    "chunkSize": 4000,
+    "cities": [
+        {
+            "id": "city_a",
+            "_comment": "A mid-sized city to the northeast of the airport",
+            "center": [
+                8000,
+                10000
+            ],
+            "radius": 4500,
+            "road": {
+                "seed": 42,
+                "blockScale": 110,
+                "arterialSpacing": 420,
+                "density": 0.82
+            },
+            "districts": [
+                {
+                    "type": "financial_core",
+                    "center": [
+                        8000,
+                        10000
+                    ],
+                    "radius": 900
+                },
+                {
+                    "type": "commercial",
+                    "center": [
+                        8700,
+                        10600
+                    ],
+                    "radius": 1200
+                },
+                {
+                    "type": "residential",
+                    "center": [
+                        7000,
+                        9600
+                    ],
+                    "radius": 1600
+                },
+                {
+                    "type": "industrial",
+                    "center": [
+                        9200,
+                        9000
+                    ],
+                    "radius": 1000
+                },
+                {
+                    "type": "suburban",
+                    "center": [
+                        6800,
+                        11200
+                    ],
+                    "radius": 1800
+                }
+            ]
+        },
+        {
+            "id": "city_b",
+            "_comment": "A smaller industrial/waterfront city to the southwest",
+            "center": [
+                -9500,
+                -7000
+            ],
+            "radius": 3000,
+            "road": {
+                "seed": 99,
+                "blockScale": 130,
+                "arterialSpacing": 520,
+                "density": 0.65
+            },
+            "districts": [
+                {
+                    "type": "commercial",
+                    "center": [
+                        -9500,
+                        -7000
+                    ],
+                    "radius": 800
+                },
+                {
+                    "type": "industrial",
+                    "center": [
+                        -8400,
+                        -7600
+                    ],
+                    "radius": 1200
+                },
+                {
+                    "type": "residential",
+                    "center": [
+                        -10400,
+                        -6400
+                    ],
+                    "radius": 1300
+                },
+                {
+                    "type": "suburban",
+                    "center": [
+                        -11000,
+                        -7800
+                    ],
+                    "radius": 1500
+                }
+            ]
+        },
+        {
+            "id": "city_c",
+            "_comment": "A suburban sprawl settlement to the west",
+            "center": [
+                -18000,
+                3000
+            ],
+            "radius": 3800,
+            "road": {
+                "seed": 7,
+                "blockScale": 160,
+                "arterialSpacing": 600,
+                "density": 0.5
+            },
+            "districts": [
+                {
+                    "type": "commercial",
+                    "center": [
+                        -18000,
+                        3000
+                    ],
+                    "radius": 700
+                },
+                {
+                    "type": "residential",
+                    "center": [
+                        -17200,
+                        4000
+                    ],
+                    "radius": 1400
+                },
+                {
+                    "type": "suburban",
+                    "center": [
+                        -18800,
+                        2000
+                    ],
+                    "radius": 2200
+                },
+                {
+                    "type": "industrial",
+                    "center": [
+                        -19200,
+                        4500
+                    ],
+                    "radius": 900
+                }
+            ]
+        }
+    ]
+}

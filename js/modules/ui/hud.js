@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { fetchCityIndex } from '../world/terrain/CityChunkLoader.js';
 
 export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const UI = {
@@ -42,8 +43,13 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         lastCenterX: Number.POSITIVE_INFINITY,
         lastCenterZ: Number.POSITIVE_INFINITY,
         minRenderIntervalMs: 140,
-        moveThresholdWorld: 120
+        moveThresholdWorld: 120,
+        cities: []
     };
+
+    fetchCityIndex().then(data => {
+        mapState.cities = data;
+    });
 
     function terrainColor(heightValue) {
         if (heightValue < -25) return '#1d4f88';
@@ -291,6 +297,50 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         mmCtx.fillStyle = '#80b7ea';
         mmCtx.font = '9px monospace';
         mmCtx.fillText('N', centerX - 3, 10);
+
+        // Nearest City Pointer
+        if (mapState.cities.length > 0) {
+            let nearestCity = null;
+            let minDist = Infinity;
+            for (const city of mapState.cities) {
+                const d = Math.hypot(PHYSICS.position.x - city.cx, PHYSICS.position.z - city.cz);
+                if (d < minDist) {
+                    minDist = d;
+                    nearestCity = city;
+                }
+            }
+
+            if (nearestCity) {
+                const dx = (nearestCity.cx - PHYSICS.position.x) * pixelsPerWorld;
+                const dz = (nearestCity.cz - PHYSICS.position.z) * pixelsPerWorld;
+                const distOnMap = Math.hypot(dx, dz);
+                const angle = Math.atan2(dz, dx);
+
+                // If city is far enough away to warrant a pointer
+                if (distOnMap > 20) {
+                    const margin = 12;
+                    const pointerR = Math.min(distOnMap, mapW * 0.5 - margin);
+                    const px = centerX + Math.cos(angle) * pointerR;
+                    const py = centerY + Math.sin(angle) * pointerR;
+
+                    mmCtx.save();
+                    mmCtx.translate(px, py);
+                    mmCtx.rotate(angle + Math.PI / 2);
+                    mmCtx.fillStyle = distOnMap < mapW * 0.5 ? '#66ffcc' : '#ffcc66';
+                    mmCtx.beginPath();
+                    mmCtx.moveTo(0, -6);
+                    mmCtx.lineTo(4, 4);
+                    mmCtx.lineTo(-4, 4);
+                    mmCtx.closePath();
+                    mmCtx.fill();
+
+                    mmCtx.font = '8px monospace';
+                    mmCtx.textAlign = 'center';
+                    mmCtx.fillText(`${Math.round(minDist / 1000)}km`, 0, 14);
+                    mmCtx.restore();
+                }
+            }
+        }
     }
 
     return { updateHUD };

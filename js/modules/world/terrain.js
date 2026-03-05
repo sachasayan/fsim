@@ -200,7 +200,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     return genProps(chunkGroup, cx, cz, lod, {
       LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
-      hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy
+      hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
+      terrainMaterial, terrainFarMaterial, terrainDetailUniforms
     });
   }
 
