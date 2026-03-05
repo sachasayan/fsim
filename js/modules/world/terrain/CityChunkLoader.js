@@ -115,6 +115,7 @@ export async function loadCityChunk(cityId) {
         const dataCopy = new Uint8Array(maskData);
         // Create an uncompressed Alpha texture (1 channel, 8-bit)
         roadMaskTexture = new THREE.DataTexture(dataCopy, maskSize, maskSize, THREE.RedFormat, THREE.UnsignedByteType);
+        roadMaskTexture.colorSpace = THREE.NoColorSpace; // CRITICAL: Stop sRGB gamma crush on alpha mask
         roadMaskTexture.generateMipmaps = true;
         roadMaskTexture.minFilter = THREE.LinearMipmapLinearFilter;
         roadMaskTexture.magFilter = THREE.LinearFilter;

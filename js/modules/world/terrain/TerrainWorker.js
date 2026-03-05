@@ -196,6 +196,7 @@ function buildChunkProps(job) {
 
         if (distFromRunwayX < 250 && distFromRunwayZ < 2800) continue;
         if (height < -5 || height > 430) continue;
+        if (inCity(vx, vz)) continue; // Skip all procedural props inside city zones
 
         const macroUrban = (Noise.fractal(vx, vz, 3, 0.5, 0.00035) + 1) * 0.5;
         const hubUrban = cityHubInfluence(vx, vz);
@@ -215,29 +216,7 @@ function buildChunkProps(job) {
         const isPark = urbanScore > 0.35 && parkNoise > 0.7 && !isRoad;
         const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
 
-        if (lodCfg.enableBuildings && urbanScore > 0.22 && !isRoad && !isPark) {
-            // Skip noise-based buildings inside pre-compiled city zones
-            if (inCity(vx, vz)) continue;
-            const lotDensity = district.lotDensity * (0.55 + urbanScore * 0.95);
-            if (rng < lotDensity * lodCfg.propDensity) {
-                const classNoise = hash2(cellX, cellZ, 12);
-                const buildingClass = pickWeighted(classNoise, district.classWeights);
-                const ox = (hash2(cellX, cellZ, 14) - 0.5) * 16;
-                const oz = (hash2(cellX, cellZ, 15) - 0.5) * 16;
-                const px = lx + ox;
-                const pz = lz + oz;
-                const py = getTerrainHeight(vx + ox, vz + oz, Noise);
-                if (py > -5 && py < 430) {
-                    buildingPositions[buildingClass].push({
-                        x: px, y: py, z: pz,
-                        angle: Math.floor(hash2(cellX, cellZ, 16) * 4) * (Math.PI / 2),
-                        seed: hash2(cellX, cellZ, 17),
-                        seed2: hash2(cellX, cellZ, 18),
-                        seed3: hash2(cellX, cellZ, 19)
-                    });
-                }
-            }
-        } else if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
+        if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
             const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise);
             const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
             if (rng < treeChance) {

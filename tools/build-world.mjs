@@ -115,83 +115,100 @@ function hash2(x, z, seed = 0) {
 }
 
 // ---------------------------------------------------------------------------
-// Voronoi generation (Lloyd-relaxed)
+// V2 Organic Grid Generation (Perlin-warped Manhattan grid)
 // ---------------------------------------------------------------------------
-function generateVoronoiSeeds(cx, cz, radius, seed, count = 60) {
+function generateCityGrid(cx, cz, radius, seed) {
     const rng = seededRand(seed * 9999 + cx * 293 + cz);
-    const seeds = [];
-    // Push until we have enough inside the circle
-    let attempts = 0;
-    while (seeds.length < count && attempts < count * 20) {
-        attempts++;
+    const blockSize = 130; // 130m standard block size
+    const steps = Math.ceil(radius / blockSize) + 1;
+
+    const grid = [];
+    for (let i = 0; i <= steps * 2 + 1; i++) grid[i] = [];
+    const nodes = [];
+
+    // Generate warped grid nodes
+    for (let ix = -steps; ix <= steps; ix++) {
+        for (let iz = -steps; iz <= steps; iz++) {
+            const ux = cx + ix * blockSize;
+            const uz = cz + iz * blockSize;
+
+            // Perlin warp (-0.5 to 0.5) to make it organic
+            const warpX = (hash2(ux, uz, 1) - 0.5) * blockSize * 0.45;
+            const warpZ = (hash2(ux, uz, 2) - 0.5) * blockSize * 0.45;
+
+            const px = ux + warpX;
+            const pz = uz + warpZ;
+
+            const dist = Math.hypot(px - cx, pz - cz);
+            if (dist > radius * 1.05) {
+                grid[ix + steps][iz + steps] = -1; // out of bounds
+                continue;
+            }
+
+            nodes.push([px, pz]);
+            grid[ix + steps][iz + steps] = nodes.length - 1;
+        }
+    }
+
+    const edges = [];
+    const blocks = [];
+
+    // Connect nodes into edges and extract city blocks
+    for (let ix = -steps; ix < steps; ix++) {
+        for (let iz = -steps; iz < steps; iz++) {
+            const nBL = grid[ix + steps][iz + steps];
+            const nBR = grid[ix + 1 + steps][iz + steps];
+            const nTL = grid[ix + steps][iz + 1 + steps];
+            const nTR = grid[ix + 1 + steps][iz + 1 + steps];
+
+            if (nBL !== -1 && nBL !== undefined) {
+                if (nBR !== -1 && nBR !== undefined) edges.push([nBL, nBR]);
+                if (nTL !== -1 && nTL !== undefined) edges.push([nBL, nTL]);
+            }
+            if (ix === steps - 1 && nBR !== -1 && nBR !== undefined) {
+                const nTopRight = grid[ix + 1 + steps][iz + 1 + steps];
+                if (nTopRight !== -1 && nTopRight !== undefined) edges.push([nBR, nTopRight]);
+            }
+            if (iz === steps - 1 && nTL !== -1 && nTL !== undefined) {
+                const nTopRight = grid[ix + 1 + steps][iz + 1 + steps];
+                if (nTopRight !== -1 && nTopRight !== undefined) edges.push([nTL, nTopRight]);
+            }
+
+            // Add block if all 4 corners exist
+            if (nBL !== -1 && nBR !== -1 && nTL !== -1 && nTR !== -1 &&
+                nBL !== undefined && nBR !== undefined && nTL !== undefined && nTR !== undefined) {
+                blocks.push([nodes[nBL], nodes[nBR], nodes[nTR], nodes[nTL]]);
+            }
+        }
+    }
+
+    // Add radial/arterial overlays (cut diagonals through the grid)
+    const numRadials = 1 + Math.floor(rng() * 2);
+    for (let r = 0; r < numRadials; r++) {
         const angle = rng() * Math.PI * 2;
-        const r = Math.sqrt(rng()) * radius * 0.92; // sqrt for uniform radial dist
-        seeds.push([cx + Math.cos(angle) * r, cz + Math.sin(angle) * r]);
-    }
-    return seeds;
-}
+        const dx = Math.cos(angle) * blockSize * 3;
+        const dz = Math.sin(angle) * blockSize * 3;
 
-function lloydRelax(seeds, cx, cz, radius, iterations = 4) {
-    let pts = seeds.map(s => [...s]);
-    for (let iter = 0; iter < iterations; iter++) {
-        // Compute centroid of each cell by sampling a grid
-        const res = 48;
-        const step = (radius * 2) / res;
-        const sums = pts.map(() => [0, 0, 0]); // [sx, sz, count]
+        let currX = cx + (rng() - 0.5) * radius * 0.5;
+        let currZ = cz + (rng() - 0.5) * radius * 0.5;
+        let lastNodeIdx = -1;
 
-        for (let ix = 0; ix <= res; ix++) {
-            for (let iz = 0; iz <= res; iz++) {
-                const px = cx - radius + ix * step;
-                const pz = cz - radius + iz * step;
-                if ((px - cx) ** 2 + (pz - cz) ** 2 > radius * radius) continue;
-                let bestDist = Infinity, bestIdx = 0;
-                for (let j = 0; j < pts.length; j++) {
-                    const d = (pts[j][0] - px) ** 2 + (pts[j][1] - pz) ** 2;
-                    if (d < bestDist) { bestDist = d; bestIdx = j; }
-                }
-                sums[bestIdx][0] += px;
-                sums[bestIdx][1] += pz;
-                sums[bestIdx][2]++;
-            }
-        }
+        for (let step = 0; step < 10; step++) {
+            const nextX = currX + dx;
+            const nextZ = currZ + dz;
+            if (Math.hypot(nextX - cx, nextZ - cz) > radius) break;
 
-        for (let j = 0; j < pts.length; j++) {
-            if (sums[j][2] > 0) {
-                const nc = [sums[j][0] / sums[j][2], sums[j][1] / sums[j][2]];
-                // Hard-clamp to city radius
-                const dx = nc[0] - cx, dz = nc[1] - cz;
-                const d = Math.sqrt(dx * dx + dz * dz);
-                if (d < radius * 0.9) pts[j] = nc;
-            }
+            nodes.push([nextX, nextZ]);
+            const currIdx = nodes.length - 1;
+            if (lastNodeIdx !== -1) edges.push([lastNodeIdx, currIdx]);
+
+            lastNodeIdx = currIdx;
+            currX = nextX;
+            currZ = nextZ;
         }
     }
-    return pts;
-}
 
-// Build Delaunay edges from seeds (brute k-nearest neighbour).
-// Distance limits are proportional to average inter-seed spacing.
-function buildRoadEdges(seeds, radius) {
-    const edges = []; // [i, j]
-    const seen = new Set();
-    const k = 6; // connect to k nearest
-
-    // Expected average spacing between seeds
-    const avgSpacing = radius / Math.sqrt(seeds.length) * 1.6;
-    const minDist = avgSpacing * 0.2;
-    const maxDist = avgSpacing * 3.5;
-
-    for (let i = 0; i < seeds.length; i++) {
-        const dists = seeds.map((s, j) => [j, (s[0] - seeds[i][0]) ** 2 + (s[1] - seeds[i][1]) ** 2]);
-        dists.sort((a, b) => a[1] - b[1]);
-        for (let n = 1; n <= Math.min(k, seeds.length - 1); n++) {
-            const j = dists[n][0];
-            const len = Math.sqrt(dists[n][1]);
-            if (len > maxDist || len < minDist) continue;
-            const key = i < j ? `${i}-${j}` : `${j}-${i}`;
-            if (!seen.has(key)) { seen.add(key); edges.push([i, j]); }
-        }
-    }
-    return edges;
+    return { nodes, edges, blocks };
 }
 
 // For each edge mid-point, classify road type based on urban intensity
@@ -212,9 +229,19 @@ const ROAD_WIDTHS = { arterial: 14, collector: 9, local: 5.5 };
 const DISTRICT_CLASS_WEIGHTS = {
     financial_core: { supertall: 0.22, highrise: 0.44, office: 0.27, apartment: 0.07 },
     commercial: { highrise: 0.18, office: 0.38, apartment: 0.30, townhouse: 0.14 },
-    residential: { apartment: 0.30, townhouse: 0.58, industrial: 0.12 },
-    industrial: { industrial: 0.60, office: 0.20, apartment: 0.08, townhouse: 0.12 },
-    suburban: { townhouse: 0.72, apartment: 0.20, industrial: 0.08 },
+    residential: { apartment: 0.25, townhouse: 0.65, industrial: 0.10 },
+    industrial: { industrial: 0.65, office: 0.15, apartment: 0.08, townhouse: 0.12 },
+    suburban: { townhouse: 0.75, apartment: 0.15, industrial: 0.10 },
+};
+
+// District-specific roof color palettes (mapped to 4-slot building color index)
+// Financial: Whites/Grays, Commercial: Modern/Blue, Industrial: Rusty/Dark, Suburb: Earthy
+const DISTRICT_PALETTES = {
+    financial_core: [0, 1, 0, 1],
+    commercial: [1, 2, 0, 1],
+    industrial: [3, 3, 2, 3],
+    residential: [2, 0, 3, 2],
+    suburban: [2, 3, 2, 3],
 };
 
 const CLASS_HEIGHT = {
@@ -239,108 +266,163 @@ function pickWeighted(rng, weights) {
     return keys[keys.length - 1];
 }
 
-function getDistrict(x, z, city) {
-    let best = null, bestDist = Infinity;
+function getDistrictWeights(x, z, city) {
+    const weights = {};
+    let totalWeight = 0;
     for (const d of city.districts) {
         const dist = Math.hypot(x - d.center[0], z - d.center[1]);
-        if (dist < bestDist) { bestDist = dist; best = d; }
+        // Inverse distance weighting with a soft falloff
+        const w = 1.0 / (1.0 + Math.pow(dist / d.radius, 2));
+        weights[d.type] = (weights[d.type] || 0) + w;
+        totalWeight += w;
     }
-    return best ? best.type : 'residential';
+    // Normalize weights
+    for (const type in weights) weights[type] /= totalWeight;
+    return weights || { residential: 1 };
+}
+
+function getUrbanIntensity(x, z, city) {
+    // Basic city center intensity
+    const dist = Math.hypot(x - city.center[0], z - city.center[1]);
+    const cityBaseNorm = Math.max(0, 1.0 - dist / city.radius);
+
+    // Add specific boosts for core districts
+    let coreBoost = 0;
+    for (const d of city.districts) {
+        if (d.type === 'financial_core' || d.type === 'commercial') {
+            const dDist = Math.hypot(x - d.center[0], z - d.center[1]);
+            const dNorm = Math.max(0, 1.0 - dDist / d.radius);
+            coreBoost = Math.max(coreBoost, dNorm);
+        }
+    }
+
+    return Math.min(1.0, cityBaseNorm * 0.4 + coreBoost * 0.8);
 }
 
 // ---------------------------------------------------------------------------
 // Building placement — populate city blocks with buildings
 // ---------------------------------------------------------------------------
-function placeBuildingsInCity(city, roads, voronoiSeeds) {
+function placeBuildingsInCity(city, roads, blocks) {
     const buildings = []; // {x, y, z, w, h, d, angle, classId, colorIdx}
     const { center, radius, road: roadCfg } = city;
     const rng = seededRand(roadCfg.seed * 31337);
 
-    // For each Voronoi seed, scatter buildings inside its cell.
-    // We sample a grid inside the cell's rough bounding area, keeping only
-    // points whose nearest Voronoi seed is this cell's seed (Voronoi ownership test).
-    const lotStep = 50; // m — spacing between building lots
-
-    for (let si = 0; si < voronoiSeeds.length; si++) {
-        const sc = voronoiSeeds[si]; // cell center
-
-        // Estimate cell size from nearest-neighbor distance to other seeds
-        let nearestDist = Infinity;
-        for (let sj = 0; sj < voronoiSeeds.length; sj++) {
-            if (si === sj) continue;
-            const d = Math.hypot(sc[0] - voronoiSeeds[sj][0], sc[1] - voronoiSeeds[sj][1]);
-            if (d < nearestDist) nearestDist = d;
+    // Populate every grid block defined by the road network intersections
+    for (const block of blocks) {
+        // Block is a quad: [BL, BR, TR, TL]
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        let cx = 0, cz = 0;
+        for (const p of block) {
+            minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+            minZ = Math.min(minZ, p[1]); maxZ = Math.max(maxZ, p[1]);
+            cx += p[0]; cz += p[1];
         }
-        const cellR = Math.min(nearestDist * 0.45, 240); // rough cell radius
-        const spawnChance = 0.62; // not every lot gets a building (visual breathing room)
+        cx /= 4; cz /= 4; // Block center
 
-        // Scan a grid within the cell bounding box
-        const steps = Math.ceil(cellR * 2 / lotStep);
-        for (let ix = 0; ix <= steps; ix++) {
-            for (let iz = 0; iz <= steps; iz++) {
-                const bx = sc[0] - cellR + ix * lotStep + (rng() - 0.5) * 8;
-                const bz = sc[1] - cellR + iz * lotStep + (rng() - 0.5) * 8;
+        // Keep inside actual city limits
+        if (Math.hypot(cx - center[0], cz - center[1]) > radius * 0.95) continue;
 
-                // Must be within city radius
-                if (Math.hypot(bx - center[0], bz - center[1]) > radius * 0.97) continue;
+        const cellIntensity = getUrbanIntensity(cx, cz, city);
 
-                // Voronoi ownership — nearest seed must be this cell
-                let nearest = si;
-                let nearSq = (bx - sc[0]) ** 2 + (bz - sc[1]) ** 2;
-                for (let sj = 0; sj < voronoiSeeds.length; sj++) {
-                    if (sj === si) continue;
-                    const d2 = (bx - voronoiSeeds[sj][0]) ** 2 + (bz - voronoiSeeds[sj][1]) ** 2;
-                    if (d2 < nearSq) { nearSq = d2; nearest = sj; }
-                }
-                if (nearest !== si) continue;
+        // Dynamic density: tightly packed in core, spaced out in suburbs
+        const lotStep = 45 - (cellIntensity * 30); // 45m (suburb) down to 15m (core)
+        const spawnChance = 0.5 + (cellIntensity * 0.45); // up to 95% filled out in core
 
-                // Not on a road?
+        // Scan the AABB of the cell perfectly
+        const stepsX = Math.ceil((maxX - minX) / lotStep);
+        const stepsZ = Math.ceil((maxZ - minZ) / lotStep);
+
+        for (let ix = 0; ix <= stepsX; ix++) {
+            for (let iz = 0; iz <= stepsZ; iz++) {
+                // Jitter decreases in tight urban cores for cleaner rows
+                const bx = minX + ix * lotStep + (rng() - 0.5) * (8 - cellIntensity * 6);
+                const bz = minZ + iz * lotStep + (rng() - 0.5) * (8 - cellIntensity * 6);
+
+                if (Math.hypot(bx - center[0], bz - center[1]) > radius * 0.98) continue;
+
+                // Keep points roughly within the block's diamond/poly footprint
+                // (Quick strict manhattan-ish check using center)
+                if (Math.abs(bx - cx) + Math.abs(bz - cz) > Math.abs(maxX - minX)) continue;
+
+                // Grab neighborhood profiles mapping
+                const distWeights = getDistrictWeights(bx, bz, city);
+                const primaryDistrict = pickWeighted(rng, distWeights);
+                const classWeights = DISTRICT_CLASS_WEIGHTS[primaryDistrict] || DISTRICT_CLASS_WEIGHTS.residential;
+                const classIdStr = pickWeighted(rng, classWeights);
+                const classId = CLASS_IDS.indexOf(classIdStr);
+
+                const widthRange = CLASS_WIDTH[classIdStr];
+                const w = widthRange[0] + rng() * (widthRange[1] - widthRange[0]);
+                const depthRange = CLASS_DEPTH[classIdStr];
+                const d = depthRange[0] + rng() * (depthRange[1] - depthRange[0]);
+                const heightRange = CLASS_HEIGHT[classIdStr];
+                const h = heightRange[0] + rng() * (heightRange[1] - heightRange[0]);
+
                 let onRoad = false;
-                let bestRoadAngle = 0;
+                const buildingRadius = Math.hypot(w, d) / 2;
+
+                // Shader thicknessPx = seg.halfWidth * 2.5
+                // The visual road footprint is 2.5x the configured halfWidth. 
+                // We add 1m sidewalk buffer.
+                const visualRoadScale = 2.5;
+                const sidewalkMargin = 1.0;
+
                 let bestRoadDist = Infinity;
+                let bestRoadAngle = 0;
+                let refSeg = null;
+
                 for (const seg of roads) {
                     const { x1, z1, x2, z2, halfWidth } = seg;
                     const dx = x2 - x1, dz = z2 - z1;
                     const len2 = dx * dx + dz * dz;
                     if (len2 === 0) continue;
+
                     let t = ((bx - x1) * dx + (bz - z1) * dz) / len2;
                     t = Math.max(0, Math.min(1, t));
-                    const nx = x1 + t * dx - bx, nz = z1 + t * dz - bz;
+                    const nx = (x1 + t * dx) - bx, nz = (z1 + t * dz) - bz;
                     const d2 = nx * nx + nz * nz;
-                    if (d2 < (halfWidth + 5) ** 2) { onRoad = true; break; }
-                    // Track closest road for building orientation
+
                     if (d2 < bestRoadDist) {
                         bestRoadDist = d2;
-                        bestRoadAngle = Math.atan2(dz, dx); // angle of road
+                        bestRoadAngle = Math.atan2(dz, dx);
+                        refSeg = seg;
+                    }
+
+                    // True collision buffer
+                    const collisionDist = (halfWidth * visualRoadScale) + buildingRadius + sidewalkMargin;
+                    if (d2 < collisionDist * collisionDist) {
+                        onRoad = true;
+                        break;
                     }
                 }
+
                 if (onRoad) continue;
+
+                let lx = bx, lz = bz;
+                if (primaryDistrict === 'residential' || primaryDistrict === 'suburban') {
+                    // Pull building towards road frontage, leaving exact margin
+                    const frontageOffset = 22 + rng() * 12;
+                    const roadVisualRadius = refSeg ? refSeg.halfWidth * visualRoadScale : 0;
+                    const pull = Math.max(0, Math.sqrt(bestRoadDist) - (frontageOffset + roadVisualRadius));
+
+                    const angleToRoad = Math.atan2((refSeg.z1 + refSeg.z2) / 2 - lz, (refSeg.x1 + refSeg.x2) / 2 - lx);
+                    lx += Math.cos(angleToRoad) * pull * 0.8;
+                    lz += Math.sin(angleToRoad) * pull * 0.8;
+                }
 
                 // Probabilistic skip for breathing room
                 if (rng() > spawnChance) continue;
 
-                // District & class
-                const districtType = getDistrict(bx, bz, city);
-                const weights = DISTRICT_CLASS_WEIGHTS[districtType] || DISTRICT_CLASS_WEIGHTS.residential;
-                const buildingClass = pickWeighted(rng, weights);
-                const classId = CLASS_IDS.indexOf(buildingClass);
+                const groundY = getTerrainHeight(lx, lz);
+                if (groundY < 2.0 || groundY > 430) continue;
 
-                const [hMin, hMax] = CLASS_HEIGHT[buildingClass];
-                const [wMin, wMax] = CLASS_WIDTH[buildingClass];
-                const [dMin, dMax] = CLASS_DEPTH[buildingClass];
+                // Align to road angle, with optional 90-degree rotations for variety
+                const roadRelativeAngle = bestRoadAngle + (Math.floor(rng() * 4) * (Math.PI / 2));
 
-                const h = hMin + rng() * (hMax - hMin);
-                const w = wMin + rng() * (wMax - wMin);
-                const d = dMin + rng() * (dMax - dMin);
+                const palette = DISTRICT_PALETTES[primaryDistrict] || DISTRICT_PALETTES.residential;
+                const colorIdx = palette[Math.floor(rng() * 4)];
 
-                const groundY = getTerrainHeight(bx, bz);
-                if (groundY < -5 || groundY > 430) continue;
-
-                // Snap angle to nearest 90° from road direction for a clean street-facing look
-                const snappedAngle = Math.round(bestRoadAngle / (Math.PI / 2)) * (Math.PI / 2);
-                const colorIdx = Math.floor(rng() * 4);
-
-                buildings.push({ x: bx, y: groundY, z: bz, w, h, d, angle: snappedAngle, classId, colorIdx });
+                buildings.push({ x: lx, y: groundY, z: lz, w, h, d, angle: roadRelativeAngle, classId, colorIdx });
             }
         }
     }
@@ -351,10 +433,10 @@ function placeBuildingsInCity(city, roads, voronoiSeeds) {
 // ---------------------------------------------------------------------------
 // Road segment list for a city
 // ---------------------------------------------------------------------------
-function buildRoadSegments(seeds, edges, city) {
+function buildRoadSegments(nodes, edges, city) {
     const segments = [];
     for (const [i, j] of edges) {
-        const s1 = seeds[i], s2 = seeds[j];
+        const s1 = nodes[i], s2 = nodes[j];
         const roadClass = classifyRoad(s1, s2, city);
         const halfWidth = ROAD_WIDTHS[roadClass] / 2;
         // Sample terrain height along the road at both endpoints
@@ -439,7 +521,6 @@ function serializeChunk(buildings, roadSegments, maskData, maskSize) {
 function generateRoadMask(city, roadSegments, size = 1024) {
     // 1 channel (alpha mask: 0=grass, 255=road center)
     const data = new Uint8Array(size * size);
-    data.fill(0);
 
     // Map bounds: -radius to +radius from city center
     const cx = city.center[0], cz = city.center[1];
@@ -450,6 +531,26 @@ function generateRoadMask(city, roadSegments, size = 1024) {
     const mapWorldRad = r * 1.05;
     const pxScale = size / (mapWorldRad * 2);
 
+    // FIRST PASS: Generate urban ground (low alpha) based on urban intensity
+    for (let py = 0; py < size; py++) {
+        for (let px = 0; px < size; px++) {
+            // Convert px back to world coords relative to map center
+            const wx = cx - mapWorldRad + (px / pxScale);
+            const wz = cz - mapWorldRad + (py / pxScale);
+            const intensity = getUrbanIntensity(wx, wz, city);
+
+            // If there's any urban intensity, paint a baseline "urban ground" value (e.g., 30 to 100)
+            if (intensity > 0.05) {
+                // Map intensity [0.05, 1.0] to alpha [80, 160] to prevent WebGL gamma crush
+                const val = Math.floor(80 + intensity * 80);
+                data[py * size + px] = val;
+            } else {
+                data[py * size + px] = 0;
+            }
+        }
+    }
+
+    // SECOND PASS: Draw high-alpha roads on top
     for (const seg of roadSegments) {
         let x1 = (seg.x1 - cx + mapWorldRad) * pxScale;
         let y1 = (seg.z1 - cz + mapWorldRad) * pxScale;
@@ -481,10 +582,10 @@ function generateRoadMask(city, roadSegments, size = 1024) {
                 // Falloff for anti-aliasing / blending
                 if (distSq < thicknessPx * thicknessPx) {
                     const dist = Math.sqrt(distSq);
-                    // 1.0 at center, 0.0 at edge
+                    // Roads go from 160 (edges) to 255 (center)
+                    const roadAlphaBase = 160;
                     const alpha = Math.max(0, 1.0 - (dist / thicknessPx));
-                    // Write max alpha (support intersections)
-                    const val = Math.min(255, alpha * 255);
+                    const val = Math.floor(roadAlphaBase + alpha * 95);
                     const idx = py * size + px;
                     if (val > data[idx]) data[idx] = val;
                 }
@@ -506,17 +607,14 @@ for (const city of mapData.cities) {
     const outDir = path.join(OUT_DIR, city.id);
     mkdirSync(outDir, { recursive: true });
 
-    console.log(`  [${city.id}] Generating Voronoi road network…`);
-    const rawSeeds = generateVoronoiSeeds(city.center[0], city.center[1], city.radius, city.road.seed);
-    const seeds = lloydRelax(rawSeeds, city.center[0], city.center[1], city.radius);
-    const edges = buildRoadEdges(seeds, city.radius);
-    const roadSegments = buildRoadSegments(seeds, edges, city);
+    console.log(`  [${city.id}] Generating Organic Grid road network…`);
+    const { nodes, edges, blocks } = generateCityGrid(city.center[0], city.center[1], city.radius, city.road.seed);
+    const roadSegments = buildRoadSegments(nodes, edges, city);
 
-    console.log(`  [${city.id}]   → ${seeds.length} nodes, ${edges.length} road edges`);
-    console.log(`  [${city.id}] Placing buildings…`);
+    console.log(`  [${city.id}]   → ${nodes.length} nodes, ${edges.length} road edges, ${blocks.length} blocks`);
+    console.log(`  [${city.id}] Placing buildings via Block Parsing…`);
 
-    console.log(`  [${city.id}] Placing buildings…`);
-    const buildings = placeBuildingsInCity(city, roadSegments, seeds);
+    const buildings = placeBuildingsInCity(city, roadSegments, blocks);
     console.log(`  [${city.id}]   → ${buildings.length} buildings`);
 
     console.log(`  [${city.id}] Rasterizing road mask texture…`);

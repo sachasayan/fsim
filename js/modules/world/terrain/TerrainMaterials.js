@@ -495,7 +495,16 @@ uniform float uCityMaskRadius;
             .replace(
                 'vec4 diffuseColor = vec4( diffuse, opacity );',
                 `vec4 diffuseColor = vec4(diffuse, opacity);
-    #ifndef IS_FAR_LOD
+    float cityAlpha = 0.0;
+        #ifdef HAS_CITY_MASK
+    vec2 cityUv = (vTerrainWorldPos.xz - uCityCenter + vec2(uCityMaskRadius)) / (uCityMaskRadius * 2.0);
+        cityUv.y = 1.0 - cityUv.y;
+        if (cityUv.x >= 0.0 && cityUv.x <= 1.0 && cityUv.y >= 0.0 && cityUv.y <= 1.0) {
+            cityAlpha = texture2D(uRoadMaskTex, cityUv).r;
+        }
+        #endif
+
+        #ifndef IS_FAR_LOD
     vec2 baseUv = vTerrainWorldPos.xz * uTerrainDetailScale;
     vec4 pNoise = texture2D(uTerrainDetailTex, baseUv * 0.12);
     vec2 perturbedUv = baseUv + (pNoise.ba * 2.0 - 1.0) * 1.25;
@@ -508,46 +517,55 @@ uniform float uCityMaskRadius;
     float rockMask = max(slopeMask, heightMask);
     float detailLuma = mix(grassDetail, rockDetail, rockMask);
     float detailBoost = mix(0.2, 2.0, detailLuma);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
+
+    // Suppress macro and foliage in city zones
+    float isCity = smoothstep(0.01, 0.1, cityAlpha);
+    
     float nearMid = 1.0 - smoothstep(140.0, 1700.0, vTerrainDist);
     float macro = 0.5 + 0.5 * sin(vTerrainWorldPos.x * 0.0018 + pNoise.b * 4.0) * sin(vTerrainWorldPos.z * 0.0022 - pNoise.a * 3.0);
-    diffuseColor.rgb *= mix(1.0, mix(0.85, 1.15, macro), nearMid * (1.0 - rockMask * 0.4));
+        diffuseColor.rgb *= mix(1.0, mix(0.85, 1.15, macro), nearMid * (1.0 - rockMask * 0.4) * (1.0 - isCity));
+    
     float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, vTerrainDist);
-    float foliage = (1.0 - rockMask) * foliageFade * smoothstep(0.48, 0.86, grassDetail);
+    float foliage = (1.0 - rockMask) * (1.0 - isCity) * foliageFade * smoothstep(0.48, 0.86, grassDetail);
+    
     float phase = vTerrainWorldPos.x * 24.0 + vTerrainWorldPos.z * 21.0 + pNoise.r * 6.0;
     float micro = abs(fract(phase * 0.15915 - 0.5) * 4.0 - 2.0) - 1.0; 
     float blade = smoothstep(0.01, 0.99, abs(micro));
-    diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
-    #endif
+        diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
+        #endif
 
-    #ifdef HAS_CITY_MASK
-    vec2 cityUv = (vTerrainWorldPos.xz - uCityCenter + vec2(uCityMaskRadius)) / (uCityMaskRadius * 2.0);
-    // Flip Y — raster image origin is top-left, GLSL texture2D origin is bottom-left
-    cityUv.y = 1.0 - cityUv.y;
-    if (cityUv.x >= 0.0 && cityUv.x <= 1.0 && cityUv.y >= 0.0 && cityUv.y <= 1.0) {
-        float roadAlpha = texture2D(uRoadMaskTex, cityUv).r;
-        if (roadAlpha > 0.01) {
-            float cleanRoad = smoothstep(0.05, 0.35, roadAlpha);
-            vec3 asphaltColor = vec3(0.26, 0.26, 0.26); // medium dark grey asphalt
-            
-            // Dashed center lane markings
-            float isCenter = smoothstep(0.88, 0.96, roadAlpha);
-            float dashPattern = step(0.5, fract(vTerrainWorldPos.x * 0.10 + vTerrainWorldPos.z * 0.10));
-            vec3 markingColor = vec3(0.92, 0.88, 0.72); // warm off-white
-            vec3 finalRoadColor = mix(asphaltColor, markingColor, isCenter * dashPattern * 0.75);
+        #ifdef HAS_CITY_MASK
+        // Pavement from 80/255 (0.31) to 160/255 (0.62)
+        float isUrbanPavement = smoothstep(0.20, 0.40, cityAlpha);
+        // Asphalt from 160/255 (0.62) upwards
+        float isRoadAsphalt = smoothstep(0.55, 0.65, cityAlpha);
+        
+        vec3 pavementColor = vec3(0.55, 0.55, 0.55); // lighter concrete gray so it pops
+        vec3 asphaltColor = vec3(0.20, 0.20, 0.20); // dark asphalt
 
-            diffuseColor.rgb = mix(diffuseColor.rgb, finalRoadColor, cleanRoad);
-        }
-    }
-    #endif
+        #ifndef IS_FAR_LOD
+        pavementColor *= mix(0.85, 1.15, rockDetail); // add grit
+        #endif
+
+        // Dashed center lane markings
+        float isCenter = smoothstep(0.92, 0.98, cityAlpha);
+        float dashPattern = step(0.5, fract(vTerrainWorldPos.x * 0.10 + vTerrainWorldPos.z * 0.10));
+        vec3 markingColor = vec3(0.92, 0.88, 0.72); // warm off-white
+        
+        vec3 finalCityColor = mix(pavementColor, asphaltColor, isRoadAsphalt);
+        finalCityColor = mix(finalCityColor, markingColor, isCenter * dashPattern * 0.75);
+
+        diffuseColor.rgb = mix(diffuseColor.rgb, finalCityColor, isUrbanPavement);
+        #endif
     float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, vTerrainDist) * uTerrainAtmosStrength;
-    diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos); `
+        diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos); `
             );
 
         if (isFarLOD) shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
         if (cityData && cityData.roadMaskTexture) shader.fragmentShader = '#define HAS_CITY_MASK\n' + shader.fragmentShader;
     };
     const fragId = (isFarLOD ? 'far' : 'near') + (cityData ? '-city' : '');
-    material.customProgramCacheKey = () => `terrain-detail-v5-${fragId}`;
+    material.customProgramCacheKey = () => `terrain - detail - v5 - ${fragId} `;
 }
