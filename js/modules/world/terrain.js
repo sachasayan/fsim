@@ -38,6 +38,12 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     uAtmosNear: { value: 9000.0 },
     uAtmosFar: { value: 68000.0 }
   };
+
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('fog') === '0') {
+    atmosphereUniforms.uAtmosNear.value = 1e6;
+    atmosphereUniforms.uAtmosFar.value = 1e7;
+  }
   const tmpColorA = new THREE.Color();
   const tmpColorB = new THREE.Color();
 
@@ -304,6 +310,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     }
   }
 
+  let lastReady = false;
   function updateTerrain() {
     const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
     const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
@@ -338,10 +345,21 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         terrainChunks.delete(key);
       }
     }
-    const buildBudget = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
-    const propBuildBudget = pendingPropBuilds.length > 160 ? 2 : 1;
+    const isFastLoad = new URLSearchParams(window.location.search).get('fastload') === '1';
+    const buildBudget = (pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2) * (isFastLoad ? 25 : 1);
+    const propBuildBudget = (pendingPropBuilds.length > 160 ? 2 : 1) * (isFastLoad ? 50 : 1);
     processChunkBuildQueue(buildBudget);
     processPropBuildQueue(propBuildBudget);
+
+    if (pendingChunkKeys.size > 0 || pendingPropKeys.size > 0) {
+      console.log(`[terrain] Pending chunks: ${pendingChunkKeys.size}, Pending props: ${pendingPropKeys.size}`);
+    } else if (terrainChunks.size > 0) {
+      const ready = isReady();
+      if (ready && !lastReady) {
+        console.log('[terrain] All chunks and props fully loaded.');
+      }
+      lastReady = ready;
+    }
   }
 
   function updateTerrainAtmosphere(camera, weatherColor = null) {
@@ -354,10 +372,17 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       tmpColorA.setRGB(0.62, 0.66, 0.72); tmpColorB.setRGB(0.78, 0.81, 0.86);
       atmosphereColor.copy(tmpColorA.lerp(tmpColorB, 0.4));
     }
-    atmosphereUniforms.uAtmosNear.value = 15000.0;
-    atmosphereUniforms.uAtmosFar.value = 90000.0;
+    if (new URLSearchParams(window.location.search).get('fog') === '0') {
+      atmosphereUniforms.uAtmosNear.value = 1e6;
+      atmosphereUniforms.uAtmosFar.value = 1e7;
+    } else {
+      atmosphereUniforms.uAtmosNear.value = 15000.0;
+      atmosphereUniforms.uAtmosFar.value = 90000.0;
+    }
   }
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
-  return { waterMaterial, getTerrainHeight: getTerrainHeightWithNoise, updateTerrain, updateTerrainAtmosphere };
+  const isReady = () => terrainChunks.size > 0 && pendingChunkBuilds.length === 0 && pendingPropBuilds.length === 0 && pendingChunkKeys.size === 0 && pendingPropKeys.size === 0;
+
+  return { waterMaterial, getTerrainHeight: getTerrainHeightWithNoise, updateTerrain, updateTerrainAtmosphere, isReady };
 }

@@ -1,7 +1,7 @@
 
 
 export const LIGHTING_PRESETS = {
-  daytime: {
+  day: {
     clearColor: 0x87bfdf,
     stormColor: 0x4a5566,
     hemiSkyColor: 0xd0e8ff,

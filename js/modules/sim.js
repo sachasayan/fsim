@@ -83,8 +83,11 @@ const {
   strobes,
   beacons,
   updateAircraftLOD,
-  updateControlSurfaces
+  updateControlSurfaces,
+  isReady
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
+
+window.fsimWorld = { isReady };
 
 // Bind visual surfaces back to physics configuration
 AIRCRAFT.movableSurfaces = movableSurfaces;
@@ -92,6 +95,7 @@ AIRCRAFT.movableSurfaces = movableSurfaces;
 // ==========================================
 // 3. MANAGERS
 // ==========================================
+const urlParamsForInit = new URLSearchParams(window.location.search);
 const weatherManager = createWeatherManager({
   scene,
   renderer,
@@ -102,7 +106,8 @@ const weatherManager = createWeatherManager({
   cloudMaterial,
   updateClouds,
   updateTerrainAtmosphere,
-  applyEnvironmentFromWeather
+  applyEnvironmentFromWeather,
+  initialPreset: urlParamsForInit.get('lighting') || undefined
 });
 
 const airportSystems = createAirportSystems({
@@ -421,10 +426,15 @@ setTimeout(() => {
   // Final attempt to resume if not already done
   ProceduralAudio.resume();
 
+  console.log('Finalizing initialization...');
   const loader = document.getElementById('loader');
   if (loader) {
+    console.log('Hiding loader...');
     loader.style.opacity = '0';
-    setTimeout(() => loader.style.display = 'none', 1000);
+    setTimeout(() => {
+      loader.style.display = 'none';
+      console.log('Loader removed.');
+    }, 1000);
   }
 
   const urlParams = new URLSearchParams(window.location.search);
@@ -432,6 +442,17 @@ setTimeout(() => {
   const spawnY = urlParams.has('y') ? parseFloat(urlParams.get('y')) : AIRCRAFT.gearHeight;
   const spawnZ = urlParams.has('z') ? parseFloat(urlParams.get('z')) : 1900;
 
+  if (urlParams.get('fog') === '0') {
+    WEATHER.targetFog = 0;
+    WEATHER.currentFog = 0;
+    if (scene.fog) scene.fog.density = 0;
+  }
+
+  if (urlParams.get('clouds') === '0') {
+    clouds.visible = false;
+  }
+
+  console.log(`Setting initial position: [${spawnX}, ${spawnY}, ${spawnZ}]`);
   PHYSICS.position.set(spawnX, spawnY, spawnZ);
   PHYSICS.velocity.set(0, 0, 0);
   PHYSICS.angularVelocity.set(0, 0, 0);

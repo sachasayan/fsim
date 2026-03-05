@@ -11,7 +11,8 @@ export function createWeatherManager({
     cloudMaterial,
     updateClouds,
     updateTerrainAtmosphere,
-    applyEnvironmentFromWeather
+    applyEnvironmentFromWeather,
+    initialPreset
 }) {
     const clearWeatherColor = new THREE.Color(WEATHER.clearColor);
     const stormWeatherColor = new THREE.Color(WEATHER.stormColor);
@@ -114,6 +115,11 @@ export function createWeatherManager({
         if (updateClouds) {
             updateClouds(dt * 4.0, camera, WEATHER, currentCloudColor, tmpSunDir.copy(dirLight.position).normalize());
         }
+    }
+
+    if (initialPreset) {
+        console.log(`WeatherManager: Applying initial lighting preset: ${initialPreset}`);
+        applyLightingPreset(initialPreset);
     }
 
     return {
