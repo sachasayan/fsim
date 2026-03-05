@@ -54,13 +54,15 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     return cameraMode;
   }
 
-  function updateCamera() {
+  function updateCamera(dt = 0.016) {
     forward.set(0, 0, -1).applyQuaternion(planeGroup.quaternion);
     up.set(0, 1, 0).applyQuaternion(planeGroup.quaternion);
 
     if (!isDragging) {
-      camRotX += (0 - camRotX) * 0.05;
-      camRotY += (0 - camRotY) * 0.05;
+      // 0.05 was the original hardcoded value per frame at ~60fps
+      const rotLerpFactor = 1.0 - Math.pow(1.0 - 0.05, dt * 60.0);
+      camRotX += (0 - camRotX) * rotLerpFactor;
+      camRotY += (0 - camRotY) * rotLerpFactor;
     }
 
     if (cameraMode === 0) {
@@ -71,7 +73,9 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
 
       idealPosition.copy(planeGroup.position).add(localOffset).addScaledVector(up, cameraParams.height);
 
-      camera.position.lerp(idealPosition, cameraParams.springFactor * 2);
+      const baseLerp = cameraParams.springFactor * 2; // Was 0.2 originally
+      const posLerpFactor = 1.0 - Math.pow(1.0 - baseLerp, dt * 60.0);
+      camera.position.lerp(idealPosition, posLerpFactor);
 
       lookTarget.copy(planeGroup.position).addScaledVector(forward, 10).addScaledVector(up, 5);
       camera.lookAt(lookTarget);
@@ -96,7 +100,9 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
       camera.quaternion.copy(planeGroup.quaternion).multiply(lookQuat);
       camera.fov = 75;
     } else if (cameraMode === 2) {
-      camera.position.lerp(towerPos, 0.05);
+      // 0.05 was the original hardcoded value
+      const towerLerpFactor = 1.0 - Math.pow(1.0 - 0.05, dt * 60.0);
+      camera.position.lerp(towerPos, towerLerpFactor);
       camera.lookAt(planeGroup.position);
       let dist = camera.position.distanceTo(planeGroup.position);
       camera.fov = Math.max(10, 60 - dist / 100);
@@ -118,13 +124,14 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
 
     if (shakeIntensity > 0 && cameraMode !== 2) {
       const modeMultiplier = cameraMode === 1 ? 1.0 : 0.4;
-      camera.position.x += (Math.random() - 0.5) * shakeIntensity * modeMultiplier;
-      camera.position.y += (Math.random() - 0.5) * shakeIntensity * modeMultiplier;
-      camera.position.z += (Math.random() - 0.5) * shakeIntensity * modeMultiplier;
+      const shakeAmt = shakeIntensity * modeMultiplier * (dt * 60.0);
+      camera.position.x += (Math.random() - 0.5) * shakeAmt;
+      camera.position.y += (Math.random() - 0.5) * shakeAmt;
+      camera.position.z += (Math.random() - 0.5) * shakeAmt;
 
       if (cameraMode === 1) {
-        camera.rotation.x += (Math.random() - 0.5) * shakeIntensity * 0.02;
-        camera.rotation.z += (Math.random() - 0.5) * shakeIntensity * 0.02;
+        camera.rotation.x += (Math.random() - 0.5) * shakeIntensity * 0.02 * (dt * 60.0);
+        camera.rotation.z += (Math.random() - 0.5) * shakeIntensity * 0.02 * (dt * 60.0);
       }
     }
 

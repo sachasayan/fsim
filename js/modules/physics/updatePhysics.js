@@ -421,7 +421,6 @@ export function calculateAerodynamics(ctx) {
 
     p.externalTorque.add(t.torqueWorld.copy(torqueLocal).applyQuaternion(p.quaternion));
 
-    // Update Three.js object
-    planeGroup.position.copy(p.position);
-    planeGroup.quaternion.copy(p.quaternion);
+    // Update Three.js object left to the main sim loop for visual interpolation
+
 }

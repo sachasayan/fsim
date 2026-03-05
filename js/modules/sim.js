@@ -139,6 +139,9 @@ const tmpTouchPosR = new THREE.Vector3();
 const tmpTouchVel = new THREE.Vector3();
 const tmpTipVel = new THREE.Vector3();
 
+const prevPhysicsPos = new THREE.Vector3();
+const prevPhysicsQuat = new THREE.Quaternion();
+
 const prevShadowCenter = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
 let prevShadowExtent = -1;
 let lastTerrainChunkX = Number.POSITIVE_INFINITY;
@@ -195,6 +198,8 @@ window.resetFlight = function () {
 
   for (let i = 0; i < MAX_PARTICLES; i++) particles[i].active = false;
 
+  prevPhysicsPos.copy(PHYSICS.position);
+  prevPhysicsQuat.identity();
   planeGroup.position.copy(PHYSICS.position);
   planeGroup.quaternion.copy(PHYSICS.quaternion);
   physicsAdapter.syncFromState();
@@ -311,6 +316,9 @@ function animate() {
   runtime.physicsAccumulator = Math.min(runtime.physicsAccumulator + dt, PHYSICS_STEP * MAX_PHYSICS_STEPS_PER_FRAME);
   let physicsSteps = 0;
   while (runtime.physicsAccumulator >= PHYSICS_STEP && physicsSteps < MAX_PHYSICS_STEPS_PER_FRAME) {
+    prevPhysicsPos.copy(PHYSICS.position);
+    prevPhysicsQuat.copy(PHYSICS.quaternion);
+
     PHYSICS.dt = PHYSICS_STEP;
     if (!PHYSICS.crashed) {
       calculateAerodynamics({
@@ -355,12 +363,13 @@ function animate() {
     const stickyGround = PHYSICS.onGround && agl < 0.45 && PHYSICS.velocity.y <= 1.2;
     PHYSICS.onGround = agl < 0.25 || stickyGround;
 
-    planeGroup.position.copy(PHYSICS.position);
-    planeGroup.quaternion.copy(PHYSICS.quaternion);
-
     physicsSteps++;
     runtime.physicsAccumulator -= PHYSICS_STEP;
   }
+
+  const alpha = runtime.physicsAccumulator / PHYSICS_STEP;
+  planeGroup.position.lerpVectors(prevPhysicsPos, PHYSICS.position, alpha);
+  planeGroup.quaternion.slerpQuaternions(prevPhysicsQuat, PHYSICS.quaternion, alpha);
 
   // 9. Post-Physics Sync
   // Shadow centering
@@ -398,7 +407,7 @@ function animate() {
     lastTerrainChunkZ = chunkZ;
   }
 
-  cameraController.updateCamera();
+  cameraController.updateCamera(dt);
   if (runtime.frameCount % 3 === 0) {
     hud.updateHUD();
   }
@@ -423,6 +432,10 @@ setTimeout(() => {
   PHYSICS.angularVelocity.set(0, 0, 0);
   PHYSICS.externalForce.set(0, 0, 0);
   PHYSICS.externalTorque.set(0, 0, 0);
+
+  prevPhysicsPos.copy(PHYSICS.position);
+  prevPhysicsQuat.copy(PHYSICS.quaternion);
+
   physicsAdapter.syncFromState();
   animate();
 }, 1500);
