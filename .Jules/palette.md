@@ -1,0 +1,3 @@
+## 2024-05-24 - Canvas Critical State Accessibility
+**Learning:** For WebGL/Canvas interfaces (like the simulator), critical states (e.g., stalls, crashes) are inaccessible to screen readers because they are rendered within the canvas or as generic DOM overlays without semantic meaning.
+**Action:** Communicate critical states to assistive technologies by placing standard ARIA attributes (`role="alert"`, `aria-live="assertive"`, `role="status"`, `aria-live="polite"`) on DOM overlays positioned above the canvas.
