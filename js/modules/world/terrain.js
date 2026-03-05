@@ -341,16 +341,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   function updateTerrainAtmosphere(camera, weatherColor = null) {
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
-      terrainMaterial.uniforms.uAtmosCameraPos.value.copy(camera.position);
-
-      const f = activeLODs.length > 0 ? (activeLODs[activeLODs.length - 1].far + activeLODs[0].far * 0.5) : 38000;
-      terrainMaterial.uniforms.uAtmosFar.value = f;
-
-      treeBillboardMats.conifer.uniforms.uMainCameraPos = { value: camera.position };
-      treeBillboardMats.broadleaf.uniforms.uMainCameraPos = { value: camera.position };
-      treeBillboardMats.poplar.uniforms.uMainCameraPos = { value: camera.position };
-      treeBillboardMats.dry.uniforms.uMainCameraPos = { value: camera.position };
-
       tempMainCameraPosUniform.value.copy(camera.position);
     }
     if (weatherColor) atmosphereColor.copy(weatherColor);
