@@ -21,16 +21,47 @@ export function createAircraftSystem({ scene }) {
   planeGroup.add(modelWrapper);
 
   const loader = new GLTFLoader();
-  loader.load('./models/b738.glb', (gltf) => {
-    const model = gltf.scene;
 
-    // We don't want to scale down the model. Just center it horizontally and adjust Y.
-    const box = new THREE.Box3().setFromObject(model);
-    const center = box.getCenter(new THREE.Vector3());
-    model.position.x -= center.x;
-    model.position.z -= center.z;
-    // Base Y offset to ensure gears sit on ground and model isn't sunken too much
-    model.position.y += 1.5;
+  const loadGltf = (url) => new Promise((resolve, reject) => {
+    loader.load(url, resolve, undefined, reject);
+  });
+
+  Promise.all([
+    loadGltf('./models/b738.glb'),
+    loadGltf('./models/nosegear.glb'),
+    loadGltf('./models/lwing.glb'),
+    loadGltf('./models/rwing.glb')
+  ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf]) => {
+    const model = mainGltf.scene;
+
+    const extractGear = (scene, keywords) => {
+      const parts = [];
+      scene.traverse(child => {
+        if (!child.isMesh && !child.isGroup) return;
+        const name = child.name ? child.name.toLowerCase() : '';
+        if (!name) return;
+        if (keywords.some(k => name.includes(k))) {
+          parts.push(child);
+        }
+      });
+      parts.forEach(p => {
+        // Clear any leftover local offset from Assimp so it purely relies on the AC3D vertices
+        p.position.set(0, 0, 0);
+
+        // Assimp's Native Coordinates mapping:
+        // [X=Longitudinal, Y=Vertical, Z=Lateral]
+        // Blender's World Coordinates mapping (b738 root):
+        // [X=Lateral, Y=Vertical, Z=Longitudinal]
+        // A -90 degree rotation on the Y-axis swaps X->Z and Z->-X, aligning everything perfectly!
+        p.rotation.set(0, -Math.PI / 2, 0);
+        p.scale.set(1, 1, 1);
+        model.add(p);
+      });
+    };
+
+    extractGear(noseGltf.scene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar', 'lhngdoor', 'rhngdoor']);
+    extractGear(lwingGltf.scene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag']);
+    extractGear(rwingGltf.scene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag']);
 
     modelWrapper.add(model);
 
