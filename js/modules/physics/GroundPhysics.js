@@ -1,0 +1,87 @@
+import { getPhysicsTmp } from './PhysicsUtils.js';
+
+export function updateGearAnimation(p, AIRCRAFT, dt) {
+    if (p.gearDown && p.gearTransition < 1.0) p.gearTransition = Math.min(1.0, p.gearTransition + dt * 0.2);
+    if (!p.gearDown && p.gearTransition > 0.0) p.gearTransition = Math.max(0.0, p.gearTransition - dt * 0.2);
+
+    const gT = 1.0 - p.gearTransition; // 1.0 when UP
+    if (AIRCRAFT.movableSurfaces.gears) {
+        AIRCRAFT.movableSurfaces.gears.forEach(g => {
+            let angle = 0;
+            if (g.type === 'nose') angle = gT * 120 * Math.PI / 180;
+            else if (g.type === 'mainLH') angle = gT * 81.5 * Math.PI / 180;
+            else if (g.type === 'mainRH') angle = gT * -81.5 * Math.PI / 180;
+            else if (g.type === 'doorLH' || g.type === 'doorRH') {
+                let doorAmt = p.gearTransition < 0.25 ? p.gearTransition / 0.25 : 1.0;
+                angle = doorAmt * (g.type === 'doorLH' ? -90 : 90) * Math.PI / 180;
+            }
+            g.animGroup.setRotationFromAxisAngle(g.animGroup.userData.hingeAxis, angle);
+        });
+    }
+}
+
+export function solveGroundPhysics(ctx, liftRatio) {
+    const { PHYSICS, AIRCRAFT, THREE, getTerrainHeight } = ctx;
+    const p = PHYSICS;
+    const t = getPhysicsTmp(THREE);
+
+    const forward = t.forward.set(0, 0, -1).applyQuaternion(p.quaternion);
+    const baseForward = t.wheelForwardBase.copy(forward);
+    baseForward.y = 0;
+    if (baseForward.lengthSq() < 1e-6) baseForward.set(0, 0, -1);
+    baseForward.normalize();
+    const baseRight = t.wheelRightBase.crossVectors(t.worldUp, baseForward).normalize();
+
+    const wheelPoints = [
+        { local: t.gearLocalL, isNose: false },
+        { local: t.gearLocalR, isNose: false },
+        { local: t.gearLocalN, isNose: true }
+    ];
+
+    const wheelForceSum = t.wheelForceSum.set(0, 0, 0);
+    const wheelTorqueSum = t.wheelTorqueSum.set(0, 0, 0);
+    let contactCount = 0;
+    let noseWheelLoad = 0;
+
+    for (const wheel of wheelPoints) {
+        const wp = t.wheelOffset.copy(wheel.local).applyQuaternion(p.quaternion).add(p.position);
+        const terrainY = getTerrainHeight(wp.x, wp.z);
+        const penetration = (terrainY + 0.28) - wp.y;
+        if (penetration <= 0) continue;
+
+        contactCount++;
+        const wheelOffset = t.wheelOffset.copy(wp).sub(p.position);
+        const pointVel = t.wheelPointVel.copy(p.angularVelocity).cross(wheelOffset).add(p.velocity);
+
+        const gearUnload = wheel.isNose ? 1.0 : (1.0 - liftRatio * 0.88);
+        const springK = (wheel.isNose ? 900000 : 1200000) * gearUnload;
+        const damperC = (wheel.isNose ? 140000 : 190000) * gearUnload;
+        const normMag = Math.max(0, penetration * springK - pointVel.y * damperC);
+        if (wheel.isNose) noseWheelLoad = normMag;
+
+        let wFwd = t.wheelForward.copy(baseForward);
+        let wRight = t.wheelRight.copy(baseRight);
+        if (wheel.isNose) {
+            const steerFade = Math.max(0, p.airspeed - 30) / 50;
+            const steerAngle = -p.rudder * 0.62 * Math.max(0, 1.0 - steerFade * steerFade * (3 - 2 * steerFade));
+            wFwd.applyAxisAngle(t.worldUp, steerAngle).normalize();
+            wRight.crossVectors(t.worldUp, wFwd).normalize();
+        }
+
+        const longVel = pointVel.dot(wFwd);
+        const latVel = pointVel.dot(wRight);
+        const muLong = p.brakes ? 0.95 : 0.12;
+        const muLat = wheel.isNose ? 0.95 : (p.airspeed < 40 ? 0.46 : 0.72);
+        const longDamp = p.brakes ? 220000 : 42000;
+        const latDamp = wheel.isNose ? 180000 : (p.airspeed < 40 ? 76000 : 128000);
+
+        let fLong = Math.max(-normMag * muLong, Math.min(normMag * muLong, -longVel * longDamp));
+        let fLat = Math.max(-normMag * muLat, Math.min(normMag * muLat, -latVel * latDamp));
+
+        const totalF = t.wheelForce.set(0, normMag, 0).add(t.wheelLongForce.copy(wFwd).multiplyScalar(fLong)).add(t.wheelLatForce.copy(wRight).multiplyScalar(fLat));
+        wheelForceSum.add(totalF);
+        wheelTorqueSum.add(t.wheelTmpCross.copy(wheelOffset).cross(totalF));
+    }
+
+    return { wheelForceSum, wheelTorqueSum, contactCount, noseWheelLoad };
+}

@@ -24,9 +24,9 @@ import {
   generateChunkProps as genProps,
   getOverlappingCity,
   loadStaticWorld,
-  spawnCityBuildingsForChunk,
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
+import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
 import { setStaticSampler, QuadtreeMapSampler } from './terrain/TerrainUtils.js';
 
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {

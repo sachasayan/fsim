@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { AIRCRAFT_CONFIG } from './aircraft_config.js';
 
 export function createAircraftSystem({ scene }) {
   const planeGroup = new THREE.Group();
@@ -29,8 +28,9 @@ export function createAircraftSystem({ scene }) {
     loadGltf('./models/b738.glb'),
     loadGltf('./models/nosegear.glb'),
     loadGltf('./models/lwing.glb'),
-    loadGltf('./models/rwing.glb')
-  ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf]) => {
+    loadGltf('./models/rwing.glb'),
+    fetch('./js/modules/world/aircraft_config.json').then(r => r.json())
+  ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf, AIRCRAFT_CONFIG]) => {
     const model = mainGltf.scene;
 
     const extractGearCluster = (scene, partsList, center, axis) => {

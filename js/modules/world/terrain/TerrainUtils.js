@@ -3,6 +3,11 @@ export function hash2(x, z, seed = 0) {
     return n - Math.floor(n);
 }
 
+export function hash2Local(seed, k, p) {
+    const n = Math.sin(seed * 127.1 + k * 311.7 + p * 74.7) * 43758.5453123;
+    return n - Math.floor(n);
+}
+
 export function pickWeighted(value01, weights) {
     let sum = 0;
     for (const w of Object.values(weights)) sum += w;

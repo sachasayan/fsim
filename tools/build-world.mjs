@@ -14,6 +14,11 @@ import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { PNG } from 'pngjs';
+import { Noise } from '../js/modules/noise.js';
+import { generateRoadMask } from './lib/WorldBuilderRaster.mjs';
+import { serializeChunk } from './lib/WorldBuilderSerial.mjs';
+
+Noise.init(12345);
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -22,64 +27,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const MAP_PATH = path.join(__dirname, 'map.json');
 const OUT_DIR = path.join(ROOT, 'world', 'chunks');
-
-// ---------------------------------------------------------------------------
-// Noise (inline — mirrors TerrainUtils so we can sample height offline)
-// ---------------------------------------------------------------------------
-// Simple seeded permutation table (Ken Perlin's approach)
-// Exact port of js/modules/noise.js to ensure height matching
-const Noise = {
-    permutation: new Uint8Array(512),
-    init(seed = 12345) {
-        let p = new Uint8Array(256);
-        for (let i = 0; i < 256; i++) p[i] = i;
-        let s = seed;
-        for (let i = 255; i > 0; i--) {
-            s = Math.imul(1664525, s) + 1013904223 | 0;
-            let rand = Math.floor((((s >>> 8) & 0xfffff) / 0x100000) * (i + 1));
-            let temp = p[i];
-            p[i] = p[rand];
-            p[rand] = temp;
-        }
-        for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
-    },
-    fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
-    lerp: (t, a, b) => a + t * (b - a),
-    grad(hash, x, y, z) {
-        let h = hash & 15;
-        let u = h < 8 ? x : y;
-        let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-    },
-    noise(x, y, z) {
-        let X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
-        x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
-        let u = this.fade(x), v = this.fade(y), w = this.fade(z);
-        let A = this.permutation[X] + Y, AA = this.permutation[A] + Z, AB = this.permutation[A + 1] + Z;
-        let B = this.permutation[X + 1] + Y, BA = this.permutation[B] + Z, BB = this.permutation[B + 1] + Z;
-        return this.lerp(w,
-            this.lerp(v,
-                this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-                this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-            ),
-            this.lerp(v,
-                this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-                this.lerp(u, this.grad(this.permutation[AB + 1], x, y - 1, z - 1), this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1))
-            )
-        );
-    },
-    fractal(x, z, octaves, persistence, scale) {
-        let total = 0, frequency = scale, amplitude = 1, maxValue = 0;
-        for (let i = 0; i < octaves; i++) {
-            total += this.noise(x * frequency, 0, z * frequency) * amplitude;
-            maxValue += amplitude;
-            amplitude *= persistence;
-            frequency *= 2;
-        }
-        return total / maxValue;
-    }
-};
-Noise.init(12345);
 
 function getTerrainHeight(x, z) {
     let distFromRunwayZ = Math.abs(z);
@@ -101,7 +48,6 @@ function getTerrainHeight(x, z) {
 // Pseudo-random helpers
 // ---------------------------------------------------------------------------
 function seededRand(seed) {
-    // Simple xorshift32
     let s = (seed | 1) >>> 0;
     return function () {
         s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
@@ -602,151 +548,12 @@ function buildRoadSegments(nodes, edges, city) {
 }
 
 // ---------------------------------------------------------------------------
-// Binary serialization
-//
-// Chunk file format (little-endian):
-//   [4]  magic  = 0x46574C44 "FWLD"
-//   [4]  version = 1
-//   [4]  numBuildings
-//   [4]  numRoadSegments
-//   [4*numBuildings*10]  buildings: x,y,z,w,h,d,angle,classId(f32),colorIdx(f32),pad
-//   [4*numRoadSegments*7] roads: x1,y1,z1,x2,y2,z2,halfWidth,classId(f32)
+// Binary serialization moved to WorldBuilderSerial.mjs
 // ---------------------------------------------------------------------------
-const MAGIC = 0x46574C44;
-const VERSION = 2; // Bumped version for mask texture inclusion
-const BLDG_FLOATS = 10;  // x,y,z, w,h,d, angle, classId, colorIdx, _pad
-const ROAD_FLOATS = 8;   // x1,y1,z1, x2,y2,z2, halfWidth, classId
-
-function serializeChunk(buildings, roadSegments, maskData, maskSize) {
-    const headerInts = 6; // magic, version, numBuildings, numRoadSegments, maskSize, maskOffset
-
-    // Calculate offsets
-    const bldgBytes = buildings.length * BLDG_FLOATS * 4;
-    const roadBytes = roadSegments.length * ROAD_FLOATS * 4;
-    const maskBytes = maskSize * maskSize; // 1 byte per pixel (alpha channel mask)
-
-    const maskOffset = headerInts * 4 + bldgBytes + roadBytes;
-    const byteLen = maskOffset + maskBytes;
-
-    const buf = new ArrayBuffer(byteLen);
-    const view = new DataView(buf);
-    let off = 0;
-
-    const wi32 = (v) => { view.setInt32(off, v, true); off += 4; };
-    const wf32 = (v) => { view.setFloat32(off, v, true); off += 4; };
-
-    wi32(MAGIC);
-    wi32(VERSION);
-    wi32(buildings.length);
-    wi32(roadSegments.length);
-    wi32(maskSize);      // Dimensions of the square mask (e.g. 1024 or 2048)
-    wi32(maskOffset);    // Byte offset where the 8-bit mask data begins
-
-    for (const b of buildings) {
-        wf32(b.x); wf32(b.y); wf32(b.z);
-        wf32(b.w); wf32(b.h); wf32(b.d);
-        wf32(b.angle);
-        wf32(b.classId);
-        wf32(b.colorIdx);
-        wf32(0); // pad to even BLDG_FLOATS
-    }
-
-    for (const r of roadSegments) {
-        wf32(r.x1); wf32(r.y1); wf32(r.z1);
-        wf32(r.x2); wf32(r.y2); wf32(r.z2);
-        wf32(r.halfWidth);
-        wf32(r.classId);
-    }
-
-    // Copy the 8-bit mask array directly to the end of the buffer
-    const dstArray = new Uint8Array(buf, maskOffset);
-    dstArray.set(maskData);
-
-    return Buffer.from(buf);
-}
 
 // ---------------------------------------------------------------------------
-// 2D Road Mask Rasterization
+// 2D Road Mask Rasterization moved to WorldBuilderRaster.mjs
 // ---------------------------------------------------------------------------
-// Rasterizes thick lines for roads into a flat 2D mask.
-// The fragment shader will use this mask to blend an asphalt map onto the terrain.
-function generateRoadMask(city, roadSegments, size = 1024) {
-    // 1 channel (alpha mask: 0=grass, 255=road center)
-    const data = new Uint8Array(size * size);
-
-    // Map bounds: -radius to +radius from city center
-    const cx = city.center[0], cz = city.center[1];
-    const r = city.radius;
-    const worldToPx = (size) / (r * 2);
-
-    // Add margin to map size to ensure roads stretching out aren't perfectly clipped
-    const mapWorldRad = r * 1.05;
-    const pxScale = size / (mapWorldRad * 2);
-
-    // FIRST PASS: Generate urban ground (low alpha) based on urban intensity
-    for (let py = 0; py < size; py++) {
-        for (let px = 0; px < size; px++) {
-            // Convert px back to world coords relative to map center
-            const wx = cx - mapWorldRad + (px / pxScale);
-            const wz = cz - mapWorldRad + (py / pxScale);
-            const intensity = getUrbanIntensity(wx, wz, city);
-
-            // If there's any urban intensity, paint a baseline "urban ground" value (e.g., 30 to 100)
-            if (intensity > 0.05) {
-                // Map intensity [0.05, 1.0] to alpha [80, 160] to prevent WebGL gamma crush
-                const val = Math.floor(80 + intensity * 80);
-                data[py * size + px] = val;
-            } else {
-                data[py * size + px] = 0;
-            }
-        }
-    }
-
-    // SECOND PASS: Draw high-alpha roads on top
-    for (const seg of roadSegments) {
-        let x1 = (seg.x1 - cx + mapWorldRad) * pxScale;
-        let y1 = (seg.z1 - cz + mapWorldRad) * pxScale;
-        let x2 = (seg.x2 - cx + mapWorldRad) * pxScale;
-        let y2 = (seg.z2 - cz + mapWorldRad) * pxScale;
-
-        let thicknessPx = (seg.halfWidth * 2.5) * pxScale;
-
-        // Simple SDF line drawing
-        const minX = Math.max(0, Math.floor(Math.min(x1, x2) - thicknessPx));
-        const maxX = Math.min(size - 1, Math.ceil(Math.max(x1, x2) + thicknessPx));
-        const minY = Math.max(0, Math.floor(Math.min(y1, y2) - thicknessPx));
-        const maxY = Math.min(size - 1, Math.ceil(Math.max(y1, y2) + thicknessPx));
-
-        const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
-
-        for (let py = minY; py <= maxY; py++) {
-            for (let px = minX; px <= maxX; px++) {
-                // Distance to line segment
-                let t = 0;
-                if (l2 !== 0) {
-                    t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-                    t = Math.max(0, Math.min(1, t));
-                }
-                const projX = x1 + t * (x2 - x1);
-                const projY = y1 + t * (y2 - y1);
-                const distSq = (px - projX) ** 2 + (py - projY) ** 2;
-
-                // Falloff for anti-aliasing / blending
-                if (distSq < thicknessPx * thicknessPx) {
-                    const dist = Math.sqrt(distSq);
-                    // Roads go from 160 (edges) to 255 (center)
-                    const roadAlphaBase = 160;
-                    const alpha = Math.max(0, 1.0 - (dist / thicknessPx));
-                    const val = Math.floor(roadAlphaBase + alpha * 95);
-                    const idx = py * size + px;
-                    if (val > data[idx]) data[idx] = val;
-                }
-            }
-        }
-    }
-
-    return { data, size, worldRadius: mapWorldRad };
-}
 
 // ---------------------------------------------------------------------------
 // Main
@@ -771,7 +578,7 @@ for (const city of mapData.cities) {
 
     console.log(`  [${city.id}] Rasterizing road mask texture…`);
     const maskSize = 1024;
-    const mask = generateRoadMask(city, roadSegments, maskSize);
+    const mask = generateRoadMask(city, roadSegments, getUrbanIntensity, maskSize);
 
     // Save PNG for debug
     const png = new PNG({ width: maskSize, height: maskSize });
