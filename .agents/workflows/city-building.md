@@ -35,9 +35,13 @@ This updates the `.bin` files and `index.json` in `public/world/chunks/`.
 Use the screenshot tool to inspect the generated layout from specific angles.
 
 1.  **Add Vantage Point**: If necessary, add a new camera position to `screenshots/vantage_points.json`. Use `hideplane: 1` for clear views.
-2.  **Capture Screenshot**:
+3.  **Capture Screenshot**:
     ```bash
     npm run screenshot -- --vantage=city_overview --fog=0 --clouds=0
+    ```
+    Alternatively, use the **Batch Tool** to verify all angles at once:
+    ```bash
+    npm run screenshot-batch
     ```
 3.  **Inspect**: Check `screenshots/[vantage]_[timestamp].png` for:
     *   Building clipping on roads.

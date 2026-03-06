@@ -40,7 +40,18 @@ for (const worker of workers) {
 function dispatchWorker(type, payload, transferables = []) {
     return new Promise((resolve, reject) => {
         const jobId = jobIdCounter++;
-        pendingJobs.set(jobId, { resolve, reject });
+        const timeout = setTimeout(() => {
+            if (pendingJobs.has(jobId)) {
+                pendingJobs.delete(jobId);
+                reject(new Error(`Worker job ${type} timed out after 60s`));
+            }
+        }, 60000);
+
+        pendingJobs.set(jobId, {
+            resolve: (res) => { clearTimeout(timeout); resolve(res); },
+            reject: (err) => { clearTimeout(timeout); reject(err); }
+        });
+
         const worker = workers[workerIdx];
         workerIdx = (workerIdx + 1) % workers.length;
         worker.postMessage({ type, payload, jobId }, transferables);
@@ -197,7 +208,7 @@ function hash2Local(seed, k, p) {
  * Determine if a terrain chunk (cx, cz) overlaps any pre-compiled city zone.
  * Returns the matching city entry or null.
  */
-async function getOverlappingCity(cx, cz) {
+export async function getOverlappingCity(cx, cz) {
     const cityIndex = await getCityIndex();
     if (!cityIndex || cityIndex.length === 0) return null;
     // Chunk world-space centre
@@ -216,7 +227,7 @@ async function getOverlappingCity(cx, cz) {
  * Spawn city buildings from pre-compiled binary data into the given chunk group.
  * Only installs buildings whose world position falls within this chunk's AABB.
  */
-function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ctx) {
+export function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ctx) {
     const {
         detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
         roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat,
@@ -227,12 +238,11 @@ function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ctx) {
     const minX = cx * CHUNK_SIZE - halfChunk, maxX = cx * CHUNK_SIZE + halfChunk;
     const minZ = cz * CHUNK_SIZE - halfChunk, maxZ = cz * CHUNK_SIZE + halfChunk;
 
-    // Bucket buildings by class
-    const byClass = {};
-    for (const className of CLASS_NAMES) byClass[className] = [];
+    const key = `${cx},${cz}`;
+    const buildingsInChunk = cityData.buildings[key] || [];
 
-    for (const b of cityData.buildings) {
-        if (b.x < minX || b.x > maxX || b.z < minZ || b.z > maxZ) continue;
+    const byClass = { supertall: [], highrise: [], office: [], apartment: [], townhouse: [], industrial: [] };
+    for (const b of buildingsInChunk) {
         const className = CLASS_NAMES[b.classId] || 'office';
         byClass[className].push(b);
     }

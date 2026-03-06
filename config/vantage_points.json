@@ -1,0 +1,85 @@
+{
+    "city_overview": {
+        "x": 8000,
+        "y": 1500,
+        "z": 10000,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "noon",
+        "hideplane": 1,
+        "renderDist": 6
+    },
+    "city_a_cinematic": {
+        "x": 7500,
+        "y": 150,
+        "z": 9500,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "dusk",
+        "hideplane": 0
+    },
+    "city_a_high": {
+        "x": 8500,
+        "y": 800,
+        "z": 10500,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 1
+    },
+    "city_a_waterfront": {
+        "x": 8200,
+        "y": 80,
+        "z": 9800,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 0
+    },
+    "city_a_suburbs": {
+        "x": 8800,
+        "y": 120,
+        "z": 11000,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 0
+    },
+    "city_a_night_view": {
+        "x": 7800,
+        "y": 300,
+        "z": 10200,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "night",
+        "hideplane": 1
+    },
+    "satellite_a": {
+        "x": 8000,
+        "y": 20000,
+        "z": 10000,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 1,
+        "renderDist": 8
+    },
+    "city_a_runway_approach": {
+        "x": 8000,
+        "y": 200,
+        "z": 8000,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "noon",
+        "hideplane": 0
+    },
+    "city_a_central_park": {
+        "x": 8100,
+        "y": 50,
+        "z": 10100,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 0
+    }
+}

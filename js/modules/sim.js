@@ -14,6 +14,7 @@ import { createWeatherManager } from './core/WeatherManager.js';
 import { createInputHandler } from './core/InputHandler.js';
 import { createAirportSystems } from './sim/AirportSystems.js';
 import { ProceduralAudio } from './audio/AudioSystem.js';
+import { initLiveReload } from './core/LiveReload.js';
 
 // Initialize audio nodes early (will be suspended until gesture)
 ProceduralAudio.init();
@@ -84,13 +85,9 @@ const {
   beacons,
   updateAircraftLOD,
   updateControlSurfaces,
-  isReady
+  isReady,
+  reloadCity
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
-
-window.fsimWorld = { isReady };
-
-// Bind visual surfaces back to physics configuration
-AIRCRAFT.movableSurfaces = movableSurfaces;
 
 // ==========================================
 // 3. MANAGERS
@@ -129,6 +126,29 @@ const inputHandler = createInputHandler({ keys, PHYSICS, cameraController });
 inputHandler.init();
 
 const hud = createHUD({ PHYSICS, WEATHER, getTerrainHeight });
+
+window.fsimWorld = {
+  isReady,
+  reloadCity,
+  PHYSICS,
+  cameraController,
+  weatherManager,
+  AIRCRAFT,
+  WEATHER,
+  planeGroup,
+  physicsAdapter,
+  clouds,
+  cloudMaterial,
+  updateTerrainAtmosphere,
+  updateTerrain, // Export updateTerrain for explicit batcher control
+  waterMaterial
+};
+
+// Initialize LiveReload functionality
+initLiveReload(window.fsimWorld);
+
+// Bind visual surfaces back to physics configuration
+AIRCRAFT.movableSurfaces = movableSurfaces;
 
 // Temp vectors for efficiency
 const tmpHdgEuler = new THREE.Euler();

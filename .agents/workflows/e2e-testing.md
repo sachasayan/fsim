@@ -7,13 +7,26 @@ As an AI agent working on the `fsim` project, you should actively use the end-to
 
 ## How to capture a screenshot
 
-Run the following command to launch the simulator in headless mode. The script will wait for the terrain and procedural city to finish loading before capturing a `.png`.
+Run the following command to launch the simulator in headless mode. The script uses the robust `isReady()` state machine to wait for full terrain stability before capturing.
 
 ```bash
 npm run screenshot
 ```
 
 By default, it captures the runway spawn point.
+
+## Batch Capture
+
+For verifying multiple vantage points (e.g., after shader or procedural city changes), use the batch screenshot utility:
+
+```bash
+npm run screenshot-batch
+```
+
+This utility:
+1.  Loads all points from `vantage_points.json`.
+2.  Captures them sequentially in high-speed mode (`?fastload=1`).
+3.  Generates a `contact_sheet.png` for quick visual overview.
 
 ## Parameterized Screenshots
 

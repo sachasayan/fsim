@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "screenshots"
+		},
+		{
+			"path": "scripts"
+		},
+		{
+			"path": "node_modules"
+		}
+	],
+	"settings": {}
+}

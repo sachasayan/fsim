@@ -1,7 +1,11 @@
 import http from 'node:http';
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, watch } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execAsync = promisify(exec);
 
 const ROOT = process.cwd();
 const PORT = Number(process.env.PORT || 5173);
@@ -38,8 +42,61 @@ function safeResolve(urlPath) {
   return absolutePath;
 }
 
+const clients = new Set();
+
+function broadcast(event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const client of clients) {
+    client.res.write(msg);
+  }
+}
+
+// Watch tools/map.json
+const MAP_FILE = path.join(ROOT, 'tools', 'map.json');
+let buildLock = false;
+
+if (existsSync(MAP_FILE)) {
+  console.log(`Watching ${MAP_FILE} for changes...`);
+  const watcher = watch(MAP_FILE);
+  (async () => {
+    try {
+      for await (const event of watcher) {
+        if (event.eventType === 'change' && !buildLock) {
+          buildLock = true;
+          console.log(`\n🔄 map.json changed, rebuilding world...`);
+          try {
+            const { stdout } = await execAsync('npm run build:world');
+            console.log(stdout);
+            broadcast('reload-city', { timestamp: Date.now() });
+          } catch (err) {
+            console.error(`❌ Build failed:`, err.message);
+          } finally {
+            setTimeout(() => { buildLock = false; }, 1000); // Debounce
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Watcher error:', err);
+    }
+  })();
+}
+
 const server = http.createServer(async (req, res) => {
   try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    if (url.pathname === '/events') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      });
+      const client = { res };
+      clients.add(client);
+      req.on('close', () => clients.delete(client));
+      return;
+    }
+
     const absolutePath = safeResolve(req.url || '/');
     if (!absolutePath) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });

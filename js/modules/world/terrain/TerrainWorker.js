@@ -198,6 +198,13 @@ function buildChunkProps(job) {
         if (height < -5 || height > 430) continue;
         if (inCity(vx, vz)) continue; // Skip all procedural props inside city zones
 
+        // Early exit: if it's too steep for buildings/trees, skip the heavy logic
+        const sampleDist = 10;
+        const h2 = getTerrainHeight(vx + sampleDist, vz, Noise);
+        const h3 = getTerrainHeight(vx, vz + sampleDist, Noise);
+        const slope = Math.max(Math.abs(h2 - height), Math.abs(h3 - height)) / sampleDist;
+        if (slope > 0.8) continue;
+
         const macroUrban = (Noise.fractal(vx, vz, 3, 0.5, 0.00035) + 1) * 0.5;
         const hubUrban = cityHubInfluence(vx, vz);
         const corridorUrban = Math.max(0, 1 - Math.abs(Math.abs(vx) - 1800) / 1800) * Math.max(0, 1 - Math.abs(vz) / 14000);

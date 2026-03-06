@@ -16,8 +16,14 @@ import {
   getLodForRingDistance
 } from './terrain/TerrainUtils.js';
 import {
+  fetchCityIndex,
+  clearCityCache
+} from './terrain/CityChunkLoader.js';
+import {
   generateChunkBase as genBase,
   generateChunkProps as genProps,
+  getOverlappingCity,
+  spawnCityBuildingsForChunk,
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
 
@@ -245,17 +251,20 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const existing = terrainChunks.get(job.key);
 
       if (existing && existing.lod === job.lod) {
-        // If it's already at this LOD, but failed to complete props previously, try again
         if (!existing.propsBuilt && existing.state !== 'building_props') {
           enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group || existing.pendingGroup);
         }
-        builds++; continue;
+        continue;
+      }
+
+      if (existing && existing.state === 'building_base' && existing.lod === job.lod) {
+        continue;
       }
 
       let oldGroup = null;
       if (existing) {
         removePendingPropJobs(job.key);
-        oldGroup = existing.group; // Save old group to keep it visible during async build
+        oldGroup = existing.group;
         if (existing.pendingGroup) disposeChunkGroup(existing.pendingGroup);
       }
 
@@ -271,6 +280,10 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         } else {
           disposeChunkGroup(group);
         }
+      }).catch(err => {
+        console.error(`[terrain] Base build failed for ${job.key}:`, err);
+        const current = terrainChunks.get(job.key);
+        if (current && current.state === 'building_base') current.state = 'error';
       });
     }
   }
@@ -285,7 +298,9 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const state = terrainChunks.get(job.key);
 
       const targetGroup = state ? (state.pendingGroup || state.group) : null;
-      if (!state || targetGroup !== job.groupRef || state.lod !== job.lod || state.propsBuilt || state.state === 'building_props') { builds++; continue; }
+      if (!state || targetGroup !== job.groupRef || state.lod !== job.lod || state.propsBuilt || state.state === 'building_props') {
+        continue;
+      }
 
       state.state = 'building_props';
       builds++;
@@ -293,28 +308,50 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       generateChunkProps(targetGroup, job.cx, job.cz, job.lod).then(() => {
         const current = terrainChunks.get(job.key);
         if (current && (current.pendingGroup === job.groupRef || current.group === job.groupRef) && current.lod === job.lod && current.state === 'building_props') {
-          // Both base and props are definitively built for the new LOD
           if (current.pendingGroup) {
-            if (current.group) disposeChunkGroup(current.group); // Dispose the old LOD
-            current.group = current.pendingGroup; // Promote the new LOD
-            scene.add(current.group); // Reveal it to the camera
+            if (current.group) disposeChunkGroup(current.group);
+            current.group = current.pendingGroup;
+            scene.add(current.group);
             current.pendingGroup = null;
           } else if (current.group && !current.group.parent) {
-            // Initial load where pendingGroup wasn't needed
             scene.add(current.group);
           }
           current.propsBuilt = true;
+          current.state = 'done';
+        }
+      }).catch(err => {
+        console.error(`[terrain] Prop build failed for ${job.key}:`, err);
+        const current = terrainChunks.get(job.key);
+        if (current && current.state === 'building_props') {
+          if (current.pendingGroup) {
+            if (current.group) disposeChunkGroup(current.group);
+            current.group = current.pendingGroup;
+            scene.add(current.group);
+            current.pendingGroup = null;
+          }
           current.state = 'done';
         }
       });
     }
   }
 
+  let lastProcessedChunkX = -999999;
+  let lastProcessedChunkZ = -999999;
   let lastReady = false;
+
   function updateTerrain() {
     const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
     const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
-    const renderDistance = 8;
+
+    lastProcessedChunkX = px;
+    lastProcessedChunkZ = pz;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isFastLoad = urlParams.get('fastload') === '1';
+    const urlRenderDist = urlParams.get('renderDist');
+    const parsedRenderDist = urlRenderDist ? parseInt(urlRenderDist, 10) : null;
+    const renderDistance = parsedRenderDist !== null ? parsedRenderDist : (isFastLoad ? 4 : 8);
+
     const activeChunks = new Map();
 
     for (let dx = -renderDistance; dx <= renderDistance; dx++) {
@@ -345,9 +382,9 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         terrainChunks.delete(key);
       }
     }
-    const isFastLoad = new URLSearchParams(window.location.search).get('fastload') === '1';
-    const buildBudget = (pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2) * (isFastLoad ? 25 : 1);
-    const propBuildBudget = (pendingPropBuilds.length > 160 ? 2 : 1) * (isFastLoad ? 50 : 1);
+    // isFastLoad already parsed above
+    const buildBudget = (pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2) * (isFastLoad ? 40 : 1);
+    const propBuildBudget = (pendingPropBuilds.length > 160 ? 2 : 1) * (isFastLoad ? 80 : 1);
     processChunkBuildQueue(buildBudget);
     processPropBuildQueue(propBuildBudget);
 
@@ -382,7 +419,85 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   }
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
-  const isReady = () => terrainChunks.size > 0 && pendingChunkBuilds.length === 0 && pendingPropBuilds.length === 0 && pendingChunkKeys.size === 0 && pendingPropKeys.size === 0;
 
-  return { waterMaterial, getTerrainHeight: getTerrainHeightWithNoise, updateTerrain, updateTerrainAtmosphere, isReady };
+  const isReady = () => {
+    if (terrainChunks.size === 0) return false;
+
+    const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
+    const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
+    if (px !== lastProcessedChunkX || pz !== lastProcessedChunkZ) return false;
+
+    // Queues must be empty
+    if (pendingChunkKeys.size > 0 || pendingPropKeys.size > 0) return false;
+
+    let blocking = [];
+    for (const [key, state] of terrainChunks.entries()) {
+      if (state.state !== 'done' || !state.group) {
+        blocking.push(`${key}:${state.state}`);
+      }
+    }
+
+    if (blocking.length > 0 && window._isReadyLogCounter % 120 === 0) {
+      console.log(`[isReady] size=${terrainChunks.size} blocking=[${blocking.slice(0, 5)}]`);
+    }
+    window._isReadyLogCounter = (window._isReadyLogCounter || 0) + 1;
+
+    return blocking.length === 0;
+  };
+
+  async function reloadCity(cityId = null) {
+    console.log(`[terrain] Hot-swapping city: ${cityId || 'all'}`);
+    clearCityCache(cityId);
+
+    const cityIndex = await fetchCityIndex();
+    const cityToReload = cityId ? cityIndex.find(c => c.id === cityId) : null;
+
+    const ctx = {
+      LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
+      roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
+      hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
+      terrainMaterial, terrainFarMaterial, terrainDetailUniforms
+    };
+
+    for (const [key, state] of terrainChunks.entries()) {
+      if (!state.group) continue;
+      const [cx, cz] = key.split(',').map(Number);
+
+      const overlapping = await getOverlappingCity(cx, cz);
+      if (overlapping && (!cityId || overlapping.id === cityId)) {
+        // Clear building/road meshes (keep terrain/water at index 0,1)
+        while (state.group.children.length > 2) {
+          const child = state.group.children.pop();
+          if (child.isInstancedMesh) {
+            // In a real production app we'd pool these, but for hot-reload simplicity 
+            // we just let them be GC'd or handled by disposeChunkGroup if we were disposing the whole thing.
+            // Actually, terrain.js uses a pool. Let's just remove them.
+          }
+        }
+        state.hasCityMaterial = false;
+
+        // Re-fetch data and re-spawn
+        const cityData = await (cityId ? overlapping.id === cityId ? overlapping.id : null : overlapping.id); // reload logic
+        // Just call genProps again or a subset?
+        // Let's call spawnCityBuildingsForChunk directly as it's cleaner for hot-swap
+        const loadedData = await (cityId || overlapping.id ? (overlapping.id ? import('./terrain/CityChunkLoader.js').then(m => m.loadCityChunk(overlapping.id)) : null) : null);
+
+        if (loadedData) {
+          spawnCityBuildingsForChunk(state.group, cx, cz, loadedData, state.lod, ctx);
+
+          // Refresh road mask if needed
+          if (loadedData.roadMaskTexture) {
+            const cityTerrainMat = state.lod === 0 ? terrainMaterial.clone() : terrainFarMaterial.clone();
+            loadedData.center = [overlapping.cx, overlapping.cz];
+            loadedData.maskRadius = overlapping.radius * 1.05;
+            setupTerrainMaterial(cityTerrainMat, terrainDetailUniforms, atmosphereUniforms, state.lod !== 0, loadedData);
+            state.group.children[0].material = cityTerrainMat;
+            state.hasCityMaterial = true;
+          }
+        }
+      }
+    }
+  }
+
+  return { waterMaterial, getTerrainHeight: getTerrainHeightWithNoise, updateTerrain, updateTerrainAtmosphere, isReady, reloadCity };
 }
