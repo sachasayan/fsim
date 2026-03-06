@@ -97,6 +97,35 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === '/save' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', async () => {
+        try {
+          const data = JSON.parse(body);
+          if (data.path && data.content) {
+            const targetPath = path.resolve(ROOT, data.path);
+            if (!targetPath.startsWith(ROOT)) {
+              res.writeHead(403);
+              res.end('Forbidden');
+              return;
+            }
+            const { writeFile } = await import('node:fs/promises');
+            await writeFile(targetPath, JSON.stringify(data.content, null, 4));
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+          } else {
+            res.writeHead(400);
+            res.end('Bad Request: Missing path or content');
+          }
+        } catch (err) {
+          res.writeHead(500);
+          res.end('Error: ' + err.message);
+        }
+      });
+      return;
+    }
+
     const absolutePath = safeResolve(req.url || '/');
     if (!absolutePath) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });

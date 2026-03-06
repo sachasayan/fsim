@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FSIM | 2D World Designer</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #030712;
+            --panel: rgba(17, 24, 39, 0.7);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.4);
+            --text: #f9fafb;
+            --text-dim: #9ca3af;
+            --border: rgba(255, 255, 255, 0.08);
+            --glass: rgba(255, 255, 255, 0.03);
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #editor-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            cursor: crosshair;
+            background: radial-gradient(circle at center, #111827 0%, #030712 100%);
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #sidebar {
+            width: 340px;
+            background: var(--panel);
+            backdrop-filter: blur(24px) saturate(180%);
+            border-left: 1px solid var(--border);
+            padding: 32px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+            z-index: 10;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .toolbar {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            display: flex;
+            gap: 8px;
+            background: var(--panel);
+            padding: 6px;
+            border-radius: 16px;
+            backdrop-filter: blur(20px) saturate(150%);
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .tool-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-dim);
+            padding: 10px 18px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tool-btn:hover {
+            background: var(--glass);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        .tool-btn.active {
+            background: var(--accent);
+            color: #000;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text);
+            letter-spacing: -0.025em;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+            font-weight: 700;
+            margin-bottom: 4px;
+            opacity: 0.8;
+        }
+
+        .property-panel {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .property-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .property-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        label {
+            font-size: 13px;
+            color: var(--text-dim);
+            font-weight: 400;
+        }
+
+        input[type="number"],
+        input[type="text"] {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            width: 80px;
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--accent);
+        }
+
+        .save-btn {
+            margin-top: auto;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 16px;
+            border-radius: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 14px;
+        }
+
+        .save-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px var(--accent-glow);
+        }
+
+        .save-btn:active {
+            transform: translateY(0);
+        }
+
+        #coords {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+            background: var(--panel);
+            backdrop-filter: blur(10px);
+            padding: 6px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            letter-spacing: 0.05em;
+        }
+
+        .status-badge {
+            font-size: 9px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent);
+            margin-left: 10px;
+            font-weight: 700;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        #selection-panel {
+            animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="editor-container">
+        <div id="canvas-container">
+            <canvas id="map-canvas"></canvas>
+            <div class="toolbar">
+                <button class="tool-btn active" id="tool-select">Select</button>
+                <button class="tool-btn" id="tool-add-city">Add City</button>
+                <button class="tool-btn" id="tool-edit-poly">Edit Poly</button>
+                <button class="tool-btn" id="tool-pan">Pan</button>
+            </div>
+            <div id="coords">X: 0, Z: 0</div>
+        </div>
+        <div id="sidebar">
+            <h2>WORLD EDITOR <span class="status-badge">v1.0</span></h2>
+
+            <div id="selection-panel" style="display: none;">
+                <div class="section-title">Selection Properties <span id="prop-type-badge"
+                        class="status-badge">CITY</span></div>
+                <div class="property-group">
+                    <div class="property-row">
+                        <label>ID</label>
+                        <input type="text" id="prop-id" readonly>
+                    </div>
+                    <div class="property-row">
+                        <label>Coord X</label>
+                        <input type="number" id="prop-cx">
+                    </div>
+                    <div class="property-row">
+                        <label>Coord Z</label>
+                        <input type="number" id="prop-cz">
+                    </div>
+
+                    <div id="city-only-props">
+                        <div class="property-row">
+                            <label>Radius</label>
+                            <input type="number" id="prop-radius">
+                        </div>
+                        <div class="section-title">Road Config</div>
+                        <div class="property-group">
+                            <div class="property-row">
+                                <label>Seed</label>
+                                <input type="number" id="prop-seed">
+                            </div>
+                            <div class="property-row">
+                                <label>Density</label>
+                                <input type="number" id="prop-density" step="0.01">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="vantage-only-props" style="display: none;">
+                        <div class="property-row">
+                            <label>Altitude (m)</label>
+                            <input type="number" id="prop-alt">
+                        </div>
+                        <div class="property-row">
+                            <label>Tilt (°)</label>
+                            <input type="number" id="prop-tilt">
+                        </div>
+                        <button class="tool-btn" id="jump-sim-btn"
+                            style="margin-top: 10px; background: #9eff66; color: #000; width: 100%;">LAUNCH IN
+                            SIM</button>
+                    </div>
+
+                    <div class="property-group" style="margin-top: 15px;">
+                        <button class="tool-btn" id="tool-delete"
+                            style="background: rgba(255, 89, 94, 0.2); color: #ff595e; border-color: rgba(255,89,94,0.3); width: 100%;">Delete
+                            Selected</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="no-selection">
+                <p style="color: #8892b0; font-size: 13px; text-align: center; margin-top: 40px;">
+                    Select an object to edit its properties.
+                </p>
+            </div>
+
+            <button class="save-btn" id="save-btn">SAVE CHANGES</button>
+        </div>
+
+        <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+        <script type="module" src="./js/editor.js"></script>
+</body>
+
+</html>
