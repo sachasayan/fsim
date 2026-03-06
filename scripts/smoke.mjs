@@ -70,7 +70,7 @@ function waitForServerReady(child) {
     child.stdout.on('data', (chunk) => {
       if (settled) return;
       const text = chunk.toString();
-      if (text.includes('fsim server running at')) {
+      if (text.includes('fsim game server running at')) {
         settled = true;
         clearTimeout(timeout);
         resolve();

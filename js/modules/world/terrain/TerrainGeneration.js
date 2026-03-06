@@ -42,11 +42,12 @@ export async function loadStaticWorld() {
         const meta = sampler.getMetadata();
 
         if (meta) {
-            window.fsimWorld = meta;
+            Object.assign(window.fsimWorld || (window.fsimWorld = {}), meta);
             console.log("🌐 Initialized world from baked metadata");
         } else {
             const jsonResp = await fetch('/tools/map.json');
-            window.fsimWorld = await jsonResp.json();
+            const mapData = await jsonResp.json();
+            Object.assign(window.fsimWorld || (window.fsimWorld = {}), mapData);
             console.log("⚠️ Baked metadata missing, fallbacked to map.json");
         }
 
