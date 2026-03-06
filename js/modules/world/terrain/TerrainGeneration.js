@@ -6,7 +6,7 @@ import { spawnCityBuildingsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
 
 export const CHUNK_SIZE = 4000;
-export const TREE_DENSITY_MULTIPLIER = 4.0;
+export const TREE_DENSITY_MULTIPLIER = 8.0;
 
 // Lazily fetched city index (array of {id, cx, cz, radius})
 let _cityIndex = null;
