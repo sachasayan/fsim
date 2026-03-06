@@ -1,4 +1,5 @@
 import { Noise } from './modules/noise.js';
+import { QuadtreeMapSampler, setStaticSampler, getTerrainHeight } from './modules/world/terrain/TerrainUtils.js';
 
 const canvas = document.getElementById('map-canvas');
 const ctx = canvas.getContext('2d');
@@ -33,18 +34,47 @@ async function init() {
 
     // Load world data
     try {
-        const [worldResp, vantageResp] = await Promise.all([
+        const [worldResp, vantageResp, worldBinResp] = await Promise.all([
             fetch('/tools/map.json'),
-            fetch('/config/vantage_points.json')
+            fetch('/config/vantage_points.json'),
+            fetch('/world/world.bin')
         ]);
         worldData = await worldResp.json();
         vantageData = await vantageResp.json();
+
+        if (worldBinResp.ok) {
+            const buf = await worldBinResp.arrayBuffer();
+            const sampler = new QuadtreeMapSampler(buf);
+            setStaticSampler(sampler);
+            console.log(`[Editor] Loaded static world.bin (${(buf.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+        }
     } catch (e) {
         console.error("Failed to load map data", e);
     }
 
     render();
     setupInputs();
+    setupHotReload();
+}
+
+function setupHotReload() {
+    const es = new EventSource('/events');
+    es.addEventListener('reload-city', async () => {
+        console.log("🔄 World rebuild detected, refreshing terrain...");
+        try {
+            const resp = await fetch('/world/world.bin');
+            if (resp.ok) {
+                const buf = await resp.arrayBuffer();
+                const sampler = new QuadtreeMapSampler(buf);
+                setStaticSampler(sampler);
+                cacheValid = false;
+                render();
+                console.log("✨ Terrain refreshed!");
+            }
+        } catch (e) {
+            console.error("Failed to hot-reload world.bin", e);
+        }
+    });
 }
 
 function resize() {
@@ -108,11 +138,11 @@ function render() {
         for (let x = 0; x < canvas.width; x += pixelStep) {
             for (let y = 0; y < canvas.height; y += pixelStep) {
                 const worldPos = screenToWorld(x + pixelStep / 2, y + pixelStep / 2);
-                const h = Noise.fractal(worldPos.x, worldPos.z, 6, 0.5, 0.0003) * 600 + 100;
+                const h = getTerrainHeight(worldPos.x, worldPos.z, Noise);
 
                 // Sample neighbors for hillshading
-                const hRight = Noise.fractal(worldPos.x + slopeOffset, worldPos.z, 6, 0.5, 0.0003) * 600 + 100;
-                const hDown = Noise.fractal(worldPos.x, worldPos.z + slopeOffset, 6, 0.5, 0.0003) * 600 + 100;
+                const hRight = getTerrainHeight(worldPos.x + slopeOffset, worldPos.z, Noise);
+                const hDown = getTerrainHeight(worldPos.x, worldPos.z + slopeOffset, Noise);
 
                 const slopeX = (hRight - h) / slopeOffset;
                 const slopeZ = (hDown - h) / slopeOffset;
@@ -507,16 +537,25 @@ async function save() {
     btn.style.opacity = '0.5';
 
     try {
-        await Promise.all([
+        console.log(`[DEBUG] Attempting save to ${window.location.origin}/save`);
+        const [resMap, resVantage] = await Promise.all([
             fetch('/save', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: 'tools/map.json', content: worldData })
             }),
             fetch('/save', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: 'config/vantage_points.json', content: vantageData })
             })
         ]);
+
+        if (!resMap.ok || !resVantage.ok) {
+            const err = !resMap.ok ? await resMap.text() : await resVantage.text();
+            throw new Error(err || "Server returned error status");
+        }
+
         btn.innerText = 'SAVED!';
         setTimeout(() => { btn.innerText = 'SAVE CHANGES'; btn.style.opacity = '1'; }, 2000);
     } catch (e) {

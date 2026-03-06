@@ -12,14 +12,30 @@ export function initLiveReload(terrainSystem) {
     }
 
     console.log('[LiveReload] Initializing SSE connection...');
-    const es = new EventSource('/events');
+
+    // If we're on port 5173 (Game), connect to the Dev Server on 5174 for rebuild events
+    const ssePort = window.location.port === '5173' ? '5174' : window.location.port;
+    const es = new EventSource(`//${window.location.hostname}:${ssePort}/events`);
 
     es.addEventListener('reload-city', async (event) => {
         const data = JSON.parse(event.data);
         console.log(`[LiveReload] Received reload signal (timestamp: ${data.timestamp})`);
 
         try {
-            // Reload all cities for simplicity, or we could pass specific IDs if server sent them
+            // 1. Clear caches and reload static world (world.bin + metadata)
+            const { loadStaticWorld, clearStaticWorldCache } = await import('../world/terrain/TerrainGeneration.js');
+            const { setStaticSampler, QuadtreeMapSampler } = await import('../world/terrain/TerrainUtils.js');
+
+            clearStaticWorldCache();
+            const success = await loadStaticWorld();
+
+            if (success) {
+                const worldBinResp = await fetch(`//${window.location.hostname}:${ssePort}/world/world.bin`);
+                const buf = await worldBinResp.arrayBuffer();
+                setStaticSampler(new QuadtreeMapSampler(buf));
+            }
+
+            // 2. Reload city building meshes
             await terrainSystem.reloadCity();
             console.log('[LiveReload] Hot-swap complete.');
         } catch (err) {

@@ -36,6 +36,14 @@ const activeFetches = new Map();
  */
 let cityIndexPromise = null;
 export async function fetchCityIndex() {
+    if (window.fsimWorld && window.fsimWorld.cities) {
+        return window.fsimWorld.cities.map(c => ({
+            id: c.id,
+            cx: c.center[0],
+            cz: c.center[1],
+            radius: c.radius
+        }));
+    }
     if (!cityIndexPromise) {
         cityIndexPromise = fetch('/world/chunks/index.json').then(r => r.json());
     }

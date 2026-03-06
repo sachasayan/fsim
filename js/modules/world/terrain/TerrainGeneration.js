@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fetchCityIndex, loadCityChunk, getCityAtPoint, CLASS_NAMES } from './CityChunkLoader.js';
+import { QuadtreeMapSampler } from './TerrainUtils.js';
 import { setupTerrainMaterial } from './TerrainMaterials.js';
 
 export const CHUNK_SIZE = 4000;
@@ -7,9 +8,61 @@ export const TREE_DENSITY_MULTIPLIER = 4.0;
 
 // Lazily fetched city index (array of {id, cx, cz, radius})
 let _cityIndex = null;
+let _staticWorldBuffer = null;
+export function clearStaticWorldCache() {
+    _staticWorldBuffer = null;
+    _cityIndex = null;
+}
+
 async function getCityIndex() {
+    if (window.fsimWorld && window.fsimWorld.cities) {
+        return window.fsimWorld.cities.map(c => ({
+            id: c.id,
+            cx: c.center[0],
+            cz: c.center[1],
+            radius: c.radius
+        }));
+    }
     if (!_cityIndex) _cityIndex = await fetchCityIndex();
     return _cityIndex;
+}
+
+
+
+export async function loadStaticWorld() {
+    try {
+        const resp = await fetch('/world/world.bin');
+        if (!resp.ok) return false;
+        _staticWorldBuffer = await resp.arrayBuffer();
+        const buffer = _staticWorldBuffer;
+
+        // Initialize sampler to extract metadata
+        // NOTE: QuadtreeMapSampler is assumed to be imported or globally available
+        // For this change, I'm assuming it's available, but in a real scenario,
+        // it would need an import statement like:
+        // import { QuadtreeMapSampler } from './QuadtreeMapSampler.js';
+        const sampler = new QuadtreeMapSampler(buffer);
+        const meta = sampler.getMetadata();
+
+        if (meta) {
+            window.fsimWorld = meta;
+            console.log("🌐 Initialized world from baked metadata");
+        } else {
+            // Fallback to fetch map.json if not baked
+            const jsonResp = await fetch('/tools/map.json');
+            window.fsimWorld = await jsonResp.json();
+            console.log("⚠️ Baked metadata missing, fallbacked to map.json");
+        }
+
+        // Broadcast buffer to workers
+        workers.forEach(w => {
+            w.postMessage({ type: 'initStaticMap', payload: buffer });
+        });
+        return true;
+    } catch (e) {
+        console.error("Failed to load static world:", e);
+        return false;
+    }
 }
 
 // Radius inflation so a chunk just outside a city boundary still loads its data
@@ -27,6 +80,10 @@ const pendingJobs = new Map();
 for (const worker of workers) {
     worker.onmessage = (e) => {
         const { jobId, type, result, error } = e.data;
+        if (type === 'workerReady' && _staticWorldBuffer) {
+            worker.postMessage({ type: 'initStaticMap', payload: _staticWorldBuffer });
+            return;
+        }
         if (pendingJobs.has(jobId)) {
             const { resolve, reject } = pendingJobs.get(jobId);
             pendingJobs.delete(jobId);
@@ -354,10 +411,11 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
     const positions = terrainMesh.geometry.attributes.position.array;
 
+    const cityIndex = await getCityIndex();
     const payload = {
         cx, cz, lod, lodCfg,
         positions: positions.slice(),
-        cityZones: _cityIndex || []  // embed current index (lightweight)
+        cityZones: cityIndex || []  // use fresh index
     };
     const transferables = [payload.positions.buffer];
 

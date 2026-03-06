@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build:world": "node tools/build-world.mjs",
+    "build:world": "node tools/bake-map.mjs && node tools/build-world.mjs",
+    "server": "node tools/dev-server.mjs",
     "smoke": "node scripts/smoke.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "screenshot:batch": "node scripts/screenshot-batcher.mjs",

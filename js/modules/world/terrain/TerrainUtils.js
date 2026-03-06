@@ -127,24 +127,125 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
     };
 }
 
+/**
+ * Sampler for the Adaptive Quadtree Map (world.bin)
+ */
+export class QuadtreeMapSampler {
+    constructor(buffer) {
+        this.buffer = buffer;
+        this.view = new DataView(buffer);
+        this.magic = this.view.getUint32(0, true);
+        if (this.magic !== 0x51545245) throw new Error("Invalid QTRE magic");
+
+        this.version = this.view.getUint32(4, true);
+        this.worldSize = this.view.getFloat32(8, true);
+        this.numNodes = this.view.getUint32(12, true);
+        this.metaOff = this.view.getUint32(16, true);
+        this.metaSize = this.view.getUint32(20, true);
+
+        this.HEADER_SIZE = 32;
+        this.NODE_SIZE = 32;
+    }
+
+    getMetadata() {
+        if (this.metaSize === 0) return null;
+        const decoder = new TextDecoder();
+        const metaBuf = new Uint8Array(this.buffer, this.metaOff, this.metaSize);
+        try {
+            return JSON.parse(decoder.decode(metaBuf));
+        } catch (e) {
+            console.error("Failed to parse baked metadata", e);
+            return null;
+        }
+    }
+
+    getAltitudeAt(wx, wz) {
+        const halfSize = this.worldSize / 2;
+        if (wx < -halfSize || wx > halfSize || wz < -halfSize || wz > halfSize) return -100;
+
+        // Start traversal from Root (Index 0)
+        return this._sampleRecursive(0, wx, wz);
+    }
+
+    _sampleRecursive(nodeIdx, wx, wz) {
+        const off = this.HEADER_SIZE + nodeIdx * this.NODE_SIZE;
+        const type = this.view.getUint32(off, true);
+        const nx = this.view.getFloat32(off + 4, true);
+        const nz = this.view.getFloat32(off + 8, true);
+        const size = this.view.getFloat32(off + 12, true);
+
+        if (type === 0) { // NODE_BRANCH
+            // Determine which quadrant based on wx, wz
+            const half = size / 2;
+            const right = wx >= nx + half;
+            const bottom = wz >= nz + half;
+            const childIdx = (bottom ? 2 : 0) + (right ? 1 : 0);
+            const ptr = this.view.getUint32(off + 16 + childIdx * 4, true);
+            return this._sampleRecursive(ptr, wx, wz);
+        }
+
+        if (type === 2) { // NODE_EMPTY
+            return this.view.getFloat32(off + 16, true);
+        }
+
+        // NODE_LEAF
+        const dataOff = this.view.getUint32(off + 16, true);
+        const LEAF_RES = 32; // Hardcoded to match baker
+        const stride = LEAF_RES + 1;
+
+        // Local relative coord [0, 1]
+        const lx = (wx - nx) / size;
+        const lz = (wz - nz) / size;
+
+        const px = lx * LEAF_RES;
+        const pz = lz * LEAF_RES;
+        const x0 = Math.floor(px);
+        const z0 = Math.floor(pz);
+        const x1 = Math.min(LEAF_RES, x0 + 1);
+        const z1 = Math.min(LEAF_RES, z0 + 1);
+        const fx = px - x0;
+        const fz = pz - z0;
+
+        const data = new Uint16Array(this.buffer, dataOff, stride * stride);
+
+        const h00 = data[z0 * stride + x0];
+        const h10 = data[z0 * stride + x1];
+        const h01 = data[z1 * stride + x0];
+        const h11 = data[z1 * stride + x1];
+
+        // Bilinear mix
+        const h0 = h00 * (1 - fx) + h10 * fx;
+        const h1 = h01 * (1 - fx) + h11 * fx;
+        const h = h0 * (1 - fz) + h1 * fz;
+
+        // Denormalize (Map 0-65535 to -200 to 1800)
+        return (h / 65535) * 2000 - 200;
+    }
+}
+
+let _staticSampler = null;
+export function setStaticSampler(sampler) {
+    _staticSampler = sampler;
+}
+
 export function getTerrainHeight(x, z, Noise, octaves = 6) {
+    if (_staticSampler) {
+        return _staticSampler.getAltitudeAt(x, z);
+    }
+
+    // Fallback to noise if sampler isn't loaded yet
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
-
-    // Base noise averages around 0, multiply and add 100 so land is naturally elevated above water
     let noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
 
-    // Flatten for runway (centered at origin, extending along Z)
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        return 0; // Lock runway exactly to Y=0
+        return 0;
     } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-        // Smooth radial transition — Math.max avoids the additive corner crease
         let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
         let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
         let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
         return noiseVal * runwayMask;
     }
-
     return noiseVal;
 }
 

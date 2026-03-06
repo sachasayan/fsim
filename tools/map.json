@@ -175,6 +175,21 @@
                     "radius": 900
                 }
             ]
+        },
+        {
+            "id": "city_4",
+            "center": [
+                -100,
+                -600
+            ],
+            "radius": 3000,
+            "road": {
+                "seed": 260,
+                "blockScale": 130,
+                "arterialSpacing": 500,
+                "density": 0.7
+            },
+            "districts": []
         }
     ]
 }

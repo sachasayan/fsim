@@ -23,11 +23,25 @@ import {
   generateChunkBase as genBase,
   generateChunkProps as genProps,
   getOverlappingCity,
+  loadStaticWorld,
   spawnCityBuildingsForChunk,
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
+import { setStaticSampler, QuadtreeMapSampler } from './terrain/TerrainUtils.js';
 
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {
+  // Load static world data early
+  loadStaticWorld().then(success => {
+    if (success && window.fsimWorld) {
+      // Also set it on the main thread for physics/etc
+      fetch('/world/world.bin')
+        .then(r => r.arrayBuffer())
+        .then(buf => {
+          const sampler = new QuadtreeMapSampler(buf);
+          setStaticSampler(sampler);
+        });
+    }
+  });
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.62,

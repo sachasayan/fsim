@@ -1,4 +1,4 @@
-import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight } from './TerrainUtils.js';
+import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, QuadtreeMapSampler, setStaticSampler } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
 
 // Re-declare constants from TerrainGeneration to avoid importing THREE
@@ -267,11 +267,16 @@ function buildChunkProps(job) {
     return { cx, cz, treeMatrices, buildingPositions, boatPositions };
 }
 
+self.postMessage({ type: 'workerReady' });
+
 self.onmessage = function (e) {
     const { type, payload, jobId } = e.data;
 
     try {
-        if (type === 'chunkBase') {
+        if (type === 'initStaticMap') {
+            const sampler = new QuadtreeMapSampler(payload);
+            setStaticSampler(sampler);
+        } else if (type === 'chunkBase') {
             const result = buildChunkBase(payload);
             self.postMessage({
                 jobId,
