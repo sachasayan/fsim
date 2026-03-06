@@ -148,8 +148,12 @@ test('calculateAerodynamics – gearTransition increments when gear is down', ()
 });
 
 test('calculateAerodynamics – gearTransition decrements when gear is up', () => {
+    // Point the aircraft perpendicular to the runway (east) so it is NOT in the
+    // approach cone and the gear automation leaves gearDown=false as seeded.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0));
     const ctx = makeCtx({
         position: new THREE.Vector3(0, 500, 0),
+        quaternion: q,
         gearDown: false,
         gearTransition: 0.5   // mid-transition
     });
@@ -178,4 +182,61 @@ test('calculateAerodynamics – gForce is finite', () => {
     const ctx = makeCtx({ position: new THREE.Vector3(0, 500, 0) });
     calculateAerodynamics(ctx);
     assert.ok(Number.isFinite(ctx.PHYSICS.gForce), `gForce should be finite, got ${ctx.PHYSICS.gForce}`);
+});
+
+// ── Approach-Cone Gear Automation ────────────────────────────────────────────
+// Runway thresholds: Z = -2000 and Z = +2000. Runway axis along Z.
+// Approach cone: 15° half-angle. Arm altitude: 1200 m AGL. Radius: 12000 m.
+
+test('gear – deploys when on approach (low altitude, aligned, within radius)', () => {
+    // Position 8 km south of threshold A (Z = -2000), so aircraft is at Z = -10000.
+    // Aircraft faces north-ish (toward threshold A, heading = 0°, +Z direction in world).
+    // In Three.js the aircraft's forward is (0,0,-1) in local space.
+    // To make the aircraft face +Z we rotate 180° around Y.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 400, -10000),  // 400 m AGL, 8 km out
+        quaternion: q,
+        onGround: false,
+        gearDown: false,
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.gearDown, true, 'Gear should deploy on approach');
+});
+
+test('gear – stays retracted above arm altitude even when aligned with runway', () => {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 1500, -10000), // 1500 m AGL — above 1200 arm alt
+        quaternion: q,
+        onGround: false,
+        gearDown: false,
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.gearDown, false, 'Gear should stay up above arm altitude');
+});
+
+test('gear – stays retracted when below arm altitude but pointing 90° off runway axis', () => {
+    // Aircraft at low altitude, 8 km from threshold A, but heading east (perpendicular)
+    // East = rotate -90° around Y → local -Z maps to world +X.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0));
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, 400, -10000),
+        quaternion: q,
+        onGround: false,
+        gearDown: false,
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.gearDown, false, 'Gear should stay up when off-axis');
+});
+
+test('gear – always down when on ground (regression)', () => {
+    const ctx = makeCtx({
+        position: new THREE.Vector3(0, AIRCRAFT.gearHeight, 0),
+        velocity: new THREE.Vector3(0, 0, 0),
+        onGround: true,
+        gearDown: false,
+    });
+    calculateAerodynamics(ctx);
+    assert.equal(ctx.PHYSICS.gearDown, true, 'Gear must stay down when on ground');
 });

@@ -2,6 +2,18 @@ import { getPhysicsTmp } from './PhysicsUtils.js';
 import { solveAerodynamics, solveStabilityTorques, FLIGHT_TUNING } from './AeroSolver.js';
 import { solveGroundPhysics, updateGearAnimation } from './GroundPhysics.js';
 
+// ── Approach-Cone constants ──────────────────────────────────────────────────
+// The runway sits at world origin, oriented along the Z axis (±Z).
+// Threshold A is at Z = -2000 (aircraft approaches from -Z, heading ~0°)
+// Threshold B is at Z = +2000 (aircraft approaches from +Z, heading ~180°)
+const _RUNWAY_THRESHOLDS = [
+    { x: 0, z: -2000 },   // runway end A — approach from south
+    { x: 0, z: 2000 },   // runway end B — approach from north
+];
+const _APPROACH_RADIUS = 12000;  // m — horizontal distance to check
+const _APPROACH_ALT_MAX = 1200;   // m AGL — arm gear only below this
+const _APPROACH_CONE_COS = Math.cos(15 * Math.PI / 180); // cos(15°)
+
 export function calculateAerodynamics(ctx) {
     const { THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight } = ctx;
     const p = PHYSICS;
@@ -12,13 +24,48 @@ export function calculateAerodynamics(ctx) {
     const groundY = _terrainY + AIRCRAFT.gearHeight;
     p.heightAgl = Math.max(0, p.position.y - groundY);
 
-    // Automation & Input Cleanup
-    if (!p.onGround && p.heightAgl > 150 && p.throttle > 0.5 && p.velocity.y > 0) {
-        p.gearDown = false;
-        p.targetFlaps = 0.0;
-    }
+    // ── Approach-Cone Gear Automation ───────────────────────────────────────
+    // Gear is down when: on the ground, OR on approach to a runway.
+    // On approach = below arm altitude AND inside the horizontal radius of a
+    // threshold AND aircraft heading is within 15° of the runway axis.
     if (p.onGround) {
         p.gearDown = true;
+    } else if (p.heightAgl < _APPROACH_ALT_MAX) {
+        // Compute current heading as a unit vector in the XZ plane.
+        // Aircraft forward is (0,0,-1) in local space; transform to world.
+        const t2 = getPhysicsTmp(THREE);
+        const fwd = t2.forward.set(0, 0, -1).applyQuaternion(p.quaternion);
+        const hx = fwd.x;
+        const hz = fwd.z;
+        const hLen = Math.sqrt(hx * hx + hz * hz);
+
+        let onApproach = false;
+        if (hLen > 1e-4) {
+            const nhx = hx / hLen;
+            const nhz = hz / hLen;
+            for (const thr of _RUNWAY_THRESHOLDS) {
+                const dx = p.position.x - thr.x;
+                const dz = p.position.z - thr.z;
+                const dist2D = Math.sqrt(dx * dx + dz * dz);
+                if (dist2D > _APPROACH_RADIUS) continue;
+
+                // Vector FROM aircraft TOWARD the threshold (approach direction)
+                const ax = -dx / dist2D;
+                const az = -dz / dist2D;
+                const dot = nhx * ax + nhz * az;
+                if (dot >= _APPROACH_CONE_COS) {
+                    onApproach = true;
+                    break;
+                }
+            }
+        }
+        p.gearDown = onApproach;
+    } else {
+        p.gearDown = false;
+    }
+
+    // Ground flap automation
+    if (p.onGround) {
         if (p.throttle >= 0.55 && p.airspeed < 72) p.targetFlaps = Math.max(p.targetFlaps, 0.22);
         if (p.airspeed < 40 && p.throttle <= 0.02) p.targetFlaps = 0.0;
     }
