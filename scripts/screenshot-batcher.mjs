@@ -148,7 +148,7 @@ async function main() {
 }
 
 async function generateContactSheet(files, outPath) {
-    const cols = 3;
+    const cols = 2;
     const rows = Math.ceil(files.length / cols);
     const thumbW = 400;
     const thumbH = 225;
