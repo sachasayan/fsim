@@ -1,5 +1,6 @@
 import { Noise } from './modules/noise.js';
 import { QuadtreeMapSampler, setStaticSampler, getTerrainHeight } from './modules/world/terrain/TerrainUtils.js';
+import { MapTileManager } from './modules/ui/MapTileManager.js';
 
 const canvas = document.getElementById('map-canvas');
 const ctx = canvas.getContext('2d');
@@ -15,6 +16,22 @@ let selectedObject = null;
 let isDragging = false;
 let draggedVertex = null; // { object: d, index: i }
 let currentTool = 'select';
+
+let _rafPending = false;
+function scheduleRender() {
+    if (!_rafPending) {
+        _rafPending = true;
+        requestAnimationFrame(() => { _rafPending = false; render(); });
+    }
+}
+
+const tileManager = new MapTileManager({
+    getTerrainHeight,
+    tileSize: 256,
+    useHillshading: true,
+    Noise,
+    onTileReady: scheduleRender
+});
 
 // Constants
 const COLORS = {
@@ -64,12 +81,14 @@ function setupHotReload() {
         try {
             const resp = await fetch('/world/world.bin');
             if (resp.ok) {
-                const buf = await resp.arrayBuffer();
-                const sampler = new QuadtreeMapSampler(buf);
-                setStaticSampler(sampler);
-                cacheValid = false;
-                render();
-                console.log("✨ Terrain refreshed!");
+                const buf = await resp.ok ? await resp.arrayBuffer() : null;
+                if (buf) {
+                    const sampler = new QuadtreeMapSampler(buf);
+                    setStaticSampler(sampler);
+                    tileManager.clearCache();
+                    render();
+                    console.log("✨ Terrain refreshed!");
+                }
             }
         } catch (e) {
             console.error("Failed to hot-reload world.bin", e);
@@ -97,63 +116,13 @@ function screenToWorld(sx, sy) {
     };
 }
 
-// Enhanced Palette
-function getTerrainColor(h, slopeX = 0, slopeZ = 0) {
-    let baseColor;
-    if (h < 5) baseColor = [29, 79, 136]; // water
-    else if (h < 15) baseColor = [214, 210, 176]; // sand
-    else if (h < 100) baseColor = [79, 126, 66]; // grass
-    else if (h < 300) baseColor = [122, 140, 88]; // hills
-    else baseColor = [242, 242, 242]; // snow
-
-    // Hillshading: Directional lighting from top-left (135 degrees)
-    const lightDir = { x: -0.707, z: -0.707 };
-    const shadow = (slopeX * lightDir.x + slopeZ * lightDir.z) * 0.5;
-
-    const r = Math.max(0, Math.min(255, baseColor[0] + shadow * 100));
-    const g = Math.max(0, Math.min(255, baseColor[1] + shadow * 100));
-    const b = Math.max(0, Math.min(255, baseColor[2] + shadow * 100));
-
-    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
-}
-
-const terrainCache = document.createElement('canvas');
-const tCtx = terrainCache.getContext('2d');
-let cacheValid = false;
 
 function render() {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Draw Terrain (Heavily Enhanced with Hillshading)
-    if (!cacheValid || terrainCache.width !== canvas.width || terrainCache.height !== canvas.height) {
-        terrainCache.width = canvas.width;
-        terrainCache.height = canvas.height;
-
-        // Multi-scale sampling based on zoom
-        const pixelStep = camera.zoom > 0.1 ? 8 : (camera.zoom > 0.02 ? 16 : 32);
-        const worldStep = pixelStep / camera.zoom;
-        const slopeOffset = worldStep * 0.5; // distance to sample for slope
-
-        for (let x = 0; x < canvas.width; x += pixelStep) {
-            for (let y = 0; y < canvas.height; y += pixelStep) {
-                const worldPos = screenToWorld(x + pixelStep / 2, y + pixelStep / 2);
-                const h = getTerrainHeight(worldPos.x, worldPos.z, Noise);
-
-                // Sample neighbors for hillshading
-                const hRight = getTerrainHeight(worldPos.x + slopeOffset, worldPos.z, Noise);
-                const hDown = getTerrainHeight(worldPos.x, worldPos.z + slopeOffset, Noise);
-
-                const slopeX = (hRight - h) / slopeOffset;
-                const slopeZ = (hDown - h) / slopeOffset;
-
-                tCtx.fillStyle = getTerrainColor(h, slopeX, slopeZ);
-                tCtx.fillRect(x, y, pixelStep, pixelStep);
-            }
-        }
-        cacheValid = true;
-    }
-    ctx.drawImage(terrainCache, 0, 0);
+    // 1. Draw Terrain using Tile System (with hillshading)
+    tileManager.draw(ctx, camera.x, camera.z, camera.zoom, canvas.width, canvas.height);
 
     // 2. Draw Grid
     ctx.strokeStyle = COLORS.grid;
@@ -265,6 +234,7 @@ function render() {
         });
     }
 }
+
 
 function setupInputs() {
     canvas.addEventListener('contextmenu', e => {
@@ -383,7 +353,6 @@ function setupInputs() {
             camera.x -= dx / camera.zoom;
             camera.z -= dy / camera.zoom;
             lastMouse = { x: e.offsetX, y: e.offsetY };
-            cacheValid = false;
             render();
         }
 
@@ -426,7 +395,6 @@ function setupInputs() {
         const mouseWorldAfter = screenToWorld(e.offsetX, e.offsetY);
         camera.x -= (mouseWorldAfter.x - mouseWorldBefore.x);
         camera.z -= (mouseWorldAfter.z - mouseWorldBefore.z);
-        cacheValid = false;
         render();
     });
 

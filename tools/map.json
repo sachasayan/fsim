@@ -179,10 +179,10 @@
         {
             "id": "city_4",
             "center": [
-                -100,
-                -600
+                -1200,
+                -2500
             ],
-            "radius": 3000,
+            "radius": 511,
             "road": {
                 "seed": 260,
                 "blockScale": 130,

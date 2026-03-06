@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fetchCityIndex } from '../world/terrain/CityChunkLoader.js';
+import { MapTileManager } from './MapTileManager.js';
 
 export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const UI = {
@@ -32,91 +33,20 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const centerY = mapH * 0.5;
     const pixelsPerWorld = 0.0225;
     const samplePx = 8;
-    const coastlineStepY = samplePx * 3;
-    const coastlineStepX = samplePx * 2;
-    const mapCacheCanvas = document.createElement('canvas');
-    mapCacheCanvas.width = mapW;
-    mapCacheCanvas.height = mapH;
-    const mapCacheCtx = mapCacheCanvas.getContext('2d');
     const mapState = {
-        lastRenderTime: 0,
-        lastCenterX: Number.POSITIVE_INFINITY,
-        lastCenterZ: Number.POSITIVE_INFINITY,
-        minRenderIntervalMs: 140,
-        moveThresholdWorld: 120,
         cities: []
     };
+
+    const tileManager = new MapTileManager({
+        getTerrainHeight,
+        tileSize: 128,
+        pixelRatio: 0.5,
+        useHillshading: false
+    });
 
     fetchCityIndex().then(data => {
         mapState.cities = data;
     });
-
-    function terrainColor(heightValue) {
-        if (heightValue < -25) return '#1d4f88';
-        if (heightValue < -5) return '#2d72a8';
-        if (heightValue < 8) return '#d6d2b0';
-        if (heightValue < 45) return '#6f9a59';
-        if (heightValue < 130) return '#4f7e42';
-        if (heightValue < 240) return '#7a8c58';
-        if (heightValue < 380) return '#7a736a';
-        if (heightValue < 560) return '#9d9890';
-        return '#f2f2f2';
-    }
-
-    function renderMapBase(centerWorldX, centerWorldZ) {
-        mapCacheCtx.clearRect(0, 0, mapW, mapH);
-        mapCacheCtx.fillStyle = '#0f1724';
-        mapCacheCtx.fillRect(0, 0, mapW, mapH);
-
-        // Terrain raster (cached, not per-frame)
-        for (let py = 0; py < mapH; py += samplePx) {
-            for (let px = 0; px < mapW; px += samplePx) {
-                const wx = centerWorldX + (px - centerX) / pixelsPerWorld;
-                const wz = centerWorldZ + (py - centerY) / pixelsPerWorld;
-                mapCacheCtx.fillStyle = terrainColor(getTerrainHeight(wx, wz, 3));
-                mapCacheCtx.fillRect(px, py, samplePx + 1, samplePx + 1);
-            }
-        }
-
-        // Coastline contour pass
-        mapCacheCtx.strokeStyle = 'rgba(230, 225, 180, 0.55)';
-        mapCacheCtx.lineWidth = 1;
-        for (let py = 0; py < mapH; py += coastlineStepY) {
-            mapCacheCtx.beginPath();
-            let started = false;
-            for (let px = 0; px < mapW; px += coastlineStepX) {
-                const wx = centerWorldX + (px - centerX) / pixelsPerWorld;
-                const wz = centerWorldZ + (py - centerY) / pixelsPerWorld;
-                const h = getTerrainHeight(wx, wz, 3);
-                if (h > -8 && h < 6) {
-                    if (!started) {
-                        mapCacheCtx.moveTo(px, py);
-                        started = true;
-                    } else {
-                        mapCacheCtx.lineTo(px, py);
-                    }
-                }
-            }
-            if (started) mapCacheCtx.stroke();
-        }
-
-        // Runway overlay
-        const rwCenterX = centerX + (-centerWorldX) * pixelsPerWorld;
-        const rwCenterY = centerY + (-centerWorldZ) * pixelsPerWorld;
-        const rwW = 100 * pixelsPerWorld;
-        const rwL = 4000 * pixelsPerWorld;
-        mapCacheCtx.fillStyle = 'rgba(30, 30, 30, 0.95)';
-        mapCacheCtx.fillRect(rwCenterX - rwW * 0.5, rwCenterY - rwL * 0.5, rwW, rwL);
-        mapCacheCtx.fillStyle = 'rgba(245, 245, 245, 0.95)';
-        mapCacheCtx.fillRect(rwCenterX - 1.5, rwCenterY - rwL * 0.48, 3, rwL * 0.96);
-
-        const twX = centerX + (-190 - centerWorldX) * pixelsPerWorld;
-        const twY = centerY + (-300 - centerWorldZ) * pixelsPerWorld;
-        mapCacheCtx.fillStyle = '#ffd26f';
-        mapCacheCtx.beginPath();
-        mapCacheCtx.arc(twX, twY, 3.5, 0, Math.PI * 2);
-        mapCacheCtx.fill();
-    }
 
     // Initialize HUD generation
     function initHUD() {
@@ -257,23 +187,25 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         }
 
 
-        // Draw North-up full-color world map (cached/throttled)
-        const now = performance.now();
-        const moved = Math.hypot(PHYSICS.position.x - mapState.lastCenterX, PHYSICS.position.z - mapState.lastCenterZ);
-        if (
-            now - mapState.lastRenderTime > mapState.minRenderIntervalMs ||
-            moved > mapState.moveThresholdWorld ||
-            !Number.isFinite(mapState.lastCenterX)
-        ) {
-            renderMapBase(PHYSICS.position.x, PHYSICS.position.z);
-            mapState.lastRenderTime = now;
-            mapState.lastCenterX = PHYSICS.position.x;
-            mapState.lastCenterZ = PHYSICS.position.z;
-        }
+        // Draw North-up full-color world map using Tile System
+        tileManager.draw(mmCtx, PHYSICS.position.x, PHYSICS.position.z, pixelsPerWorld, mapW, mapH);
 
-        mmCtx.clearRect(0, 0, mapW, mapH);
-        mmCtx.drawImage(mapCacheCanvas, 0, 0);
-
+        // Runway overlay (drawn every frame on top of tiles since camera center moves)
+        const rwCenterX = centerX + (0 - PHYSICS.position.x) * pixelsPerWorld;
+        const rwCenterY = centerY + (0 - PHYSICS.position.z) * pixelsPerWorld;
+        const rwW = 100 * pixelsPerWorld;
+        const rwL = 4000 * pixelsPerWorld;
+        mmCtx.fillStyle = 'rgba(30, 30, 30, 0.95)';
+        mmCtx.fillRect(rwCenterX - rwW * 0.5, rwCenterY - rwL * 0.5, rwW, rwL);
+        mmCtx.fillStyle = 'rgba(245, 245, 245, 0.95)';
+        mmCtx.fillRect(rwCenterX - 1.5, rwCenterY - rwL * 0.48, 3, rwL * 0.96);
+        // Taxiway dot
+        const twX = centerX + (-190 - PHYSICS.position.x) * pixelsPerWorld;
+        const twY = centerY + (-300 - PHYSICS.position.z) * pixelsPerWorld;
+        mmCtx.fillStyle = '#ffd26f';
+        mmCtx.beginPath();
+        mmCtx.arc(twX, twY, 3.5, 0, Math.PI * 2);
+        mmCtx.fill();
 
         // Aircraft icon rotates on north-up map
         mmCtx.save();
