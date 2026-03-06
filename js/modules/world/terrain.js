@@ -59,8 +59,14 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     uAtmosFar: { value: 68000.0 }
   };
 
+  // Parse URL params once — these never change at runtime
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('fog') === '0') {
+  const _fogDisabled = urlParams.get('fog') === '0';
+  const _isFastLoad  = urlParams.get('fastload') === '1';
+  const _renderDist  = urlParams.has('renderDist') ? parseInt(urlParams.get('renderDist'), 10) : null;
+  const _renderDistance = _renderDist !== null ? _renderDist : (_isFastLoad ? 4 : 8);
+
+  if (_fogDisabled) {
     atmosphereUniforms.uAtmosNear.value = 1e6;
     atmosphereUniforms.uAtmosFar.value = 1e7;
   }
@@ -370,11 +376,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     lastProcessedChunkX = px;
     lastProcessedChunkZ = pz;
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const isFastLoad = urlParams.get('fastload') === '1';
-    const urlRenderDist = urlParams.get('renderDist');
-    const parsedRenderDist = urlRenderDist ? parseInt(urlRenderDist, 10) : null;
-    const renderDistance = parsedRenderDist !== null ? parsedRenderDist : (isFastLoad ? 4 : 8);
+    const renderDistance = _renderDistance;
 
     const activeChunks = new Map();
 
@@ -406,9 +408,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         terrainChunks.delete(key);
       }
     }
-    // isFastLoad already parsed above
-    const buildBudget = (pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2) * (isFastLoad ? 40 : 1);
-    const propBuildBudget = (pendingPropBuilds.length > 160 ? 2 : 1) * (isFastLoad ? 80 : 1);
+    const buildBudget = (pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2) * (_isFastLoad ? 40 : 1);
+    const propBuildBudget = (pendingPropBuilds.length > 160 ? 2 : 1) * (_isFastLoad ? 80 : 1);
     processChunkBuildQueue(buildBudget);
     processPropBuildQueue(propBuildBudget);
 
@@ -433,7 +434,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       tmpColorA.setRGB(0.62, 0.66, 0.72); tmpColorB.setRGB(0.78, 0.81, 0.86);
       atmosphereColor.copy(tmpColorA.lerp(tmpColorB, 0.4));
     }
-    if (new URLSearchParams(window.location.search).get('fog') === '0') {
+    if (_fogDisabled) {
       atmosphereUniforms.uAtmosNear.value = 1e6;
       atmosphereUniforms.uAtmosFar.value = 1e7;
     } else {
