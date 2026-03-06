@@ -205,6 +205,16 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     scene.remove(chunkGroup);
     const lod = chunkGroup.userData.lod;
     if (lod !== undefined && chunkPools[lod]) {
+      // Handle city material cleanup
+      if (chunkGroup.userData.hasCityMaterial) {
+        const terrainMesh = chunkGroup.children[0];
+        if (terrainMesh && terrainMesh.material) {
+          terrainMesh.material.dispose();
+          terrainMesh.material = (lod === 0) ? terrainMaterial : terrainFarMaterial;
+        }
+        chunkGroup.userData.hasCityMaterial = false;
+      }
+
       while (chunkGroup.children.length > 2) {
         const child = chunkGroup.children.pop();
         if (child.isInstancedMesh) {

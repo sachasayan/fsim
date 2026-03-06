@@ -486,6 +486,6 @@ ${ShaderLibrary.terrain_city_pavement_fragment}
         if (isFarLOD) shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
         if (cityData && cityData.roadMaskTexture) shader.fragmentShader = '#define HAS_CITY_MASK\n' + shader.fragmentShader;
     };
-    const fragId = (isFarLOD ? 'far' : 'near') + (cityData ? '-city' : '');
+    const fragId = (isFarLOD ? 'far' : 'near') + (cityData ? `-city-${cityData.id}` : '');
     material.customProgramCacheKey = () => `terrain-detail-v5-${fragId}`;
 }
