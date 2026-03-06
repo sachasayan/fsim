@@ -15,6 +15,7 @@ import { createInputHandler } from './core/InputHandler.js';
 import { createAirportSystems } from './sim/AirportSystems.js';
 import { ProceduralAudio } from './audio/AudioSystem.js';
 import { initLiveReload } from './core/LiveReload.js';
+import { startLoaderTips } from './ui/LoaderTips.js';
 
 // Initialize audio nodes early (will be suspended until gesture)
 ProceduralAudio.init();
@@ -441,6 +442,9 @@ function animate() {
   composer.render();
 }
 
+// Initialize Loader Tips
+const loaderTipsInterval = startLoaderTips('loader-subtext', 150);
+
 // Initialization complete
 setTimeout(() => {
   // Final attempt to resume if not already done
@@ -453,6 +457,7 @@ setTimeout(() => {
     loader.style.opacity = '0';
     setTimeout(() => {
       loader.style.display = 'none';
+      if (loaderTipsInterval) clearInterval(loaderTipsInterval);
       console.log('Loader removed.');
     }, 1000);
   }
