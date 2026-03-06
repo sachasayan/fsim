@@ -6,7 +6,11 @@ import { createCloudSystem } from './clouds.js';
 import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
 
+import { createWorldLodManager } from './WorldLodManager.js';
+
 export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER }) {
+  const lodManager = createWorldLodManager();
+
   const environment = createEnvironment({ scene, renderer, WEATHER });
   const terrain = createTerrainSystem({ scene, Noise, PHYSICS });
   const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
@@ -15,6 +19,10 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const particles = createParticleSystem({ scene });
   const aircraft = createAircraftSystem({ scene, renderer });
 
+  // Register objects for centralized LOD management
+  lodManager.register(runway);
+  lodManager.register(tower);
+
   return {
     ...environment,
     ...terrain,
@@ -22,6 +30,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...tower,
     ...cloudSystem,
     ...particles,
-    ...aircraft
+    ...aircraft,
+    updateWorldLOD: lodManager.updateWorldLOD
   };
 }

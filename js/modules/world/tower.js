@@ -87,5 +87,59 @@ export function createTowerSystem({ scene, getTerrainHeight }) {
   towerGroup.position.set(towerX, 0, towerZ);
   scene.add(towerGroup);
 
-  return { towerGroup };
+  // --- LOD Setup ---
+  const proxyGroup = new THREE.Group();
+  const proxyMat = new THREE.MeshStandardMaterial({ color: 0x7b8086, roughness: 0.9 });
+  const proxyGeo = new THREE.CylinderGeometry(10, 10, 70, 6);
+  proxyGeo.translate(0, terrainY + 35, 0);
+  const proxyMesh = new THREE.Mesh(proxyGeo, proxyMat);
+  proxyGroup.add(proxyMesh);
+  proxyGroup.visible = false;
+  towerGroup.add(proxyGroup);
+
+  const highDetailGroup = new THREE.Group();
+  // Move existing meshes into highDetailGroup
+  highDetailGroup.add(concreteMesh, frameMesh, glassMesh, beaconTop, whiteBeaconsMesh);
+  towerGroup.add(highDetailGroup);
+
+  let currentLOD = -1;
+
+  function updateLOD(cameraPos, dist) {
+    let newLOD = 0;
+    if (dist > 25000) newLOD = 3; // Cull
+    else if (dist > 12000) newLOD = 2; // Low poly proxy
+    else if (dist > 5000) newLOD = 1; // Mid detail (no transparency/complex mats)
+    else newLOD = 0; // High detail
+
+    if (newLOD === currentLOD) return;
+    currentLOD = newLOD;
+
+    if (newLOD === 3) {
+      towerGroup.visible = false;
+      return;
+    }
+
+    towerGroup.visible = true;
+
+    if (newLOD === 2) {
+      highDetailGroup.visible = false;
+      proxyGroup.visible = true;
+    } else {
+      proxyGroup.visible = false;
+      highDetailGroup.visible = true;
+
+      if (newLOD === 1) {
+        glassMesh.visible = false;
+        concreteMesh.castShadow = false;
+        frameMesh.castShadow = false;
+        // Optionally swap materials to simpler ones if needed, but visibility is a good start.
+      } else {
+        glassMesh.visible = true;
+        concreteMesh.castShadow = true;
+        frameMesh.castShadow = true;
+      }
+    }
+  }
+
+  return { towerGroup, updateLOD, position: new THREE.Vector3(towerX, 0, towerZ) };
 }

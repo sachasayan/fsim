@@ -251,8 +251,9 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       runwayGroup.add(mesh);
     }
     scene.add(runwayGroup);
+    return { runwayGroup, runwayMat };
   }
-  createRunwayMesh();
+  const { runwayGroup, runwayMat } = createRunwayMesh();
 
   // Global arrays for ALSF-2 Animation
   const alsStrobes = []; // Now stores { mesh, index, dist, dir }
@@ -294,7 +295,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
          varying float vDist;`
       ).replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
-        `float lodFade = smoothstep(12000.0, 8000.0, vDist);
+        `float lodFade = smoothstep(16000.0, 10000.0, vDist);
          vec4 diffuseColor = vec4( diffuse * vInstanceColor * uIntensity * lodFade, opacity );`
       );
     };
@@ -402,9 +403,30 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
 
     lightGroup.add(alsWhiteMesh, strobeMesh, poleMesh);
     scene.add(lightGroup);
-
+    return lightGroup;
   }
-  createRunwayLights();
+  const lightGroup = createRunwayLights();
 
-  return { alsStrobes, strobeColorOn, strobeColorOff };
+  let currentLOD = -1;
+  function updateLOD(cameraPos, dist) {
+    let newLOD = 0;
+    if (dist > 25000) newLOD = 2; // Cull lights completely
+    else if (dist > 12000) newLOD = 1; // Simplify
+    else newLOD = 0; // High detail
+
+    if (newLOD === currentLOD) return;
+    currentLOD = newLOD;
+
+    if (newLOD === 2) {
+      lightGroup.visible = false;
+    } else {
+      lightGroup.visible = true;
+      if (newLOD === 1) {
+        // We could swap runwayMat to a simpler one here if needed
+        // but for now light culling is the biggest win.
+      }
+    }
+  }
+
+  return { alsStrobes, strobeColorOn, strobeColorOff, updateLOD, position: new THREE.Vector3(0, 0, 0) };
 }

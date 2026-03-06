@@ -87,7 +87,8 @@ const {
   updateAircraftLOD,
   updateControlSurfaces,
   isReady,
-  reloadCity
+  reloadCity,
+  updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
 // ==========================================
@@ -421,13 +422,14 @@ function animate() {
     prevShadowExtent = shadowExtent;
   }
 
-  // Terrain update
+  // Terrain and World LOD update
   const chunkX = Math.floor(PHYSICS.position.x / 4000);
   const chunkZ = Math.floor(PHYSICS.position.z / 4000);
   const terrainDue = (now - lastTerrainUpdateMs) >= TERRAIN_UPDATE_INTERVAL_MS;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
   if (terrainDue || chunkChanged) {
     updateTerrain();
+    updateWorldLOD(camera.position);
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
