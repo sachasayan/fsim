@@ -213,7 +213,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
-      terrainMaterial, terrainFarMaterial, terrainDetailUniforms
+      terrainMaterial, terrainFarMaterial, terrainDetailUniforms, timeUniform: waterTimeUniform
     });
   }
 
@@ -456,7 +456,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
-      terrainMaterial, terrainFarMaterial, terrainDetailUniforms
+      terrainMaterial, terrainFarMaterial, terrainDetailUniforms, timeUniform: waterTimeUniform
     };
 
     for (const [key, state] of terrainChunks.entries()) {
@@ -490,7 +490,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
             const cityTerrainMat = state.lod === 0 ? terrainMaterial.clone() : terrainFarMaterial.clone();
             loadedData.center = [overlapping.cx, overlapping.cz];
             loadedData.maskRadius = overlapping.radius * 1.05;
-            setupTerrainMaterial(cityTerrainMat, terrainDetailUniforms, atmosphereUniforms, state.lod !== 0, loadedData);
+            setupTerrainMaterial(cityTerrainMat, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, state.lod !== 0, loadedData);
             state.group.children[0].material = cityTerrainMat;
             state.hasCityMaterial = true;
           }

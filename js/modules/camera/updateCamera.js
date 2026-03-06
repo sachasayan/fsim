@@ -11,6 +11,8 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
   let isDragging = false;
   let camRotX = 0;
   let camRotY = 0;
+  let targetCamRotX = 0;
+  let targetCamRotY = 0;
   const axisX = new THREE.Vector3(1, 0, 0);
   const axisY = new THREE.Vector3(0, 1, 0);
   const forward = new THREE.Vector3();
@@ -61,9 +63,10 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     if (!isDragging) {
       // 0.05 was the original hardcoded value per frame at ~60fps
       const rotLerpFactor = 1.0 - Math.pow(1.0 - 0.05, dt * 60.0);
-      camRotX += (0 - camRotX) * rotLerpFactor;
-      camRotY += (0 - camRotY) * rotLerpFactor;
+      camRotX += (targetCamRotX - camRotX) * rotLerpFactor;
+      camRotY += (targetCamRotY - camRotY) * rotLerpFactor;
     }
+    // ... rest of the logic ...
 
     if (cameraMode === 0) {
       localOffset.set(0, 0, cameraParams.distance);
@@ -168,5 +171,16 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     camera.updateProjectionMatrix();
   }
 
-  return { cycleMode, getMode, updateCamera, snapToTarget };
+  function setRotation(x, y) {
+    camRotX = x;
+    camRotY = y;
+    targetCamRotX = x;
+    targetCamRotY = y;
+  }
+
+  function setDistance(d) {
+    cameraParams.distance = d;
+  }
+
+  return { cycleMode, getMode, updateCamera, snapToTarget, setRotation, setDistance };
 }

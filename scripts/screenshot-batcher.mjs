@@ -113,6 +113,10 @@ async function main() {
                     world.updateTerrainAtmosphere();
                 }
 
+                if (p.tilt !== undefined && world.cameraController.setRotation) {
+                    world.cameraController.setRotation(0, -parseFloat(p.tilt) * (Math.PI / 180));
+                }
+
                 world.cameraController.snapToTarget();
 
                 // Force immediate terrain recalculation for the new position

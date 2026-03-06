@@ -117,7 +117,11 @@ function hash2(x, z, seed = 0) {
 // ---------------------------------------------------------------------------
 // V2 Organic Grid Generation (Perlin-warped Manhattan grid)
 // ---------------------------------------------------------------------------
-function generateCityGrid(cx, cz, radius, seed) {
+function generateCityGrid(city) {
+    const cx = city.center[0];
+    const cz = city.center[1];
+    const radius = city.radius;
+    const seed = city.road.seed;
     const rng = seededRand(seed * 9999 + cx * 293 + cz);
     const blockSize = 130; // 130m standard block size
     const steps = Math.ceil(radius / blockSize) + 1;
@@ -126,15 +130,30 @@ function generateCityGrid(cx, cz, radius, seed) {
     for (let i = 0; i <= steps * 2 + 1; i++) grid[i] = [];
     const nodes = [];
 
-    // Generate warped grid nodes
+    // Generate warped grid nodes based on district
     for (let ix = -steps; ix <= steps; ix++) {
         for (let iz = -steps; iz <= steps; iz++) {
             const ux = cx + ix * blockSize;
             const uz = cz + iz * blockSize;
 
-            // Perlin warp (-0.5 to 0.5) to make it organic
-            const warpX = (hash2(ux, uz, 1) - 0.5) * blockSize * 0.45;
-            const warpZ = (hash2(ux, uz, 2) - 0.5) * blockSize * 0.45;
+            // Determine district at this node
+            const distWeights = getDistrictWeights(ux, uz, city);
+            let maxWeight = 0;
+            let primaryDistrict = 'residential';
+            for (const [k, w] of Object.entries(distWeights)) {
+                if (w > maxWeight) { maxWeight = w; primaryDistrict = k; }
+            }
+
+            // Context-Aware Warping
+            let warpFactor = 0.45; // Default residential
+            if (primaryDistrict === 'financial_core') warpFactor = 0.0;
+            else if (primaryDistrict === 'commercial') warpFactor = 0.1;
+            else if (primaryDistrict === 'industrial') warpFactor = 0.15;
+            else if (primaryDistrict === 'suburban') warpFactor = 0.7;
+
+            // Perlin warp (-0.5 to 0.5)
+            const warpX = (hash2(ux, uz, 1) - 0.5) * blockSize * warpFactor;
+            const warpZ = (hash2(ux, uz, 2) - 0.5) * blockSize * warpFactor;
 
             const px = ux + warpX;
             const pz = uz + warpZ;
@@ -161,17 +180,32 @@ function generateCityGrid(cx, cz, radius, seed) {
             const nTL = grid[ix + steps][iz + 1 + steps];
             const nTR = grid[ix + 1 + steps][iz + 1 + steps];
 
+            let dropChance = 0;
             if (nBL !== -1 && nBL !== undefined) {
-                if (nBR !== -1 && nBR !== undefined) edges.push([nBL, nBR]);
-                if (nTL !== -1 && nTL !== undefined) edges.push([nBL, nTL]);
+                const px = nodes[nBL][0];
+                const pz = nodes[nBL][1];
+                const distWeights = getDistrictWeights(px, pz, city);
+                let primaryDistrict = 'residential';
+                let maxWeight = 0;
+                for (const [k, w] of Object.entries(distWeights)) {
+                    if (w > maxWeight) { maxWeight = w; primaryDistrict = k; }
+                }
+
+                if (primaryDistrict === 'suburban') dropChance = 0.35;
+                if (primaryDistrict === 'residential') dropChance = 0.15;
+            }
+
+            if (nBL !== -1 && nBL !== undefined) {
+                if (nBR !== -1 && nBR !== undefined && rng() > dropChance) edges.push([nBL, nBR]);
+                if (nTL !== -1 && nTL !== undefined && rng() > dropChance) edges.push([nBL, nTL]);
             }
             if (ix === steps - 1 && nBR !== -1 && nBR !== undefined) {
                 const nTopRight = grid[ix + 1 + steps][iz + 1 + steps];
-                if (nTopRight !== -1 && nTopRight !== undefined) edges.push([nBR, nTopRight]);
+                if (nTopRight !== -1 && nTopRight !== undefined && rng() > dropChance) edges.push([nBR, nTopRight]);
             }
             if (iz === steps - 1 && nTL !== -1 && nTL !== undefined) {
                 const nTopRight = grid[ix + 1 + steps][iz + 1 + steps];
-                if (nTopRight !== -1 && nTopRight !== undefined) edges.push([nTL, nTopRight]);
+                if (nTopRight !== -1 && nTopRight !== undefined && rng() > dropChance) edges.push([nTL, nTopRight]);
             }
 
             // Add block if all 4 corners exist
@@ -182,29 +216,60 @@ function generateCityGrid(cx, cz, radius, seed) {
         }
     }
 
-    // Add radial/arterial overlays (cut diagonals through the grid)
-    const numRadials = 1 + Math.floor(rng() * 2);
-    for (let r = 0; r < numRadials; r++) {
-        const angle = rng() * Math.PI * 2;
-        const dx = Math.cos(angle) * blockSize * 3;
-        const dz = Math.sin(angle) * blockSize * 3;
+    // Smart Arterials: Connect outliers to the center
+    if (city.districts) {
+        for (const d of city.districts) {
+            if (d.type === 'financial_core' || (d.center[0] === cx && d.center[1] === cz)) continue;
 
-        let currX = cx + (rng() - 0.5) * radius * 0.5;
-        let currZ = cz + (rng() - 0.5) * radius * 0.5;
-        let lastNodeIdx = -1;
+            const dx = d.center[0] - cx;
+            const dz = d.center[1] - cz;
+            const dist = Math.hypot(dx, dz);
+            if (dist === 0) continue;
 
-        for (let step = 0; step < 10; step++) {
-            const nextX = currX + dx;
-            const nextZ = currZ + dz;
-            if (Math.hypot(nextX - cx, nextZ - cz) > radius) break;
+            let currX = cx;
+            let currZ = cz;
+            let lastNodeIdx = -1;
 
-            nodes.push([nextX, nextZ]);
-            const currIdx = nodes.length - 1;
-            if (lastNodeIdx !== -1) edges.push([lastNodeIdx, currIdx]);
+            const stepSize = blockSize * 1.5;
+            const numSteps = Math.ceil(dist / stepSize);
+            const dirX = (dx / dist) * stepSize;
+            const dirZ = (dz / dist) * stepSize;
 
-            lastNodeIdx = currIdx;
-            currX = nextX;
-            currZ = nextZ;
+            for (let s = 0; s <= numSteps; s++) {
+                nodes.push([currX, currZ]);
+                const currIdx = nodes.length - 1;
+                if (lastNodeIdx !== -1) edges.push([lastNodeIdx, currIdx]);
+
+                lastNodeIdx = currIdx;
+                currX += dirX + (rng() - 0.5) * blockSize * 0.5; // slight wobble on arterials
+                currZ += dirZ + (rng() - 0.5) * blockSize * 0.5;
+            }
+        }
+    } else {
+        // Fallback for missing districts
+        const numRadials = 1 + Math.floor(rng() * 2);
+        for (let r = 0; r < numRadials; r++) {
+            const angle = rng() * Math.PI * 2;
+            const dx = Math.cos(angle) * blockSize * 3;
+            const dz = Math.sin(angle) * blockSize * 3;
+
+            let currX = cx + (rng() - 0.5) * radius * 0.5;
+            let currZ = cz + (rng() - 0.5) * radius * 0.5;
+            let lastNodeIdx = -1;
+
+            for (let step = 0; step < 10; step++) {
+                const nextX = currX + dx;
+                const nextZ = currZ + dz;
+                if (Math.hypot(nextX - cx, nextZ - cz) > radius) break;
+
+                nodes.push([nextX, nextZ]);
+                const currIdx = nodes.length - 1;
+                if (lastNodeIdx !== -1) edges.push([lastNodeIdx, currIdx]);
+
+                lastNodeIdx = currIdx;
+                currX = nextX;
+                currZ = nextZ;
+            }
         }
     }
 
@@ -381,8 +446,19 @@ function placeBuildingsInCity(city, roads, blocks) {
         const cellIntensity = getUrbanIntensity(cx, cz, city);
 
         // Dynamic density: tightly packed in core, spaced out in suburbs
-        const lotStep = 45 - (cellIntensity * 30); // 45m (suburb) down to 15m (core)
-        const spawnChance = 0.5 + (cellIntensity * 0.45); // up to 95% filled out in core
+        let lotStep = 45 - (cellIntensity * 30); // 45m (suburb) down to 15m (core)
+        let spawnChance = 0.5 + (cellIntensity * 0.45); // up to 95% filled out in core
+
+        // Boost density further in financial core
+        let blockIsCore = false;
+        for (const p of block) {
+            const weights = getDistrictWeights(p[0], p[1], city);
+            if (weights.financial_core > 0.5) blockIsCore = true;
+        }
+        if (blockIsCore) {
+            lotStep *= 0.85;
+            spawnChance = Math.min(0.98, spawnChance * 1.1);
+        }
 
         // Scan the AABB of the cell perfectly
         const stepsX = Math.ceil((maxX - minX) / lotStep);
@@ -397,8 +473,11 @@ function placeBuildingsInCity(city, roads, blocks) {
                 if (Math.hypot(bx - center[0], bz - center[1]) > radius * 0.98) continue;
 
                 // Keep points roughly within the block's diamond/poly footprint
-                // (Quick strict manhattan-ish check using center)
                 if (Math.abs(bx - cx) + Math.abs(bz - cz) > Math.abs(maxX - minX)) continue;
+
+                // Park Logic: probabilistic "green lungs" in dense areas
+                const parkNoise = hash2(bx, bz, 777);
+                if (cellIntensity > 0.4 && parkNoise > 0.88) continue; // 12% chance of a small park/plaza
 
                 // Grab neighborhood profiles mapping
                 const distWeights = getDistrictWeights(bx, bz, city);
@@ -412,7 +491,13 @@ function placeBuildingsInCity(city, roads, blocks) {
                 const depthRange = CLASS_DEPTH[classIdStr];
                 const d = depthRange[0] + rng() * (depthRange[1] - depthRange[0]);
                 const heightRange = CLASS_HEIGHT[classIdStr];
-                const h = heightRange[0] + rng() * (heightRange[1] - heightRange[0]);
+                let h = heightRange[0] + rng() * (heightRange[1] - heightRange[0]);
+
+                // Skyline Profile: exponential falloff from city center
+                const distToCenter = Math.hypot(bx - center[0], bz - center[1]);
+                const skylineFalloff = Math.pow(Math.max(0, 1.0 - distToCenter / (radius * 0.85)), 1.5);
+                // Core buildings can be up to 1.5x taller, periphery scales down
+                h *= (0.4 + skylineFalloff * 1.1);
 
                 let onRoad = false;
                 const buildingRadius = Math.hypot(w, d) / 2;
@@ -460,10 +545,12 @@ function placeBuildingsInCity(city, roads, blocks) {
                     const frontageOffset = 22 + rng() * 12;
                     const roadVisualRadius = refSeg ? refSeg.halfWidth * visualRoadScale : 0;
                     const pull = Math.max(0, Math.sqrt(bestRoadDist) - (frontageOffset + roadVisualRadius));
+                    const maxPull = 40.0;
+                    const actualPull = Math.min(pull * 0.8, maxPull);
 
                     const angleToRoad = Math.atan2((refSeg.z1 + refSeg.z2) / 2 - lz, (refSeg.x1 + refSeg.x2) / 2 - lx);
-                    lx += Math.cos(angleToRoad) * pull * 0.8;
-                    lz += Math.sin(angleToRoad) * pull * 0.8;
+                    lx += Math.cos(angleToRoad) * actualPull;
+                    lz += Math.sin(angleToRoad) * actualPull;
                 }
 
                 // Probabilistic skip for breathing room
@@ -472,8 +559,13 @@ function placeBuildingsInCity(city, roads, blocks) {
                 const groundY = getTerrainHeight(lx, lz);
                 if (groundY < 2.0 || groundY > 430) continue;
 
-                // Align to road angle, with optional 90-degree rotations for variety
-                const roadRelativeAngle = bestRoadAngle + (Math.floor(rng() * 4) * (Math.PI / 2));
+                // Align to road angle
+                let roadRelativeAngle = bestRoadAngle;
+                if (primaryDistrict === 'suburban' || primaryDistrict === 'residential') {
+                    roadRelativeAngle = bestRoadAngle + (rng() > 0.5 ? 0 : Math.PI);
+                } else {
+                    roadRelativeAngle = bestRoadAngle + (Math.floor(rng() * 4) * (Math.PI / 2));
+                }
 
                 const palette = DISTRICT_PALETTES[primaryDistrict] || DISTRICT_PALETTES.residential;
                 const colorIdx = palette[Math.floor(rng() * 4)];
@@ -664,7 +756,7 @@ for (const city of mapData.cities) {
     mkdirSync(outDir, { recursive: true });
 
     console.log(`  [${city.id}] Generating Organic Grid road network…`);
-    const { nodes, edges, blocks } = generateCityGrid(city.center[0], city.center[1], city.radius, city.road.seed);
+    const { nodes, edges, blocks } = generateCityGrid(city);
     const roadSegments = buildRoadSegments(nodes, edges, city);
 
     console.log(`  [${city.id}]   → ${nodes.length} nodes, ${edges.length} road edges, ${blocks.length} blocks`);

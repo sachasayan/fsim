@@ -486,6 +486,14 @@ setTimeout(() => {
   prevPhysicsPos.copy(PHYSICS.position);
   prevPhysicsQuat.copy(PHYSICS.quaternion);
 
+  if (urlParams.has('tilt')) {
+    const tiltDeg = parseFloat(urlParams.get('tilt'));
+    cameraController.setRotation(0, -tiltDeg * (Math.PI / 180));
+  }
+  if (urlParams.has('camDist')) {
+    cameraController.setDistance(parseFloat(urlParams.get('camDist')));
+  }
+
   physicsAdapter.syncFromState();
   animate();
 }, 1500);

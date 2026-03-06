@@ -21,7 +21,7 @@ uniform float uCityMaskRadius;
         // Pavement from 80/255 (0.31) to 160/255 (0.62)
         float isUrbanPavement = smoothstep(0.20, 0.40, cityAlpha);
         // Asphalt from 160/255 (0.62) upwards
-        float isRoadAsphalt = smoothstep(0.55, 0.65, cityAlpha);
+        float isRoadAsphalt = smoothstep(0.52, 0.62, cityAlpha);
         
         vec3 pavementColor = vec3(0.55, 0.55, 0.55); // lighter concrete gray so it pops
         vec3 asphaltColor = vec3(0.20, 0.20, 0.20); // dark asphalt

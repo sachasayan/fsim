@@ -383,7 +383,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 const cityTerrainMat = lod === 0 ? ctx.terrainMaterial.clone() : ctx.terrainFarMaterial.clone();
                 cityData.center = [overlappingCity.cx, overlappingCity.cz];
                 cityData.maskRadius = overlappingCity.radius * 1.05;
-                setupTerrainMaterial(cityTerrainMat, ctx.terrainDetailUniforms, ctx.atmosphereUniforms, lod !== 0, cityData);
+                setupTerrainMaterial(cityTerrainMat, ctx.terrainDetailUniforms, ctx.atmosphereUniforms, ctx.timeUniform, lod !== 0, cityData);
                 chunkGroup.children[0].material = cityTerrainMat;
                 chunkGroup.userData.hasCityMaterial = true;
             }
