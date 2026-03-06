@@ -126,97 +126,11 @@ function generateCityGrid(city) {
     const blockSize = 130; // 130m standard block size
     const steps = Math.ceil(radius / blockSize) + 1;
 
-    const grid = [];
-    for (let i = 0; i <= steps * 2 + 1; i++) grid[i] = [];
     const nodes = [];
-
-    // Generate warped grid nodes based on district
-    for (let ix = -steps; ix <= steps; ix++) {
-        for (let iz = -steps; iz <= steps; iz++) {
-            const ux = cx + ix * blockSize;
-            const uz = cz + iz * blockSize;
-
-            // Determine district at this node
-            const distWeights = getDistrictWeights(ux, uz, city);
-            let maxWeight = 0;
-            let primaryDistrict = 'residential';
-            for (const [k, w] of Object.entries(distWeights)) {
-                if (w > maxWeight) { maxWeight = w; primaryDistrict = k; }
-            }
-
-            // Context-Aware Warping
-            let warpFactor = 0.45; // Default residential
-            if (primaryDistrict === 'financial_core') warpFactor = 0.0;
-            else if (primaryDistrict === 'commercial') warpFactor = 0.1;
-            else if (primaryDistrict === 'industrial') warpFactor = 0.15;
-            else if (primaryDistrict === 'suburban') warpFactor = 0.7;
-
-            // Perlin warp (-0.5 to 0.5)
-            const warpX = (hash2(ux, uz, 1) - 0.5) * blockSize * warpFactor;
-            const warpZ = (hash2(ux, uz, 2) - 0.5) * blockSize * warpFactor;
-
-            const px = ux + warpX;
-            const pz = uz + warpZ;
-
-            const dist = Math.hypot(px - cx, pz - cz);
-            if (dist > radius * 1.05) {
-                grid[ix + steps][iz + steps] = -1; // out of bounds
-                continue;
-            }
-
-            nodes.push([px, pz]);
-            grid[ix + steps][iz + steps] = nodes.length - 1;
-        }
-    }
-
     const edges = [];
-    const blocks = [];
+    const arterialSegments = [];
 
-    // Connect nodes into edges and extract city blocks
-    for (let ix = -steps; ix < steps; ix++) {
-        for (let iz = -steps; iz < steps; iz++) {
-            const nBL = grid[ix + steps][iz + steps];
-            const nBR = grid[ix + 1 + steps][iz + steps];
-            const nTL = grid[ix + steps][iz + 1 + steps];
-            const nTR = grid[ix + 1 + steps][iz + 1 + steps];
-
-            let dropChance = 0;
-            if (nBL !== -1 && nBL !== undefined) {
-                const px = nodes[nBL][0];
-                const pz = nodes[nBL][1];
-                const distWeights = getDistrictWeights(px, pz, city);
-                let primaryDistrict = 'residential';
-                let maxWeight = 0;
-                for (const [k, w] of Object.entries(distWeights)) {
-                    if (w > maxWeight) { maxWeight = w; primaryDistrict = k; }
-                }
-
-                if (primaryDistrict === 'suburban') dropChance = 0.35;
-                if (primaryDistrict === 'residential') dropChance = 0.15;
-            }
-
-            if (nBL !== -1 && nBL !== undefined) {
-                if (nBR !== -1 && nBR !== undefined && rng() > dropChance) edges.push([nBL, nBR]);
-                if (nTL !== -1 && nTL !== undefined && rng() > dropChance) edges.push([nBL, nTL]);
-            }
-            if (ix === steps - 1 && nBR !== -1 && nBR !== undefined) {
-                const nTopRight = grid[ix + 1 + steps][iz + 1 + steps];
-                if (nTopRight !== -1 && nTopRight !== undefined && rng() > dropChance) edges.push([nBR, nTopRight]);
-            }
-            if (iz === steps - 1 && nTL !== -1 && nTL !== undefined) {
-                const nTopRight = grid[ix + 1 + steps][iz + 1 + steps];
-                if (nTopRight !== -1 && nTopRight !== undefined && rng() > dropChance) edges.push([nTL, nTopRight]);
-            }
-
-            // Add block if all 4 corners exist
-            if (nBL !== -1 && nBR !== -1 && nTL !== -1 && nTR !== -1 &&
-                nBL !== undefined && nBR !== undefined && nTL !== undefined && nTR !== undefined) {
-                blocks.push([nodes[nBL], nodes[nBR], nodes[nTR], nodes[nTL]]);
-            }
-        }
-    }
-
-    // Smart Arterials: Connect outliers to the center
+    // 1. Generate Arterial Backbone FIRST
     if (city.districts) {
         for (const d of city.districts) {
             if (d.type === 'financial_core' || (d.center[0] === cx && d.center[1] === cz)) continue;
@@ -238,37 +152,105 @@ function generateCityGrid(city) {
             for (let s = 0; s <= numSteps; s++) {
                 nodes.push([currX, currZ]);
                 const currIdx = nodes.length - 1;
-                if (lastNodeIdx !== -1) edges.push([lastNodeIdx, currIdx]);
+                if (lastNodeIdx !== -1) {
+                    const seg = [lastNodeIdx, currIdx];
+                    edges.push(seg);
+                    arterialSegments.push({ x1: nodes[seg[0]][0], z1: nodes[seg[0]][1], x2: nodes[seg[1]][0], z2: nodes[seg[1]][1] });
+                }
 
                 lastNodeIdx = currIdx;
-                currX += dirX + (rng() - 0.5) * blockSize * 0.5; // slight wobble on arterials
-                currZ += dirZ + (rng() - 0.5) * blockSize * 0.5;
+                currX += dirX + (rng() - 0.5) * blockSize * 0.2; // tighter arterials
+                currZ += dirZ + (rng() - 0.5) * blockSize * 0.2;
             }
         }
-    } else {
-        // Fallback for missing districts
-        const numRadials = 1 + Math.floor(rng() * 2);
-        for (let r = 0; r < numRadials; r++) {
-            const angle = rng() * Math.PI * 2;
-            const dx = Math.cos(angle) * blockSize * 3;
-            const dz = Math.sin(angle) * blockSize * 3;
+    }
 
-            let currX = cx + (rng() - 0.5) * radius * 0.5;
-            let currZ = cz + (rng() - 0.5) * radius * 0.5;
-            let lastNodeIdx = -1;
+    const grid = [];
+    for (let i = 0; i <= steps * 2 + 1; i++) grid[i] = [];
 
-            for (let step = 0; step < 10; step++) {
-                const nextX = currX + dx;
-                const nextZ = currZ + dz;
-                if (Math.hypot(nextX - cx, nextZ - cz) > radius) break;
+    // 2. Generate Local Grid Nodes
+    for (let ix = -steps; ix <= steps; ix++) {
+        for (let iz = -steps; iz <= steps; iz++) {
+            const ux = cx + ix * blockSize;
+            const uz = cz + iz * blockSize;
 
-                nodes.push([nextX, nextZ]);
-                const currIdx = nodes.length - 1;
-                if (lastNodeIdx !== -1) edges.push([lastNodeIdx, currIdx]);
+            const distWeights = getDistrictWeights(ux, uz, city);
+            let maxWeight = 0;
+            let primaryDistrict = 'residential';
+            for (const [k, w] of Object.entries(distWeights)) {
+                if (w > maxWeight) { maxWeight = w; primaryDistrict = k; }
+            }
 
-                lastNodeIdx = currIdx;
-                currX = nextX;
-                currZ = nextZ;
+            let warpFactor = 0.45;
+            if (primaryDistrict === 'financial_core') warpFactor = 0.0;
+            else if (primaryDistrict === 'commercial') warpFactor = 0.1;
+            else if (primaryDistrict === 'industrial') warpFactor = 0.15;
+            else if (primaryDistrict === 'suburban') warpFactor = 0.8; // increased suburban warp
+
+            const warpX = (hash2(ux, uz, 1) - 0.5) * blockSize * warpFactor;
+            const warpZ = (hash2(ux, uz, 2) - 0.5) * blockSize * warpFactor;
+
+            const px = ux + warpX;
+            const pz = uz + warpZ;
+
+            const dist = Math.hypot(px - cx, pz - cz);
+            if (dist > radius * 1.05) {
+                grid[ix + steps][iz + steps] = -1;
+                continue;
+            }
+
+            nodes.push([px, pz]);
+            grid[ix + steps][iz + steps] = nodes.length - 1;
+        }
+    }
+
+    const blocks = [];
+
+    // 3. Connect Local Grid with Arterial Hierarchy
+    for (let ix = -steps; ix < steps; ix++) {
+        for (let iz = -steps; iz < steps; iz++) {
+            const nBL = grid[ix + steps][iz + steps];
+            const nBR = grid[ix + 1 + steps][iz + steps];
+            const nTL = grid[ix + steps][iz + 1 + steps];
+            const nTR = grid[ix + 1 + steps][iz + 1 + steps];
+
+            const tryAdd = (i1, i2) => {
+                if (i1 === -1 || i1 === undefined || i2 === -1 || i2 === undefined) return;
+
+                const p1 = nodes[i1], p2 = nodes[i2];
+                // Check if this local edge crosses any arterial
+                let crossing = false;
+                for (const art of arterialSegments) {
+                    if (lineIntersect(p1[0], p1[1], p2[0], p2[1], art.x1, art.z1, art.x2, art.z2)) {
+                        crossing = true; break;
+                    }
+                }
+
+                if (!crossing) {
+                    const distWeights = getDistrictWeights(p1[0], p1[1], city);
+                    let primaryDistrict = 'residential';
+                    let maxWeight = 0;
+                    for (const [k, w] of Object.entries(distWeights)) {
+                        if (w > maxWeight) { maxWeight = w; primaryDistrict = k; }
+                    }
+
+                    let dropChance = 0;
+                    if (primaryDistrict === 'suburban') dropChance = 0.45;
+                    else if (primaryDistrict === 'residential') dropChance = 0.2;
+
+                    if (rng() > dropChance) edges.push([i1, i2]);
+                }
+            };
+
+            tryAdd(nBL, nBR);
+            tryAdd(nBL, nTL);
+            if (ix === steps - 1) tryAdd(nBR, nTR);
+            if (iz === steps - 1) tryAdd(nTL, nTR);
+
+            // Add block if all 4 corners exist
+            if (nBL !== -1 && nBR !== -1 && nTL !== -1 && nTR !== -1 &&
+                nBL !== undefined && nBR !== undefined && nTL !== undefined && nTR !== undefined) {
+                blocks.push([nodes[nBL], nodes[nBR], nodes[nTR], nodes[nTL]]);
             }
         }
     }
@@ -319,6 +301,17 @@ function distToPolygon(px, pz, points) {
         minDist = Math.min(minDist, d);
     }
     return minDist;
+}
+
+function lineIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (denom === 0) return null;
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+    if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+        return { x: x1 + ua * (x2 - x1), y: y1 + ua * (y2 - y1) };
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,15 +415,13 @@ function getUrbanIntensity(x, z, city) {
 
 // ---------------------------------------------------------------------------
 // Building placement — populate city blocks with buildings
-// ---------------------------------------------------------------------------
 function placeBuildingsInCity(city, roads, blocks) {
     const buildings = []; // {x, y, z, w, h, d, angle, classId, colorIdx}
     const { center, radius, road: roadCfg } = city;
     const rng = seededRand(roadCfg.seed * 31337);
 
-    // Populate every grid block defined by the road network intersections
+    // PASS 1: Standard Grid Infilling
     for (const block of blocks) {
-        // Block is a quad: [BL, BR, TR, TL]
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
         let cx = 0, cz = 0;
         for (const p of block) {
@@ -438,75 +429,57 @@ function placeBuildingsInCity(city, roads, blocks) {
             minZ = Math.min(minZ, p[1]); maxZ = Math.max(maxZ, p[1]);
             cx += p[0]; cz += p[1];
         }
-        cx /= 4; cz /= 4; // Block center
+        cx /= 4; cz /= 4;
 
-        // Keep inside actual city limits
         if (Math.hypot(cx - center[0], cz - center[1]) > radius * 0.95) continue;
 
         const cellIntensity = getUrbanIntensity(cx, cz, city);
+        let lotStep = 45 - (cellIntensity * 30);
+        let spawnChance = 0.5 + (cellIntensity * 0.45);
 
-        // Dynamic density: tightly packed in core, spaced out in suburbs
-        let lotStep = 45 - (cellIntensity * 30); // 45m (suburb) down to 15m (core)
-        let spawnChance = 0.5 + (cellIntensity * 0.45); // up to 95% filled out in core
-
-        // Boost density further in financial core
-        let blockIsCore = false;
-        for (const p of block) {
-            const weights = getDistrictWeights(p[0], p[1], city);
-            if (weights.financial_core > 0.5) blockIsCore = true;
-        }
-        if (blockIsCore) {
-            lotStep *= 0.85;
-            spawnChance = Math.min(0.98, spawnChance * 1.1);
+        // Skyline Clustering Hubs
+        const hubs = [];
+        for (const dist of city.districts) {
+            if (dist.type === 'financial_core') hubs.push(dist.center);
         }
 
-        // Scan the AABB of the cell perfectly
         const stepsX = Math.ceil((maxX - minX) / lotStep);
         const stepsZ = Math.ceil((maxZ - minZ) / lotStep);
 
         for (let ix = 0; ix <= stepsX; ix++) {
             for (let iz = 0; iz <= stepsZ; iz++) {
-                // Jitter decreases in tight urban cores for cleaner rows
                 const bx = minX + ix * lotStep + (rng() - 0.5) * (8 - cellIntensity * 6);
                 const bz = minZ + iz * lotStep + (rng() - 0.5) * (8 - cellIntensity * 6);
 
                 if (Math.hypot(bx - center[0], bz - center[1]) > radius * 0.98) continue;
-
-                // Keep points roughly within the block's diamond/poly footprint
                 if (Math.abs(bx - cx) + Math.abs(bz - cz) > Math.abs(maxX - minX)) continue;
 
-                // Park Logic: probabilistic "green lungs" in dense areas
                 const parkNoise = hash2(bx, bz, 777);
-                if (cellIntensity > 0.4 && parkNoise > 0.88) continue; // 12% chance of a small park/plaza
+                if (cellIntensity > 0.4 && parkNoise > 0.88) continue;
 
-                // Grab neighborhood profiles mapping
                 const distWeights = getDistrictWeights(bx, bz, city);
                 const primaryDistrict = pickWeighted(rng, distWeights);
                 const classWeights = DISTRICT_CLASS_WEIGHTS[primaryDistrict] || DISTRICT_CLASS_WEIGHTS.residential;
                 const classIdStr = pickWeighted(rng, classWeights);
                 const classId = CLASS_IDS.indexOf(classIdStr);
 
-                const widthRange = CLASS_WIDTH[classIdStr];
-                const w = widthRange[0] + rng() * (widthRange[1] - widthRange[0]);
-                const depthRange = CLASS_DEPTH[classIdStr];
-                const d = depthRange[0] + rng() * (depthRange[1] - depthRange[0]);
-                const heightRange = CLASS_HEIGHT[classIdStr];
-                let h = heightRange[0] + rng() * (heightRange[1] - heightRange[0]);
+                const w = CLASS_WIDTH[classIdStr][0] + rng() * (CLASS_WIDTH[classIdStr][1] - CLASS_WIDTH[classIdStr][0]);
+                const d = CLASS_DEPTH[classIdStr][0] + rng() * (CLASS_DEPTH[classIdStr][1] - CLASS_DEPTH[classIdStr][0]);
+                let h = CLASS_HEIGHT[classIdStr][0] + rng() * (CLASS_HEIGHT[classIdStr][1] - CLASS_HEIGHT[classIdStr][0]);
 
-                // Skyline Profile: exponential falloff from city center
-                const distToCenter = Math.hypot(bx - center[0], bz - center[1]);
-                const skylineFalloff = Math.pow(Math.max(0, 1.0 - distToCenter / (radius * 0.85)), 1.5);
-                // Core buildings can be up to 1.5x taller, periphery scales down
-                h *= (0.4 + skylineFalloff * 1.1);
+                // Hub-based Skyline Clustering
+                let hubBoost = 0;
+                for (const hub of hubs) {
+                    const dHub = Math.hypot(bx - hub[0], bz - hub[1]);
+                    hubBoost = Math.max(hubBoost, Math.pow(Math.max(0, 1.0 - dHub / 1000), 2.0));
+                }
+                const skylineFalloff = Math.pow(Math.max(0, 1.0 - Math.hypot(bx - center[0], bz - center[1]) / (radius * 0.85)), 1.5);
+                h *= (0.4 + skylineFalloff * 0.8 + hubBoost * 1.5);
 
                 let onRoad = false;
                 const buildingRadius = Math.hypot(w, d) / 2;
-
-                // Shader thicknessPx = seg.halfWidth * 2.5
-                // The visual road footprint is 2.5x the configured halfWidth. 
-                // We add 1m sidewalk buffer.
                 const visualRoadScale = 2.5;
-                const sidewalkMargin = 1.0;
+                const sidewalkMargin = 1.2;
 
                 let bestRoadDist = Infinity;
                 let bestRoadAngle = 0;
@@ -529,7 +502,6 @@ function placeBuildingsInCity(city, roads, blocks) {
                         refSeg = seg;
                     }
 
-                    // True collision buffer
                     const collisionDist = (halfWidth * visualRoadScale) + buildingRadius + sidewalkMargin;
                     if (d2 < collisionDist * collisionDist) {
                         onRoad = true;
@@ -538,34 +510,25 @@ function placeBuildingsInCity(city, roads, blocks) {
                 }
 
                 if (onRoad) continue;
+                if (rng() > spawnChance) continue;
 
                 let lx = bx, lz = bz;
                 if (primaryDistrict === 'residential' || primaryDistrict === 'suburban') {
-                    // Pull building towards road frontage, leaving exact margin
                     const frontageOffset = 22 + rng() * 12;
                     const roadVisualRadius = refSeg ? refSeg.halfWidth * visualRoadScale : 0;
                     const pull = Math.max(0, Math.sqrt(bestRoadDist) - (frontageOffset + roadVisualRadius));
-                    const maxPull = 40.0;
-                    const actualPull = Math.min(pull * 0.8, maxPull);
-
+                    const actualPull = Math.min(pull * 0.8, 45.0);
                     const angleToRoad = Math.atan2((refSeg.z1 + refSeg.z2) / 2 - lz, (refSeg.x1 + refSeg.x2) / 2 - lx);
                     lx += Math.cos(angleToRoad) * actualPull;
                     lz += Math.sin(angleToRoad) * actualPull;
                 }
 
-                // Probabilistic skip for breathing room
-                if (rng() > spawnChance) continue;
-
                 const groundY = getTerrainHeight(lx, lz);
                 if (groundY < 2.0 || groundY > 430) continue;
 
-                // Align to road angle
-                let roadRelativeAngle = bestRoadAngle;
-                if (primaryDistrict === 'suburban' || primaryDistrict === 'residential') {
-                    roadRelativeAngle = bestRoadAngle + (rng() > 0.5 ? 0 : Math.PI);
-                } else {
-                    roadRelativeAngle = bestRoadAngle + (Math.floor(rng() * 4) * (Math.PI / 2));
-                }
+                const roadRelativeAngle = (primaryDistrict === 'suburban' || primaryDistrict === 'residential')
+                    ? bestRoadAngle + (rng() > 0.5 ? 0 : Math.PI)
+                    : bestRoadAngle + (Math.floor(rng() * 4) * (Math.PI / 2));
 
                 const palette = DISTRICT_PALETTES[primaryDistrict] || DISTRICT_PALETTES.residential;
                 const colorIdx = palette[Math.floor(rng() * 4)];
@@ -573,6 +536,47 @@ function placeBuildingsInCity(city, roads, blocks) {
                 buildings.push({ x: lx, y: groundY, z: lz, w, h, d, angle: roadRelativeAngle, classId, colorIdx });
             }
         }
+
+        // PASS 2: Back-Lotting (fill center of block if space permits)
+        if (cellIntensity < 0.3) { // Suburbs only for back-lotting
+            const bx = cx, bz = cz;
+            const distWeights = getDistrictWeights(bx, bz, city);
+            const primaryDistrict = pickWeighted(rng, distWeights);
+            if (primaryDistrict === 'suburban' || primaryDistrict === 'residential') {
+                const w = 9 + rng() * 5, d = 9 + rng() * 5, h = 8 + rng() * 6;
+                const groundY = getTerrainHeight(bx, bz);
+                if (groundY > 2.0 && groundY < 430) {
+                    buildings.push({ x: bx, y: groundY, z: bz, w, h, d, angle: rng() * Math.PI, classId: CLASS_IDS.indexOf('townhouse'), colorIdx: 2 });
+                }
+            }
+        }
+    }
+
+    // PASS 3: Dead-End Infiller
+    const nodeDegree = new Map();
+    for (const [i, j] of roads.map(r => [r.x1 + "," + r.z1, r.x2 + "," + r.z2])) { // Rough hack but works for infill
+        nodeDegree.set(i, (nodeDegree.get(i) || 0) + 1);
+        nodeDegree.set(j, (nodeDegree.get(j) || 0) + 1);
+    }
+
+    // We actually need the road segments to find the angle for dead ends
+    for (const seg of roads) {
+        const p1 = seg.x1 + "," + seg.z1;
+        const p2 = seg.x2 + "," + seg.z2;
+
+        const tryFill = (x, z, angle, otherX, otherZ) => {
+            const key = x + "," + z;
+            if (nodeDegree.get(key) === 1) {
+                const bx = x + (x - otherX) * 0.15; // push slightly past the end
+                const bz = z + (z - otherZ) * 0.15;
+                const groundY = getTerrainHeight(bx, bz);
+                if (groundY > 2.0 && groundY < 430) {
+                    buildings.push({ x: bx, y: groundY, z: bz, w: 14, h: 12, d: 14, angle: Math.atan2(z - otherZ, x - otherX), classId: CLASS_IDS.indexOf('townhouse'), colorIdx: 3 });
+                }
+            }
+        };
+        tryFill(seg.x1, seg.z1, 0, seg.x2, seg.z2);
+        tryFill(seg.x2, seg.z2, 0, seg.x1, seg.z1);
     }
 
     return buildings;
