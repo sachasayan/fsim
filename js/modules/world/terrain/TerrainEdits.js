@@ -8,11 +8,17 @@ function getDistanceToSegment(x, z, ax, az, bx, bz) {
     const abx = bx - ax;
     const abz = bz - az;
     const lenSq = abx * abx + abz * abz;
-    if (lenSq <= 1e-6) return Math.hypot(x - ax, z - az);
+    if (lenSq <= 1e-6) {
+        const dx = x - ax;
+        const dz = z - az;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
     const t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / lenSq));
     const px = ax + abx * t;
     const pz = az + abz * t;
-    return Math.hypot(x - px, z - pz);
+    const dx = x - px;
+    const dz = z - pz;
+    return Math.sqrt(dx * dx + dz * dz);
 }
 
 function getEditInfluence(edit, x, z) {
@@ -22,7 +28,9 @@ function getEditInfluence(edit, x, z) {
         let minDist = Infinity;
         for (let i = 0; i < points.length; i++) {
             const [px, pz] = points[i];
-            minDist = Math.min(minDist, Math.hypot(x - px, z - pz));
+            const dx = x - px;
+            const dz = z - pz;
+            minDist = Math.min(minDist, Math.sqrt(dx * dx + dz * dz));
             if (i > 0) {
                 const [ax, az] = points[i - 1];
                 minDist = Math.min(minDist, getDistanceToSegment(x, z, ax, az, px, pz));
@@ -33,7 +41,7 @@ function getEditInfluence(edit, x, z) {
 
     const dx = x - edit.x;
     const dz = z - edit.z;
-    const dist = Math.hypot(dx, dz);
+    const dist = Math.sqrt(dx * dx + dz * dz);
     return getRadialInfluence(dist, radius);
 }
 

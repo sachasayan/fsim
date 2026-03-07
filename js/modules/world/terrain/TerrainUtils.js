@@ -40,7 +40,9 @@ export function cityHubInfluence(vx, vz) {
             const radius = 2600 + hash2(cx, cz, 4) * 5200;
             const intensity = 0.45 + hash2(cx, cz, 5) * 0.55;
 
-            const d = Math.hypot(vx - centerX, vz - centerZ);
+            const dx = vx - centerX;
+            const dz = vz - centerZ;
+            const d = Math.sqrt(dx * dx + dz * dz);
             const local = Math.max(0, 1 - d / radius) * intensity;
             influence = Math.max(influence, local);
         }

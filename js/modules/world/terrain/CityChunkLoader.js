@@ -44,7 +44,9 @@ function deriveRadiusFromDistrict(center, district) {
             ]
             : [];
     for (const [x, z] of points) {
-        maxDist = Math.max(maxDist, Math.hypot(x - center[0], z - center[1]));
+        const dx = x - center[0];
+        const dz = z - center[1];
+        maxDist = Math.max(maxDist, Math.sqrt(dx * dx + dz * dz));
     }
     return maxDist;
 }
@@ -80,7 +82,9 @@ function districtContainsPoint(record, x, z) {
     const district = record.district || record.districts?.[0];
     if (district?.points?.length >= 3) return isPointInPolygon(x, z, district.points);
     if (district?.center && district?.radius) {
-        return Math.hypot(x - district.center[0], z - district.center[1]) <= district.radius;
+        const ddx = x - district.center[0];
+        const ddz = z - district.center[1];
+        return ddx * ddx + ddz * ddz <= district.radius * district.radius;
     }
     const dx = x - record.cx;
     const dz = z - record.cz;
