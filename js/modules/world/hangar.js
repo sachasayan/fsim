@@ -3,6 +3,8 @@ import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { AIRPORT_CONFIG } from './config.js';
 
 export function createHangarSystem({ scene, getTerrainHeight }) {
+    const towerX = AIRPORT_CONFIG.TOWER.x;
+    const towerZ = AIRPORT_CONFIG.TOWER.z;
     const hangarGroup = new THREE.Group();
 
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x95a5a6, roughness: 0.4, metalness: 0.8 });
