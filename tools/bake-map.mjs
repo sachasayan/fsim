@@ -17,12 +17,20 @@ const MAP_JSON_PATH = path.join(ROOT, 'tools', 'map.json');
 import { readFileSync as readFileSyncSync } from 'node:fs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
+import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
 let mapData = null;
 try {
     mapData = normalizeMapData(JSON.parse(readFileSyncSync(MAP_JSON_PATH, 'utf8')));
     console.log(`📖 Loaded ${MAP_JSON_PATH} (${mapData.cities.length} cities)`);
 } catch (e) {
     console.error(`⚠️ Could not load ${MAP_JSON_PATH}, using defaults.`);
+}
+
+const useExistingTerrain = process.env.FSIM_USE_EXISTING_TERRAIN === '1';
+const clearTerrainEdits = process.env.FSIM_CLEAR_TERRAIN_EDITS === '1';
+const existingTerrainSampler = useExistingTerrain ? loadExistingTerrainSampler(OUT_PATH) : null;
+if (existingTerrainSampler) {
+    console.log(`🗺️ Using existing baked terrain from ${OUT_PATH} as base`);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +88,11 @@ const Noise = {
 Noise.init(12345);
 
 function getTerrainHeight(x, z) {
+    if (existingTerrainSampler) {
+        const baseHeight = existingTerrainSampler.getAltitudeAt(x, z);
+        return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
+    }
+
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
     let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
@@ -215,7 +228,15 @@ function buildTreeRecursive(node) {
 function serializeQuadtree(root) {
     const totalNodes = allNodes.length;
     // Serialization of Map JSON (Metadata)
-    const metaStr = JSON.stringify(mapData ? { ...mapData, districts: mapData.districts, districtRecords: buildDistrictRecords(mapData) } : { districts: [], districtRecords: [] });
+    const metadataMap = mapData
+        ? {
+            ...mapData,
+            terrainEdits: clearTerrainEdits ? [] : (mapData.terrainEdits || []),
+            districts: mapData.districts,
+            districtRecords: buildDistrictRecords(mapData)
+        }
+        : { terrainEdits: [], districts: [], districtRecords: [] };
+    const metaStr = JSON.stringify(metadataMap);
     const metaBuffer = Buffer.from(metaStr, 'utf8');
 
     // NEW HEADER:

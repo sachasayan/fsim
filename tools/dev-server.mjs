@@ -56,7 +56,7 @@ if (existsSync(MAP_FILE)) {
                     buildLock = true;
                     console.log(`\n🔄 map.json changed, rebuilding world...`);
                     try {
-                        const { stdout } = await execAsync('npm run build:world');
+                        const { stdout } = await execAsync(`${process.execPath} tools/commit-map-save.mjs`);
                         console.log(stdout);
                         broadcast('reload-city', { timestamp: Date.now() });
                     } catch (err) {

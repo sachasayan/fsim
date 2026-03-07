@@ -150,6 +150,16 @@
             gap: 8px;
         }
 
+        .hint-card {
+            border-radius: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.16);
+            background: rgba(56, 189, 248, 0.08);
+            color: var(--text-dim);
+            font-size: 12px;
+            line-height: 1.45;
+            padding: 12px 14px;
+        }
+
         label {
             font-size: 13px;
             color: var(--text-dim);
@@ -482,6 +492,15 @@
                                 <input type="range" id="prop-terrain-opacity-range" step="0.05" min="0" max="1">
                                 <input type="number" id="prop-terrain-opacity" step="0.05" min="0" max="1">
                             </div>
+                        </div>
+                        <div class="property-row">
+                            <div class="field-label">
+                                <label>Stroke Points</label>
+                            </div>
+                            <input type="text" id="prop-terrain-points" readonly>
+                        </div>
+                        <div class="hint-card" id="terrain-edit-hint">
+                            Use <strong>Edit Poly</strong> to drag stroke points, double-click the stroke to add one, and right-click a point to remove it.
                         </div>
                     </div>
 

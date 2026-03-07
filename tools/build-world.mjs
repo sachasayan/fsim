@@ -18,6 +18,7 @@ import { generateRoadMask } from './lib/WorldBuilderRaster.mjs';
 import { serializeChunk } from './lib/WorldBuilderSerial.mjs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
+import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
 
 Noise.init(12345);
 
@@ -28,8 +29,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const MAP_PATH = path.join(__dirname, 'map.json');
 const OUT_DIR = path.join(ROOT, 'world', 'chunks');
+const WORLD_BIN_PATH = path.join(ROOT, 'world', 'world.bin');
+const existingTerrainSampler = process.env.FSIM_USE_EXISTING_TERRAIN === '1'
+    ? loadExistingTerrainSampler(WORLD_BIN_PATH)
+    : null;
+
+if (existingTerrainSampler) {
+    console.log(`🗺️ Using existing baked terrain from ${WORLD_BIN_PATH} as base`);
+}
 
 function getTerrainHeight(x, z) {
+    if (existingTerrainSampler) {
+        const baseHeight = existingTerrainSampler.getAltitudeAt(x, z);
+        return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
+    }
+
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
     let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;

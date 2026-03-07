@@ -21,6 +21,7 @@ let currentTool = 'select';
 let isPaintingTerrain = false;
 let terrainBrush = { radius: 300, strength: 40 };
 let activeTerrainStroke = null;
+let hoverWorldPos = null;
 
 let _rafPending = false;
 const CONTROL_GROUPS = [
@@ -253,6 +254,61 @@ function invalidateTerrainEdit(edit) {
     tileManager.invalidateWorldRect(bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ);
 }
 
+function isTerrainStroke(edit) {
+    return isTerrainEdit(edit) && Array.isArray(edit.points) && edit.points.length > 0;
+}
+
+function getVertexHitIndex(points, worldPos, threshold) {
+    for (let i = points.length - 1; i >= 0; i--) {
+        const [x, z] = points[i];
+        if (Math.hypot(worldPos.x - x, worldPos.z - z) <= threshold) return i;
+    }
+    return -1;
+}
+
+function getClosestTerrainSegmentIndex(edit, worldPos, threshold) {
+    if (!isTerrainStroke(edit) || edit.points.length < 2) return -1;
+    let bestIndex = -1;
+    let bestDistance = threshold;
+    for (let i = 1; i < edit.points.length; i++) {
+        const [ax, az] = edit.points[i - 1];
+        const [bx, bz] = edit.points[i];
+        const dist = getDistanceToSegment(worldPos.x, worldPos.z, ax, az, bx, bz);
+        if (dist <= bestDistance) {
+            bestDistance = dist;
+            bestIndex = i;
+        }
+    }
+    return bestIndex;
+}
+
+function moveTerrainStrokePoint(edit, index, worldPos) {
+    if (!isTerrainStroke(edit) || index < 0 || index >= edit.points.length) return;
+    invalidateTerrainEdit(edit);
+    edit.points[index][0] = Math.round(worldPos.x);
+    edit.points[index][1] = Math.round(worldPos.z);
+    refreshTerrainEditGeometry(edit);
+    invalidateTerrainEdit(edit);
+}
+
+function insertTerrainStrokePoint(edit, insertIndex, worldPos) {
+    if (!isTerrainStroke(edit)) return false;
+    invalidateTerrainEdit(edit);
+    edit.points.splice(insertIndex, 0, [Math.round(worldPos.x), Math.round(worldPos.z)]);
+    refreshTerrainEditGeometry(edit);
+    invalidateTerrainEdit(edit);
+    return true;
+}
+
+function removeTerrainStrokePoint(edit, index) {
+    if (!isTerrainStroke(edit) || edit.points.length <= 1 || index < 0 || index >= edit.points.length) return false;
+    invalidateTerrainEdit(edit);
+    edit.points.splice(index, 1);
+    refreshTerrainEditGeometry(edit);
+    invalidateTerrainEdit(edit);
+    return true;
+}
+
 function createTerrainStroke(worldPos) {
     const baseHeight = sampleTerrainHeight(worldPos.x, worldPos.z);
     const edit = {
@@ -335,17 +391,23 @@ function setupHotReload() {
     es.addEventListener('reload-city', async () => {
         console.log("🔄 World rebuild detected, refreshing terrain...");
         try {
-            const resp = await fetch('/world/world.bin');
-            if (resp.ok) {
-                const buf = await resp.ok ? await resp.arrayBuffer() : null;
-                if (buf) {
-                    const sampler = new QuadtreeMapSampler(buf);
-                    setStaticSampler(sampler);
-                    tileManager.clearCache();
-                    scheduleRender();
-                    console.log("✨ Terrain refreshed!");
-                }
+            const [worldResp, mapResp] = await Promise.all([
+                fetch('/world/world.bin'),
+                fetch('/tools/map.json')
+            ]);
+            if (worldResp.ok) {
+                const buf = await worldResp.arrayBuffer();
+                const sampler = new QuadtreeMapSampler(buf);
+                setStaticSampler(sampler);
             }
+            if (mapResp.ok) {
+                worldData = await mapResp.json();
+                normalizeMapData(worldData);
+            }
+            tileManager.clearCache();
+            updateSidebar();
+            scheduleRender();
+            console.log("✨ Terrain refreshed!");
         } catch (e) {
             console.error("Failed to hot-reload world.bin", e);
         }
@@ -505,6 +567,19 @@ function render() {
             ctx.stroke();
             ctx.lineCap = 'butt';
             ctx.lineJoin = 'miter';
+
+            if (selectedObject === edit && currentTool === 'edit-poly') {
+                edit.points.forEach((point, index) => {
+                    const vp = worldToScreen(point[0], point[1]);
+                    ctx.fillStyle = (draggedVertex && draggedVertex.object === edit && draggedVertex.index === index) ? '#fff' : strokeStyle;
+                    ctx.beginPath();
+                    ctx.arc(vp.x, vp.y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#08111f';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                });
+            }
             return;
         }
 
@@ -519,6 +594,32 @@ function render() {
         ctx.lineWidth = 1;
         ctx.stroke();
     });
+
+    if (hoverWorldPos && currentTool.startsWith('terrain-') && !isPaintingTerrain) {
+        const pos = worldToScreen(hoverWorldPos.x, hoverWorldPos.z);
+        const previewColor = currentTool === 'terrain-lower'
+            ? 'rgba(255, 89, 94, 0.85)'
+            : currentTool === 'terrain-flatten'
+                ? 'rgba(255, 173, 51, 0.85)'
+                : 'rgba(56, 189, 248, 0.85)';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, terrainBrush.radius * camera.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = previewColor.replace('0.85', '0.14');
+        ctx.fill();
+        ctx.strokeStyle = previewColor;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(pos.x - 8, pos.y);
+        ctx.lineTo(pos.x + 8, pos.y);
+        ctx.moveTo(pos.x, pos.y - 8);
+        ctx.lineTo(pos.x, pos.y + 8);
+        ctx.strokeStyle = previewColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
 
     // 5. Draw Vantage Points
     if (vantageData) {
@@ -546,14 +647,15 @@ function setupInputs() {
         const worldPos = screenToWorld(e.offsetX, e.offsetY);
         if (currentTool === 'edit-poly' && selectedObject && selectedObject.points) {
             // Right-click to delete vertex
-            let hitVertex = -1;
-            selectedObject.points.forEach((p, i) => {
-                const dist = Math.hypot(worldPos.x - p[0], worldPos.z - p[1]);
-                if (dist < 100 / camera.zoom) hitVertex = i;
-            });
+            const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, 100 / camera.zoom);
 
             if (hitVertex !== -1) {
-                selectedObject.points.splice(hitVertex, 1);
+                if (isTerrainStroke(selectedObject)) {
+                    removeTerrainStrokePoint(selectedObject, hitVertex);
+                } else {
+                    selectedObject.points.splice(hitVertex, 1);
+                }
+                updateSidebar();
                 scheduleRender();
             }
         }
@@ -562,8 +664,20 @@ function setupInputs() {
     canvas.addEventListener('dblclick', e => {
         const worldPos = screenToWorld(e.offsetX, e.offsetY);
         if (currentTool === 'edit-poly' && selectedObject && selectedObject.points) {
-            // Add vertex at mouse position
-            selectedObject.points.push([Math.round(worldPos.x), Math.round(worldPos.z)]);
+            if (isTerrainStroke(selectedObject)) {
+                const insertIndex = getClosestTerrainSegmentIndex(selectedObject, worldPos, Math.max(80, selectedObject.radius) / camera.zoom);
+                if (insertIndex !== -1) {
+                    insertTerrainStrokePoint(selectedObject, insertIndex, worldPos);
+                } else {
+                    selectedObject.points.push([Math.round(worldPos.x), Math.round(worldPos.z)]);
+                    refreshTerrainEditGeometry(selectedObject);
+                    invalidateTerrainEdit(selectedObject);
+                }
+            } else {
+                // Add vertex at mouse position
+                selectedObject.points.push([Math.round(worldPos.x), Math.round(worldPos.z)]);
+            }
+            updateSidebar();
             scheduleRender();
         }
     });
@@ -579,11 +693,7 @@ function setupInputs() {
 
         if (currentTool === 'edit-poly' && selectedObject && selectedObject.points) {
             // Check vertex hits
-            let hitVertex = -1;
-            selectedObject.points.forEach((p, i) => {
-                const dist = Math.hypot(worldPos.x - p[0], worldPos.z - p[1]);
-                if (dist < 100 / camera.zoom) hitVertex = i;
-            });
+            const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, 100 / camera.zoom);
 
             if (hitVertex !== -1) {
                 draggedVertex = { object: selectedObject, index: hitVertex };
@@ -667,6 +777,7 @@ function setupInputs() {
 
     window.addEventListener('mousemove', e => {
         const worldPos = screenToWorld(e.offsetX, e.offsetY);
+        hoverWorldPos = worldPos;
         coordsDiv.innerText = `X: ${Math.round(worldPos.x)}, Z: ${Math.round(worldPos.z)}`;
 
         if (isPanning) {
@@ -681,8 +792,13 @@ function setupInputs() {
         if (draggedVertex) {
             const d = draggedVertex.object;
             const idx = draggedVertex.index;
-            d.points[idx][0] = Math.round(worldPos.x);
-            d.points[idx][1] = Math.round(worldPos.z);
+            if (isTerrainStroke(d)) {
+                moveTerrainStrokePoint(d, idx, worldPos);
+            } else {
+                d.points[idx][0] = Math.round(worldPos.x);
+                d.points[idx][1] = Math.round(worldPos.z);
+            }
+            updateSidebar();
             scheduleRender();
             return;
         }
@@ -694,6 +810,10 @@ function setupInputs() {
                 scheduleRender();
             }
             return;
+        }
+
+        if (currentTool.startsWith('terrain-')) {
+            scheduleRender();
         }
 
         if (isDragging && selectedObject) {
@@ -728,6 +848,11 @@ function setupInputs() {
         draggedVertex = null;
         isPaintingTerrain = false;
         activeTerrainStroke = null;
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        hoverWorldPos = null;
+        scheduleRender();
     });
 
     canvas.addEventListener('wheel', e => {
@@ -883,6 +1008,8 @@ function setTool(tool) {
     currentTool = tool;
     document.querySelectorAll('.toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
     document.getElementById('tool-' + tool).classList.add('active');
+    updateSidebar();
+    scheduleRender();
 }
 
 function updateSidebar() {
@@ -898,6 +1025,8 @@ function updateSidebar() {
     const terrainOpacityRow = document.getElementById('terrain-opacity-row');
     const coordX = document.getElementById('prop-cx');
     const coordZ = document.getElementById('prop-cz');
+    const terrainPoints = document.getElementById('prop-terrain-points');
+    const terrainHint = document.getElementById('terrain-edit-hint');
 
     if (selectedObject) {
         selPanel.style.display = 'block';
@@ -932,6 +1061,10 @@ function updateSidebar() {
             terrainDeltaRow.style.display = selectedObject.kind === 'flatten' ? 'none' : 'flex';
             terrainTargetRow.style.display = selectedObject.kind === 'flatten' ? 'flex' : 'none';
             terrainOpacityRow.style.display = selectedObject.kind === 'flatten' ? 'flex' : 'none';
+            terrainPoints.value = String(Array.isArray(selectedObject.points) ? selectedObject.points.length : 0);
+            terrainHint.innerHTML = currentTool === 'edit-poly'
+                ? 'Drag points to reshape the stroke. Double-click the stroke to add a point, and right-click a point to remove it.'
+                : 'Switch to <strong>Edit Poly</strong> to reshape this stroke point-by-point.';
             if (selectedObject.kind !== 'flatten') {
                 setSyncedControlValue('prop-terrain-delta', selectedObject.delta);
             } else {
@@ -947,6 +1080,8 @@ function updateSidebar() {
         noSel.style.display = 'block';
         coordX.readOnly = false;
         coordZ.readOnly = false;
+        terrainPoints.value = '';
+        terrainHint.innerHTML = 'Use <strong>Edit Poly</strong> to drag stroke points, double-click the stroke to add one, and right-click a point to remove it.';
     }
 }
 
