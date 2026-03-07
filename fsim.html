@@ -28,11 +28,11 @@
     </div>
 
     <div id="game-container"></div>
-    <div id="warning-overlay">STALL</div>
+    <div id="warning-overlay" role="alert" aria-live="assertive">STALL</div>
 
     <!-- NEW CRASH SCREEN OVERLAY -->
-    <div id="crash-screen">
-        <h1 class="crash-title">AIRCRAFT DESTROYED
+    <div id="crash-screen" role="alertdialog" aria-modal="true" aria-labelledby="crash-title" aria-describedby="crash-reason">
+        <h1 id="crash-title" class="crash-title">AIRCRAFT DESTROYED
         </h1>
         <p id="crash-reason" class="crash-reason"></p>
         <button onclick="resetFlight()" class="crash-reset-btn">RESTART
