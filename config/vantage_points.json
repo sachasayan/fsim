@@ -39,5 +39,16 @@
         "lighting": "noon",
         "hideplane": 1,
         "tilt": 45
+    },
+    "airport_overview": {
+        "x": -600,
+        "y": 450,
+        "z": 600,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 1,
+        "tilt": 35,
+        "camDist": 120
     }
 }

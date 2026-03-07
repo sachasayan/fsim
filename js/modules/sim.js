@@ -88,6 +88,7 @@ const {
   updateControlSurfaces,
   isReady,
   reloadCity,
+  updateWorldObjects,
   updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
 
@@ -274,6 +275,7 @@ function animate() {
 
   // 5. Airport Systems (ALS)
   airportSystems.updateALS(now);
+  updateWorldObjects(now);
 
   // 5b. Aircraft LOD
   updateAircraftLOD(camera);

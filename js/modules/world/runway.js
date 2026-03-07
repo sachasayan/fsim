@@ -56,6 +56,19 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     ctx.fillRect(220, 4096 - 1200, 90, 500);
     ctx.fillRect(715, 4096 - 1200, 90, 500);
 
+    // Runway Numbers
+    ctx.font = 'bold 300px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    // North end (pointing South: 18)
+    ctx.save();
+    ctx.translate(512, 450);
+    ctx.rotate(Math.PI);
+    ctx.fillText('18', 0, 0);
+    ctx.restore();
+    // South end (pointing North: 36)
+    ctx.fillText('36', 512, 4096 - 450);
+
     // Touchdown zones
     for (let y = 500; y < 1500; y += 250) {
       ctx.fillRect(250, y, 20, 100);
