@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AIRPORT_CONFIG } from './config.js';
 
 export function createRadarSystem({ scene, getTerrainHeight }) {
     const radarGroup = new THREE.Group();
@@ -51,7 +52,7 @@ export function createRadarSystem({ scene, getTerrainHeight }) {
     }
 
     function updateLOD(cameraPos, dist) {
-        if (dist > 35000) {
+        if (dist > AIRPORT_CONFIG.LOD.CULL) {
             radarGroup.visible = false;
         } else {
             radarGroup.visible = true;

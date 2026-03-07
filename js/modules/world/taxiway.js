@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AIRPORT_CONFIG } from './config.js';
 
 export function createTaxiwaySystem({ scene, renderer, getTerrainHeight }) {
     const taxiwayGroup = new THREE.Group();
@@ -105,7 +106,7 @@ export function createTaxiwaySystem({ scene, renderer, getTerrainHeight }) {
     scene.add(taxiwayGroup);
 
     function updateLOD(cameraPos, dist) {
-        if (dist > 25000) {
+        if (dist > AIRPORT_CONFIG.LOD.LOW) {
             taxiwayGroup.visible = false;
         } else {
             taxiwayGroup.visible = true;

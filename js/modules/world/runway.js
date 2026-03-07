@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AIRPORT_CONFIG } from './config.js';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
@@ -423,8 +424,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   let currentLOD = -1;
   function updateLOD(cameraPos, dist) {
     let newLOD = 0;
-    if (dist > 25000) newLOD = 2; // Cull lights completely
-    else if (dist > 12000) newLOD = 1; // Simplify
+    if (dist > AIRPORT_CONFIG.LOD.CULL) newLOD = 2; // Cull lights completely
+    else if (dist > AIRPORT_CONFIG.LOD.LOW) newLOD = 1; // Simplify
     else newLOD = 0; // High detail
 
     if (newLOD === currentLOD) return;

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { AIRPORT_CONFIG } from './config.js';
 
 export function createTowerSystem({ scene, getTerrainHeight }) {
   const towerGroup = new THREE.Group();
 
-  const towerX = -190;
-  const towerZ = -300;
+  const towerX = AIRPORT_CONFIG.TOWER.x;
+  const towerZ = AIRPORT_CONFIG.TOWER.z;
   const terrainY = getTerrainHeight(towerX, towerZ);
 
   // Optimized Materials
@@ -106,9 +107,9 @@ export function createTowerSystem({ scene, getTerrainHeight }) {
 
   function updateLOD(cameraPos, dist) {
     let newLOD = 0;
-    if (dist > 25000) newLOD = 3; // Cull
-    else if (dist > 12000) newLOD = 2; // Low poly proxy
-    else if (dist > 5000) newLOD = 1; // Mid detail (no transparency/complex mats)
+    if (dist > AIRPORT_CONFIG.LOD.CULL) newLOD = 3; // Cull
+    else if (dist > AIRPORT_CONFIG.LOD.LOW) newLOD = 2; // Low poly proxy
+    else if (dist > AIRPORT_CONFIG.LOD.MID) newLOD = 1; // Mid detail
     else newLOD = 0; // High detail
 
     if (newLOD === currentLOD) return;

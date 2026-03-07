@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { AIRPORT_CONFIG } from './config.js';
 
 export function createApron({ scene, renderer, getTerrainHeight }) {
-    const apronX = -190;
-    const apronZ = -450;
-    const width = 180;
-    const depth = 600;
+    const apronX = AIRPORT_CONFIG.APRON.x;
+    const apronZ = AIRPORT_CONFIG.APRON.z;
+    const width = AIRPORT_CONFIG.APRON.width;
+    const depth = AIRPORT_CONFIG.APRON.depth;
 
     // Procedural texture similar to runway
     function createApronMesh() {
@@ -68,7 +69,7 @@ export function createApron({ scene, renderer, getTerrainHeight }) {
     const apronMesh = createApronMesh();
 
     function updateLOD(cameraPos, dist) {
-        if (dist > 25000) {
+        if (dist > AIRPORT_CONFIG.LOD.LOW) {
             apronMesh.visible = false;
         } else {
             apronMesh.visible = true;
