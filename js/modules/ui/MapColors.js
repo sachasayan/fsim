@@ -1,23 +1,17 @@
-export const MAP_COLORS = {
-    terrain: (h) => {
-        if (h < -25) return '#1d4f88'; // Deep Water
-        if (h < -5) return '#2d72a8';  // Shallow Water
-        if (h < 8) return '#d6d2b0';   // Sand/Beach
-        if (h < 45) return '#6f9a59';  // Light Grass
-        if (h < 130) return '#4f7e42'; // Dark Grass
-        if (h < 240) return '#7a8c58'; // Hills
-        if (h < 380) return '#7a736a'; // Mountain Base
-        if (h < 560) return '#9d9890'; // High Peaks
-        return '#f2f2f2';             // Snow
-    },
+import { getSurfaceMapSrgb } from '../world/terrain/TerrainPalette.js';
 
-    _baseRGB: (h) => {
-        if (h < 5) return [29, 79, 136];      // water
-        if (h < 15) return [214, 210, 176];   // sand
-        if (h < 100) return [79, 126, 66];    // grass
-        if (h < 300) return [122, 140, 88];   // hills
-        return [242, 242, 242];               // snow
-    },
+function clampByte(v) {
+    return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+function rgbToHex([r, g, b]) {
+    return `#${[r, g, b].map(v => clampByte(v).toString(16).padStart(2, '0')).join('')}`;
+}
+
+export const MAP_COLORS = {
+    terrain: (h) => rgbToHex(getSurfaceMapSrgb(h)),
+
+    _baseRGB: (h) => getSurfaceMapSrgb(h),
 
     /**
      * Returns [r, g, b] array — fast path for ImageData rendering.
@@ -30,9 +24,9 @@ export const MAP_COLORS = {
         const shadow = (slopeX * -0.707 + slopeZ * -0.707) * 0.5;
         const scale = shadow * 100;
         return [
-            Math.max(0, Math.min(255, base[0] + scale)),
-            Math.max(0, Math.min(255, base[1] + scale)),
-            Math.max(0, Math.min(255, base[2] + scale))
+            clampByte(base[0] + scale),
+            clampByte(base[1] + scale),
+            clampByte(base[2] + scale)
         ];
     },
 

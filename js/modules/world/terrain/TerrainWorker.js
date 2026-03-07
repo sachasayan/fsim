@@ -1,5 +1,6 @@
 import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, QuadtreeMapSampler, setStaticSampler } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
+import { SEA_LEVEL, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
 
 // Re-declare constants from TerrainGeneration to avoid importing THREE
 const TREE_DENSITY_MULTIPLIER = 4.0;
@@ -75,33 +76,14 @@ const classConfigs = {
     }
 };
 
-// Colors definition without THREE dependency, but mapped to Linear space
 function srgbToLinear(c) {
     return (c < 0.04045) ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4);
 }
-function hexToLinear(hex) {
+function srgbArrayToLinear(rgb) {
     return {
-        r: srgbToLinear(((hex >> 16) & 255) / 255),
-        g: srgbToLinear(((hex >> 8) & 255) / 255),
-        b: srgbToLinear((hex & 255) / 255)
-    };
-}
-
-const terrainColorSand = hexToLinear(0xc2b280);
-const terrainColorLowland = hexToLinear(0x355e3b);
-const terrainColorForest = hexToLinear(0x2a4b2a);
-const terrainColorRock = hexToLinear(0x555555);
-const terrainColorSnow = hexToLinear(0xffffff);
-
-const waterColorFoam = hexToLinear(0xffffff);
-const waterColorBlue = hexToLinear(0x2F86DE);
-const waterColorDeep = hexToLinear(0x1A62C4);
-
-function lerpColor(c1, c2, t) {
-    return {
-        r: c1.r + (c2.r - c1.r) * t,
-        g: c1.g + (c2.g - c1.g) * t,
-        b: c1.b + (c2.b - c1.b) * t
+        r: srgbToLinear(rgb[0] / 255),
+        g: srgbToLinear(rgb[1] / 255),
+        b: srgbToLinear(rgb[2] / 255)
     };
 }
 
@@ -120,13 +102,7 @@ function buildChunkBase(job) {
         let height = getTerrainHeight(vx, vz, Noise);
         positions[i + 1] = height;
 
-        let col;
-        if (height < -5) col = terrainColorSand;
-        else if (height < 25) col = terrainColorLowland;
-        else if (height < 150) col = terrainColorForest;
-        else if (height < 400) col = lerpColor(terrainColorForest, terrainColorRock, (height - 150) / 250);
-        else if (height < 600) col = terrainColorRock;
-        else col = lerpColor(terrainColorRock, terrainColorSnow, Math.min(1.0, (height - 600) / 100));
+        const col = srgbArrayToLinear(getTerrainBaseSrgb(height));
 
         colors[i] = col.r;
         colors[i + 1] = col.g;
@@ -139,15 +115,11 @@ function buildChunkBase(job) {
         let vz = wPos[i + 2] + cz * CHUNK_SIZE;
         let th = getTerrainHeight(vx, vz, Noise);
 
-        wPos[i + 1] = -10;
+        wPos[i + 1] = SEA_LEVEL;
 
         let waveNoise = Noise.fractal(vx / 30, vz / 30, 2, 0.5, 1);
-        let depth = -10 - th + waveNoise * 4.0;
-
-        let col;
-        if (depth < 2) col = waterColorFoam;
-        else if (depth < 25) col = lerpColor(waterColorFoam, waterColorBlue, Math.pow((depth - 2) / 23, 0.6));
-        else col = waterColorDeep;
+        let depth = SEA_LEVEL - th + waveNoise * 4.0;
+        const col = srgbArrayToLinear(getWaterDepthSrgb(depth));
 
         wCols[i] = col.r;
         wCols[i + 1] = col.g;
