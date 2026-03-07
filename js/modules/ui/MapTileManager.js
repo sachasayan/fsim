@@ -15,8 +15,10 @@ export class MapTileManager {
 
         this.tiles = new Map();       // key -> { canvas, status: 'ready'|'pending' }
         this.renderQueue = [];        // tiles waiting to render
+        this.queuedKeys = new Set();
         this.isProcessingQueue = false;
         this.maxCacheSize = 512;
+        this.cacheGeneration = 0;
     }
 
     /**
@@ -42,7 +44,10 @@ export class MapTileManager {
         this.evictIfNeeded();
         this.tiles.set(key, newEntry);
 
-        this.renderQueue.push({ tx, tz, lod, key });
+        if (!this.queuedKeys.has(key)) {
+            this.renderQueue.push({ tx, tz, lod, key, generation: this.cacheGeneration });
+            this.queuedKeys.add(key);
+        }
         this.processQueue();
 
         return null; // Not ready yet
@@ -58,18 +63,19 @@ export class MapTileManager {
                 this.isProcessingQueue = false;
                 return;
             }
-            const { tx, tz, lod, key } = this.renderQueue.shift();
+            const { tx, tz, lod, key, generation } = this.renderQueue.shift();
+            this.queuedKeys.delete(key);
             const entry = this.tiles.get(key);
-            if (entry && entry.status === 'pending') {
+            if (generation === this.cacheGeneration && entry && entry.status === 'pending') {
                 const ctx = entry.canvas.getContext('2d');
                 this.renderTile(ctx, tx, tz, lod, entry.canvas.width, entry.canvas.height);
                 entry.status = 'ready';
                 if (this.onTileReady) this.onTileReady();
             }
-            setTimeout(renderNext, 0);
+            requestAnimationFrame(renderNext);
         };
 
-        setTimeout(renderNext, 0);
+        requestAnimationFrame(renderNext);
     }
 
     renderTile(ctx, tx, tz, lod, canvasW, canvasH) {
@@ -143,6 +149,34 @@ export class MapTileManager {
     clearCache() {
         this.tiles.clear();
         this.renderQueue.length = 0;
+        this.queuedKeys.clear();
+        this.cacheGeneration++;
+    }
+
+    invalidateWorldRect(minX, minZ, maxX, maxZ) {
+        for (const [key] of this.tiles.entries()) {
+            const [lodStr, txStr, tzStr] = key.split('_');
+            const lod = Number(lodStr);
+            const tx = Number(txStr);
+            const tz = Number(tzStr);
+            const worldTileSize = this.tileSize * lod;
+            const tileMinX = tx * worldTileSize;
+            const tileMinZ = tz * worldTileSize;
+            const tileMaxX = tileMinX + worldTileSize;
+            const tileMaxZ = tileMinZ + worldTileSize;
+            if (tileMaxX < minX || tileMinX > maxX || tileMaxZ < minZ || tileMinZ > maxZ) continue;
+            this.tiles.delete(key);
+        }
+        this.renderQueue = this.renderQueue.filter(job => {
+            const worldTileSize = this.tileSize * job.lod;
+            const tileMinX = job.tx * worldTileSize;
+            const tileMinZ = job.tz * worldTileSize;
+            const tileMaxX = tileMinX + worldTileSize;
+            const tileMaxZ = tileMinZ + worldTileSize;
+            const keep = tileMaxX < minX || tileMinX > maxX || tileMaxZ < minZ || tileMinZ > maxZ;
+            if (!keep) this.queuedKeys.delete(job.key);
+            return keep;
+        });
     }
 
     evictIfNeeded() {
@@ -202,9 +236,22 @@ export class MapTileManager {
                 }
             }
         }
+        this.prioritizeQueue(cameraX, cameraZ);
     }
 
     getNearestLod(lod) {
         return Math.pow(2, Math.ceil(Math.log2(Math.max(lod, 0.5))));
+    }
+
+    prioritizeQueue(cameraX, cameraZ) {
+        this.renderQueue.sort((a, b) => {
+            const aWorldTileSize = this.tileSize * a.lod;
+            const bWorldTileSize = this.tileSize * b.lod;
+            const aDx = (a.tx + 0.5) * aWorldTileSize - cameraX;
+            const aDz = (a.tz + 0.5) * aWorldTileSize - cameraZ;
+            const bDx = (b.tx + 0.5) * bWorldTileSize - cameraX;
+            const bDz = (b.tz + 0.5) * bWorldTileSize - cameraZ;
+            return (aDx * aDx + aDz * aDz) - (bDx * bDx + bDz * bDz);
+        });
     }
 }

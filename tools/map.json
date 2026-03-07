@@ -10,73 +10,13 @@
                 8000,
                 10000
             ],
-            "radius": 4500,
             "road": {
                 "seed": 42,
                 "blockScale": 110,
                 "arterialSpacing": 420,
                 "density": 0.82
             },
-            "districts": [
-                {
-                    "type": "financial_core",
-                    "center": [
-                        8000,
-                        10000
-                    ],
-                    "radius": 900,
-                    "points": [
-                        [
-                            7200,
-                            9200
-                        ],
-                        [
-                            8800,
-                            9200
-                        ],
-                        [
-                            9000,
-                            10800
-                        ],
-                        [
-                            7000,
-                            11000
-                        ]
-                    ]
-                },
-                {
-                    "type": "commercial",
-                    "center": [
-                        8700,
-                        10600
-                    ],
-                    "radius": 1200
-                },
-                {
-                    "type": "residential",
-                    "center": [
-                        7000,
-                        9600
-                    ],
-                    "radius": 1600
-                },
-                {
-                    "type": "industrial",
-                    "center": [
-                        9200,
-                        9000
-                    ],
-                    "radius": 1000
-                },
-                {
-                    "type": "suburban",
-                    "center": [
-                        6800,
-                        11200
-                    ],
-                    "radius": 1800
-                }
-            ]
+            "districts": []
         },
         {
             "id": "city_b",
@@ -85,47 +25,13 @@
                 -9500,
                 -7000
             ],
-            "radius": 3000,
             "road": {
                 "seed": 99,
                 "blockScale": 130,
                 "arterialSpacing": 520,
                 "density": 0.65
             },
-            "districts": [
-                {
-                    "type": "commercial",
-                    "center": [
-                        -9500,
-                        -7000
-                    ],
-                    "radius": 800
-                },
-                {
-                    "type": "industrial",
-                    "center": [
-                        -8400,
-                        -7600
-                    ],
-                    "radius": 1200
-                },
-                {
-                    "type": "residential",
-                    "center": [
-                        -10400,
-                        -6400
-                    ],
-                    "radius": 1300
-                },
-                {
-                    "type": "suburban",
-                    "center": [
-                        -11000,
-                        -7800
-                    ],
-                    "radius": 1500
-                }
-            ]
+            "districts": []
         },
         {
             "id": "city_c",
@@ -134,62 +40,302 @@
                 -18000,
                 3000
             ],
-            "radius": 3800,
             "road": {
                 "seed": 7,
                 "blockScale": 160,
                 "arterialSpacing": 600,
                 "density": 0.5
             },
-            "districts": [
-                {
-                    "type": "commercial",
-                    "center": [
-                        -18000,
-                        3000
-                    ],
-                    "radius": 700
-                },
-                {
-                    "type": "residential",
-                    "center": [
-                        -17200,
-                        4000
-                    ],
-                    "radius": 1400
-                },
-                {
-                    "type": "suburban",
-                    "center": [
-                        -18800,
-                        2000
-                    ],
-                    "radius": 2200
-                },
-                {
-                    "type": "industrial",
-                    "center": [
-                        -19200,
-                        4500
-                    ],
-                    "radius": 900
-                }
+            "districts": []
+        }
+    ],
+    "districts": [
+        {
+            "center": [
+                8000,
+                10000
+            ],
+            "radius": 900,
+            "points": [
+                [
+                    7200,
+                    9200
+                ],
+                [
+                    8800,
+                    9200
+                ],
+                [
+                    9000,
+                    10800
+                ],
+                [
+                    7000,
+                    11000
+                ]
+            ],
+            "city_id": "city_a",
+            "district_type": "financial_core"
+        },
+        {
+            "center": [
+                -9500,
+                -7000
+            ],
+            "radius": 800,
+            "city_id": "city_b",
+            "district_type": "commercial",
+            "points": null
+        },
+        {
+            "center": [
+                -8400,
+                -7600
+            ],
+            "radius": 1200,
+            "city_id": "city_b",
+            "district_type": "industrial",
+            "points": null
+        },
+        {
+            "center": [
+                -10400,
+                -6400
+            ],
+            "radius": 1300,
+            "city_id": "city_b",
+            "district_type": "residential",
+            "points": null
+        },
+        {
+            "center": [
+                -11000,
+                -7800
+            ],
+            "radius": 1500,
+            "city_id": "city_b",
+            "district_type": "suburban",
+            "points": null
+        },
+        {
+            "center": [
+                -18000,
+                3000
+            ],
+            "radius": 700,
+            "city_id": "city_c",
+            "district_type": "commercial",
+            "points": null
+        },
+        {
+            "center": [
+                -17200,
+                4000
+            ],
+            "radius": 1400,
+            "city_id": "city_c",
+            "district_type": "residential",
+            "points": null
+        },
+        {
+            "center": [
+                -18800,
+                2000
+            ],
+            "radius": 2200,
+            "city_id": "city_c",
+            "district_type": "suburban",
+            "points": null
+        },
+        {
+            "center": [
+                -19200,
+                4500
+            ],
+            "radius": 900,
+            "city_id": "city_c",
+            "district_type": "industrial",
+            "points": null
+        },
+        {
+            "district_type": "residential",
+            "center": [
+                -1800,
+                -3500
+            ],
+            "radius": 500,
+            "points": [
+                [
+                    -1181,
+                    -3133
+                ],
+                [
+                    -509,
+                    -3463
+                ],
+                [
+                    -565,
+                    -3218
+                ],
+                [
+                    -669,
+                    -2578
+                ]
+            ],
+            "city_id": "city_b"
+        },
+        {
+            "district_type": "commercial",
+            "center": [
+                -4200,
+                -1500
+            ],
+            "radius": 500,
+            "points": [
+                [
+                    -4608,
+                    -1026
+                ],
+                [
+                    -4397,
+                    -877
+                ],
+                [
+                    -4422,
+                    104
+                ],
+                [
+                    -4757,
+                    -579
+                ]
+            ],
+            "city_id": "city_b"
+        },
+        {
+            "district_type": "industrial",
+            "center": [
+                5400,
+                6600
+            ],
+            "radius": 500,
+            "points": [
+                [
+                    5980,
+                    8360
+                ],
+                [
+                    7106,
+                    9185
+                ],
+                [
+                    6959,
+                    11051
+                ],
+                [
+                    5343,
+                    10328
+                ]
             ]
         },
         {
-            "id": "city_4",
+            "district_type": "residential",
             "center": [
-                -1200,
-                -2500
+                1200,
+                600
             ],
-            "radius": 511,
-            "road": {
-                "seed": 260,
-                "blockScale": 130,
-                "arterialSpacing": 500,
-                "density": 0.7
-            },
-            "districts": []
+            "radius": 500,
+            "points": [
+                [
+                    700,
+                    100
+                ],
+                [
+                    1217,
+                    63
+                ],
+                [
+                    1089,
+                    2438
+                ],
+                [
+                    887,
+                    2589
+                ]
+            ]
+        }
+    ],
+    "terrainEdits": [
+        {
+            "kind": "lower",
+            "x": -1255,
+            "z": -2823,
+            "radius": 50,
+            "delta": 40,
+            "points": [
+                [
+                    -1330,
+                    -3180
+                ],
+                [
+                    -1330,
+                    -3140
+                ],
+                [
+                    -1330,
+                    -3080
+                ],
+                [
+                    -1330,
+                    -3040
+                ],
+                [
+                    -1310,
+                    -3000
+                ],
+                [
+                    -1290,
+                    -2900
+                ],
+                [
+                    -1270,
+                    -2760
+                ],
+                [
+                    -1250,
+                    -2660
+                ],
+                [
+                    -1230,
+                    -2620
+                ],
+                [
+                    -1190,
+                    -2580
+                ],
+                [
+                    -1130,
+                    -2500
+                ],
+                [
+                    -1070,
+                    -2420
+                ]
+            ]
+        },
+        {
+            "kind": "flatten",
+            "x": 651,
+            "z": -3062,
+            "radius": 300,
+            "points": [
+                [
+                    651,
+                    -3062
+                ]
+            ],
+            "opacity": 1,
+            "target_height": 227,
+            "delta": 40
         }
     ]
 }

@@ -160,13 +160,34 @@ function buildChunkBase(job) {
 function buildChunkProps(job) {
     const { cx, cz, lod, lodCfg, positions, cityZones = [] } = job;
 
-    // Pre-compute city bounding circles as squared radii for fast containment checks
-    const cityCircles = cityZones.map(c => ({
-        cx: c.cx, cz: c.cz, r2: c.radius * c.radius
+    function isPointInPolygon(x, z, points) {
+        let inside = false;
+        for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+            const xi = points[i][0], zi = points[i][1];
+            const xj = points[j][0], zj = points[j][1];
+            const intersect = ((zi > z) !== (zj > z)) &&
+                (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    const normalizedCityZones = cityZones.map(c => ({
+        cx: c.cx,
+        cz: c.cz,
+        r2: c.radius * c.radius,
+        districts: c.districts || []
     }));
 
     function inCity(vx, vz) {
-        for (const c of cityCircles) {
+        for (const c of normalizedCityZones) {
+            if (c.districts.length > 0) {
+                for (const district of c.districts) {
+                    if (district.points?.length >= 3 && isPointInPolygon(vx, vz, district.points)) return true;
+                    if (district.center && district.radius && Math.hypot(vx - district.center[0], vz - district.center[1]) <= district.radius) return true;
+                }
+                continue;
+            }
             const dx = vx - c.cx, dz = vz - c.cz;
             if (dx * dx + dz * dz < c.r2) return true;
         }

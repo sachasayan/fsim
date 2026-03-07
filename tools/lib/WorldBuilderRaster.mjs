@@ -14,7 +14,7 @@
 export function generateRoadMask(city, roadSegments, getUrbanIntensity, size = 1024) {
     const data = new Uint8Array(size * size);
     const cx = city.center[0], cz = city.center[1];
-    const r = city.radius;
+    const r = deriveCityRadius(city);
     const mapWorldRad = r * 1.05;
     const pxScale = size / (mapWorldRad * 2);
 
@@ -72,4 +72,26 @@ export function generateRoadMask(city, roadSegments, getUrbanIntensity, size = 1
         }
     }
     return { data, size, worldRadius: mapWorldRad };
+}
+
+function deriveCityRadius(city) {
+    const cx = city.center[0];
+    const cz = city.center[1];
+    let maxDist = 600;
+    for (const district of city.districts || []) {
+        const points = district.points?.length >= 3
+            ? district.points
+            : district.center && district.radius
+                ? [
+                    [district.center[0] - district.radius, district.center[1] - district.radius],
+                    [district.center[0] + district.radius, district.center[1] - district.radius],
+                    [district.center[0] + district.radius, district.center[1] + district.radius],
+                    [district.center[0] - district.radius, district.center[1] + district.radius]
+                ]
+                : [];
+        for (const [x, z] of points) {
+            maxDist = Math.max(maxDist, Math.hypot(x - cx, z - cz));
+        }
+    }
+    return city.radius || maxDist;
 }

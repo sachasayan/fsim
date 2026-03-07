@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fetchCityIndex } from '../world/terrain/CityChunkLoader.js';
+import { fetchDistrictIndex } from '../world/terrain/CityChunkLoader.js';
 import { MapTileManager } from './MapTileManager.js';
 
 export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
@@ -34,7 +34,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const pixelsPerWorld = 0.0225;
     const samplePx = 8;
     const mapState = {
-        cities: []
+        districts: []
     };
 
     const tileManager = new MapTileManager({
@@ -44,8 +44,8 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         useHillshading: false
     });
 
-    fetchCityIndex().then(data => {
-        mapState.cities = data;
+    fetchDistrictIndex().then(data => {
+        mapState.districts = data;
     });
 
     // Initialize HUD generation
@@ -230,25 +230,25 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         mmCtx.font = '9px monospace';
         mmCtx.fillText('N', centerX - 3, 10);
 
-        // Nearest City Pointer
-        if (mapState.cities.length > 0) {
-            let nearestCity = null;
+        // Nearest District Pointer
+        if (mapState.districts.length > 0) {
+            let nearestDistrict = null;
             let minDist = Infinity;
-            for (const city of mapState.cities) {
-                const d = Math.hypot(PHYSICS.position.x - city.cx, PHYSICS.position.z - city.cz);
+            for (const district of mapState.districts) {
+                const d = Math.hypot(PHYSICS.position.x - district.cx, PHYSICS.position.z - district.cz);
                 if (d < minDist) {
                     minDist = d;
-                    nearestCity = city;
+                    nearestDistrict = district;
                 }
             }
 
-            if (nearestCity) {
-                const dx = (nearestCity.cx - PHYSICS.position.x) * pixelsPerWorld;
-                const dz = (nearestCity.cz - PHYSICS.position.z) * pixelsPerWorld;
+            if (nearestDistrict) {
+                const dx = (nearestDistrict.cx - PHYSICS.position.x) * pixelsPerWorld;
+                const dz = (nearestDistrict.cz - PHYSICS.position.z) * pixelsPerWorld;
                 const distOnMap = Math.hypot(dx, dz);
                 const angle = Math.atan2(dz, dx);
 
-                // If city is far enough away to warrant a pointer
+                // If the district is far enough away to warrant a pointer
                 if (distOnMap > 20) {
                     const margin = 12;
                     const pointerR = Math.min(distOnMap, mapW * 0.5 - margin);

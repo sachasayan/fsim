@@ -1,9 +1,9 @@
 /**
  * CityChunkLoader.js
  *
- * Runtime module that fetches and parses pre-compiled binary city chunks.
- * Each city has a single `city.bin` file located at:
- *   /world/chunks/<cityId>/city.bin
+ * Runtime module that fetches and parses pre-compiled district chunks.
+ * Each district has a single `district.bin` file located at:
+ *   /world/chunks/<districtId>/district.bin
  *
  * Binary format (little-endian, mirrors build-world.mjs serialization):
  *   [4]  magic  = 0x46574C44
@@ -18,6 +18,7 @@
  */
 
 import * as THREE from 'three';
+import { buildDistrictRecords } from '../MapDataUtils.js';
 
 const MAGIC = 0x46574C44;
 const BLDG_FLOATS = 10;
@@ -26,54 +27,107 @@ const ROAD_FLOATS = 8;
 // Mapping classId integer → building class string (must match build-world.mjs CLASS_IDS order)
 export const CLASS_NAMES = ['supertall', 'highrise', 'office', 'apartment', 'townhouse', 'industrial'];
 
-// Cache so each city is only fetched once per session
+// Cache so each district is only fetched once per session
 const cache = new Map();
 const activeFetches = new Map();
 
-/**
- * Fetches the city index listing all cities and their bounding circles.
- * Returns an array of { id, cx, cz, radius }.
- */
-let cityIndexPromise = null;
-export async function fetchCityIndex() {
-    if (window.fsimWorld && window.fsimWorld.cities) {
-        return window.fsimWorld.cities.map(c => ({
-            id: c.id,
-            cx: c.center[0],
-            cz: c.center[1],
-            radius: c.radius
-        }));
+function deriveRadiusFromDistrict(center, district) {
+    let maxDist = 600;
+    const points = district?.points?.length >= 3
+        ? district.points
+        : district?.center && district?.radius
+            ? [
+                [district.center[0] - district.radius, district.center[1] - district.radius],
+                [district.center[0] + district.radius, district.center[1] - district.radius],
+                [district.center[0] + district.radius, district.center[1] + district.radius],
+                [district.center[0] - district.radius, district.center[1] + district.radius]
+            ]
+            : [];
+    for (const [x, z] of points) {
+        maxDist = Math.max(maxDist, Math.hypot(x - center[0], z - center[1]));
     }
-    if (!cityIndexPromise) {
-        cityIndexPromise = fetch('/world/chunks/index.json').then(r => r.json());
+    return maxDist;
+}
+
+function normalizeDistrictIndexEntry(record) {
+    const center = record.center || [record.cx, record.cz];
+    const district = record.district || record.districts?.[0] || null;
+    const radius = record.radius || deriveRadiusFromDistrict(center, district);
+    return {
+        id: record.id,
+        cx: center[0],
+        cz: center[1],
+        radius,
+        maskRadius: record.maskRadius || radius * 1.05,
+        district,
+        districts: district ? [district] : []
+    };
+}
+
+function isPointInPolygon(x, z, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const xi = points[i][0], zi = points[i][1];
+        const xj = points[j][0], zj = points[j][1];
+        const intersect = ((zi > z) !== (zj > z)) &&
+            (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
+        if (intersect) inside = !inside;
     }
-    return cityIndexPromise;
+    return inside;
+}
+
+function districtContainsPoint(record, x, z) {
+    const district = record.district || record.districts?.[0];
+    if (district?.points?.length >= 3) return isPointInPolygon(x, z, district.points);
+    if (district?.center && district?.radius) {
+        return Math.hypot(x - district.center[0], z - district.center[1]) <= district.radius;
+    }
+    const dx = x - record.cx;
+    const dz = z - record.cz;
+    return dx * dx + dz * dz <= record.radius * record.radius;
 }
 
 /**
- * Loads and parses the binary chunk for a given city id.
+ * Fetches the district index listing all authored district footprints.
+ * Returns an array of { id, cx, cz, radius, maskRadius, district, districts }.
+ */
+let districtIndexPromise = null;
+export async function fetchDistrictIndex() {
+    if (window.fsimWorld) {
+        return buildDistrictRecords(window.fsimWorld).map(normalizeDistrictIndexEntry);
+    }
+    if (!districtIndexPromise) {
+        districtIndexPromise = fetch('/world/chunks/index.json')
+            .then(r => r.json())
+            .then(records => records.map(normalizeDistrictIndexEntry));
+    }
+    return districtIndexPromise;
+}
+
+/**
+ * Loads and parses the binary chunk for a given district id.
  * Returns { buildings: Array, roadSegments: Array } or null on failure.
  *
  * buildings:    { "cx,cz": [{ x,y,z,w,h,d,angle,classId,colorIdx }] }
  * roadSegments: [{ x1,y1,z1,x2,y2,z2,halfWidth,classId }]
  */
-export async function loadCityChunk(cityId) {
-    if (cache.has(cityId)) return cache.get(cityId);
+export async function loadDistrictChunk(districtId) {
+    if (cache.has(districtId)) return cache.get(districtId);
 
     // Promise coalescing: if already fetching, wait for that same promise
-    if (activeFetches.has(cityId)) return activeFetches.get(cityId);
+    if (activeFetches.has(districtId)) return activeFetches.get(districtId);
 
     const fetchPromise = (async () => {
         let buf;
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 15000);
-            const resp = await fetch(`/world/chunks/${cityId}/city.bin`, { signal: controller.signal });
+            const resp = await fetch(`/world/chunks/${districtId}/district.bin`, { signal: controller.signal });
             clearTimeout(timeout);
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             buf = await resp.arrayBuffer();
         } catch (e) {
-            console.warn(`[CityChunkLoader] Failed to load city "${cityId}":`, e.message);
+            console.warn(`[CityChunkLoader] Failed to load district "${districtId}":`, e.message);
             return null;
         }
 
@@ -85,13 +139,13 @@ export async function loadCityChunk(cityId) {
 
         const magic = ri32();
         if (magic !== MAGIC) {
-            console.error(`[CityChunkLoader] Invalid magic in city "${cityId}": 0x${magic.toString(16)}`);
+            console.error(`[CityChunkLoader] Invalid magic in district "${districtId}": 0x${magic.toString(16)}`);
             return null;
         }
 
         const version = ri32();
         if (version < 1 || version > 2) {
-            console.warn(`[CityChunkLoader] Unknown version ${version} for city "${cityId}"`);
+            console.warn(`[CityChunkLoader] Unknown version ${version} for district "${districtId}"`);
         }
 
         const numBuildings = ri32();
@@ -150,36 +204,40 @@ export async function loadCityChunk(cityId) {
         }
 
         const result = { buildings: buildingsByChunk, roadSegments, roadMaskTexture };
-        cache.set(cityId, result);
+        cache.set(districtId, result);
         return result;
     })();
 
-    activeFetches.set(cityId, fetchPromise);
+    activeFetches.set(districtId, fetchPromise);
     try {
         return await fetchPromise;
     } finally {
-        activeFetches.delete(cityId);
+        activeFetches.delete(districtId);
     }
 }
 
 /**
- * Given a world position (x, z), returns the first city that contains it,
- * or null if it's not inside any city.
+ * Given a world position (x, z), returns the first district record that contains it,
+ * or null if it's not inside any authored district.
  */
-export function getCityAtPoint(x, z, cityIndex) {
-    for (const city of cityIndex) {
-        const dx = x - city.cx, dz = z - city.cz;
-        if (dx * dx + dz * dz <= city.radius * city.radius) return city;
+export function getDistrictAtPoint(x, z, districtIndex) {
+    for (const district of districtIndex) {
+        if (districtContainsPoint(district, x, z)) return district;
     }
     return null;
 }
 /**
- * Clears the cache for a specific city or all cities.
+ * Clears the cache for a specific district or all districts.
  */
-export function clearCityCache(cityId = null) {
-    if (cityId) {
-        cache.delete(cityId);
+export function clearDistrictCache(districtId = null) {
+    if (districtId) {
+        cache.delete(districtId);
     } else {
         cache.clear();
     }
 }
+
+export const fetchCityIndex = fetchDistrictIndex;
+export const loadCityChunk = loadDistrictChunk;
+export const getCityAtPoint = getDistrictAtPoint;
+export const clearCityCache = clearDistrictCache;

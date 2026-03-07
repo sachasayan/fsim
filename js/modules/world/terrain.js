@@ -16,13 +16,13 @@ import {
   getLodForRingDistance
 } from './terrain/TerrainUtils.js';
 import {
-  fetchCityIndex,
-  clearCityCache
+  fetchDistrictIndex,
+  clearDistrictCache
 } from './terrain/CityChunkLoader.js';
 import {
   generateChunkBase as genBase,
   generateChunkProps as genProps,
-  getOverlappingCity,
+  getOverlappingDistricts,
   loadStaticWorld,
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
@@ -471,11 +471,10 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   };
 
   async function reloadCity(cityId = null) {
-    console.log(`[terrain] Hot-swapping city: ${cityId || 'all'}`);
-    clearCityCache(cityId);
+    console.log(`[terrain] Hot-swapping district data: ${cityId || 'all'}`);
+    clearDistrictCache(cityId);
 
-    const cityIndex = await fetchCityIndex();
-    const cityToReload = cityId ? cityIndex.find(c => c.id === cityId) : null;
+    await fetchDistrictIndex();
 
     const ctx = {
       LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
@@ -488,8 +487,9 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       if (!state.group) continue;
       const [cx, cz] = key.split(',').map(Number);
 
-      const overlapping = await getOverlappingCity(cx, cz);
-      if (overlapping && (!cityId || overlapping.id === cityId)) {
+      const overlapping = await getOverlappingDistricts(cx, cz);
+      const matching = overlapping.filter(district => !cityId || district.id === cityId);
+      if (matching.length > 0) {
         // Clear building/road meshes (keep terrain/water at index 0,1)
         while (state.group.children.length > 2) {
           const child = state.group.children.pop();
@@ -501,24 +501,23 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         }
         state.hasCityMaterial = false;
 
-        // Re-fetch data and re-spawn
-        const cityData = await (cityId ? overlapping.id === cityId ? overlapping.id : null : overlapping.id); // reload logic
-        // Just call genProps again or a subset?
-        // Let's call spawnCityBuildingsForChunk directly as it's cleaner for hot-swap
-        const loadedData = await (cityId || overlapping.id ? (overlapping.id ? import('./terrain/CityChunkLoader.js').then(m => m.loadCityChunk(overlapping.id)) : null) : null);
+        const { loadDistrictChunk } = await import('./terrain/CityChunkLoader.js');
+        const loadedDistricts = await Promise.all(matching.map(district => loadDistrictChunk(district.id)));
+        loadedDistricts.forEach(loadedData => {
+          if (!loadedData) return;
+          spawnCityBuildingsForChunk(state.group, cx, cz, loadedData, state.lod, ctx, CHUNK_SIZE);
+        });
 
-        if (loadedData) {
-          spawnCityBuildingsForChunk(state.group, cx, cz, loadedData, state.lod, ctx);
-
-          // Refresh road mask if needed
-          if (loadedData.roadMaskTexture) {
-            const cityTerrainMat = state.lod === 0 ? terrainMaterial.clone() : terrainFarMaterial.clone();
-            loadedData.center = [overlapping.cx, overlapping.cz];
-            loadedData.maskRadius = overlapping.radius * 1.05;
-            setupTerrainMaterial(cityTerrainMat, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, state.lod !== 0, loadedData);
-            state.group.children[0].material = cityTerrainMat;
-            state.hasCityMaterial = true;
-          }
+        const maskDistrictIndex = loadedDistricts.findIndex(loadedData => loadedData?.roadMaskTexture);
+        if (maskDistrictIndex !== -1) {
+          const loadedData = loadedDistricts[maskDistrictIndex];
+          const overlappingDistrict = matching[maskDistrictIndex];
+          const cityTerrainMat = state.lod === 0 ? terrainMaterial.clone() : terrainFarMaterial.clone();
+          loadedData.center = [overlappingDistrict.cx, overlappingDistrict.cz];
+          loadedData.maskRadius = overlappingDistrict.maskRadius;
+          setupTerrainMaterial(cityTerrainMat, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, state.lod !== 0, loadedData);
+          state.group.children[0].material = cityTerrainMat;
+          state.hasCityMaterial = true;
         }
       }
     }

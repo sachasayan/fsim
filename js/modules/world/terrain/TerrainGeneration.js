@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fetchCityIndex, loadCityChunk, getCityAtPoint } from './CityChunkLoader.js';
+import { fetchDistrictIndex, loadDistrictChunk } from './CityChunkLoader.js';
 import { QuadtreeMapSampler, hash2Local } from './TerrainUtils.js';
 import { setupTerrainMaterial } from './TerrainMaterials.js';
 import { spawnCityBuildingsForChunk, classConfigs } from './BuildingSpawner.js';
@@ -8,27 +8,19 @@ import { initWorkerManager } from './TerrainWorkerManager.js';
 export const CHUNK_SIZE = 4000;
 export const TREE_DENSITY_MULTIPLIER = 8.0;
 
-// Lazily fetched city index (array of {id, cx, cz, radius})
-let _cityIndex = null;
+// Lazily fetched district index (array of {id, cx, cz, radius})
+let _districtIndex = null;
 let _staticWorldBuffer = null;
 let _workerManager = null;
 
 export function clearStaticWorldCache() {
     _staticWorldBuffer = null;
-    _cityIndex = null;
+    _districtIndex = null;
 }
 
-async function getCityIndex() {
-    if (window.fsimWorld && window.fsimWorld.cities) {
-        return window.fsimWorld.cities.map(c => ({
-            id: c.id,
-            cx: c.center[0],
-            cz: c.center[1],
-            radius: c.radius
-        }));
-    }
-    if (!_cityIndex) _cityIndex = await fetchCityIndex();
-    return _cityIndex;
+async function getDistrictIndex() {
+    if (!_districtIndex) _districtIndex = await fetchDistrictIndex();
+    return _districtIndex;
 }
 
 export async function loadStaticWorld() {
@@ -67,8 +59,8 @@ export async function loadStaticWorld() {
     }
 }
 
-// Radius inflation so a chunk just outside a city boundary still loads its data
-const CITY_CHUNK_MARGIN = CHUNK_SIZE * 0.75;
+// Radius inflation so a chunk just outside a district boundary still loads its data
+const DISTRICT_CHUNK_MARGIN = CHUNK_SIZE * 0.75;
 
 function dispatchWorker(type, payload, transferables = []) {
     if (!_workerManager) {
@@ -148,21 +140,23 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
 }
 
 /**
- * Determine if a terrain chunk (cx, cz) overlaps any pre-compiled city zone.
- * Returns the matching city entry or null.
+ * Determine which authored districts overlap a terrain chunk (cx, cz).
+ * Returns an array of matching district entries.
  */
-export async function getOverlappingCity(cx, cz) {
-    const cityIndex = await getCityIndex();
-    if (!cityIndex || cityIndex.length === 0) return null;
+export async function getOverlappingDistricts(cx, cz) {
+    const districtIndex = await getDistrictIndex();
+    if (!districtIndex || districtIndex.length === 0) return [];
     const chunkCX = cx * CHUNK_SIZE;
     const chunkCZ = cz * CHUNK_SIZE;
-    for (const city of cityIndex) {
-        const dx = chunkCX - city.cx, dz = chunkCZ - city.cz;
+    const overlapping = [];
+    for (const district of districtIndex) {
+        const dx = chunkCX - district.cx;
+        const dz = chunkCZ - district.cz;
         const distSq = dx * dx + dz * dz;
-        const threshold = city.radius + CITY_CHUNK_MARGIN;
-        if (distSq < threshold * threshold) return city;
+        const threshold = district.radius + DISTRICT_CHUNK_MARGIN;
+        if (distSq < threshold * threshold) overlapping.push(district);
     }
-    return null;
+    return overlapping;
 }
 
 export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
@@ -180,31 +174,37 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
     const positions = terrainMesh.geometry.attributes.position.array;
 
-    const cityIndex = await getCityIndex();
+    const districtIndex = await getDistrictIndex();
     const payload = {
         cx, cz, lod, lodCfg,
         positions: positions.slice(),
-        cityZones: cityIndex || []
+        cityZones: districtIndex || []
     };
     const transferables = [payload.positions.buffer];
 
-    const overlappingCity = await getOverlappingCity(cx, cz);
+    const overlappingDistricts = await getOverlappingDistricts(cx, cz);
     const result = await dispatchWorker('chunkProps', payload, transferables);
 
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) return;
 
     const { treeMatrices, buildingPositions, boatPositions } = result;
 
-    if (overlappingCity) {
-        const cityData = await loadCityChunk(overlappingCity.id);
-        if (cityData && chunkGroup.userData.chunkKey === `${cx},${cz}`) {
-            spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ctx, CHUNK_SIZE);
+    if (overlappingDistricts.length > 0) {
+        const loadedDistricts = await Promise.all(overlappingDistricts.map(district => loadDistrictChunk(district.id)));
+        if (chunkGroup.userData.chunkKey === `${cx},${cz}`) {
+            loadedDistricts.forEach(districtData => {
+                if (!districtData) return;
+                spawnCityBuildingsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
+            });
 
-            if (cityData.roadMaskTexture && !chunkGroup.userData.hasCityMaterial) {
+            const maskDistrictIndex = loadedDistricts.findIndex(districtData => districtData?.roadMaskTexture);
+            if (maskDistrictIndex !== -1 && !chunkGroup.userData.hasCityMaterial) {
+                const maskSource = loadedDistricts[maskDistrictIndex];
+                const districtRecord = overlappingDistricts[maskDistrictIndex];
                 const cityTerrainMat = lod === 0 ? ctx.terrainMaterial.clone() : ctx.terrainFarMaterial.clone();
-                cityData.center = [overlappingCity.cx, overlappingCity.cz];
-                cityData.maskRadius = overlappingCity.radius * 1.05;
-                setupTerrainMaterial(cityTerrainMat, ctx.terrainDetailUniforms, ctx.atmosphereUniforms, ctx.timeUniform, lod !== 0, cityData);
+                maskSource.center = [districtRecord.cx, districtRecord.cz];
+                maskSource.maskRadius = districtRecord.maskRadius;
+                setupTerrainMaterial(cityTerrainMat, ctx.terrainDetailUniforms, ctx.atmosphereUniforms, ctx.timeUniform, lod !== 0, maskSource);
                 chunkGroup.children[0].material = cityTerrainMat;
                 chunkGroup.userData.hasCityMaterial = true;
             }

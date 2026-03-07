@@ -15,9 +15,11 @@ const OUT_PATH = path.join(ROOT, 'world', 'world.bin');
 const MAP_JSON_PATH = path.join(ROOT, 'tools', 'map.json');
 
 import { readFileSync as readFileSyncSync } from 'node:fs';
+import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
+import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 let mapData = null;
 try {
-    mapData = JSON.parse(readFileSyncSync(MAP_JSON_PATH, 'utf8'));
+    mapData = normalizeMapData(JSON.parse(readFileSyncSync(MAP_JSON_PATH, 'utf8')));
     console.log(`📖 Loaded ${MAP_JSON_PATH} (${mapData.cities.length} cities)`);
 } catch (e) {
     console.error(`⚠️ Could not load ${MAP_JSON_PATH}, using defaults.`);
@@ -81,16 +83,19 @@ function getTerrainHeight(x, z) {
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
     let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
+    let baseHeight;
 
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        return 0;
+        baseHeight = 0;
     } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
         let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
         let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
         let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-        return noiseVal * runwayMask;
+        baseHeight = noiseVal * runwayMask;
+    } else {
+        baseHeight = noiseVal;
     }
-    return noiseVal;
+    return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +215,7 @@ function buildTreeRecursive(node) {
 function serializeQuadtree(root) {
     const totalNodes = allNodes.length;
     // Serialization of Map JSON (Metadata)
-    const metaStr = JSON.stringify(mapData || { cities: [] });
+    const metaStr = JSON.stringify(mapData ? { ...mapData, districts: mapData.districts, districtRecords: buildDistrictRecords(mapData) } : { districts: [], districtRecords: [] });
     const metaBuffer = Buffer.from(metaStr, 'utf8');
 
     // NEW HEADER:

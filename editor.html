@@ -14,6 +14,8 @@
             --panel: rgba(17, 24, 39, 0.7);
             --accent: #38bdf8;
             --accent-glow: rgba(56, 189, 248, 0.4);
+            --accent-strong: #7dd3fc;
+            --accent-soft: rgba(56, 189, 248, 0.14);
             --text: #f9fafb;
             --text-dim: #9ca3af;
             --border: rgba(255, 255, 255, 0.08);
@@ -143,8 +145,9 @@
 
         .property-row {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
         }
 
         label {
@@ -153,8 +156,30 @@
             font-weight: 400;
         }
 
+        .field-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .control-stack {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-cluster {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+
         input[type="number"],
-        input[type="text"] {
+        input[type="text"],
+        select {
             background: rgba(0, 0, 0, 0.4);
             border: 1px solid var(--border);
             color: #fff;
@@ -167,8 +192,98 @@
             transition: border-color 0.2s;
         }
 
+        input[type="number"],
+        input[type="text"] {
+            width: 96px;
+        }
+
+        input[type="text"][readonly] {
+            width: 100%;
+            color: var(--accent-strong);
+            background: rgba(7, 11, 24, 0.85);
+        }
+
+        select {
+            width: 100%;
+            min-width: 170px;
+            appearance: none;
+            padding-right: 34px;
+            background-image:
+                linear-gradient(45deg, transparent 50%, var(--accent-strong) 50%),
+                linear-gradient(135deg, var(--accent-strong) 50%, transparent 50%),
+                linear-gradient(to right, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+            background-position:
+                calc(100% - 18px) calc(50% - 3px),
+                calc(100% - 12px) calc(50% - 3px),
+                calc(100% - 38px) 50%;
+            background-size: 6px 6px, 6px 6px, 1px 60%;
+            background-repeat: no-repeat;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 18px;
+            margin: 0;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 6px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.85), rgba(125, 211, 252, 0.4));
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-top: -5px;
+            border: 2px solid #08111f;
+            background: #f8fbff;
+            box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
+        }
+
+        input[type="range"]::-moz-range-track {
+            height: 6px;
+            border: 0;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.85), rgba(125, 211, 252, 0.4));
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #08111f;
+            border-radius: 50%;
+            background: #f8fbff;
+            box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
+        }
+
         input:focus {
             border-color: var(--accent);
+        }
+
+        select:focus {
+            border-color: var(--accent);
+        }
+
+        .value-pill {
+            min-width: 48px;
+            text-align: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            background: var(--accent-soft);
+            color: var(--accent-strong);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .save-btn {
@@ -247,7 +362,11 @@
             <div class="toolbar">
                 <button class="tool-btn active" id="tool-select">Select</button>
                 <button class="tool-btn" id="tool-add-city">Add City</button>
+                <button class="tool-btn" id="tool-add-district">Add District</button>
                 <button class="tool-btn" id="tool-edit-poly">Edit Poly</button>
+                <button class="tool-btn" id="tool-terrain-raise">Raise</button>
+                <button class="tool-btn" id="tool-terrain-lower">Lower</button>
+                <button class="tool-btn" id="tool-terrain-flatten">Flatten</button>
                 <button class="tool-btn" id="tool-pan">Pan</button>
             </div>
             <div id="coords">X: 0, Z: 0</div>
@@ -260,44 +379,132 @@
                         class="status-badge">CITY</span></div>
                 <div class="property-group">
                     <div class="property-row">
-                        <label>ID</label>
+                        <div class="field-label">
+                            <label>ID</label>
+                        </div>
                         <input type="text" id="prop-id" readonly>
                     </div>
                     <div class="property-row">
-                        <label>Coord X</label>
+                        <div class="field-label">
+                            <label>Coord X</label>
+                        </div>
                         <input type="number" id="prop-cx">
                     </div>
                     <div class="property-row">
-                        <label>Coord Z</label>
+                        <div class="field-label">
+                            <label>Coord Z</label>
+                        </div>
                         <input type="number" id="prop-cz">
                     </div>
 
                     <div id="city-only-props">
-                        <div class="property-row">
-                            <label>Radius</label>
-                            <input type="number" id="prop-radius">
-                        </div>
                         <div class="section-title">Road Config</div>
                         <div class="property-group">
                             <div class="property-row">
-                                <label>Seed</label>
+                                <div class="field-label">
+                                    <label>Seed</label>
+                                </div>
                                 <input type="number" id="prop-seed">
                             </div>
                             <div class="property-row">
-                                <label>Density</label>
-                                <input type="number" id="prop-density" step="0.01">
+                                <div class="field-label">
+                                    <label>Density</label>
+                                    <span class="value-pill" id="prop-density-value">0.7</span>
+                                </div>
+                                <div class="control-stack">
+                                    <input type="range" id="prop-density-range" min="0" max="1" step="0.01">
+                                    <input type="number" id="prop-density" step="0.01" min="0" max="1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="district-only-props" style="display: none;">
+                        <div class="property-row">
+                            <div class="field-label">
+                                <label>District Type</label>
+                            </div>
+                            <div class="control-cluster">
+                                <select id="prop-district-type">
+                                    <option value="financial_core">financial_core</option>
+                                    <option value="commercial">commercial</option>
+                                    <option value="residential">residential</option>
+                                    <option value="industrial">industrial</option>
+                                    <option value="suburban">suburban</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="terrain-only-props" style="display: none;">
+                        <div class="property-row">
+                            <div class="field-label">
+                                <label>Brush Kind</label>
+                            </div>
+                            <input type="text" id="prop-terrain-kind" readonly>
+                        </div>
+                        <div class="property-row">
+                            <div class="field-label">
+                                <label>Radius</label>
+                                <span class="value-pill" id="prop-terrain-radius-value">300</span>
+                            </div>
+                            <div class="control-stack">
+                                <input type="range" id="prop-terrain-radius-range" min="50" max="2000" step="10">
+                                <input type="number" id="prop-terrain-radius" min="50" max="2000" step="10">
+                            </div>
+                        </div>
+                        <div class="property-row" id="terrain-delta-row">
+                            <div class="field-label">
+                                <label>Delta</label>
+                                <span class="value-pill" id="prop-terrain-delta-value">40</span>
+                            </div>
+                            <div class="control-stack">
+                                <input type="range" id="prop-terrain-delta-range" min="1" max="200" step="1">
+                                <input type="number" id="prop-terrain-delta" min="1" max="200" step="1">
+                            </div>
+                        </div>
+                        <div class="property-row" id="terrain-target-row" style="display: none;">
+                            <div class="field-label">
+                                <label>Target H</label>
+                                <span class="value-pill" id="prop-terrain-target-value">0</span>
+                            </div>
+                            <div class="control-stack">
+                                <input type="range" id="prop-terrain-target-range" min="-200" max="1200" step="5">
+                                <input type="number" id="prop-terrain-target" min="-200" max="1200" step="5">
+                            </div>
+                        </div>
+                        <div class="property-row" id="terrain-opacity-row" style="display: none;">
+                            <div class="field-label">
+                                <label>Opacity</label>
+                                <span class="value-pill" id="prop-terrain-opacity-value">1</span>
+                            </div>
+                            <div class="control-stack">
+                                <input type="range" id="prop-terrain-opacity-range" step="0.05" min="0" max="1">
+                                <input type="number" id="prop-terrain-opacity" step="0.05" min="0" max="1">
                             </div>
                         </div>
                     </div>
 
                     <div id="vantage-only-props" style="display: none;">
                         <div class="property-row">
-                            <label>Altitude (m)</label>
-                            <input type="number" id="prop-alt">
+                            <div class="field-label">
+                                <label>Altitude (m)</label>
+                                <span class="value-pill" id="prop-alt-value">0</span>
+                            </div>
+                            <div class="control-stack">
+                                <input type="range" id="prop-alt-range" min="0" max="3000" step="10">
+                                <input type="number" id="prop-alt" min="0" max="3000" step="10">
+                            </div>
                         </div>
                         <div class="property-row">
-                            <label>Tilt (°)</label>
-                            <input type="number" id="prop-tilt">
+                            <div class="field-label">
+                                <label>Tilt (°)</label>
+                                <span class="value-pill" id="prop-tilt-value">45</span>
+                            </div>
+                            <div class="control-stack">
+                                <input type="range" id="prop-tilt-range" min="5" max="85" step="1">
+                                <input type="number" id="prop-tilt" min="5" max="85" step="1">
+                            </div>
                         </div>
                         <button class="tool-btn" id="jump-sim-btn"
                             style="margin-top: 10px; background: #9eff66; color: #000; width: 100%;">LAUNCH IN
@@ -316,6 +523,32 @@
                 <p style="color: #8892b0; font-size: 13px; text-align: center; margin-top: 40px;">
                     Select an object to edit its properties.
                 </p>
+            </div>
+
+            <div class="property-panel">
+                <div class="section-title">Terrain Brush</div>
+                <div class="property-group">
+                    <div class="property-row">
+                        <div class="field-label">
+                            <label>Radius</label>
+                            <span class="value-pill" id="terrain-brush-radius-value">300</span>
+                        </div>
+                        <div class="control-stack">
+                            <input type="range" id="terrain-brush-radius-range" value="300" min="50" max="2000" step="10">
+                            <input type="number" id="terrain-brush-radius" value="300" min="50" max="2000" step="10">
+                        </div>
+                    </div>
+                    <div class="property-row">
+                        <div class="field-label">
+                            <label>Strength</label>
+                            <span class="value-pill" id="terrain-brush-strength-value">40</span>
+                        </div>
+                        <div class="control-stack">
+                            <input type="range" id="terrain-brush-strength-range" value="40" min="0" max="200" step="1">
+                            <input type="number" id="terrain-brush-strength" value="40" step="1" min="0" max="200">
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <button class="save-btn" id="save-btn">SAVE CHANGES</button>

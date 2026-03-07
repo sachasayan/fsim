@@ -1,3 +1,5 @@
+import { applyTerrainEdits } from './TerrainEdits.js';
+
 export function hash2(x, z, seed = 0) {
     const n = Math.sin(x * 127.1 + z * 311.7 + seed * 74.7) * 43758.5453123;
     return n - Math.floor(n);
@@ -242,16 +244,19 @@ export function getTerrainHeight(x, z, Noise, octaves = 6) {
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
     let noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
+    let baseHeight;
 
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        return 0;
+        baseHeight = 0;
     } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
         let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
         let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
         let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-        return noiseVal * runwayMask;
+        baseHeight = noiseVal * runwayMask;
+    } else {
+        baseHeight = noiseVal;
     }
-    return noiseVal;
+    return applyTerrainEdits(baseHeight, x, z, window.fsimWorld?.terrainEdits || []);
 }
 
 export function getLodForRingDistance(ringDistance, currentLod = null) {

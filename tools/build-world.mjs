@@ -1,22 +1,23 @@
 /**
- * build-world.mjs — Offline city layout compiler
+ * build-world.mjs — Offline district layout compiler
  *
- * Reads tools/map.json, generates Voronoi-based city block layouts with road
- * networks and building lot assignments, samples the shared TerrainUtils height
- * function, and serialises everything into compact binary chunk files under
- * world/chunks/<cityId>/.
+ * Reads tools/map.json, generates district road/building layouts, samples the
+ * shared TerrainUtils height function, and serialises everything into compact
+ * binary chunk files under world/chunks/<districtId>/.
  *
  * Usage:
  *   node tools/build-world.mjs
  */
 
-import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 import { Noise } from '../js/modules/noise.js';
 import { generateRoadMask } from './lib/WorldBuilderRaster.mjs';
 import { serializeChunk } from './lib/WorldBuilderSerial.mjs';
+import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
+import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 
 Noise.init(12345);
 
@@ -32,16 +33,19 @@ function getTerrainHeight(x, z) {
     let distFromRunwayZ = Math.abs(z);
     let distFromRunwayX = Math.abs(x);
     let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
+    let baseHeight;
 
     if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        return 0;
+        baseHeight = 0;
     } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
         let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
         let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
         let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-        return noiseVal * runwayMask;
+        baseHeight = noiseVal * runwayMask;
+    } else {
+        baseHeight = noiseVal;
     }
-    return noiseVal;
+    return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
 }
 
 // ---------------------------------------------------------------------------
@@ -60,13 +64,84 @@ function hash2(x, z, seed = 0) {
     return n - Math.floor(n);
 }
 
+function getDistrictType(district) {
+    return district?.district_type || district?.type || 'residential';
+}
+
+function getDistrictVertices(district) {
+    if (district.points?.length >= 3) return district.points;
+    if (!district.center || !district.radius) return [];
+    const [cx, cz] = district.center;
+    const r = district.radius;
+    return [
+        [cx - r, cz - r],
+        [cx + r, cz - r],
+        [cx + r, cz + r],
+        [cx - r, cz + r]
+    ];
+}
+
+function getCityBounds(city) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const district of city.districts || []) {
+        for (const [x, z] of getDistrictVertices(district)) {
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minZ = Math.min(minZ, z);
+            maxZ = Math.max(maxZ, z);
+        }
+    }
+    if (!Number.isFinite(minX)) {
+        const [cx, cz] = city.center;
+        return { minX: cx - 600, maxX: cx + 600, minZ: cz - 600, maxZ: cz + 600 };
+    }
+    return { minX, maxX, minZ, maxZ };
+}
+
+function getCityRadius(city) {
+    const bounds = getCityBounds(city);
+    return Math.max(
+        Math.hypot(bounds.minX - city.center[0], bounds.minZ - city.center[1]),
+        Math.hypot(bounds.minX - city.center[0], bounds.maxZ - city.center[1]),
+        Math.hypot(bounds.maxX - city.center[0], bounds.minZ - city.center[1]),
+        Math.hypot(bounds.maxX - city.center[0], bounds.maxZ - city.center[1]),
+        600
+    );
+}
+
+function isPointInDistrict(x, z, district) {
+    if (district.points?.length >= 3) return isPointInPolygon(x, z, district.points);
+    if (district.center && district.radius) return Math.hypot(x - district.center[0], z - district.center[1]) <= district.radius;
+    return false;
+}
+
+function distToDistrict(x, z, district) {
+    if (district.points?.length >= 3) {
+        if (isPointInPolygon(x, z, district.points)) return 0;
+        return distToPolygon(x, z, district.points);
+    }
+    if (district.center && district.radius) {
+        return Math.max(0, Math.hypot(x - district.center[0], z - district.center[1]) - district.radius);
+    }
+    return Infinity;
+}
+
+function distToCityFootprint(x, z, city) {
+    let minDist = Infinity;
+    for (const district of city.districts || []) {
+        minDist = Math.min(minDist, distToDistrict(x, z, district));
+    }
+    return minDist;
+}
+
 // ---------------------------------------------------------------------------
 // V2 Organic Grid Generation (Perlin-warped Manhattan grid)
 // ---------------------------------------------------------------------------
 function generateCityGrid(city) {
     const cx = city.center[0];
     const cz = city.center[1];
-    const radius = city.radius;
+    const radius = getCityRadius(city);
+    const bounds = getCityBounds(city);
     const seed = city.road.seed;
     const rng = seededRand(seed * 9999 + cx * 293 + cz);
     const blockSize = 130; // 130m standard block size
@@ -79,7 +154,7 @@ function generateCityGrid(city) {
     // 1. Generate Arterial Backbone FIRST
     if (city.districts) {
         for (const d of city.districts) {
-            if (d.type === 'financial_core' || (d.center[0] === cx && d.center[1] === cz)) continue;
+            if (getDistrictType(d) === 'financial_core' || (d.center[0] === cx && d.center[1] === cz)) continue;
 
             const dx = d.center[0] - cx;
             const dz = d.center[1] - cz;
@@ -139,8 +214,11 @@ function generateCityGrid(city) {
             const px = ux + warpX;
             const pz = uz + warpZ;
 
-            const dist = Math.hypot(px - cx, pz - cz);
-            if (dist > radius * 1.05) {
+            if (px < bounds.minX - 450 || px > bounds.maxX + 450 || pz < bounds.minZ - 450 || pz > bounds.maxZ + 450) {
+                grid[ix + steps][iz + steps] = -1;
+                continue;
+            }
+            if (distToCityFootprint(px, pz, city) > 350) {
                 grid[ix + steps][iz + steps] = -1;
                 continue;
             }
@@ -208,7 +286,7 @@ function generateCityGrid(city) {
 function classifyRoad(s1, s2, city) {
     const mx = (s1[0] + s2[0]) / 2, mz = (s1[1] + s2[1]) / 2;
     const d = Math.hypot(mx - city.center[0], mz - city.center[1]);
-    const ratio = d / city.radius;
+    const ratio = d / getCityRadius(city);
     if (ratio < 0.2) return 'arterial';    // wide inner ring roads
     if (ratio < 0.55) return 'collector';  // mid-tier roads
     return 'local';                         // narrow suburban roads
@@ -320,7 +398,8 @@ function getDistrictWeights(x, z, city) {
             const dist = Math.hypot(x - d.center[0], z - d.center[1]);
             w = 1.0 / (1.0 + Math.pow(dist / d.radius, 2));
         }
-        weights[d.type] = (weights[d.type] || 0) + w;
+        const districtType = getDistrictType(d);
+        weights[districtType] = (weights[districtType] || 0) + w;
         totalWeight += w;
     }
     // Normalize weights
@@ -333,27 +412,27 @@ function getDistrictWeights(x, z, city) {
 function getUrbanIntensity(x, z, city) {
     // Basic city center intensity
     const dist = Math.hypot(x - city.center[0], z - city.center[1]);
-    const cityBaseNorm = Math.max(0, 1.0 - dist / city.radius);
+    const cityBaseNorm = Math.max(0, 1.0 - dist / getCityRadius(city));
 
     // Add specific boosts for core districts
     let coreBoost = 0;
     for (const d of city.districts) {
-        if (d.type === 'financial_core' || d.type === 'commercial') {
-            let dNorm = 0;
-            if (d.points) {
-                const inside = isPointInPolygon(x, z, d.points);
-                if (inside) {
-                    dNorm = 1.0;
-                } else {
-                    const distToE = distToPolygon(x, z, d.points);
-                    dNorm = Math.max(0, 1.0 - distToE / 300); // 300m linear falloff
-                }
+        const districtType = getDistrictType(d);
+        if (districtType !== 'financial_core' && districtType !== 'commercial') continue;
+        let dNorm = 0;
+        if (d.points) {
+            const inside = isPointInPolygon(x, z, d.points);
+            if (inside) {
+                dNorm = 1.0;
             } else {
-                const dDist = Math.hypot(x - d.center[0], z - d.center[1]);
-                dNorm = Math.max(0, 1.0 - dDist / d.radius);
+                const distToE = distToPolygon(x, z, d.points);
+                dNorm = Math.max(0, 1.0 - distToE / 300); // 300m linear falloff
             }
-            coreBoost = Math.max(coreBoost, dNorm);
+        } else {
+            const dDist = Math.hypot(x - d.center[0], z - d.center[1]);
+            dNorm = Math.max(0, 1.0 - dDist / d.radius);
         }
+        coreBoost = Math.max(coreBoost, dNorm);
     }
 
     return Math.min(1.0, cityBaseNorm * 0.4 + coreBoost * 0.8);
@@ -363,7 +442,8 @@ function getUrbanIntensity(x, z, city) {
 // Building placement — populate city blocks with buildings
 function placeBuildingsInCity(city, roads, blocks) {
     const buildings = []; // {x, y, z, w, h, d, angle, classId, colorIdx}
-    const { center, radius, road: roadCfg } = city;
+    const { center, road: roadCfg } = city;
+    const radius = getCityRadius(city);
     const rng = seededRand(roadCfg.seed * 31337);
 
     // PASS 1: Standard Grid Infilling
@@ -377,7 +457,7 @@ function placeBuildingsInCity(city, roads, blocks) {
         }
         cx /= 4; cz /= 4;
 
-        if (Math.hypot(cx - center[0], cz - center[1]) > radius * 0.95) continue;
+        if (distToCityFootprint(cx, cz, city) > 220) continue;
 
         const cellIntensity = getUrbanIntensity(cx, cz, city);
         let lotStep = 45 - (cellIntensity * 30);
@@ -386,7 +466,7 @@ function placeBuildingsInCity(city, roads, blocks) {
         // Skyline Clustering Hubs
         const hubs = [];
         for (const dist of city.districts) {
-            if (dist.type === 'financial_core') hubs.push(dist.center);
+            if (getDistrictType(dist) === 'financial_core') hubs.push(dist.center);
         }
 
         const stepsX = Math.ceil((maxX - minX) / lotStep);
@@ -397,7 +477,7 @@ function placeBuildingsInCity(city, roads, blocks) {
                 const bx = minX + ix * lotStep + (rng() - 0.5) * (8 - cellIntensity * 6);
                 const bz = minZ + iz * lotStep + (rng() - 0.5) * (8 - cellIntensity * 6);
 
-                if (Math.hypot(bx - center[0], bz - center[1]) > radius * 0.98) continue;
+                if (distToCityFootprint(bx, bz, city) > 180) continue;
                 if (Math.abs(bx - cx) + Math.abs(bz - cz) > Math.abs(maxX - minX)) continue;
 
                 const parkNoise = hash2(bx, bz, 777);
@@ -558,11 +638,25 @@ function buildRoadSegments(nodes, edges, city) {
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
-const mapData = JSON.parse(readFileSync(MAP_PATH, 'utf8'));
+const mapData = normalizeMapData(JSON.parse(readFileSync(MAP_PATH, 'utf8')));
+const districtRecords = buildDistrictRecords(mapData);
+const districtIds = new Set(districtRecords.map(record => record.id));
 
-console.log(`\n🌆  build-world — processing ${mapData.cities.length} cities\n`);
+console.log(`\n🌆  build-world — processing ${districtRecords.length} districts\n`);
 
-for (const city of mapData.cities) {
+for (const entry of readdirSync(OUT_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const entryPath = path.join(OUT_DIR, entry.name);
+    if (!districtIds.has(entry.name)) {
+        rmSync(entryPath, { recursive: true, force: true });
+        continue;
+    }
+
+    rmSync(path.join(entryPath, 'city.bin'), { force: true });
+    rmSync(path.join(entryPath, 'city.json'), { force: true });
+}
+
+for (const city of districtRecords) {
     const outDir = path.join(OUT_DIR, city.id);
     mkdirSync(outDir, { recursive: true });
 
@@ -593,17 +687,17 @@ for (const city of mapData.cities) {
     writeFileSync(path.join(outDir, 'mask.png'), PNG.sync.write(png));
 
     // Write single binary chunk for the whole city (now includes mask)
-    const binPath = path.join(outDir, 'city.bin');
+    const binPath = path.join(outDir, 'district.bin');
     const binData = serializeChunk(buildings, roadSegments, mask.data, maskSize);
     writeFileSync(binPath, binData);
     console.log(`  [${city.id}]   → wrote ${(Buffer.byteLength(binData) / 1024).toFixed(1)} KB to ${path.relative(ROOT, binPath)}`);
 
     // Also write JSON for human inspection / debugging
-    const jsonPath = path.join(outDir, 'city.json');
+    const jsonPath = path.join(outDir, 'district.json');
     writeFileSync(jsonPath, JSON.stringify({
         id: city.id,
         center: city.center,
-        radius: city.radius,
+        radius: getCityRadius(city),
         maskRadius: mask.worldRadius, // Tell runtime what map scale is
         numBuildings: buildings.length,
         numRoadSegments: roadSegments.length,
@@ -613,13 +707,15 @@ for (const city of mapData.cities) {
     console.log(`  [${city.id}]   → wrote debug JSON to ${path.relative(ROOT, jsonPath)}\n`);
 }
 
-// Write a small city index file for the runtime to know which cities exist and where
-const cityIndex = mapData.cities.map(c => ({
+// Write a small district index file for the runtime to know which authored districts exist and where
+const districtIndex = districtRecords.map(c => ({
     id: c.id,
     cx: c.center[0],
     cz: c.center[1],
-    radius: c.radius,
+    radius: getCityRadius(c),
+    maskRadius: getCityRadius(c) * 1.05,
+    district: c.districts?.[0] || null,
 }));
-writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(cityIndex, null, 2));
+writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(districtIndex, null, 2));
 console.log(`✅  index written to world/chunks/index.json`);
 console.log(`🏙️  Done!\n`);
