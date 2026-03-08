@@ -1,13 +1,29 @@
 import { getPhysicsTmp } from './PhysicsUtils.js';
 
 export const FLIGHT_TUNING = {
-    controlAuthorityMultiplier: 4.0,
+    controlAuthorityMultiplier: 3.2,
     sideForceSlipGain: 0.9,
     sideForceMaxCoeff: 0.45,
-    groundRotationBoost: 1.35
+    groundRotationBoost: 1.35,
+    rollRateGain: 460000,
+    rollDampingBase: 220000,
+    rollDampingQuadratic: 120000,
+    maxRollRateDegLow: 35,
+    maxRollRateDegHigh: 110
 };
 
 const GROUND_EFFECT_WINGSPAN = 30.0;
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function getTargetRollRate(airspeed, aileron) {
+    const speedNorm = clamp((airspeed - 20) / 150, 0, 1);
+    const maxRollRateDeg = FLIGHT_TUNING.maxRollRateDegLow
+        + (FLIGHT_TUNING.maxRollRateDegHigh - FLIGHT_TUNING.maxRollRateDegLow) * speedNorm;
+    return -aileron * maxRollRateDeg * (Math.PI / 180);
+}
 
 export function solveAerodynamics(ctx, airVel, localVel) {
     const { PHYSICS, AIRCRAFT, THREE } = ctx;
@@ -67,10 +83,19 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
     const p = PHYSICS;
     const t = getPhysicsTmp(THREE);
 
+    const airspeed = Math.max(0, p.airspeed || localVel.length());
+    const speedNorm = clamp((airspeed - 20) / 150, 0, 1);
+    const targetRollRate = getTargetRollRate(airspeed, p.aileron);
+    const rollRateError = targetRollRate - angVelLocal.z;
+    const rollRateTorque = rollRateError
+        * FLIGHT_TUNING.rollRateGain
+        * (0.7 + 0.8 * speedNorm)
+        * speedFactor;
+
     const torque = t.torqueLocal.set(
         p.elevator * 180000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier,
         -p.rudder * 120000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier,
-        -p.aileron * 260000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier
+        rollRateTorque
     );
 
     if (p.onGround) torque.x *= FLIGHT_TUNING.groundRotationBoost;
@@ -83,11 +108,13 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
     // Local damping
     torque.x += -angVelLocal.x * 170000;
     torque.y += -angVelLocal.y * 140000;
-    torque.z += -angVelLocal.z * 200000;
+    const rollLinearDamping = FLIGHT_TUNING.rollDampingBase * (0.7 + 1.3 * speedNorm);
+    torque.z += -angVelLocal.z * rollLinearDamping;
+    torque.z += -angVelLocal.z * Math.abs(angVelLocal.z) * FLIGHT_TUNING.rollDampingQuadratic;
 
-    const maxPitch = 320000 * FLIGHT_TUNING.controlAuthorityMultiplier;
-    const maxYaw = 900000 * FLIGHT_TUNING.controlAuthorityMultiplier;
-    const maxRoll = 420000 * FLIGHT_TUNING.controlAuthorityMultiplier;
+    const maxPitch = 300000 * FLIGHT_TUNING.controlAuthorityMultiplier;
+    const maxYaw = 780000 * FLIGHT_TUNING.controlAuthorityMultiplier;
+    const maxRoll = 280000 * FLIGHT_TUNING.controlAuthorityMultiplier;
     torque.x = Math.max(-maxPitch, Math.min(maxPitch, torque.x));
     torque.y = Math.max(-maxYaw, Math.min(maxYaw, torque.y));
     torque.z = Math.max(-maxRoll, Math.min(maxRoll, torque.z));

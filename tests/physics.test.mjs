@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { calculateAerodynamics } from '../js/modules/physics/updatePhysics.js';
+import { solveStabilityTorques } from '../js/modules/physics/AeroSolver.js';
 
 // Minimal aircraft constants matching the real sim
 const AIRCRAFT = {
@@ -182,6 +183,53 @@ test('calculateAerodynamics – gForce is finite', () => {
     const ctx = makeCtx({ position: new THREE.Vector3(0, 500, 0) });
     calculateAerodynamics(ctx);
     assert.ok(Number.isFinite(ctx.PHYSICS.gForce), `gForce should be finite, got ${ctx.PHYSICS.gForce}`);
+});
+
+test('solveStabilityTorques – neutral aileron damps existing roll rate', () => {
+    const ctx = makeCtx({
+        airspeed: 120,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+    const localVel = new THREE.Vector3(0, 0, -120);
+    const angVelLocal = new THREE.Vector3(0, 0, 0.8);
+    const torque = solveStabilityTorques(ctx, localVel, angVelLocal, 1.0);
+    assert.ok(torque.z < 0, `Expected negative roll torque to arrest positive roll rate, got ${torque.z}`);
+});
+
+test('solveStabilityTorques – opposite aileron increases roll-rate braking', () => {
+    const localVel = new THREE.Vector3(0, 0, -80);
+    const angVelLocal = new THREE.Vector3(0, 0, 0.25);
+
+    const neutralCtx = makeCtx({
+        airspeed: 80,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+    const oppositeCtx = makeCtx({
+        airspeed: 80,
+        aileron: 1,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+
+    const neutralTorqueZ = solveStabilityTorques(neutralCtx, localVel, angVelLocal, 1.0).z;
+    const oppositeTorqueZ = solveStabilityTorques(oppositeCtx, localVel, angVelLocal, 1.0).z;
+    assert.ok(
+        oppositeTorqueZ < neutralTorqueZ,
+        `Opposite aileron should command stronger negative roll torque (${oppositeTorqueZ} vs ${neutralTorqueZ})`
+    );
 });
 
 // ── Approach-Cone Gear Automation ────────────────────────────────────────────
