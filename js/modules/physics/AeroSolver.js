@@ -6,6 +6,8 @@ export const FLIGHT_TUNING = {
     sideForceMaxCoeff: 0.45,
     groundRotationBoost: 1.35,
     rollRateGain: 460000,
+    pitchDampingBase: 170000,
+    yawDampingBase: 140000,
     rollDampingBase: 220000,
     rollDampingQuadratic: 120000,
     maxRollRateDegLow: 35,
@@ -106,8 +108,10 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
     torque.z += p.slip * 60000 * speedFactor;
 
     // Local damping
-    torque.x += -angVelLocal.x * 170000;
-    torque.y += -angVelLocal.y * 140000;
+    const pitchLinearDamping = FLIGHT_TUNING.pitchDampingBase * (0.7 + 1.0 * speedNorm);
+    const yawLinearDamping = FLIGHT_TUNING.yawDampingBase * (0.7 + 1.0 * speedNorm);
+    torque.x += -angVelLocal.x * pitchLinearDamping;
+    torque.y += -angVelLocal.y * yawLinearDamping;
     const rollLinearDamping = FLIGHT_TUNING.rollDampingBase * (0.7 + 1.3 * speedNorm);
     torque.z += -angVelLocal.z * rollLinearDamping;
     torque.z += -angVelLocal.z * Math.abs(angVelLocal.z) * FLIGHT_TUNING.rollDampingQuadratic;

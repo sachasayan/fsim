@@ -231,6 +231,39 @@ test('solveStabilityTorques – opposite aileron increases roll-rate braking', (
     );
 });
 
+test('solveStabilityTorques – pitch/yaw damping increases with airspeed', () => {
+    const angVelLocal = new THREE.Vector3(0.5, 0.5, 0);
+    const speedFactor = 1.0;
+
+    const lowSpeedCtx = makeCtx({
+        airspeed: 35,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+    const highSpeedCtx = makeCtx({
+        airspeed: 180,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+
+    const lowTorque = solveStabilityTorques(lowSpeedCtx, new THREE.Vector3(0, 0, -35), angVelLocal, speedFactor);
+    const lowX = lowTorque.x;
+    const lowY = lowTorque.y;
+    const highTorque = solveStabilityTorques(highSpeedCtx, new THREE.Vector3(0, 0, -180), angVelLocal, speedFactor);
+    const highX = highTorque.x;
+    const highY = highTorque.y;
+    assert.ok(highX < lowX, `Expected stronger high-speed pitch damping (${highX} vs ${lowX})`);
+    assert.ok(highY < lowY, `Expected stronger high-speed yaw damping (${highY} vs ${lowY})`);
+});
+
 // ── Approach-Cone Gear Automation ────────────────────────────────────────────
 // Runway thresholds: Z = -2000 and Z = +2000. Runway axis along Z.
 // Approach cone: 15° half-angle. Arm altitude: 1200 m AGL. Radius: 12000 m.
