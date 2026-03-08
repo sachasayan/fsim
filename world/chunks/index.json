@@ -1,10 +1,10 @@
 [
   {
-    "id": "city_a",
+    "id": "district_z460p4",
     "cx": 8000,
-    "cz": 10000,
-    "radius": 1414.213562373095,
-    "maskRadius": 1484.92424049175,
+    "cz": 10100,
+    "radius": 1345.362404707371,
+    "maskRadius": 1412.6305249427396,
     "district": {
       "center": [
         8000,
@@ -34,11 +34,11 @@
     }
   },
   {
-    "id": "city_b",
-    "cx": -1800,
-    "cz": -3500,
-    "radius": 1586.4315301959932,
-    "maskRadius": 1665.753106705793,
+    "id": "district_1ir87y",
+    "cx": -845,
+    "cz": -3020.5,
+    "radius": 600,
+    "maskRadius": 630,
     "district": {
       "district_type": "residential",
       "center": [
@@ -68,11 +68,11 @@
     }
   },
   {
-    "id": "city_b_2",
-    "cx": -100,
-    "cz": -2100,
-    "radius": 1709.251298083462,
-    "maskRadius": 1794.7138629876351,
+    "id": "district_b46a4b",
+    "cx": -663,
+    "cz": -1099,
+    "radius": 600,
+    "maskRadius": 630,
     "district": {
       "district_type": "industrial",
       "center": [
@@ -102,11 +102,11 @@
     }
   },
   {
-    "id": "district_4",
-    "cx": 5400,
-    "cz": 6600,
-    "radius": 4766.742808249675,
-    "maskRadius": 5005.079948662159,
+    "id": "district_z4us7v",
+    "cx": 6224.5,
+    "cz": 9705.5,
+    "radius": 1608.5435959276952,
+    "maskRadius": 1688.9707757240799,
     "district": {
       "district_type": "industrial",
       "center": [
@@ -135,11 +135,11 @@
     }
   },
   {
-    "id": "district_5",
-    "cx": 1200,
-    "cz": 600,
-    "radius": 2050.8829805720266,
-    "maskRadius": 2153.427129600628,
+    "id": "district_zwmo5",
+    "cx": 958.5,
+    "cz": 1326,
+    "radius": 1289.1823959393798,
+    "maskRadius": 1353.641515736349,
     "district": {
       "district_type": "residential",
       "center": [
@@ -165,6 +165,40 @@
           2589
         ]
       ]
+    }
+  },
+  {
+    "id": "district_isqofs",
+    "cx": 1879.5,
+    "cz": -1399.5,
+    "radius": 1856.9977113610023,
+    "maskRadius": 1949.8475969290525,
+    "district": {
+      "district_type": "industrial",
+      "center": [
+        1300,
+        -1600
+      ],
+      "radius": 500,
+      "points": [
+        [
+          425,
+          -2133
+        ],
+        [
+          3222,
+          -2554
+        ],
+        [
+          3334,
+          -245
+        ],
+        [
+          456,
+          -379
+        ]
+      ],
+      "city_id": "city_b"
     }
   }
 ]

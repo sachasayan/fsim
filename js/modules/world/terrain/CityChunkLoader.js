@@ -188,12 +188,18 @@ export async function loadDistrictChunk(districtId) {
 
         let roadMaskTexture = null;
         if (version >= 2 && maskSize > 0) {
-            // Read 8-bit mask directly from the ArrayBuffer view
+            // Read 8-bit mask and expand to RGBA for broader WebGL compatibility.
             const maskData = new Uint8Array(buf, maskOffset, maskSize * maskSize);
-            // Copy data because the original ArrayBuffer might be GC'd or modified
-            const dataCopy = new Uint8Array(maskData);
-            // Create an uncompressed Alpha texture (1 channel, 8-bit)
-            roadMaskTexture = new THREE.DataTexture(dataCopy, maskSize, maskSize, THREE.RedFormat, THREE.UnsignedByteType);
+            const rgba = new Uint8Array(maskSize * maskSize * 4);
+            for (let i = 0; i < maskData.length; i++) {
+                const v = maskData[i];
+                const j = i * 4;
+                rgba[j] = v;
+                rgba[j + 1] = v;
+                rgba[j + 2] = v;
+                rgba[j + 3] = 255;
+            }
+            roadMaskTexture = new THREE.DataTexture(rgba, maskSize, maskSize, THREE.RGBAFormat, THREE.UnsignedByteType);
             roadMaskTexture.colorSpace = THREE.NoColorSpace; // CRITICAL: Stop sRGB gamma crush on alpha mask
             roadMaskTexture.generateMipmaps = true;
             roadMaskTexture.minFilter = THREE.LinearMipmapLinearFilter;

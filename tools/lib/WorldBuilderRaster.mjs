@@ -26,7 +26,8 @@ export function generateRoadMask(city, roadSegments, getUrbanIntensity, size = 1
             const intensity = getUrbanIntensity(wx, wz, city);
 
             if (intensity > 0.05) {
-                const val = Math.floor(80 + intensity * 80);
+                // Keep urban base subtle so roads remain high-contrast in shader thresholds.
+                const val = Math.floor(30 + intensity * 60);
                 data[py * size + px] = val;
             } else {
                 data[py * size + px] = 0;
@@ -62,9 +63,9 @@ export function generateRoadMask(city, roadSegments, getUrbanIntensity, size = 1
 
                 if (distSq < thicknessPx * thicknessPx) {
                     const dist = Math.sqrt(distSq);
-                    const roadAlphaBase = 160;
+                    const roadAlphaBase = 205;
                     const alpha = Math.max(0, 1.0 - (dist / thicknessPx));
-                    const val = Math.floor(roadAlphaBase + alpha * 95);
+                    const val = Math.floor(roadAlphaBase + alpha * 50);
                     const idx = py * size + px;
                     if (val > data[idx]) data[idx] = val;
                 }

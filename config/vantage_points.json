@@ -41,9 +41,9 @@
         "tilt": 45
     },
     "airport_overview": {
-        "x": -600,
+        "x": 1793,
         "y": 450,
-        "z": 600,
+        "z": 1,
         "fog": 0,
         "clouds": 0,
         "lighting": "day",

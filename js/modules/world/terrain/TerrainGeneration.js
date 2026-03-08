@@ -205,7 +205,30 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 spawnCityBuildingsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
             });
 
-            const maskDistrictIndex = loadedDistricts.findIndex(districtData => districtData?.roadMaskTexture);
+            const chunkWX = cx * CHUNK_SIZE;
+            const chunkWZ = cz * CHUNK_SIZE;
+            const chunkKey = `${cx},${cz}`;
+            let maskDistrictIndex = -1;
+            let bestBuildingCount = -1;
+            let bestMaskDistSq = Infinity;
+            for (let i = 0; i < loadedDistricts.length; i++) {
+                const districtData = loadedDistricts[i];
+                if (!districtData?.roadMaskTexture) continue;
+                const districtRecord = overlappingDistricts[i];
+                if (!districtRecord) continue;
+                const buildingCount = districtData.buildings?.[chunkKey]?.length || 0;
+                const dx = districtRecord.cx - chunkWX;
+                const dz = districtRecord.cz - chunkWZ;
+                const distSq = dx * dx + dz * dz;
+                if (
+                    buildingCount > bestBuildingCount ||
+                    (buildingCount === bestBuildingCount && distSq < bestMaskDistSq)
+                ) {
+                    bestBuildingCount = buildingCount;
+                    bestMaskDistSq = distSq;
+                    maskDistrictIndex = i;
+                }
+            }
             if (maskDistrictIndex !== -1 && !chunkGroup.userData.hasCityMaterial) {
                 const maskSource = loadedDistricts[maskDistrictIndex];
                 const districtRecord = overlappingDistricts[maskDistrictIndex];

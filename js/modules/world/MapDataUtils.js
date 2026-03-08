@@ -9,10 +9,12 @@ export function normalizeDistrict(rawDistrict, cityId = null) {
     district.district_type = getDistrictType(district);
     delete district.type;
     if (cityId && !district.city_id) district.city_id = cityId;
-    if (!Array.isArray(district.points)) {
-        district.points = null;
-        return district;
+    if (!Array.isArray(district.points) && Array.isArray(district.footprint)) {
+        district.points = district.footprint;
     }
+    if (!Array.isArray(district.points)) district.points = null;
+    delete district.footprint;
+    if (!Array.isArray(district.points)) return district;
     const hasCenter = Array.isArray(district.center) && district.center.length === 2;
     let looksRelative = false;
     if (hasCenter && district.points.length > 0) {
@@ -135,8 +137,8 @@ function getDistrictBounds(district) {
 }
 
 function getDistrictCenter(district, bounds) {
-    if (Array.isArray(district.center) && district.center.length === 2) return district.center;
-    return [(bounds.minX + bounds.maxX) * 0.5, (bounds.minZ + bounds.maxZ) * 0.5];
+    const boundsCenter = [(bounds.minX + bounds.maxX) * 0.5, (bounds.minZ + bounds.maxZ) * 0.5];
+    return boundsCenter;
 }
 
 function collectNormalizedDistricts(data) {
@@ -156,7 +158,7 @@ function collectNormalizedDistricts(data) {
     }
 
     return districts
-        .filter(district => Array.isArray(district.center) && district.center.length === 2)
+        .filter(district => Array.isArray(district.points) && district.points.length >= 3)
         .map((district, index) => {
             const bounds = getDistrictBounds(district);
             return {
@@ -168,9 +170,8 @@ function collectNormalizedDistricts(data) {
         });
 }
 
-function chooseRoadProfile(district, explicitCityConfigs, recordIndex) {
-    const explicit = district.city_id ? explicitCityConfigs.get(district.city_id) : null;
-    if (explicit?.road) return { ...explicit.road };
+function chooseRoadProfile(district, recordIndex) {
+    if (district?.road && typeof district.road === 'object') return { ...district.road };
 
     const districtType = getDistrictType(district);
     const defaultsByType = {
@@ -189,24 +190,30 @@ function chooseRoadProfile(district, explicitCityConfigs, recordIndex) {
     };
 }
 
+function hashDistrictGeometry(district, index) {
+    const type = getDistrictType(district);
+    const geom = JSON.stringify((district.points || []).map(([x, z]) => [Math.round(x), Math.round(z)]));
+    let h = 2166136261;
+    const input = `${type}|${geom}|${index}`;
+    for (let i = 0; i < input.length; i++) {
+        h ^= input.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(36);
+}
+
 export function buildDistrictRecords(data) {
     const districtEntries = collectNormalizedDistricts(data);
     if (districtEntries.length === 0) return [];
 
-    const explicitCityConfigs = new Map((data.cities || []).map(city => [city.id, city]));
-    const baseIdCounts = new Map();
-
     return districtEntries.map(({ district, center, bounds, index }) => {
-        const preferredBaseId = district.id || district.city_id || `district_${index + 1}`;
-        const occurrence = (baseIdCounts.get(preferredBaseId) || 0) + 1;
-        baseIdCounts.set(preferredBaseId, occurrence);
-        const id = occurrence === 1 ? preferredBaseId : `${preferredBaseId}_${occurrence}`;
+        const id = `district_${hashDistrictGeometry(district, index)}`;
 
         return {
             id,
             center,
             bounds,
-            road: chooseRoadProfile(district, explicitCityConfigs, index),
+            road: chooseRoadProfile(district, index),
             districts: [{ ...district }]
         };
     });

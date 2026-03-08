@@ -148,6 +148,98 @@ function distToCityFootprint(x, z, city) {
     return minDist;
 }
 
+function getDistrictBounds(district) {
+    const vertices = getDistrictVertices(district);
+    if (vertices.length === 0) {
+        const [cx, cz] = Array.isArray(district.center) ? district.center : [0, 0];
+        const r = Number.isFinite(district.radius) ? district.radius : 0;
+        return { minX: cx - r, maxX: cx + r, minZ: cz - r, maxZ: cz + r };
+    }
+
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, z] of vertices) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+    }
+    return { minX, maxX, minZ, maxZ };
+}
+
+function buildIndustrialQuadSubdivisions(city, maxArea = 400_000) {
+    const district = city.districts?.[0] || null;
+    if (!district) return [];
+    const bounds = getDistrictBounds(district);
+
+    const quads = [];
+    const queue = [{
+        minX: bounds.minX,
+        maxX: bounds.maxX,
+        minZ: bounds.minZ,
+        maxZ: bounds.maxZ
+    }];
+
+    while (queue.length > 0) {
+        const quad = queue.pop();
+        const width = quad.maxX - quad.minX;
+        const depth = quad.maxZ - quad.minZ;
+        const area = width * depth;
+
+        if (area <= maxArea) {
+            quads.push([
+                [quad.minX, quad.minZ],
+                [quad.maxX, quad.minZ],
+                [quad.maxX, quad.maxZ],
+                [quad.minX, quad.maxZ]
+            ]);
+            continue;
+        }
+
+        const midX = (quad.minX + quad.maxX) * 0.5;
+        const midZ = (quad.minZ + quad.maxZ) * 0.5;
+        queue.push(
+            { minX: quad.minX, maxX: midX, minZ: quad.minZ, maxZ: midZ },
+            { minX: midX, maxX: quad.maxX, minZ: quad.minZ, maxZ: midZ },
+            { minX: quad.minX, maxX: midX, minZ: midZ, maxZ: quad.maxZ },
+            { minX: midX, maxX: quad.maxX, minZ: midZ, maxZ: quad.maxZ }
+        );
+    }
+
+    return quads;
+}
+
+function buildRoadSegmentsFromIndustrialQuads(quads) {
+    const seen = new Set();
+    const segments = [];
+    const halfWidth = ROAD_WIDTHS.collector / 2;
+    const classId = 1; // collector
+    const roundKey = n => Math.round(n * 1000) / 1000;
+    const edgeKey = (x1, z1, x2, z2) => {
+        const a = `${roundKey(x1)},${roundKey(z1)}`;
+        const b = `${roundKey(x2)},${roundKey(z2)}`;
+        return a < b ? `${a}|${b}` : `${b}|${a}`;
+    };
+
+    for (const quad of quads) {
+        const edges = [
+            [quad[0][0], quad[0][1], quad[1][0], quad[1][1]],
+            [quad[1][0], quad[1][1], quad[2][0], quad[2][1]],
+            [quad[2][0], quad[2][1], quad[3][0], quad[3][1]],
+            [quad[3][0], quad[3][1], quad[0][0], quad[0][1]],
+        ];
+        for (const [x1, z1, x2, z2] of edges) {
+            const key = edgeKey(x1, z1, x2, z2);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const y1 = getTerrainHeight(x1, z1);
+            const y2 = getTerrainHeight(x2, z2);
+            segments.push({ x1, y1, z1, x2, y2, z2, halfWidth, classId });
+        }
+    }
+
+    return segments;
+}
+
 // ---------------------------------------------------------------------------
 // V2 Organic Grid Generation (Perlin-warped Manhattan grid)
 // ---------------------------------------------------------------------------
@@ -622,6 +714,71 @@ function placeBuildingsInCity(city, roads, blocks) {
     return buildings;
 }
 
+function placeBuildingsInIndustrialQuads(city, roads, quads) {
+    const buildings = [];
+    const roadBuffer = 18;
+    const rng = seededRand(city.road.seed * 71437 + 17);
+    const classId = CLASS_IDS.indexOf('industrial');
+    const palette = DISTRICT_PALETTES.industrial;
+
+    const nearestRoadAngle = (x, z) => {
+        let bestD2 = Infinity;
+        let bestAngle = 0;
+        for (const seg of roads) {
+            const dx = seg.x2 - seg.x1;
+            const dz = seg.z2 - seg.z1;
+            const len2 = dx * dx + dz * dz;
+            if (len2 === 0) continue;
+            let t = ((x - seg.x1) * dx + (z - seg.z1) * dz) / len2;
+            t = Math.max(0, Math.min(1, t));
+            const nx = seg.x1 + t * dx - x;
+            const nz = seg.z1 + t * dz - z;
+            const d2 = nx * nx + nz * nz;
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                bestAngle = Math.atan2(dz, dx);
+            }
+        }
+        return bestAngle;
+    };
+
+    for (const quad of quads) {
+        const minX = quad[0][0];
+        const maxX = quad[1][0];
+        const minZ = quad[0][1];
+        const maxZ = quad[2][1];
+        const width = maxX - minX;
+        const depth = maxZ - minZ;
+
+        const lotStep = Math.max(36, Math.min(58, Math.sqrt(width * depth) / 4.2));
+        const stepsX = Math.max(1, Math.floor((width - roadBuffer * 2) / lotStep));
+        const stepsZ = Math.max(1, Math.floor((depth - roadBuffer * 2) / lotStep));
+
+        for (let ix = 0; ix <= stepsX; ix++) {
+            for (let iz = 0; iz <= stepsZ; iz++) {
+                const bx = minX + roadBuffer + ix * lotStep + (rng() - 0.5) * 8;
+                const bz = minZ + roadBuffer + iz * lotStep + (rng() - 0.5) * 8;
+                if (bx <= minX + roadBuffer || bx >= maxX - roadBuffer) continue;
+                if (bz <= minZ + roadBuffer || bz >= maxZ - roadBuffer) continue;
+                if (!isPointInDistrict(bx, bz, city.districts[0])) continue;
+                if (rng() > 0.78) continue;
+
+                const w = CLASS_WIDTH.industrial[0] + rng() * (CLASS_WIDTH.industrial[1] - CLASS_WIDTH.industrial[0]);
+                const d = CLASS_DEPTH.industrial[0] + rng() * (CLASS_DEPTH.industrial[1] - CLASS_DEPTH.industrial[0]);
+                const h = CLASS_HEIGHT.industrial[0] + rng() * (CLASS_HEIGHT.industrial[1] - CLASS_HEIGHT.industrial[0]);
+                const y = getTerrainHeight(bx, bz);
+                if (y < 2.0 || y > 430) continue;
+
+                const angle = nearestRoadAngle(bx, bz) + (Math.floor(rng() * 2) * Math.PI / 2);
+                const colorIdx = palette[Math.floor(rng() * palette.length)];
+                buildings.push({ x: bx, y, z: bz, w, h, d, angle, classId, colorIdx });
+            }
+        }
+    }
+
+    return buildings;
+}
+
 // ---------------------------------------------------------------------------
 // Road segment list for a city
 // ---------------------------------------------------------------------------
@@ -674,14 +831,26 @@ for (const city of districtRecords) {
     const outDir = path.join(OUT_DIR, city.id);
     mkdirSync(outDir, { recursive: true });
 
-    console.log(`  [${city.id}] Generating Organic Grid road network…`);
-    const { nodes, edges, blocks } = generateCityGrid(city);
-    const roadSegments = buildRoadSegments(nodes, edges, city);
+    const districtType = getDistrictType(city.districts?.[0]);
+    let roadSegments;
+    let buildings;
 
-    console.log(`  [${city.id}]   → ${nodes.length} nodes, ${edges.length} road edges, ${blocks.length} blocks`);
-    console.log(`  [${city.id}] Placing buildings via Block Parsing…`);
+    if (districtType === 'industrial') {
+        console.log(`  [${city.id}] Generating industrial quad subdivision road network…`);
+        const industrialQuads = buildIndustrialQuadSubdivisions(city, 400_000);
+        roadSegments = buildRoadSegmentsFromIndustrialQuads(industrialQuads);
+        console.log(`  [${city.id}]   → ${industrialQuads.length} quads, ${roadSegments.length} road edges`);
+        console.log(`  [${city.id}] Filling industrial quads with buildings…`);
+        buildings = placeBuildingsInIndustrialQuads(city, roadSegments, industrialQuads);
+    } else {
+        console.log(`  [${city.id}] Generating Organic Grid road network…`);
+        const { nodes, edges, blocks } = generateCityGrid(city);
+        roadSegments = buildRoadSegments(nodes, edges, city);
+        console.log(`  [${city.id}]   → ${nodes.length} nodes, ${edges.length} road edges, ${blocks.length} blocks`);
+        console.log(`  [${city.id}] Placing buildings via Block Parsing…`);
+        buildings = placeBuildingsInCity(city, roadSegments, blocks);
+    }
 
-    const buildings = placeBuildingsInCity(city, roadSegments, blocks);
     console.log(`  [${city.id}]   → ${buildings.length} buildings`);
 
     console.log(`  [${city.id}] Rasterizing road mask texture…`);
