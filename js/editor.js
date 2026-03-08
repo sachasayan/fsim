@@ -797,8 +797,7 @@ function setupInputs() {
             const center = [Math.round(worldPos.x / 100) * 100, Math.round(worldPos.z / 100) * 100];
             const newCity = {
                 id: `city_${worldData.cities.length + 1}`,
-                center,
-                road: { seed: Math.floor(Math.random() * 1000), blockScale: 130, arterialSpacing: 500, density: 0.7 }
+                center
             };
             worldData.cities.push(newCity);
             const district = createPolygonDistrict(center);
@@ -1025,7 +1024,7 @@ function setupInputs() {
     });
 
     // Sidebar listeners
-    ['prop-cx', 'prop-cz', 'prop-seed'].forEach(id => {
+    ['prop-cx', 'prop-cz'].forEach(id => {
         document.getElementById(id).onchange = e => {
             if (!selectedObject || isObjectLocked(selectedObject)) return;
             const val = parseFloat(e.target.value);
@@ -1057,20 +1056,17 @@ function setupInputs() {
                     invalidateTerrainEdit(selectedObject);
                 } else selectedObject.z = val;
             }
-            if (id === 'prop-seed') selectedObject.road.seed = val;
             scheduleRender();
         };
     });
 
-    ['prop-density', 'prop-density-range', 'prop-alt', 'prop-alt-range', 'prop-tilt', 'prop-tilt-range'].forEach(id => {
+    ['prop-alt', 'prop-alt-range', 'prop-tilt', 'prop-tilt-range'].forEach(id => {
         document.getElementById(id).oninput = e => {
             if (!selectedObject || isObjectLocked(selectedObject)) return;
             const val = parseFloat(e.target.value);
             if (!Number.isFinite(val)) return;
-            if (id.startsWith('prop-density') && !isCity(selectedObject)) return;
             if ((id.startsWith('prop-alt') || id.startsWith('prop-tilt')) && (isCity(selectedObject) || isDistrict(selectedObject) || isTerrainEdit(selectedObject))) return;
             syncControlGroup(id, val);
-            if (id.startsWith('prop-density')) selectedObject.road.density = val;
             if (id.startsWith('prop-alt')) selectedObject.y = val;
             if (id.startsWith('prop-tilt')) selectedObject.tilt = val;
             scheduleRender();
@@ -1169,7 +1165,6 @@ function updateSidebar({ full = true } = {}) {
     const selPanel = document.getElementById('selection-panel');
     const noSel = document.getElementById('no-selection');
     const badge = document.getElementById('prop-type-badge');
-    const cityProps = document.getElementById('city-only-props');
     const districtProps = document.getElementById('district-only-props');
     const terrainProps = document.getElementById('terrain-only-props');
     const vantageProps = document.getElementById('vantage-only-props');
@@ -1189,7 +1184,6 @@ function updateSidebar({ full = true } = {}) {
         const districtSelected = isDistrict(selectedObject);
         const terrainSelected = isTerrainEdit(selectedObject);
         badge.innerText = citySelected ? "CITY" : districtSelected ? "DISTRICT" : terrainSelected ? "TERRAIN" : "VANTAGE POINT";
-        cityProps.style.display = citySelected ? "block" : "none";
         districtProps.style.display = districtSelected ? "block" : "none";
         terrainProps.style.display = terrainSelected ? "block" : "none";
         vantageProps.style.display = citySelected || districtSelected || terrainSelected ? "none" : "block";
@@ -1205,12 +1199,7 @@ function updateSidebar({ full = true } = {}) {
         document.getElementById('prop-cx').value = citySelected || districtSelected ? selectedObject.center[0] : selectedObject.x;
         document.getElementById('prop-cz').value = citySelected || districtSelected ? selectedObject.center[1] : selectedObject.z;
 
-        if (citySelected) {
-            if (selectedObject.road) {
-                document.getElementById('prop-seed').value = selectedObject.road.seed;
-                setSyncedControlValue('prop-density', selectedObject.road.density);
-            }
-        } else if (districtSelected) {
+        if (districtSelected) {
             document.getElementById('prop-district-type').value = getDistrictType(selectedObject);
         } else if (terrainSelected) {
             document.getElementById('prop-terrain-kind').value = selectedObject.kind;

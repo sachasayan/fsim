@@ -4,26 +4,22 @@
  */
 
 const MAGIC = 0x46574C44;
-const VERSION = 2;
+const VERSION = 3;
 const BLDG_FLOATS = 10;
-const ROAD_FLOATS = 8;
 
 /**
- * Serializes city buildings and road segments into a binary buffer.
+ * Serializes district buildings into a binary buffer.
  * @param {Array} buildings - List of buildings.
- * @param {Array} roadSegments - List of road segments.
- * @param {Uint8Array} maskData - 2D road mask data.
- * @param {number} maskSize - Size of the square mask.
  * @returns {Buffer} Node.js Buffer containing the binary data.
  */
-export function serializeChunk(buildings, roadSegments, maskData, maskSize) {
+export function serializeChunk(buildings) {
     const headerInts = 6;
     const bldgBytes = buildings.length * BLDG_FLOATS * 4;
-    const roadBytes = roadSegments.length * ROAD_FLOATS * 4;
-    const maskBytes = maskSize * maskSize;
 
-    const maskOffset = headerInts * 4 + bldgBytes + roadBytes;
-    const byteLen = maskOffset + maskBytes;
+    // Header layout retained for backward compatibility:
+    // [magic, version, numBuildings, numRoads, maskSize, maskOffset]
+    const maskOffset = headerInts * 4 + bldgBytes;
+    const byteLen = maskOffset;
 
     const buf = new ArrayBuffer(byteLen);
     const view = new DataView(buf);
@@ -35,8 +31,8 @@ export function serializeChunk(buildings, roadSegments, maskData, maskSize) {
     wi32(MAGIC);
     wi32(VERSION);
     wi32(buildings.length);
-    wi32(roadSegments.length);
-    wi32(maskSize);
+    wi32(0);
+    wi32(0);
     wi32(maskOffset);
 
     for (const b of buildings) {
@@ -47,16 +43,6 @@ export function serializeChunk(buildings, roadSegments, maskData, maskSize) {
         wf32(b.colorIdx);
         wf32(0);
     }
-
-    for (const r of roadSegments) {
-        wf32(r.x1); wf32(r.y1); wf32(r.z1);
-        wf32(r.x2); wf32(r.y2); wf32(r.z2);
-        wf32(r.halfWidth);
-        wf32(r.classId);
-    }
-
-    const dstArray = new Uint8Array(buf, maskOffset);
-    dstArray.set(maskData);
 
     return Buffer.from(buf);
 }

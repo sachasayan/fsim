@@ -10,12 +10,6 @@
                 8000,
                 10000
             ],
-            "road": {
-                "seed": 42,
-                "blockScale": 110,
-                "arterialSpacing": 420,
-                "density": 0.82
-            },
             "districts": []
         },
         {
@@ -25,12 +19,6 @@
                 -9500,
                 -7000
             ],
-            "road": {
-                "seed": 99,
-                "blockScale": 130,
-                "arterialSpacing": 520,
-                "density": 0.65
-            },
             "districts": []
         }
     ],

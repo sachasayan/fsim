@@ -1,11 +1,11 @@
 import { getDistrictType } from '../world/MapDataUtils.js';
 
 export function isDistrict(obj) {
-    return !!obj?.center && !obj?.road && (!!obj?.district_type || !!obj?.type || Array.isArray(obj?.points));
+    return !!obj?.center && (!!obj?.district_type || !!obj?.type || Array.isArray(obj?.points));
 }
 
 export function isCity(obj) {
-    return !!obj?.center && !!obj?.road;
+    return !!obj?.center && !isDistrict(obj);
 }
 
 export function isTerrainEdit(obj) {

@@ -9,20 +9,18 @@
  *   [4]  magic  = 0x46574C44
  *   [4]  version = 2
  *   [4]  numBuildings
- *   [4]  numRoadSegments
- *   [4]  maskSize (resolution, e.g., 1024)
- *   [4]  maskOffset (byte offset where mask data begins)
+ *   [4]  numRoadSegments (legacy, ignored)
+ *   [4]  maskSize (legacy, ignored)
+ *   [4]  maskOffset (legacy, ignored)
  *   per building (10 × f32): x,y,z, w,h,d, angle, classId, colorIdx, _pad
- *   per road    ( 8 × f32): x1,y1,z1, x2,y2,z2, halfWidth, classId
- *   mask data (maskSize*maskSize bytes): uint8 alpha channel
+ *   per road    ( 8 × f32): x1,y1,z1, x2,y2,z2, halfWidth, classId (legacy, ignored)
+ *   mask data (maskSize*maskSize bytes): uint8 alpha channel (legacy, ignored)
  */
 
-import * as THREE from 'three';
 import { buildDistrictRecords } from '../MapDataUtils.js';
 
 const MAGIC = 0x46574C44;
 const BLDG_FLOATS = 10;
-const ROAD_FLOATS = 8;
 
 // Mapping classId integer → building class string (must match build-world.mjs CLASS_IDS order)
 export const CLASS_NAMES = ['supertall', 'highrise', 'office', 'apartment', 'townhouse', 'industrial'];
@@ -106,10 +104,9 @@ export async function fetchDistrictIndex() {
 
 /**
  * Loads and parses the binary chunk for a given district id.
- * Returns { buildings: Array, roadSegments: Array } or null on failure.
+ * Returns { buildings: Array } or null on failure.
  *
  * buildings:    { "cx,cz": [{ x,y,z,w,h,d,angle,classId,colorIdx }] }
- * roadSegments: [{ x1,y1,z1,x2,y2,z2,halfWidth,classId }]
  */
 export async function loadDistrictChunk(districtId) {
     if (cache.has(districtId)) return cache.get(districtId);
@@ -177,39 +174,11 @@ export async function loadDistrictChunk(districtId) {
             buildingsByChunk[key].push(b);
         }
 
-        const roadSegments = [];
+        const roadFloatBytes = 8 * 4;
         for (let i = 0; i < numRoads; i++) {
-            const x1 = rf32(), y1 = rf32(), z1 = rf32();
-            const x2 = rf32(), y2 = rf32(), z2 = rf32();
-            const halfWidth = rf32();
-            const classId = Math.round(rf32());
-            roadSegments.push({ x1, y1, z1, x2, y2, z2, halfWidth, classId });
+            off += roadFloatBytes;
         }
-
-        let roadMaskTexture = null;
-        if (version >= 2 && maskSize > 0) {
-            // Read 8-bit mask and expand to RGBA for broader WebGL compatibility.
-            const maskData = new Uint8Array(buf, maskOffset, maskSize * maskSize);
-            const rgba = new Uint8Array(maskSize * maskSize * 4);
-            for (let i = 0; i < maskData.length; i++) {
-                const v = maskData[i];
-                const j = i * 4;
-                rgba[j] = v;
-                rgba[j + 1] = v;
-                rgba[j + 2] = v;
-                rgba[j + 3] = 255;
-            }
-            roadMaskTexture = new THREE.DataTexture(rgba, maskSize, maskSize, THREE.RGBAFormat, THREE.UnsignedByteType);
-            roadMaskTexture.colorSpace = THREE.NoColorSpace; // CRITICAL: Stop sRGB gamma crush on alpha mask
-            roadMaskTexture.generateMipmaps = true;
-            roadMaskTexture.minFilter = THREE.LinearMipmapLinearFilter;
-            roadMaskTexture.magFilter = THREE.LinearFilter;
-            roadMaskTexture.wrapS = THREE.ClampToEdgeWrapping;
-            roadMaskTexture.wrapT = THREE.ClampToEdgeWrapping;
-            roadMaskTexture.needsUpdate = true;
-        }
-
-        const result = { buildings: buildingsByChunk, roadSegments, roadMaskTexture };
+        const result = { buildings: buildingsByChunk };
         cache.set(districtId, result);
         return result;
     })();

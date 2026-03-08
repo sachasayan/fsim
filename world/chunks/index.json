@@ -4,7 +4,6 @@
     "cx": 8000,
     "cz": 10100,
     "radius": 1345.362404707371,
-    "maskRadius": 1412.6305249427396,
     "district": {
       "center": [
         8000,
@@ -38,7 +37,6 @@
     "cx": -845,
     "cz": -3020.5,
     "radius": 600,
-    "maskRadius": 630,
     "district": {
       "district_type": "residential",
       "center": [
@@ -72,7 +70,6 @@
     "cx": -663,
     "cz": -1099,
     "radius": 600,
-    "maskRadius": 630,
     "district": {
       "district_type": "industrial",
       "center": [
@@ -106,7 +103,6 @@
     "cx": 6224.5,
     "cz": 9705.5,
     "radius": 1608.5435959276952,
-    "maskRadius": 1688.9707757240799,
     "district": {
       "district_type": "industrial",
       "center": [
@@ -139,7 +135,6 @@
     "cx": 958.5,
     "cz": 1326,
     "radius": 1289.1823959393798,
-    "maskRadius": 1353.641515736349,
     "district": {
       "district_type": "residential",
       "center": [
@@ -172,7 +167,6 @@
     "cx": 1879.5,
     "cz": -1399.5,
     "radius": 1856.9977113610023,
-    "maskRadius": 1949.8475969290525,
     "district": {
       "district_type": "industrial",
       "center": [

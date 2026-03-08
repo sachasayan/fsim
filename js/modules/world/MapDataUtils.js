@@ -170,26 +170,6 @@ function collectNormalizedDistricts(data) {
         });
 }
 
-function chooseRoadProfile(district, recordIndex) {
-    if (district?.road && typeof district.road === 'object') return { ...district.road };
-
-    const districtType = getDistrictType(district);
-    const defaultsByType = {
-        financial_core: { blockScale: 105, arterialSpacing: 380, density: 0.88 },
-        commercial: { blockScale: 120, arterialSpacing: 430, density: 0.78 },
-        residential: { blockScale: 150, arterialSpacing: 560, density: 0.6 },
-        industrial: { blockScale: 160, arterialSpacing: 620, density: 0.52 },
-        suburban: { blockScale: 180, arterialSpacing: 700, density: 0.42 }
-    };
-    const defaults = defaultsByType[districtType] || defaultsByType.residential;
-    return {
-        seed: 1000 + recordIndex,
-        blockScale: defaults.blockScale,
-        arterialSpacing: defaults.arterialSpacing,
-        density: defaults.density
-    };
-}
-
 function hashDistrictGeometry(district, index) {
     const type = getDistrictType(district);
     const geom = JSON.stringify((district.points || []).map(([x, z]) => [Math.round(x), Math.round(z)]));
@@ -213,7 +193,6 @@ export function buildDistrictRecords(data) {
             id,
             center,
             bounds,
-            road: chooseRoadProfile(district, index),
             districts: [{ ...district }]
         };
     });

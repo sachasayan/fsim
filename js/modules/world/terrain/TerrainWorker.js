@@ -204,19 +204,11 @@ function buildChunkProps(job) {
         const urbanScore = Math.max(0, Math.min(1, hubUrban * 0.65 + macroUrban * 0.25 + corridorUrban * 0.25));
         const district = getDistrictProfile(vx, vz, urbanScore, height);
 
-        const warpX = Noise.fractal(vx + 7000, vz - 11000, 2, 0.5, 0.0013) * 60;
-        const warpZ = Noise.fractal(vx - 9000, vz + 13000, 2, 0.5, 0.0013) * 60;
-        const roadSpacing = (90 + (1 - urbanScore) * 140) * district.roadScale;
-        const roadWidth = 4 + urbanScore * 4;
-        const roadX = Math.abs((((vx + warpX) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
-        const roadZ = Math.abs((((vz + warpZ) % roadSpacing) + roadSpacing) % roadSpacing - roadSpacing / 2);
-        const isRoad = roadX < roadWidth || roadZ < roadWidth;
-
         const parkNoise = (Noise.fractal(vx - 20000, vz + 15000, 3, 0.5, 0.0025) + 1) * 0.5;
-        const isPark = urbanScore > 0.35 && parkNoise > 0.7 && !isRoad;
+        const isPark = urbanScore > 0.35 && parkNoise > 0.7;
         const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
 
-        if (lodCfg.enableTrees && forestNoise > 0.45 && !isRoad && !isPark) {
+        if (lodCfg.enableTrees && forestNoise > 0.45 && !isPark) {
             const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise);
             const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
             if (rng < treeChance) {

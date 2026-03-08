@@ -1,7 +1,7 @@
 /**
  * build-world.mjs — Offline district layout compiler
  *
- * Reads tools/map.json, generates district road/building layouts, samples the
+ * Reads tools/map.json, generates district building layouts, samples the
  * shared TerrainUtils height function, and serialises everything into compact
  * binary chunk files under world/chunks/<districtId>/.
  *
@@ -12,9 +12,7 @@
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { PNG } from 'pngjs';
 import { Noise } from '../js/modules/noise.js';
-import { generateRoadMask } from './lib/WorldBuilderRaster.mjs';
 import { serializeChunk } from './lib/WorldBuilderSerial.mjs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
@@ -78,6 +76,17 @@ function hash2(x, z, seed = 0) {
     return n - Math.floor(n);
 }
 
+function getDistrictSeed(city) {
+    const [cx = 0, cz = 0] = city?.center || [0, 0];
+    let h = 2166136261;
+    const input = `${city?.id || 'district'}|${Math.round(cx)}|${Math.round(cz)}`;
+    for (let i = 0; i < input.length; i++) {
+        h ^= input.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) % 100000;
+}
+
 function getDistrictType(district) {
     return district?.district_type || district?.type || 'residential';
 }
@@ -110,6 +119,25 @@ function getCityBounds(city) {
         return { minX: cx - 600, maxX: cx + 600, minZ: cz - 600, maxZ: cz + 600 };
     }
     return { minX, maxX, minZ, maxZ };
+}
+
+function buildDistrictBlocks(city, blockSize = 260) {
+    const { minX, maxX, minZ, maxZ } = getCityBounds(city);
+    const blocks = [];
+    for (let x = minX; x < maxX; x += blockSize) {
+        for (let z = minZ; z < maxZ; z += blockSize) {
+            const cx = x + blockSize * 0.5;
+            const cz = z + blockSize * 0.5;
+            if (distToCityFootprint(cx, cz, city) > 260) continue;
+            blocks.push([
+                [x, z],
+                [Math.min(x + blockSize, maxX), z],
+                [Math.min(x + blockSize, maxX), Math.min(z + blockSize, maxZ)],
+                [x, Math.min(z + blockSize, maxZ)]
+            ]);
+        }
+    }
+    return blocks;
 }
 
 function getCityRadius(city) {
@@ -248,7 +276,7 @@ function generateCityGrid(city) {
     const cz = city.center[1];
     const radius = getCityRadius(city);
     const bounds = getCityBounds(city);
-    const seed = city.road.seed;
+    const seed = getDistrictSeed(city);
     const rng = seededRand(seed * 9999 + cx * 293 + cz);
     const blockSize = 130; // 130m standard block size
     const steps = Math.ceil(radius / blockSize) + 1;
@@ -548,9 +576,9 @@ function getUrbanIntensity(x, z, city) {
 // Building placement — populate city blocks with buildings
 function placeBuildingsInCity(city, roads, blocks) {
     const buildings = []; // {x, y, z, w, h, d, angle, classId, colorIdx}
-    const { center, road: roadCfg } = city;
+    const { center } = city;
     const radius = getCityRadius(city);
-    const rng = seededRand(roadCfg.seed * 31337);
+    const rng = seededRand(getDistrictSeed(city) * 31337);
 
     // PASS 1: Standard Grid Infilling
     for (const block of blocks) {
@@ -650,9 +678,11 @@ function placeBuildingsInCity(city, roads, blocks) {
                     const roadVisualRadius = refSeg ? refSeg.halfWidth * visualRoadScale : 0;
                     const pull = Math.max(0, Math.sqrt(bestRoadDist) - (frontageOffset + roadVisualRadius));
                     const actualPull = Math.min(pull * 0.8, 45.0);
-                    const angleToRoad = Math.atan2((refSeg.z1 + refSeg.z2) / 2 - lz, (refSeg.x1 + refSeg.x2) / 2 - lx);
-                    lx += Math.cos(angleToRoad) * actualPull;
-                    lz += Math.sin(angleToRoad) * actualPull;
+                    if (refSeg) {
+                        const angleToRoad = Math.atan2((refSeg.z1 + refSeg.z2) / 2 - lz, (refSeg.x1 + refSeg.x2) / 2 - lx);
+                        lx += Math.cos(angleToRoad) * actualPull;
+                        lz += Math.sin(angleToRoad) * actualPull;
+                    }
                 }
 
                 const groundY = getTerrainHeight(lx, lz);
@@ -717,7 +747,7 @@ function placeBuildingsInCity(city, roads, blocks) {
 function placeBuildingsInIndustrialQuads(city, roads, quads) {
     const buildings = [];
     const roadBuffer = 18;
-    const rng = seededRand(city.road.seed * 71437 + 17);
+    const rng = seededRand(getDistrictSeed(city) * 71437 + 17);
     const classId = CLASS_IDS.indexOf('industrial');
     const palette = DISTRICT_PALETTES.industrial;
 
@@ -803,10 +833,6 @@ function buildRoadSegments(nodes, edges, city) {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// 2D Road Mask Rasterization moved to WorldBuilderRaster.mjs
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 const mapData = normalizeMapData(JSON.parse(readFileSync(MAP_PATH, 'utf8')));
@@ -825,6 +851,7 @@ for (const entry of readdirSync(OUT_DIR, { withFileTypes: true })) {
 
     rmSync(path.join(entryPath, 'city.bin'), { force: true });
     rmSync(path.join(entryPath, 'city.json'), { force: true });
+    rmSync(path.join(entryPath, 'mask.png'), { force: true });
 }
 
 for (const city of districtRecords) {
@@ -832,46 +859,27 @@ for (const city of districtRecords) {
     mkdirSync(outDir, { recursive: true });
 
     const districtType = getDistrictType(city.districts?.[0]);
-    let roadSegments;
     let buildings;
 
     if (districtType === 'industrial') {
-        console.log(`  [${city.id}] Generating industrial quad subdivision road network…`);
+        console.log(`  [${city.id}] Generating industrial district blocks…`);
         const industrialQuads = buildIndustrialQuadSubdivisions(city, 400_000);
-        roadSegments = buildRoadSegmentsFromIndustrialQuads(industrialQuads);
-        console.log(`  [${city.id}]   → ${industrialQuads.length} quads, ${roadSegments.length} road edges`);
+        console.log(`  [${city.id}]   → ${industrialQuads.length} blocks`);
         console.log(`  [${city.id}] Filling industrial quads with buildings…`);
-        buildings = placeBuildingsInIndustrialQuads(city, roadSegments, industrialQuads);
+        buildings = placeBuildingsInIndustrialQuads(city, [], industrialQuads);
     } else {
-        console.log(`  [${city.id}] Generating Organic Grid road network…`);
-        const { nodes, edges, blocks } = generateCityGrid(city);
-        roadSegments = buildRoadSegments(nodes, edges, city);
-        console.log(`  [${city.id}]   → ${nodes.length} nodes, ${edges.length} road edges, ${blocks.length} blocks`);
-        console.log(`  [${city.id}] Placing buildings via Block Parsing…`);
-        buildings = placeBuildingsInCity(city, roadSegments, blocks);
+        console.log(`  [${city.id}] Generating district blocks…`);
+        const blocks = buildDistrictBlocks(city);
+        console.log(`  [${city.id}]   → ${blocks.length} blocks`);
+        console.log(`  [${city.id}] Placing buildings…`);
+        buildings = placeBuildingsInCity(city, [], blocks);
     }
 
     console.log(`  [${city.id}]   → ${buildings.length} buildings`);
 
-    console.log(`  [${city.id}] Rasterizing road mask texture…`);
-    const maskSize = 1024;
-    const mask = generateRoadMask(city, roadSegments, getUrbanIntensity, maskSize);
-
-    // Save PNG for debug
-    const png = new PNG({ width: maskSize, height: maskSize });
-    for (let i = 0; i < mask.data.length; i++) {
-        // Map 1-channel data to RGBA
-        const val = mask.data[i];
-        png.data[i * 4] = val;     // R
-        png.data[i * 4 + 1] = val; // G
-        png.data[i * 4 + 2] = val; // B
-        png.data[i * 4 + 3] = 255; // A
-    }
-    writeFileSync(path.join(outDir, 'mask.png'), PNG.sync.write(png));
-
-    // Write single binary chunk for the whole city (now includes mask)
+    // Write single binary chunk for the whole district
     const binPath = path.join(outDir, 'district.bin');
-    const binData = serializeChunk(buildings, roadSegments, mask.data, maskSize);
+    const binData = serializeChunk(buildings);
     writeFileSync(binPath, binData);
     console.log(`  [${city.id}]   → wrote ${(Buffer.byteLength(binData) / 1024).toFixed(1)} KB to ${path.relative(ROOT, binPath)}`);
 
@@ -881,11 +889,8 @@ for (const city of districtRecords) {
         id: city.id,
         center: city.center,
         radius: getCityRadius(city),
-        maskRadius: mask.worldRadius, // Tell runtime what map scale is
         numBuildings: buildings.length,
-        numRoadSegments: roadSegments.length,
-        buildings,
-        roadSegments
+        buildings
     }, null, 2));
     console.log(`  [${city.id}]   → wrote debug JSON to ${path.relative(ROOT, jsonPath)}\n`);
 }
@@ -896,7 +901,6 @@ const districtIndex = districtRecords.map(c => ({
     cx: c.center[0],
     cz: c.center[1],
     radius: getCityRadius(c),
-    maskRadius: getCityRadius(c) * 1.05,
     district: c.districts?.[0] || null,
 }));
 writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(districtIndex, null, 2));

@@ -217,16 +217,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     scene.remove(chunkGroup);
     const lod = chunkGroup.userData.lod;
     if (lod !== undefined && chunkPools[lod]) {
-      // Handle city material cleanup
-      if (chunkGroup.userData.hasCityMaterial) {
-        const terrainMesh = chunkGroup.children[0];
-        if (terrainMesh && terrainMesh.material) {
-          terrainMesh.material.dispose();
-          terrainMesh.material = (lod === 0) ? terrainMaterial : terrainFarMaterial;
-        }
-        chunkGroup.userData.hasCityMaterial = false;
-      }
-
       while (chunkGroup.children.length > 2) {
         const child = chunkGroup.children.pop();
         if (child.isInstancedMesh) {
@@ -496,7 +486,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
       const overlapping = await getOverlappingDistricts(cx, cz);
       const matching = overlapping.filter(district => !cityId || district.id === cityId);
       if (matching.length > 0) {
-        // Clear building/road meshes (keep terrain/water at index 0,1)
+        // Clear spawned prop meshes (keep terrain/water at index 0,1)
         while (state.group.children.length > 2) {
           const child = state.group.children.pop();
           if (child.isInstancedMesh) {
@@ -505,7 +495,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
             // Actually, terrain.js uses a pool. Let's just remove them.
           }
         }
-        state.hasCityMaterial = false;
 
         const { loadDistrictChunk } = await import('./terrain/CityChunkLoader.js');
         const loadedDistricts = await Promise.all(matching.map(district => loadDistrictChunk(district.id)));
@@ -513,18 +502,6 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
           if (!loadedData) return;
           spawnCityBuildingsForChunk(state.group, cx, cz, loadedData, state.lod, ctx, CHUNK_SIZE);
         });
-
-        const maskDistrictIndex = loadedDistricts.findIndex(loadedData => loadedData?.roadMaskTexture);
-        if (maskDistrictIndex !== -1) {
-          const loadedData = loadedDistricts[maskDistrictIndex];
-          const overlappingDistrict = matching[maskDistrictIndex];
-          const cityTerrainMat = state.lod === 0 ? terrainMaterial.clone() : terrainFarMaterial.clone();
-          loadedData.center = [overlappingDistrict.cx, overlappingDistrict.cz];
-          loadedData.maskRadius = overlappingDistrict.maskRadius;
-          setupTerrainMaterial(cityTerrainMat, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, state.lod !== 0, loadedData);
-          state.group.children[0].material = cityTerrainMat;
-          state.hasCityMaterial = true;
-        }
       }
     }
   }

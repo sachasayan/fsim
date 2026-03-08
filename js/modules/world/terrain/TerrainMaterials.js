@@ -395,12 +395,6 @@ export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphere
         shader.uniforms.uTerrainFoliageNearEnd = terrainDetailUniforms.uTerrainFoliageNearEnd;
         shader.uniforms.uTerrainFoliageStrength = terrainDetailUniforms.uTerrainFoliageStrength;
 
-        if (cityData && cityData.roadMaskTexture) {
-            shader.uniforms.uRoadMaskTex = { value: cityData.roadMaskTexture };
-            shader.uniforms.uCityCenter = { value: new THREE.Vector2(cityData.center[0], cityData.center[1]) };
-            shader.uniforms.uCityMaskRadius = { value: cityData.maskRadius };
-        }
-
         shader.vertexShader = replaceInclude(shader.vertexShader, 'common', `#include <common>
     varying vec3 vTerrainWorldPos;
         varying vec3 vTerrainWorldNormal;
@@ -484,8 +478,7 @@ ${ShaderLibrary.terrain_city_pavement_fragment}
         );
 
         if (isFarLOD) shader.fragmentShader = '#define IS_FAR_LOD\n' + shader.fragmentShader;
-        if (cityData && cityData.roadMaskTexture) shader.fragmentShader = '#define HAS_CITY_MASK\n' + shader.fragmentShader;
     };
-    const fragId = (isFarLOD ? 'far' : 'near') + (cityData ? `-city-${cityData.id}` : '');
+    const fragId = isFarLOD ? 'far' : 'near';
     material.customProgramCacheKey = () => `terrain-detail-v5-${fragId}`;
 }

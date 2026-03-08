@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { fetchDistrictIndex, loadDistrictChunk } from './CityChunkLoader.js';
 import { QuadtreeMapSampler, hash2Local } from './TerrainUtils.js';
-import { setupTerrainMaterial } from './TerrainMaterials.js';
 import { spawnCityBuildingsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
 import { debugLog } from '../../core/logging.js';
@@ -204,41 +203,6 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 if (!districtData) return;
                 spawnCityBuildingsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
             });
-
-            const chunkWX = cx * CHUNK_SIZE;
-            const chunkWZ = cz * CHUNK_SIZE;
-            const chunkKey = `${cx},${cz}`;
-            let maskDistrictIndex = -1;
-            let bestBuildingCount = -1;
-            let bestMaskDistSq = Infinity;
-            for (let i = 0; i < loadedDistricts.length; i++) {
-                const districtData = loadedDistricts[i];
-                if (!districtData?.roadMaskTexture) continue;
-                const districtRecord = overlappingDistricts[i];
-                if (!districtRecord) continue;
-                const buildingCount = districtData.buildings?.[chunkKey]?.length || 0;
-                const dx = districtRecord.cx - chunkWX;
-                const dz = districtRecord.cz - chunkWZ;
-                const distSq = dx * dx + dz * dz;
-                if (
-                    buildingCount > bestBuildingCount ||
-                    (buildingCount === bestBuildingCount && distSq < bestMaskDistSq)
-                ) {
-                    bestBuildingCount = buildingCount;
-                    bestMaskDistSq = distSq;
-                    maskDistrictIndex = i;
-                }
-            }
-            if (maskDistrictIndex !== -1 && !chunkGroup.userData.hasCityMaterial) {
-                const maskSource = loadedDistricts[maskDistrictIndex];
-                const districtRecord = overlappingDistricts[maskDistrictIndex];
-                const cityTerrainMat = lod === 0 ? ctx.terrainMaterial.clone() : ctx.terrainFarMaterial.clone();
-                maskSource.center = [districtRecord.cx, districtRecord.cz];
-                maskSource.maskRadius = districtRecord.maskRadius;
-                setupTerrainMaterial(cityTerrainMat, ctx.terrainDetailUniforms, ctx.atmosphereUniforms, ctx.timeUniform, lod !== 0, maskSource);
-                chunkGroup.children[0].material = cityTerrainMat;
-                chunkGroup.userData.hasCityMaterial = true;
-            }
 
             // Render trees
             for (const [treeType, matrices] of Object.entries(treeMatrices)) {

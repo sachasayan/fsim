@@ -10,7 +10,6 @@ export const TOOL_SHORTCUTS = {
 };
 
 export const CONTROL_GROUPS = [
-    { ids: ['prop-density', 'prop-density-range'], valueId: 'prop-density-value' },
     { ids: ['prop-terrain-radius', 'prop-terrain-radius-range'], valueId: 'prop-terrain-radius-value' },
     { ids: ['prop-terrain-delta', 'prop-terrain-delta-range'], valueId: 'prop-terrain-delta-value' },
     { ids: ['prop-terrain-target', 'prop-terrain-target-range'], valueId: 'prop-terrain-target-value' },
