@@ -9,6 +9,7 @@ export function createInputHandler({ keys, PHYSICS, cameraController }) {
         }
 
         if (key === 'c' && cameraController) cameraController.cycleMode();
+        if (!e.repeat && cameraController) cameraController.recenterBehindAircraft();
         if (key === 'g') {
             const gui = document.querySelector('.lil-gui');
             if (gui) {

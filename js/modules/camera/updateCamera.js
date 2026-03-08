@@ -13,6 +13,7 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
   let camRotY = 0;
   let targetCamRotX = 0;
   let targetCamRotY = 0;
+  let shouldRubberBandToTarget = false;
   const axisX = new THREE.Vector3(1, 0, 0);
   const axisY = new THREE.Vector3(0, 1, 0);
   const forward = new THREE.Vector3();
@@ -50,6 +51,9 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
 
   function cycleMode() {
     cameraMode = (cameraMode + 1) % 3;
+    if (cameraMode === 0) {
+      shouldRubberBandToTarget = true;
+    }
   }
 
   function getMode() {
@@ -60,11 +64,17 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     forward.set(0, 0, -1).applyQuaternion(planeGroup.quaternion);
     up.set(0, 1, 0).applyQuaternion(planeGroup.quaternion);
 
-    if (!isDragging) {
+    if (!isDragging && shouldRubberBandToTarget) {
       // 0.05 was the original hardcoded value per frame at ~60fps
       const rotLerpFactor = 1.0 - Math.pow(1.0 - 0.05, dt * 60.0);
       camRotX += (targetCamRotX - camRotX) * rotLerpFactor;
       camRotY += (targetCamRotY - camRotY) * rotLerpFactor;
+
+      if (Math.abs(targetCamRotX - camRotX) < 0.001 && Math.abs(targetCamRotY - camRotY) < 0.001) {
+        camRotX = targetCamRotX;
+        camRotY = targetCamRotY;
+        shouldRubberBandToTarget = false;
+      }
     }
     // ... rest of the logic ...
 
@@ -176,11 +186,18 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
     camRotY = y;
     targetCamRotX = x;
     targetCamRotY = y;
+    shouldRubberBandToTarget = false;
+  }
+
+  function recenterBehindAircraft() {
+    targetCamRotX = 0;
+    targetCamRotY = 0;
+    shouldRubberBandToTarget = true;
   }
 
   function setDistance(d) {
     cameraParams.distance = d;
   }
 
-  return { cycleMode, getMode, updateCamera, snapToTarget, setRotation, setDistance };
+  return { cycleMode, getMode, updateCamera, snapToTarget, setRotation, setDistance, recenterBehindAircraft };
 }
