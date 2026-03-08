@@ -7,6 +7,8 @@ import { DISTRICT_TYPES, getDistrictType, getDistrictsForCity, normalizeMapData 
 const canvas = document.getElementById('map-canvas');
 const ctx = canvas.getContext('2d');
 const coordsDiv = document.getElementById('coords');
+const canvasContainer = document.getElementById('canvas-container');
+const layersGroupsDiv = document.getElementById('layers-groups');
 
 // State
 let worldData = null;
@@ -22,6 +24,32 @@ let isPaintingTerrain = false;
 let terrainBrush = { radius: 300, strength: 40 };
 let activeTerrainStroke = null;
 let hoverWorldPos = null;
+let hoverObject = null;
+let activePointerId = null;
+let _sidebarLivePending = false;
+let _layersRenderPending = false;
+let vantageEntries = [];
+
+const objectUidByRef = new WeakMap();
+let nextObjectUid = 1;
+const layerState = {
+    groupVisibility: new Map(),
+    groupLocked: new Map(),
+    collapsed: new Map(),
+    itemVisibility: new Map(),
+    itemLocked: new Map()
+};
+
+const TOOL_SHORTCUTS = {
+    v: 'select',
+    h: 'pan',
+    c: 'add-city',
+    d: 'add-district',
+    e: 'edit-poly',
+    r: 'terrain-raise',
+    l: 'terrain-lower',
+    f: 'terrain-flatten'
+};
 
 let _rafPending = false;
 const CONTROL_GROUPS = [
@@ -43,6 +71,94 @@ function scheduleRender() {
     if (!_rafPending) {
         _rafPending = true;
         requestAnimationFrame(() => { _rafPending = false; render(); });
+    }
+}
+
+function scheduleSidebarLiveUpdate() {
+    if (_sidebarLivePending) return;
+    _sidebarLivePending = true;
+    requestAnimationFrame(() => {
+        _sidebarLivePending = false;
+        updateSidebarLiveFields();
+    });
+}
+
+function scheduleLayersPanelRender() {
+    if (_layersRenderPending) return;
+    _layersRenderPending = true;
+    requestAnimationFrame(() => {
+        _layersRenderPending = false;
+        renderLayersPanel();
+    });
+}
+
+function getObjectUid(obj) {
+    if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return 'none';
+    if (!objectUidByRef.has(obj)) objectUidByRef.set(obj, nextObjectUid++);
+    return String(objectUidByRef.get(obj));
+}
+
+function getLayerGroupId(obj) {
+    if (isCity(obj)) return 'cities';
+    if (isDistrict(obj)) return 'districts';
+    if (isTerrainEdit(obj)) return 'terrain';
+    return 'vantage';
+}
+
+function getLayerKey(obj) {
+    return `${getLayerGroupId(obj)}:${getObjectUid(obj)}`;
+}
+
+function isGroupVisible(groupId) {
+    return layerState.groupVisibility.get(groupId) !== false;
+}
+
+function isGroupLocked(groupId) {
+    return layerState.groupLocked.get(groupId) === true;
+}
+
+function isObjectVisible(obj) {
+    const groupId = getLayerGroupId(obj);
+    if (!isGroupVisible(groupId)) return false;
+    return layerState.itemVisibility.get(getLayerKey(obj)) !== false;
+}
+
+function isObjectLocked(obj) {
+    const groupId = getLayerGroupId(obj);
+    if (isGroupLocked(groupId)) return true;
+    return layerState.itemLocked.get(getLayerKey(obj)) === true;
+}
+
+function objectLabel(obj, index = 0, fallback = 'Item') {
+    if (isCity(obj)) return obj.id || `City ${index + 1}`;
+    if (isDistrict(obj)) {
+        const cityRef = obj.city_id ? ` @${obj.city_id}` : '';
+        return `${getDistrictType(obj)}${cityRef}`;
+    }
+    if (isTerrainEdit(obj)) return `${obj.kind} #${index + 1}`;
+    return fallback;
+}
+
+function rebuildVantageEntries() {
+    vantageEntries = [];
+    if (!vantageData) return;
+    const entries = Object.entries(vantageData);
+    for (let i = 0; i < entries.length; i++) {
+        const [id, vp] = entries[i];
+        vantageEntries.push({ id, obj: vp });
+    }
+}
+
+function setSelection(nextSelection) {
+    selectedObject = nextSelection;
+    updateSidebar();
+    scheduleRender();
+}
+
+function clearSelectionIfUnavailable() {
+    if (!selectedObject) return;
+    if (!isObjectVisible(selectedObject) || isObjectLocked(selectedObject)) {
+        selectedObject = null;
     }
 }
 
@@ -112,6 +228,7 @@ async function init() {
         worldData = await worldResp.json();
         vantageData = await vantageResp.json();
         normalizeMapData(worldData);
+        rebuildVantageEntries();
 
         if (worldBinResp.ok) {
             const buf = await worldBinResp.arrayBuffer();
@@ -125,6 +242,8 @@ async function init() {
 
     render();
     setupInputs();
+    setCanvasToolClass();
+    renderLayersPanel();
     setupHotReload();
 }
 
@@ -386,6 +505,109 @@ function createPolygonDistrict(center, districtType = 'commercial') {
     };
 }
 
+function getLayerGroupsData() {
+    const cities = (worldData?.cities || []).map((city, index) => ({ obj: city, label: objectLabel(city, index, 'City') }));
+    const districts = (worldData?.districts || []).map((district, index) => ({ obj: district, label: objectLabel(district, index, 'District') }));
+    const terrain = (worldData?.terrainEdits || []).map((edit, index) => ({ obj: edit, label: objectLabel(edit, index, 'Terrain Edit') }));
+    const vantage = vantageEntries.map((entry, index) => ({ obj: entry.obj, label: objectLabel(entry.obj, index, entry.id), id: entry.id }));
+
+    return [
+        { id: 'cities', label: 'Cities', items: cities },
+        { id: 'districts', label: 'Districts', items: districts },
+        { id: 'terrain', label: 'Terrain Edits', items: terrain },
+        { id: 'vantage', label: 'Vantage Points', items: vantage }
+    ];
+}
+
+function setCanvasToolClass() {
+    canvasContainer.classList.remove(
+        'tool-select',
+        'tool-pan',
+        'tool-edit-poly',
+        'tool-add-city',
+        'tool-add-district',
+        'tool-terrain-raise',
+        'tool-terrain-lower',
+        'tool-terrain-flatten',
+        'dragging'
+    );
+    canvasContainer.classList.add(`tool-${currentTool}`);
+    if (isPanning) canvasContainer.classList.add('dragging');
+}
+
+function updateSidebarLiveFields() {
+    if (!selectedObject) return;
+    const coordX = document.getElementById('prop-cx');
+    const coordZ = document.getElementById('prop-cz');
+    const terrainPoints = document.getElementById('prop-terrain-points');
+    if (coordX && coordZ) {
+        coordX.value = isCity(selectedObject) || isDistrict(selectedObject) ? selectedObject.center[0] : selectedObject.x;
+        coordZ.value = isCity(selectedObject) || isDistrict(selectedObject) ? selectedObject.center[1] : selectedObject.z;
+    }
+    if (terrainPoints && isTerrainEdit(selectedObject)) {
+        terrainPoints.value = String(Array.isArray(selectedObject.points) ? selectedObject.points.length : 0);
+    }
+}
+
+function renderLayersPanel() {
+    if (!layersGroupsDiv) return;
+    const groups = getLayerGroupsData();
+    const html = groups.map(group => {
+        const collapsed = layerState.collapsed.get(group.id) === true;
+        const visible = isGroupVisible(group.id);
+        const locked = isGroupLocked(group.id);
+        const body = collapsed ? '' : `
+            <div class="layers-items">
+                ${group.items.map(item => {
+                    const itemKey = getLayerKey(item.obj);
+                    const itemVisible = isObjectVisible(item.obj);
+                    const itemLocked = isObjectLocked(item.obj);
+                    const selected = selectedObject === item.obj;
+                    return `
+                        <div class="layer-item ${selected ? 'selected' : ''}">
+                            <button class="layer-toggle" type="button" data-layer-item-visible="${itemKey}" title="${itemVisible ? 'Hide layer' : 'Show layer'}">${itemVisible ? 'V' : 'H'}</button>
+                            <button class="layer-toggle" type="button" data-layer-item-lock="${itemKey}" title="${itemLocked ? 'Unlock layer' : 'Lock layer'}">${itemLocked ? 'L' : 'U'}</button>
+                            <button class="layer-item-select" type="button" data-layer-select="${itemKey}"><span class="layer-item-name">${item.label}</span></button>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+        return `
+            <div class="layers-group">
+                <div class="layers-group-header">
+                    <button class="layer-toggle chevron" type="button" data-layer-group-toggle="${group.id}" title="Toggle group">${collapsed ? '+' : '-'}</button>
+                    <button class="layer-group-name" type="button" data-layer-group-toggle="${group.id}">${group.label}</button>
+                    <span class="layer-count">${group.items.length}</span>
+                    <span style="display:flex; gap:6px;">
+                        <button class="layer-toggle" type="button" data-layer-group-visible="${group.id}" title="${visible ? 'Hide group' : 'Show group'}">${visible ? 'V' : 'H'}</button>
+                        <button class="layer-toggle" type="button" data-layer-group-lock="${group.id}" title="${locked ? 'Unlock group' : 'Lock group'}">${locked ? 'L' : 'U'}</button>
+                    </span>
+                </div>
+                ${body}
+            </div>
+        `;
+    }).join('');
+    layersGroupsDiv.innerHTML = html;
+}
+
+function getObjectByLayerKey(layerKey) {
+    const [groupId, uid] = String(layerKey).split(':');
+    const groups = getLayerGroupsData();
+    for (let i = 0; i < groups.length; i++) {
+        if (groups[i].id !== groupId) continue;
+        const items = groups[i].items;
+        for (let j = 0; j < items.length; j++) {
+            if (getObjectUid(items[j].obj) === uid) return items[j].obj;
+        }
+    }
+    return null;
+}
+
+function canInteractWithObject(obj) {
+    return !!obj && isObjectVisible(obj) && !isObjectLocked(obj);
+}
+
 function setupHotReload() {
     const es = new EventSource('/events');
     es.addEventListener('reload-city', async () => {
@@ -405,7 +627,9 @@ function setupHotReload() {
                 normalizeMapData(worldData);
             }
             tileManager.clearCache();
+            clearSelectionIfUnavailable();
             updateSidebar();
+            renderLayersPanel();
             scheduleRender();
             console.log("✨ Terrain refreshed!");
         } catch (e) {
@@ -437,85 +661,118 @@ function screenToWorld(sx, sy) {
 
 function render() {
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const width = canvas.width;
+    const height = canvas.height;
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    const zoom = camera.zoom;
+    const minX = camera.x - halfWidth / zoom;
+    const maxX = camera.x + halfWidth / zoom;
+    const minZ = camera.z - halfHeight / zoom;
+    const maxZ = camera.z + halfHeight / zoom;
+    const offscreenPadPx = 24;
 
-    // 1. Draw Terrain using Tile System (with hillshading)
-    tileManager.draw(ctx, camera.x, camera.z, camera.zoom, canvas.width, canvas.height);
+    const toScreen = (wx, wz) => ({
+        x: halfWidth + (wx - camera.x) * zoom,
+        y: halfHeight + (wz - camera.z) * zoom
+    });
+    const isWorldPointNearViewport = (wx, wz, padMeters = 0) =>
+        wx >= minX - padMeters && wx <= maxX + padMeters && wz >= minZ - padMeters && wz <= maxZ + padMeters;
+    const isScreenPointVisible = (sx, sy, padPx = offscreenPadPx) =>
+        sx >= -padPx && sx <= width + padPx && sy >= -padPx && sy <= height + padPx;
 
-    // 2. Draw Grid
+    ctx.clearRect(0, 0, width, height);
+    tileManager.draw(ctx, camera.x, camera.z, zoom, width, height);
+
     ctx.strokeStyle = COLORS.grid;
     ctx.lineWidth = 1;
-    const gridSpacing = 1000; // 1km
-    const start = screenToWorld(0, 0);
-    const end = screenToWorld(canvas.width, canvas.height);
-
+    const gridSpacing = 1000;
     ctx.beginPath();
-    for (let gx = Math.floor(start.x / gridSpacing) * gridSpacing; gx <= end.x; gx += gridSpacing) {
-        const sx = worldToScreen(gx, 0).x;
-        ctx.moveTo(sx, 0); ctx.lineTo(sx, canvas.height);
+    for (let gx = Math.floor(minX / gridSpacing) * gridSpacing; gx <= maxX; gx += gridSpacing) {
+        const sx = halfWidth + (gx - camera.x) * zoom;
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, height);
     }
-    for (let gz = Math.floor(start.z / gridSpacing) * gridSpacing; gz <= end.z; gz += gridSpacing) {
-        const sy = worldToScreen(0, gz).y;
-        ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy);
+    for (let gz = Math.floor(minZ / gridSpacing) * gridSpacing; gz <= maxZ; gz += gridSpacing) {
+        const sy = halfHeight + (gz - camera.z) * zoom;
+        ctx.moveTo(0, sy);
+        ctx.lineTo(width, sy);
     }
     ctx.stroke();
 
     if (!worldData) return;
 
-    // 3. Draw Runway (Fixed at 0,0 for now in fsim)
-    const rwPos = worldToScreen(0, 0);
+    const rwPos = toScreen(0, 0);
     ctx.save();
     ctx.translate(rwPos.x, rwPos.y);
     ctx.fillStyle = COLORS.runway;
-    const rwW = 100 * camera.zoom;
-    const rwL = 4000 * camera.zoom;
+    const rwW = 100 * zoom;
+    const rwL = 4000 * zoom;
     ctx.fillRect(-rwW / 2, -rwL / 2, rwW, rwL);
     ctx.restore();
 
-    // 4. Draw Cities
-    worldData.districts.forEach(d => {
+    const districts = worldData.districts || [];
+    for (let i = 0; i < districts.length; i++) {
+        const d = districts[i];
+        if (!isObjectVisible(d)) continue;
+        if (!isWorldPointNearViewport(d.center[0], d.center[1], (d.radius || 700))) continue;
+        const isSelected = selectedObject === d;
+        const isHovered = hoverObject === d && !isSelected;
+        const fillStyle = isSelected ? COLORS.districtSelected : isHovered ? 'rgba(255, 255, 140, 0.35)' : COLORS.district;
         if (d.points && d.points.length > 0) {
             ctx.beginPath();
-            const startPos = worldToScreen(d.points[0][0], d.points[0][1]);
+            const startPos = toScreen(d.points[0][0], d.points[0][1]);
             ctx.moveTo(startPos.x, startPos.y);
-            for (let i = 1; i < d.points.length; i++) {
-                const p = worldToScreen(d.points[i][0], d.points[i][1]);
-                ctx.lineTo(p.x, p.y);
+            for (let p = 1; p < d.points.length; p++) {
+                const pointPos = toScreen(d.points[p][0], d.points[p][1]);
+                ctx.lineTo(pointPos.x, pointPos.y);
             }
             ctx.closePath();
-            ctx.fillStyle = (selectedObject === d) ? COLORS.districtSelected : COLORS.district;
+            ctx.fillStyle = fillStyle;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.strokeStyle = isSelected ? '#fff' : isHovered ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)';
+            ctx.lineWidth = isSelected ? 2.2 : 1;
             ctx.stroke();
 
-            if (selectedObject === d && currentTool === 'edit-poly') {
-                d.points.forEach((p, i) => {
-                    const vp = worldToScreen(p[0], p[1]);
-                    ctx.fillStyle = (draggedVertex && draggedVertex.object === d && draggedVertex.index === i) ? '#fff' : COLORS.accent;
+            if (isSelected && currentTool === 'edit-poly') {
+                for (let p = 0; p < d.points.length; p++) {
+                    const vp = toScreen(d.points[p][0], d.points[p][1]);
+                    if (!isScreenPointVisible(vp.x, vp.y)) continue;
+                    ctx.fillStyle = (draggedVertex && draggedVertex.object === d && draggedVertex.index === p) ? '#fff' : COLORS.accent;
                     ctx.beginPath();
-                    ctx.arc(vp.x, vp.y, 5, 0, Math.PI * 2);
+                    ctx.arc(vp.x, vp.y, 6, 0, Math.PI * 2);
                     ctx.fill();
+                    ctx.strokeStyle = '#021018';
+                    ctx.lineWidth = 1.2;
                     ctx.stroke();
-                });
+                }
             }
         } else {
-            const dPos = worldToScreen(d.center[0], d.center[1]);
-            const dRad = d.radius * camera.zoom;
+            const dPos = toScreen(d.center[0], d.center[1]);
+            const dRad = d.radius * zoom;
+            if (!isScreenPointVisible(dPos.x, dPos.y, dRad + offscreenPadPx)) continue;
             ctx.beginPath();
             ctx.arc(dPos.x, dPos.y, dRad, 0, Math.PI * 2);
-            ctx.fillStyle = (selectedObject === d) ? COLORS.districtSelected : COLORS.district;
+            ctx.fillStyle = fillStyle;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = isSelected ? 1.8 : 1;
             ctx.stroke();
         }
-    });
+    }
 
-    worldData.cities.forEach(city => {
-        const pos = worldToScreen(city.center[0], city.center[1]);
-
-        const markerSize = selectedObject === city ? 9 : 6;
-        ctx.strokeStyle = (selectedObject === city) ? COLORS.citySelected : COLORS.city;
-        ctx.lineWidth = 2;
+    const cities = worldData.cities || [];
+    for (let i = 0; i < cities.length; i++) {
+        const city = cities[i];
+        if (!isObjectVisible(city)) continue;
+        if (!isWorldPointNearViewport(city.center[0], city.center[1], 1200)) continue;
+        const pos = toScreen(city.center[0], city.center[1]);
+        if (!isScreenPointVisible(pos.x, pos.y, 36)) continue;
+        const isSelected = selectedObject === city;
+        const isHovered = hoverObject === city && !isSelected;
+        const markerSize = isSelected ? 10 : isHovered ? 8 : 6;
+        ctx.strokeStyle = isSelected ? COLORS.citySelected : isHovered ? '#c9f2ff' : COLORS.city;
+        ctx.lineWidth = isSelected ? 2.4 : 2;
         ctx.beginPath();
         ctx.moveTo(pos.x - markerSize, pos.y);
         ctx.lineTo(pos.x + markerSize, pos.y);
@@ -524,86 +781,98 @@ function render() {
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = (selectedObject === city) ? COLORS.citySelected : COLORS.city;
+        ctx.arc(pos.x, pos.y, isSelected ? 4 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = isSelected ? COLORS.citySelected : isHovered ? '#c9f2ff' : COLORS.city;
         ctx.fill();
 
-        ctx.fillStyle = '#fff';
-        ctx.font = '12px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(city.id, pos.x, pos.y - 18);
-    });
+        if (isScreenPointVisible(pos.x, pos.y - 18, 40)) {
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Outfit';
+            ctx.textAlign = 'center';
+            ctx.fillText(city.id, pos.x, pos.y - 18);
+        }
+    }
 
-    worldData.terrainEdits.forEach(edit => {
+    const terrainEdits = worldData.terrainEdits || [];
+    for (let i = 0; i < terrainEdits.length; i++) {
+        const edit = terrainEdits[i];
+        if (!isObjectVisible(edit)) continue;
+        const bounds = getTerrainEditBounds(edit);
+        if (bounds.maxX < minX || bounds.minX > maxX || bounds.maxZ < minZ || bounds.minZ > maxZ) continue;
+        const isSelected = selectedObject === edit;
+        const isHovered = hoverObject === edit && !isSelected;
         const fillStyle = edit.kind === 'lower'
             ? 'rgba(255, 89, 94, 0.12)'
             : edit.kind === 'flatten'
                 ? 'rgba(255, 173, 51, 0.12)'
                 : 'rgba(56, 189, 248, 0.12)';
-        const strokeStyle = selectedObject === edit ? '#fff' : (edit.kind === 'lower' ? '#ff595e' : edit.kind === 'flatten' ? '#ffad33' : '#38bdf8');
+        const baseStroke = edit.kind === 'lower' ? '#ff595e' : edit.kind === 'flatten' ? '#ffad33' : '#38bdf8';
+        const strokeStyle = isSelected ? '#fff' : isHovered ? '#cff5ff' : baseStroke;
         const points = Array.isArray(edit.points) ? edit.points : null;
 
         if (points?.length > 1) {
             ctx.beginPath();
-            points.forEach(([x, z], index) => {
-                const pos = worldToScreen(x, z);
-                if (index === 0) ctx.moveTo(pos.x, pos.y);
+            for (let p = 0; p < points.length; p++) {
+                const pos = toScreen(points[p][0], points[p][1]);
+                if (p === 0) ctx.moveTo(pos.x, pos.y);
                 else ctx.lineTo(pos.x, pos.y);
-            });
+            }
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.lineWidth = edit.radius * camera.zoom * 2;
+            ctx.lineWidth = edit.radius * zoom * 2;
             ctx.strokeStyle = fillStyle;
             ctx.stroke();
 
             ctx.beginPath();
-            points.forEach(([x, z], index) => {
-                const pos = worldToScreen(x, z);
-                if (index === 0) ctx.moveTo(pos.x, pos.y);
+            for (let p = 0; p < points.length; p++) {
+                const pos = toScreen(points[p][0], points[p][1]);
+                if (p === 0) ctx.moveTo(pos.x, pos.y);
                 else ctx.lineTo(pos.x, pos.y);
-            });
-            ctx.lineWidth = Math.max(2, Math.min(6, edit.radius * camera.zoom * 0.18));
+            }
+            ctx.lineWidth = isSelected ? 3 : Math.max(2, Math.min(6, edit.radius * zoom * 0.18));
             ctx.strokeStyle = strokeStyle;
             ctx.stroke();
             ctx.lineCap = 'butt';
             ctx.lineJoin = 'miter';
 
-            if (selectedObject === edit && currentTool === 'edit-poly') {
-                edit.points.forEach((point, index) => {
-                    const vp = worldToScreen(point[0], point[1]);
-                    ctx.fillStyle = (draggedVertex && draggedVertex.object === edit && draggedVertex.index === index) ? '#fff' : strokeStyle;
+            if (isSelected && currentTool === 'edit-poly') {
+                for (let p = 0; p < points.length; p++) {
+                    const vp = toScreen(points[p][0], points[p][1]);
+                    if (!isScreenPointVisible(vp.x, vp.y)) continue;
+                    ctx.fillStyle = (draggedVertex && draggedVertex.object === edit && draggedVertex.index === p) ? '#fff' : strokeStyle;
                     ctx.beginPath();
-                    ctx.arc(vp.x, vp.y, 5, 0, Math.PI * 2);
+                    ctx.arc(vp.x, vp.y, 6, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.strokeStyle = '#08111f';
                     ctx.lineWidth = 1.5;
                     ctx.stroke();
-                });
+                }
             }
-            return;
+            continue;
         }
 
         const [px, pz] = points?.[0] || [edit.x, edit.z];
-        const pos = worldToScreen(px, pz);
-        const radius = edit.radius * camera.zoom;
+        const pos = toScreen(px, pz);
+        const radius = edit.radius * zoom;
+        if (!isScreenPointVisible(pos.x, pos.y, radius + offscreenPadPx)) continue;
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = fillStyle;
         ctx.fill();
         ctx.strokeStyle = strokeStyle;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = isSelected ? 2.2 : 1;
         ctx.stroke();
-    });
+    }
 
     if (hoverWorldPos && currentTool.startsWith('terrain-') && !isPaintingTerrain) {
-        const pos = worldToScreen(hoverWorldPos.x, hoverWorldPos.z);
+        const pos = toScreen(hoverWorldPos.x, hoverWorldPos.z);
         const previewColor = currentTool === 'terrain-lower'
             ? 'rgba(255, 89, 94, 0.85)'
             : currentTool === 'terrain-flatten'
                 ? 'rgba(255, 173, 51, 0.85)'
                 : 'rgba(56, 189, 248, 0.85)';
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, terrainBrush.radius * camera.zoom, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, terrainBrush.radius * zoom, 0, Math.PI * 2);
         ctx.fillStyle = previewColor.replace('0.85', '0.14');
         ctx.fill();
         ctx.strokeStyle = previewColor;
@@ -621,34 +890,86 @@ function render() {
         ctx.stroke();
     }
 
-    // 5. Draw Vantage Points
-    if (vantageData) {
-        Object.entries(vantageData).forEach(([id, vp]) => {
-            const pos = worldToScreen(vp.x, vp.z);
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
-            ctx.fillStyle = (selectedObject === vp) ? COLORS.vantageSelected : COLORS.vantage;
-            ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.stroke();
+    for (let i = 0; i < vantageEntries.length; i++) {
+        const { id, obj: vp } = vantageEntries[i];
+        if (!isObjectVisible(vp)) continue;
+        if (!isWorldPointNearViewport(vp.x, vp.z, 1500)) continue;
+        const pos = toScreen(vp.x, vp.z);
+        if (!isScreenPointVisible(pos.x, pos.y, 40)) continue;
+        const isSelected = selectedObject === vp;
+        const isHovered = hoverObject === vp && !isSelected;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, isSelected ? 9 : 8, 0, Math.PI * 2);
+        ctx.fillStyle = isSelected ? COLORS.vantageSelected : isHovered ? '#d4ffc0' : COLORS.vantage;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.stroke();
 
-            ctx.fillStyle = '#fff';
-            ctx.font = '10px Inter';
-            ctx.textAlign = 'center';
-            ctx.fillText(id, pos.x, pos.y + 20);
-        });
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px Outfit';
+        ctx.textAlign = 'center';
+        ctx.fillText(id, pos.x, pos.y + 20);
     }
+}
+
+function getCanvasPointFromEvent(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        inside: event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
+    };
+}
+
+function findObjectAtWorldPos(worldPos, { allowLocked = false } = {}) {
+    if (!worldData) return null;
+
+    const districts = worldData.districts || [];
+    for (let i = districts.length - 1; i >= 0; i--) {
+        const district = districts[i];
+        if (!isObjectVisible(district)) continue;
+        if (!allowLocked && isObjectLocked(district)) continue;
+        if (districtContainsPoint(district, worldPos.x, worldPos.z)) return district;
+    }
+
+    const cities = worldData.cities || [];
+    for (let i = cities.length - 1; i >= 0; i--) {
+        const city = cities[i];
+        if (!isObjectVisible(city)) continue;
+        if (!allowLocked && isObjectLocked(city)) continue;
+        const dist = Math.hypot(worldPos.x - city.center[0], worldPos.z - city.center[1]);
+        if (dist < 250 / camera.zoom) return city;
+    }
+
+    const terrainEdits = worldData.terrainEdits || [];
+    for (let i = terrainEdits.length - 1; i >= 0; i--) {
+        const edit = terrainEdits[i];
+        if (!isObjectVisible(edit)) continue;
+        if (!allowLocked && isObjectLocked(edit)) continue;
+        if (terrainEditContainsPoint(edit, worldPos.x, worldPos.z)) return edit;
+    }
+
+    for (let i = vantageEntries.length - 1; i >= 0; i--) {
+        const vp = vantageEntries[i].obj;
+        if (!isObjectVisible(vp)) continue;
+        if (!allowLocked && isObjectLocked(vp)) continue;
+        const dist = Math.hypot(worldPos.x - vp.x, worldPos.z - vp.z);
+        if (dist < 500) return vp;
+    }
+
+    return null;
 }
 
 
 function setupInputs() {
     canvas.addEventListener('contextmenu', e => {
         e.preventDefault();
-        const worldPos = screenToWorld(e.offsetX, e.offsetY);
-        if (currentTool === 'edit-poly' && selectedObject && selectedObject.points) {
-            // Right-click to delete vertex
+        if (!selectedObject || !selectedObject.points || currentTool !== 'edit-poly' || isObjectLocked(selectedObject)) return;
+        const point = getCanvasPointFromEvent(e);
+        const worldPos = screenToWorld(point.x, point.y);
+        if (selectedObject && selectedObject.points) {
             const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, 100 / camera.zoom);
-
             if (hitVertex !== -1) {
                 if (isTerrainStroke(selectedObject)) {
                     removeTerrainStrokePoint(selectedObject, hitVertex);
@@ -662,8 +983,10 @@ function setupInputs() {
     });
 
     canvas.addEventListener('dblclick', e => {
-        const worldPos = screenToWorld(e.offsetX, e.offsetY);
-        if (currentTool === 'edit-poly' && selectedObject && selectedObject.points) {
+        if (!selectedObject || !selectedObject.points || currentTool !== 'edit-poly' || isObjectLocked(selectedObject)) return;
+        const point = getCanvasPointFromEvent(e);
+        const worldPos = screenToWorld(point.x, point.y);
+        if (selectedObject && selectedObject.points) {
             if (isTerrainStroke(selectedObject)) {
                 const insertIndex = getClosestTerrainSegmentIndex(selectedObject, worldPos, Math.max(80, selectedObject.radius) / camera.zoom);
                 if (insertIndex !== -1) {
@@ -682,19 +1005,22 @@ function setupInputs() {
         }
     });
 
-    canvas.addEventListener('mousedown', e => {
-        const worldPos = screenToWorld(e.offsetX, e.offsetY);
+    canvas.addEventListener('pointerdown', e => {
+        const point = getCanvasPointFromEvent(e);
+        if (!point.inside) return;
+        const worldPos = screenToWorld(point.x, point.y);
+        activePointerId = e.pointerId;
+        canvas.setPointerCapture(e.pointerId);
 
         if (e.button === 1 || currentTool === 'pan') {
             isPanning = true;
-            lastMouse = { x: e.offsetX, y: e.offsetY };
+            lastMouse = { x: point.x, y: point.y };
+            setCanvasToolClass();
             return;
         }
 
-        if (currentTool === 'edit-poly' && selectedObject && selectedObject.points) {
-            // Check vertex hits
+        if (currentTool === 'edit-poly' && selectedObject && selectedObject.points && !isObjectLocked(selectedObject)) {
             const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, 100 / camera.zoom);
-
             if (hitVertex !== -1) {
                 draggedVertex = { object: selectedObject, index: hitVertex };
                 return;
@@ -704,9 +1030,7 @@ function setupInputs() {
         if (currentTool.startsWith('terrain-')) {
             isPaintingTerrain = true;
             activeTerrainStroke = createTerrainStroke(worldPos);
-            selectedObject = activeTerrainStroke;
-            updateSidebar();
-            scheduleRender();
+            setSelection(activeTerrainStroke);
             return;
         }
 
@@ -721,10 +1045,8 @@ function setupInputs() {
             const district = createPolygonDistrict(center);
             district.city_id = newCity.id;
             worldData.districts.push(district);
-            selectedObject = newCity;
-            updateSidebar();
+            setSelection(newCity);
             setTool('select');
-            scheduleRender();
             return;
         }
 
@@ -734,59 +1056,39 @@ function setupInputs() {
             const parentCity = findCityForDistrictPlacement();
             if (parentCity) newDistrict.city_id = parentCity.id;
             worldData.districts.push(newDistrict);
-            selectedObject = newDistrict;
-            updateSidebar();
+            setSelection(newDistrict);
             setTool('edit-poly');
-            scheduleRender();
             return;
         }
 
-        // Selection logic
-        let found = null;
-        if (worldData) {
-            // Check districts first (z-order)
-            worldData.districts.forEach(d => {
-                if (districtContainsPoint(d, worldPos.x, worldPos.z)) found = d;
-            });
-            // Check cities
-            if (!found) {
-                worldData.cities.forEach(city => {
-                    const dist = Math.hypot(worldPos.x - city.center[0], worldPos.z - city.center[1]);
-                    if (dist < 250 / camera.zoom) found = city;
-                });
-            }
-            if (!found) {
-                worldData.terrainEdits.forEach(edit => {
-                    if (terrainEditContainsPoint(edit, worldPos.x, worldPos.z)) found = edit;
-                });
-            }
-            // Check vantage points
-            if (!found && vantageData) {
-                Object.values(vantageData).forEach(vp => {
-                    const dist = Math.hypot(worldPos.x - vp.x, worldPos.z - vp.z);
-                    if (dist < 500) found = vp; // larger hit area for icons
-                });
-            }
-        }
-
-        selectedObject = found;
-        updateSidebar();
-        if (selectedObject && !isTerrainEdit(selectedObject)) isDragging = true;
-        scheduleRender();
+        const found = findObjectAtWorldPos(worldPos);
+        setSelection(found);
+        if (found && !isTerrainEdit(found) && !isObjectLocked(found)) isDragging = true;
     });
 
-    window.addEventListener('mousemove', e => {
-        const worldPos = screenToWorld(e.offsetX, e.offsetY);
-        hoverWorldPos = worldPos;
-        coordsDiv.innerText = `X: ${Math.round(worldPos.x)}, Z: ${Math.round(worldPos.z)}`;
+    window.addEventListener('pointermove', e => {
+        const point = getCanvasPointFromEvent(e);
+        const worldPos = screenToWorld(point.x, point.y);
+        hoverWorldPos = point.inside ? worldPos : null;
+        if (!isPanning && !isDragging && !draggedVertex && !isPaintingTerrain) {
+            const nextHoverObject = point.inside ? findObjectAtWorldPos(worldPos, { allowLocked: true }) : null;
+            if (hoverObject !== nextHoverObject) {
+                hoverObject = nextHoverObject;
+                scheduleRender();
+            }
+        }
+        if (point.inside) {
+            coordsDiv.innerText = `X: ${Math.round(worldPos.x)}, Z: ${Math.round(worldPos.z)}`;
+        }
 
         if (isPanning) {
-            const dx = e.offsetX - lastMouse.x;
-            const dy = e.offsetY - lastMouse.y;
+            const dx = point.x - lastMouse.x;
+            const dy = point.y - lastMouse.y;
             camera.x -= dx / camera.zoom;
             camera.z -= dy / camera.zoom;
-            lastMouse = { x: e.offsetX, y: e.offsetY };
+            lastMouse = { x: point.x, y: point.y };
             scheduleRender();
+            return;
         }
 
         if (draggedVertex) {
@@ -798,7 +1100,7 @@ function setupInputs() {
                 d.points[idx][0] = Math.round(worldPos.x);
                 d.points[idx][1] = Math.round(worldPos.z);
             }
-            updateSidebar();
+            scheduleSidebarLiveUpdate();
             scheduleRender();
             return;
         }
@@ -806,7 +1108,7 @@ function setupInputs() {
         if (isPaintingTerrain) {
             if (activeTerrainStroke && appendTerrainStrokePoint(activeTerrainStroke, worldPos)) {
                 selectedObject = activeTerrainStroke;
-                updateSidebar();
+                scheduleSidebarLiveUpdate();
                 scheduleRender();
             }
             return;
@@ -837,36 +1139,112 @@ function setupInputs() {
                 selectedObject.x = Math.round(worldPos.x);
                 selectedObject.z = Math.round(worldPos.z);
             }
-            updateSidebar();
+            scheduleSidebarLiveUpdate();
             scheduleRender();
         }
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('pointerup', e => {
+        if (activePointerId !== null && e.pointerId === activePointerId) {
+            if (canvas.hasPointerCapture(e.pointerId)) {
+                canvas.releasePointerCapture(e.pointerId);
+            }
+            activePointerId = null;
+        }
         isPanning = false;
         isDragging = false;
         draggedVertex = null;
         isPaintingTerrain = false;
         activeTerrainStroke = null;
+        setCanvasToolClass();
+    });
+
+    window.addEventListener('pointercancel', () => {
+        activePointerId = null;
+        isPanning = false;
+        isDragging = false;
+        draggedVertex = null;
+        isPaintingTerrain = false;
+        activeTerrainStroke = null;
+        setCanvasToolClass();
     });
 
     canvas.addEventListener('mouseleave', () => {
         hoverWorldPos = null;
+        hoverObject = null;
         scheduleRender();
     });
 
     canvas.addEventListener('wheel', e => {
         e.preventDefault();
-        const mouseWorldBefore = screenToWorld(e.offsetX, e.offsetY);
+        const point = getCanvasPointFromEvent(e);
+        const mouseWorldBefore = screenToWorld(point.x, point.y);
         const zoomSpeed = 1.1;
         if (e.deltaY < 0) camera.zoom *= zoomSpeed;
         else camera.zoom /= zoomSpeed;
         camera.zoom = Math.max(0.001, Math.min(1.0, camera.zoom));
-
-        const mouseWorldAfter = screenToWorld(e.offsetX, e.offsetY);
+        const mouseWorldAfter = screenToWorld(point.x, point.y);
         camera.x -= (mouseWorldAfter.x - mouseWorldBefore.x);
         camera.z -= (mouseWorldAfter.z - mouseWorldBefore.z);
         scheduleRender();
+    }, { passive: false });
+
+    layersGroupsDiv?.addEventListener('click', e => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const groupToggle = target.closest('[data-layer-group-toggle]')?.getAttribute('data-layer-group-toggle');
+        if (groupToggle) {
+            layerState.collapsed.set(groupToggle, !(layerState.collapsed.get(groupToggle) === true));
+            scheduleLayersPanelRender();
+            return;
+        }
+        const groupVisible = target.closest('[data-layer-group-visible]')?.getAttribute('data-layer-group-visible');
+        if (groupVisible) {
+            layerState.groupVisibility.set(groupVisible, !isGroupVisible(groupVisible));
+            clearSelectionIfUnavailable();
+            updateSidebar();
+            scheduleLayersPanelRender();
+            scheduleRender();
+            return;
+        }
+        const groupLock = target.closest('[data-layer-group-lock]')?.getAttribute('data-layer-group-lock');
+        if (groupLock) {
+            layerState.groupLocked.set(groupLock, !isGroupLocked(groupLock));
+            clearSelectionIfUnavailable();
+            updateSidebar();
+            scheduleLayersPanelRender();
+            scheduleRender();
+            return;
+        }
+        const itemVisible = target.closest('[data-layer-item-visible]')?.getAttribute('data-layer-item-visible');
+        if (itemVisible) {
+            const obj = getObjectByLayerKey(itemVisible);
+            if (obj) {
+                layerState.itemVisibility.set(itemVisible, !isObjectVisible(obj));
+                clearSelectionIfUnavailable();
+                updateSidebar();
+                scheduleLayersPanelRender();
+                scheduleRender();
+            }
+            return;
+        }
+        const itemLock = target.closest('[data-layer-item-lock]')?.getAttribute('data-layer-item-lock');
+        if (itemLock) {
+            const obj = getObjectByLayerKey(itemLock);
+            if (obj) {
+                layerState.itemLocked.set(itemLock, !isObjectLocked(obj));
+                clearSelectionIfUnavailable();
+                updateSidebar();
+                scheduleLayersPanelRender();
+                scheduleRender();
+            }
+            return;
+        }
+        const itemSelect = target.closest('[data-layer-select]')?.getAttribute('data-layer-select');
+        if (itemSelect) {
+            const obj = getObjectByLayerKey(itemSelect);
+            if (obj && canInteractWithObject(obj)) setSelection(obj);
+        }
     });
 
     // Toolbar
@@ -878,11 +1256,19 @@ function setupInputs() {
     document.getElementById('tool-terrain-lower').onclick = () => setTool('terrain-lower');
     document.getElementById('tool-terrain-flatten').onclick = () => setTool('terrain-flatten');
     document.getElementById('tool-pan').onclick = () => setTool('pan');
+    window.addEventListener('keydown', e => {
+        const activeTag = document.activeElement?.tagName || '';
+        if (activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+        const tool = TOOL_SHORTCUTS[e.key.toLowerCase()];
+        if (!tool) return;
+        e.preventDefault();
+        setTool(tool);
+    });
 
     // Sidebar listeners
     ['prop-cx', 'prop-cz', 'prop-seed'].forEach(id => {
         document.getElementById(id).onchange = e => {
-            if (!selectedObject) return;
+            if (!selectedObject || isObjectLocked(selectedObject)) return;
             const val = parseFloat(e.target.value);
             if (id === 'prop-cx') {
                 if (isDistrict(selectedObject)) translateDistrict(selectedObject, val - selectedObject.center[0], 0);
@@ -919,7 +1305,7 @@ function setupInputs() {
 
     ['prop-density', 'prop-density-range', 'prop-alt', 'prop-alt-range', 'prop-tilt', 'prop-tilt-range'].forEach(id => {
         document.getElementById(id).oninput = e => {
-            if (!selectedObject) return;
+            if (!selectedObject || isObjectLocked(selectedObject)) return;
             const val = parseFloat(e.target.value);
             if (!Number.isFinite(val)) return;
             if (id.startsWith('prop-density') && !isCity(selectedObject)) return;
@@ -933,14 +1319,14 @@ function setupInputs() {
     });
 
     document.getElementById('prop-district-type').onchange = e => {
-        if (!isDistrict(selectedObject)) return;
+        if (!isDistrict(selectedObject) || isObjectLocked(selectedObject)) return;
         selectedObject.district_type = DISTRICT_TYPES.includes(e.target.value) ? e.target.value : 'residential';
         scheduleRender();
     };
 
     ['prop-terrain-radius', 'prop-terrain-radius-range', 'prop-terrain-delta', 'prop-terrain-delta-range', 'prop-terrain-target', 'prop-terrain-target-range', 'prop-terrain-opacity', 'prop-terrain-opacity-range'].forEach(id => {
         document.getElementById(id).oninput = e => {
-            if (!isTerrainEdit(selectedObject)) return;
+            if (!isTerrainEdit(selectedObject) || isObjectLocked(selectedObject)) return;
             const val = parseFloat(e.target.value);
             if (!Number.isFinite(val)) return;
             syncControlGroup(id, val);
@@ -952,7 +1338,7 @@ function setupInputs() {
             if (id.startsWith('prop-terrain-opacity')) selectedObject.opacity = val;
             refreshTerrainEditGeometry(selectedObject);
             invalidateTerrainEdit(selectedObject);
-            updateSidebar();
+            scheduleSidebarLiveUpdate();
             scheduleRender();
         };
     });
@@ -971,6 +1357,7 @@ function setupInputs() {
     document.getElementById('jump-sim-btn').onclick = jumpToSim;
 
     CONTROL_GROUPS.forEach(group => syncControlGroup(group.ids[0], document.getElementById(group.ids[0])?.value ?? ''));
+    renderLayersPanel();
 }
 
 function jumpToSim() {
@@ -980,7 +1367,7 @@ function jumpToSim() {
 }
 
 function deleteObject() {
-    if (!selectedObject) return;
+    if (!selectedObject || isObjectLocked(selectedObject)) return;
     const label = selectedObject.id || (isDistrict(selectedObject) ? getDistrictType(selectedObject) : isTerrainEdit(selectedObject) ? selectedObject.kind : 'selection');
     if (confirm(`Delete ${label}?`)) {
         const cityIdx = worldData.cities.indexOf(selectedObject);
@@ -1000,6 +1387,7 @@ function deleteObject() {
         }
         selectedObject = null;
         updateSidebar();
+        renderLayersPanel();
         scheduleRender();
     }
 }
@@ -1008,11 +1396,17 @@ function setTool(tool) {
     currentTool = tool;
     document.querySelectorAll('.toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
     document.getElementById('tool-' + tool).classList.add('active');
+    setCanvasToolClass();
     updateSidebar();
     scheduleRender();
 }
 
-function updateSidebar() {
+function updateSidebar({ full = true } = {}) {
+    if (!full) {
+        updateSidebarLiveFields();
+        return;
+    }
+    clearSelectionIfUnavailable();
     const selPanel = document.getElementById('selection-panel');
     const noSel = document.getElementById('no-selection');
     const badge = document.getElementById('prop-type-badge');
@@ -1041,8 +1435,12 @@ function updateSidebar() {
         terrainProps.style.display = terrainSelected ? "block" : "none";
         vantageProps.style.display = citySelected || districtSelected || terrainSelected ? "none" : "block";
         const terrainStrokeSelected = terrainSelected && Array.isArray(selectedObject.points) && selectedObject.points.length > 0;
-        coordX.readOnly = terrainStrokeSelected;
-        coordZ.readOnly = terrainStrokeSelected;
+        const isLocked = isObjectLocked(selectedObject);
+        coordX.readOnly = terrainStrokeSelected || isLocked;
+        coordZ.readOnly = terrainStrokeSelected || isLocked;
+        badge.style.background = isLocked ? 'rgba(239, 68, 68, 0.2)' : 'rgba(56, 189, 248, 0.15)';
+        badge.style.color = isLocked ? '#ff9da0' : 'var(--accent)';
+        badge.style.borderColor = isLocked ? 'rgba(239,68,68,0.35)' : 'rgba(56, 189, 248, 0.2)';
 
         document.getElementById('prop-id').value = selectedObject.id || (districtSelected ? getDistrictType(selectedObject) : terrainSelected ? selectedObject.kind : "Vantage Point");
         document.getElementById('prop-cx').value = citySelected || districtSelected ? selectedObject.center[0] : selectedObject.x;
@@ -1081,8 +1479,12 @@ function updateSidebar() {
         coordX.readOnly = false;
         coordZ.readOnly = false;
         terrainPoints.value = '';
+        badge.style.background = 'rgba(56, 189, 248, 0.15)';
+        badge.style.color = 'var(--accent)';
+        badge.style.borderColor = 'rgba(56, 189, 248, 0.2)';
         terrainHint.innerHTML = 'Use <strong>Edit Poly</strong> to drag stroke points, double-click the stroke to add one, and right-click a point to remove it.';
     }
+    scheduleLayersPanelRender();
 }
 
 async function save() {

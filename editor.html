@@ -46,8 +46,35 @@
         #canvas-container {
             flex-grow: 1;
             position: relative;
-            cursor: crosshair;
+            cursor: default;
             background: radial-gradient(circle at center, #111827 0%, #030712 100%);
+        }
+
+        #canvas-container.tool-select {
+            cursor: default;
+        }
+
+        #canvas-container.tool-pan {
+            cursor: grab;
+        }
+
+        #canvas-container.tool-pan.dragging {
+            cursor: grabbing;
+        }
+
+        #canvas-container.tool-edit-poly {
+            cursor: cell;
+        }
+
+        #canvas-container.tool-add-city,
+        #canvas-container.tool-add-district {
+            cursor: copy;
+        }
+
+        #canvas-container.tool-terrain-raise,
+        #canvas-container.tool-terrain-lower,
+        #canvas-container.tool-terrain-flatten {
+            cursor: crosshair;
         }
 
         canvas {
@@ -65,6 +92,7 @@
             gap: 28px;
             z-index: 10;
             box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+            overflow-y: auto;
         }
 
         .toolbar {
@@ -72,27 +100,28 @@
             top: 24px;
             left: 24px;
             display: flex;
-            gap: 8px;
+            gap: 6px;
+            flex-wrap: wrap;
             background: var(--panel);
             padding: 6px;
             border-radius: 16px;
             backdrop-filter: blur(20px) saturate(150%);
             border: 1px solid var(--border);
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            max-width: min(88vw, 560px);
         }
 
         .tool-btn {
             background: transparent;
             border: 1px solid transparent;
             color: var(--text-dim);
-            padding: 10px 18px;
+            padding: 8px 10px;
             border-radius: 12px;
             cursor: pointer;
             font-weight: 600;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-size: 10px;
+            letter-spacing: 0.06em;
         }
 
         .tool-btn:hover {
@@ -105,6 +134,31 @@
             background: var(--accent);
             color: #000;
             box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .tool-btn.tool-icon {
+            min-width: 58px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            line-height: 1;
+        }
+
+        .tool-btn.tool-icon svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .tool-btn.tool-icon .tool-label {
+            font-size: 9px;
+            text-transform: uppercase;
         }
 
         h2 {
@@ -135,6 +189,101 @@
             display: flex;
             flex-direction: column;
             gap: 16px;
+        }
+
+        #layers-panel {
+            max-height: 32vh;
+            overflow-y: auto;
+        }
+
+        .layers-group {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(5, 10, 20, 0.35);
+        }
+
+        .layers-group-header {
+            width: 100%;
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text);
+            padding: 9px 10px;
+            font-size: 11px;
+        }
+
+        .layers-group-header .chevron {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-strong);
+            opacity: 0.8;
+        }
+
+        .layer-count {
+            color: var(--text-dim);
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .layer-toggle {
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.35);
+            color: var(--text-dim);
+            width: 24px;
+            height: 24px;
+            border-radius: 7px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .layer-toggle:hover {
+            color: var(--text);
+            border-color: rgba(125, 211, 252, 0.35);
+        }
+
+        .layers-items {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .layer-item {
+            display: grid;
+            grid-template-columns: auto auto minmax(0, 1fr);
+            align-items: center;
+            gap: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 8px 10px;
+        }
+
+        .layer-item:hover,
+        .layer-item.selected {
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        .layer-group-name,
+        .layer-item-select {
+            border: 0;
+            background: transparent;
+            color: var(--text);
+            font-size: 11px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .layer-item-name {
+            font-size: 11px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-dim);
+        }
+
+        .layer-item.selected .layer-item-name,
+        .layer-item-select:hover .layer-item-name {
+            color: var(--text);
         }
 
         .property-group {
@@ -362,6 +511,17 @@
         #selection-panel {
             animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        @media (max-width: 1080px) {
+            #sidebar {
+                width: 320px;
+                padding: 20px 16px;
+            }
+
+            .toolbar {
+                max-width: min(92vw, 480px);
+            }
+        }
     </style>
 </head>
 
@@ -370,19 +530,48 @@
         <div id="canvas-container">
             <canvas id="map-canvas"></canvas>
             <div class="toolbar">
-                <button class="tool-btn active" id="tool-select">Select</button>
-                <button class="tool-btn" id="tool-add-city">Add City</button>
-                <button class="tool-btn" id="tool-add-district">Add District</button>
-                <button class="tool-btn" id="tool-edit-poly">Edit Poly</button>
-                <button class="tool-btn" id="tool-terrain-raise">Raise</button>
-                <button class="tool-btn" id="tool-terrain-lower">Lower</button>
-                <button class="tool-btn" id="tool-terrain-flatten">Flatten</button>
-                <button class="tool-btn" id="tool-pan">Pan</button>
+                <button class="tool-btn tool-icon active" id="tool-select" aria-label="Select (V)" title="Select (V)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18l5-6 4 6 5-2-4-6 6-4z"></path></svg>
+                    <span class="tool-label">Select</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-add-city" aria-label="Add City (C)" title="Add City (C)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l4 2V7l4 2V5l4 2v13z"></path><path d="M14 14h6"></path><path d="M17 11v6"></path></svg>
+                    <span class="tool-label">City</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-add-district" aria-label="Add District (D)" title="Add District (D)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"></path><path d="M12 10v4"></path><path d="M10 12h4"></path></svg>
+                    <span class="tool-label">District</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-edit-poly" aria-label="Edit Polygon (E)" title="Edit Polygon (E)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6l7-3 7 4v9l-7 5-7-4z"></path><circle cx="5" cy="6" r="1.7"></circle><circle cx="12" cy="3" r="1.7"></circle><circle cx="19" cy="7" r="1.7"></circle></svg>
+                    <span class="tool-label">Edit</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-terrain-raise" aria-label="Terrain Raise (R)" title="Terrain Raise (R)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16"></path><path d="M12 6v8"></path><path d="M9 9l3-3 3 3"></path></svg>
+                    <span class="tool-label">Raise</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-terrain-lower" aria-label="Terrain Lower (L)" title="Terrain Lower (L)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16"></path><path d="M12 6v8"></path><path d="M9 11l3 3 3-3"></path></svg>
+                    <span class="tool-label">Lower</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-terrain-flatten" aria-label="Terrain Flatten (F)" title="Terrain Flatten (F)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16h16"></path><path d="M4 11h16"></path><path d="M4 8h16"></path></svg>
+                    <span class="tool-label">Flatten</span>
+                </button>
+                <button class="tool-btn tool-icon" id="tool-pan" aria-label="Pan (H)" title="Pan (H)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M8 7l4-4 4 4"></path><path d="M8 17l4 4 4-4"></path><path d="M7 8L3 12l4 4"></path><path d="M17 8l4 4-4 4"></path></svg>
+                    <span class="tool-label">Pan</span>
+                </button>
             </div>
             <div id="coords">X: 0, Z: 0</div>
         </div>
         <div id="sidebar">
             <h2>WORLD EDITOR <span class="status-badge">v1.0</span></h2>
+
+            <div class="property-panel" id="layers-panel">
+                <div class="section-title">Layers</div>
+                <div id="layers-groups"></div>
+            </div>
 
             <div id="selection-panel" style="display: none;">
                 <div class="section-title">Selection Properties <span id="prop-type-badge"

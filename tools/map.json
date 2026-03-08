@@ -32,21 +32,6 @@
                 "density": 0.65
             },
             "districts": []
-        },
-        {
-            "id": "city_c",
-            "_comment": "A suburban sprawl settlement to the west",
-            "center": [
-                -18000,
-                3000
-            ],
-            "road": {
-                "seed": 7,
-                "blockScale": 160,
-                "arterialSpacing": 600,
-                "density": 0.5
-            },
-            "districts": []
         }
     ],
     "districts": [
@@ -76,86 +61,6 @@
             ],
             "city_id": "city_a",
             "district_type": "financial_core"
-        },
-        {
-            "center": [
-                -9500,
-                -7000
-            ],
-            "radius": 800,
-            "city_id": "city_b",
-            "district_type": "commercial",
-            "points": null
-        },
-        {
-            "center": [
-                -8400,
-                -7600
-            ],
-            "radius": 1200,
-            "city_id": "city_b",
-            "district_type": "industrial",
-            "points": null
-        },
-        {
-            "center": [
-                -10400,
-                -6400
-            ],
-            "radius": 1300,
-            "city_id": "city_b",
-            "district_type": "residential",
-            "points": null
-        },
-        {
-            "center": [
-                -11000,
-                -7800
-            ],
-            "radius": 1500,
-            "city_id": "city_b",
-            "district_type": "suburban",
-            "points": null
-        },
-        {
-            "center": [
-                -18000,
-                3000
-            ],
-            "radius": 700,
-            "city_id": "city_c",
-            "district_type": "commercial",
-            "points": null
-        },
-        {
-            "center": [
-                -17200,
-                4000
-            ],
-            "radius": 1400,
-            "city_id": "city_c",
-            "district_type": "residential",
-            "points": null
-        },
-        {
-            "center": [
-                -18800,
-                2000
-            ],
-            "radius": 2200,
-            "city_id": "city_c",
-            "district_type": "suburban",
-            "points": null
-        },
-        {
-            "center": [
-                -19200,
-                4500
-            ],
-            "radius": 900,
-            "city_id": "city_c",
-            "district_type": "industrial",
-            "points": null
         },
         {
             "district_type": "residential",
