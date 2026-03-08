@@ -320,73 +320,41 @@ test('solveStabilityTorques – roll rate contributes yaw coupling', () => {
     assert.notEqual(withRollRateYaw, noRollYaw, 'Roll rate should contribute to yaw coupling');
 });
 
-test('solveStabilityTorques – rudder no longer injects direct yaw control torque', () => {
-    const rudderNeutralCtx = makeCtx({
-        airspeed: 120,
+test('solveStabilityTorques – ground rudder authority is suppressed at taxi speed', () => {
+    const lowTaxiCtx = makeCtx({
+        airspeed: 12,
         aileron: 0,
         elevator: 0,
-        rudder: 0,
+        rudder: 1.0,
         aoa: 0,
         slip: 0,
-        onGround: false
+        onGround: true
     });
-    const rudderInputCtx = makeCtx({
-        airspeed: 120,
+    const higherSpeedCtx = makeCtx({
+        airspeed: 90,
         aileron: 0,
         elevator: 0,
-        rudder: 1,
+        rudder: 1.0,
         aoa: 0,
         slip: 0,
-        onGround: false
+        onGround: true
     });
 
-    const neutralYaw = solveStabilityTorques(
-        rudderNeutralCtx,
-        new THREE.Vector3(0, 0, -120),
+    const lowTaxiYaw = solveStabilityTorques(
+        lowTaxiCtx,
+        new THREE.Vector3(0, 0, -12),
         new THREE.Vector3(0, 0, 0),
-        1.0
+        0.28
     ).y;
-    const rudderYaw = solveStabilityTorques(
-        rudderInputCtx,
-        new THREE.Vector3(0, 0, -120),
+    const higherSpeedYaw = solveStabilityTorques(
+        higherSpeedCtx,
+        new THREE.Vector3(0, 0, -90),
         new THREE.Vector3(0, 0, 0),
-        1.0
+        1.1
     ).y;
 
-    assert.equal(rudderYaw, neutralYaw, 'Rudder input should not directly add yaw control torque');
-});
-
-test('calculateAerodynamics – rudder creates aerodynamic sideforce and yaw moment', () => {
-    const ctx = makeCtx({
-        position: new THREE.Vector3(0, 500, 0),
-        velocity: new THREE.Vector3(0, 0, -120),
-        rudder: 0.8,
-        onGround: false
-    });
-    calculateAerodynamics(ctx);
-    assert.ok(Math.abs(ctx.PHYSICS.externalForce.x) > 1000, `Expected rudder sideforce, got ${ctx.PHYSICS.externalForce.x}`);
-    assert.ok(Math.abs(ctx.PHYSICS.externalTorque.y) > 5000, `Expected rudder-induced yaw moment, got ${ctx.PHYSICS.externalTorque.y}`);
-});
-
-test('calculateAerodynamics – rudder direction matches controls (Q left, E right)', () => {
-    const qCtx = makeCtx({
-        position: new THREE.Vector3(0, 500, 0),
-        velocity: new THREE.Vector3(0, 0, -120),
-        rudder: -1.0, // Q
-        onGround: false
-    });
-    calculateAerodynamics(qCtx);
-
-    const eCtx = makeCtx({
-        position: new THREE.Vector3(0, 500, 0),
-        velocity: new THREE.Vector3(0, 0, -120),
-        rudder: 1.0, // E
-        onGround: false
-    });
-    calculateAerodynamics(eCtx);
-
-    assert.ok(qCtx.PHYSICS.externalTorque.y > 0, `Q should yaw left (positive yaw torque), got ${qCtx.PHYSICS.externalTorque.y}`);
-    assert.ok(eCtx.PHYSICS.externalTorque.y < 0, `E should yaw right (negative yaw torque), got ${eCtx.PHYSICS.externalTorque.y}`);
+    assert.ok(Math.abs(lowTaxiYaw) < 1000, `Low-speed ground rudder torque should be minimal, got ${lowTaxiYaw}`);
+    assert.ok(Math.abs(higherSpeedYaw) > Math.abs(lowTaxiYaw), 'Ground rudder authority should increase with speed');
 });
 
 // ── Approach-Cone Gear Automation ────────────────────────────────────────────

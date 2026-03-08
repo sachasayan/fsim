@@ -95,7 +95,7 @@ export function calculateAerodynamics(ctx) {
     const localVel = t.localVel.copy(airVel).applyQuaternion(invQ);
 
     // Solve Aero
-    const { liftForce, sideForce, dragForce, thrustForce, liftRatio, rudderForce, rudderArm } = solveAerodynamics(ctx, airVel, localVel);
+    const { liftForce, sideForce, dragForce, thrustForce, liftRatio } = solveAerodynamics(ctx, airVel, localVel);
 
     // Solve Ground
     const { wheelForceSum, wheelTorqueSum, contactCount } = solveGroundPhysics(ctx, liftRatio);
@@ -103,18 +103,14 @@ export function calculateAerodynamics(ctx) {
 
     // Forces
     const weightForce = t.weight.set(0, -AIRCRAFT.mass * p.gravity, 0);
-    const netForce = t.net.set(0, 0, 0).add(liftForce).add(sideForce).add(rudderForce).add(dragForce).add(thrustForce).add(weightForce).add(wheelForceSum);
+    const netForce = t.net.set(0, 0, 0).add(liftForce).add(sideForce).add(dragForce).add(thrustForce).add(weightForce).add(wheelForceSum);
 
     // Torques
     const angVelLocal = t.angVelLocal.copy(p.angularVelocity).applyQuaternion(invQ);
     const speedFactor = p.onGround ? Math.max(0.28, Math.min(1.1, p.airspeed / 75)) : Math.max(0.12, Math.min(1.2, (p.airspeed - 20) / 120));
     const torqueLocal = solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor);
 
-    const rudderTorqueWorld = t.rudderTorque.copy(rudderArm).cross(rudderForce);
-    p.externalTorque.set(0, 0, 0)
-        .add(wheelTorqueSum)
-        .add(rudderTorqueWorld)
-        .add(t.torqueWorld.copy(torqueLocal).applyQuaternion(p.quaternion));
+    p.externalTorque.set(0, 0, 0).add(wheelTorqueSum).add(t.torqueWorld.copy(torqueLocal).applyQuaternion(p.quaternion));
 
     // Acceleration & G-Factor
     const up = t.up.set(0, 1, 0).applyQuaternion(p.quaternion);
