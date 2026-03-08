@@ -1,0 +1,3 @@
+## 2024-05-14 - WebGL Canvas Accessibility Overlays
+**Learning:** For WebGL/Canvas interfaces (like the simulator), the canvas content is opaque to assistive technologies. Critical application states (e.g., stalls, crashes, loading) must be communicated by placing standard ARIA attributes (`role="alert"`, `aria-live="assertive"`, `role="status"`) on DOM overlays positioned above the canvas.
+**Action:** When working on Canvas/WebGL applications, ensure any critical state changes rendered in the canvas are accompanied by visually hidden (or overlay) DOM elements with appropriate ARIA live regions so screen reader users are informed of state changes.
