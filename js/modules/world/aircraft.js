@@ -232,19 +232,24 @@ export function createAircraftSystem({ scene }) {
 
   const lightBulbGeo = new THREE.SphereGeometry(0.15, 10, 10);
 
-  function addNavLight(color, x, y, z) {
-    const light = new THREE.PointLight(color, 2, 20);
-    light.position.set(x, y, z);
-
+  function createMarker(color, emissiveIntensity) {
+    const marker = new THREE.Object3D();
+    marker.intensity = 0;
+    marker.userData.baseIntensity = emissiveIntensity;
     const lens = new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({
       color: 0x000000,
       emissive: color,
-      emissiveIntensity: 32
+      emissiveIntensity
     }));
-    light.add(lens);
+    marker.add(lens);
+    return marker;
+  }
 
-    planeGroup.add(light);
-    return light;
+  function addNavLight(color, x, y, z) {
+    const navMarker = createMarker(color, 20);
+    navMarker.position.set(x, y, z);
+    planeGroup.add(navMarker);
+    return navMarker;
   }
 
   // Left Red
@@ -253,9 +258,8 @@ export function createAircraftSystem({ scene }) {
   addNavLight(0x00ff00, 17.5, 2.0, 5);
 
   function addStrobe(x, y, z) {
-    const strobe = new THREE.PointLight(0xffffff, 0, 100);
+    const strobe = createMarker(0xffffff, 70);
     strobe.position.set(x, y, z);
-    strobe.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 80 })));
     planeGroup.add(strobe);
     strobes.push(strobe);
   }
@@ -264,28 +268,22 @@ export function createAircraftSystem({ scene }) {
   addStrobe(18, 2.0, 5.5);
   addStrobe(0, 8.5, 17); // Tail strobe
 
-  const beaconTop = new THREE.PointLight(0xff0000, 0, 50);
+  const beaconTop = createMarker(0xff0000, 35);
   beaconTop.position.set(0, 3.5, 0);
-  beaconTop.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 40 })));
   planeGroup.add(beaconTop);
   beacons.push(beaconTop);
 
-  const beaconBot = new THREE.PointLight(0xff0000, 0, 50);
+  const beaconBot = createMarker(0xff0000, 35);
   beaconBot.position.set(0, -1.0, 2);
-  beaconBot.add(new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xff0000, emissiveIntensity: 40 })));
   planeGroup.add(beaconBot);
   beacons.push(beaconBot);
 
   const landingLights = new THREE.Group();
-  const llLeft = new THREE.SpotLight(0xffffff, 5, 2000, 0.2, 0.5, 0.1);
+  const llLeft = createMarker(0xfff2cc, 18);
   llLeft.position.set(-2, 0, -5);
-  llLeft.target.position.set(-2, 0, -100);
-
-  const llRight = new THREE.SpotLight(0xffffff, 5, 2000, 0.2, 0.5, 0.1);
+  const llRight = createMarker(0xfff2cc, 18);
   llRight.position.set(2, 0, -5);
-  llRight.target.position.set(2, 0, -100);
-
-  landingLights.add(llLeft, llLeft.target, llRight, llRight.target);
+  landingLights.add(llLeft, llRight);
   gearGroup.add(landingLights);
   planeGroup.add(gearGroup);
 
@@ -308,6 +306,7 @@ export function createAircraftSystem({ scene }) {
         }
       });
     }
+
   }
 
   function updateControlSurfaces(PHYSICS, dt) {

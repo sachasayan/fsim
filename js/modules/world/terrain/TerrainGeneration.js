@@ -73,6 +73,8 @@ function dispatchWorker(type, payload, transferables = []) {
 export async function generateChunkBase(cx, cz, lod, ctx) {
     const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
+    const receiveTerrainShadows = lod <= 1;
+    const receiveWaterShadows = lod === 0;
     let chunkGroup;
     let terrainMesh, waterMesh;
 
@@ -86,16 +88,19 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         geometry.rotateX(-Math.PI / 2);
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
         terrainMesh = new THREE.Mesh(geometry, lod === 0 ? terrainMaterial : terrainFarMaterial);
-        terrainMesh.receiveShadow = true;
+        terrainMesh.receiveShadow = receiveTerrainShadows;
         chunkGroup.add(terrainMesh);
 
         const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
         waterGeo.rotateX(-Math.PI / 2);
         waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
         waterMesh = new THREE.Mesh(waterGeo, lod === 0 ? waterMaterial : waterFarMaterial);
-        waterMesh.receiveShadow = true;
+        waterMesh.receiveShadow = receiveWaterShadows;
         chunkGroup.add(waterMesh);
     }
+
+    terrainMesh.receiveShadow = receiveTerrainShadows;
+    waterMesh.receiveShadow = receiveWaterShadows;
 
     chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
     chunkGroup.userData.lod = lod;
@@ -171,6 +176,8 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     } = ctx;
 
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
+    const treeShadowsEnabled = lod === 0;
+    const boatShadowsEnabled = lod === 0;
     const terrainMesh = chunkGroup.children[0];
     if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
     const positions = terrainMesh.geometry.attributes.position.array;
@@ -219,7 +226,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, count);
                 cardA.instanceMatrix.array.set(matrices);
                 cardA.instanceMatrix.needsUpdate = true;
-                cardA.castShadow = true;
+                cardA.castShadow = treeShadowsEnabled;
                 cardA.receiveShadow = false;
                 cardA.customDepthMaterial = cfg.depthMat;
                 chunkGroup.add(cardA);
@@ -230,7 +237,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 const hullMesh = new THREE.InstancedMesh(hullGeo, hullMat, boatPositions.length);
                 const cabinMesh = new THREE.InstancedMesh(cabinGeo, cabinMat, boatPositions.length);
                 const mastMesh = new THREE.InstancedMesh(mastGeo, mastMat, boatPositions.length);
-                hullMesh.castShadow = true; cabinMesh.castShadow = true; mastMesh.castShadow = true;
+                hullMesh.castShadow = boatShadowsEnabled; cabinMesh.castShadow = boatShadowsEnabled; mastMesh.castShadow = boatShadowsEnabled;
                 for (let j = 0; j < boatPositions.length; j++) {
                     let bp = boatPositions[j];
                     dummy.position.set(bp.x, -10.2, bp.z);
@@ -256,7 +263,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, count);
         cardA.instanceMatrix.array.set(matrices);
         cardA.instanceMatrix.needsUpdate = true;
-        cardA.castShadow = true;
+        cardA.castShadow = treeShadowsEnabled;
         cardA.receiveShadow = false;
         cardA.customDepthMaterial = cfg.depthMat;
         chunkGroup.add(cardA);
@@ -352,7 +359,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         const hullMesh = new THREE.InstancedMesh(hullGeo, hullMat, boatPositions.length);
         const cabinMesh = new THREE.InstancedMesh(cabinGeo, cabinMat, boatPositions.length);
         const mastMesh = new THREE.InstancedMesh(mastGeo, mastMat, boatPositions.length);
-        hullMesh.castShadow = true; cabinMesh.castShadow = true; mastMesh.castShadow = true;
+        hullMesh.castShadow = boatShadowsEnabled; cabinMesh.castShadow = boatShadowsEnabled; mastMesh.castShadow = boatShadowsEnabled;
         for (let j = 0; j < boatPositions.length; j++) {
             let bp = boatPositions[j];
             dummy.position.set(bp.x, -10.2, bp.z);

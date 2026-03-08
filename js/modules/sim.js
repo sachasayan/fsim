@@ -39,6 +39,7 @@ const container = document.getElementById('game-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x3a2e3f);
 scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015);
+const urlParamsForInit = new URLSearchParams(window.location.search);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
 
@@ -47,6 +48,7 @@ const {
   composer,
   smaaPass,
   bloomPass,
+  updateAdaptiveQuality,
   handleResize
 } = createRendererManager({ container, scene, camera });
 
@@ -96,7 +98,6 @@ const {
 // ==========================================
 // 3. MANAGERS
 // ==========================================
-const urlParamsForInit = new URLSearchParams(window.location.search);
 const weatherManager = createWeatherManager({
   scene,
   renderer,
@@ -177,6 +178,9 @@ let lastTerrainChunkX = Number.POSITIVE_INFINITY;
 let lastTerrainChunkZ = Number.POSITIVE_INFINITY;
 let lastTerrainUpdateMs = 0;
 const TERRAIN_UPDATE_INTERVAL_MS = 120;
+const SHADOW_MAP_NEAR = 2048;
+const SHADOW_MAP_FAR = 1024;
+let currentShadowMapSize = SHADOW_MAP_NEAR;
 
 const PHYSICS_STEP = 1 / 75;
 const MAX_PHYSICS_STEPS_PER_FRAME = 4;
@@ -245,6 +249,7 @@ function animate() {
   runtime.lastTime = now;
 
   runtime.frameCount++;
+  updateAdaptiveQuality(dt);
 
   // 1. Update visuals (weather, lighting, clouds)
   weatherManager.update(dt, runtime.frameCount, camera);
@@ -286,7 +291,7 @@ function animate() {
     PHYSICS.throttle,
     PHYSICS.airspeed,
     PHYSICS.spoilers,
-    cameraController.mode,
+    cameraController.getMode(),
     WEATHER.mode,
     PHYSICS.gForce,
     PHYSICS.angularVelocity,
@@ -402,6 +407,18 @@ function animate() {
   planeGroup.quaternion.slerpQuaternions(prevPhysicsQuat, PHYSICS.quaternion, alpha);
 
   // 9. Post-Physics Sync
+  const cameraMode = cameraController.getMode();
+  const highShadowQuality = PHYSICS.position.y < 1200 && cameraMode !== 2;
+  const targetShadowMapSize = highShadowQuality ? SHADOW_MAP_NEAR : SHADOW_MAP_FAR;
+  if (targetShadowMapSize !== currentShadowMapSize) {
+    currentShadowMapSize = targetShadowMapSize;
+    dirLight.shadow.mapSize.set(currentShadowMapSize, currentShadowMapSize);
+    if (dirLight.shadow.map) {
+      dirLight.shadow.map.dispose();
+      dirLight.shadow.map = null;
+    }
+  }
+
   // Shadow centering
   tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
   const shadowCenter = planeGroup.position;
