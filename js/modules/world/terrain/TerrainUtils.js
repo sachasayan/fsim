@@ -256,7 +256,8 @@ export function getTerrainHeight(x, z, Noise, octaves = 6) {
     } else {
         baseHeight = noiseVal;
     }
-    return applyTerrainEdits(baseHeight, x, z, window.fsimWorld?.terrainEdits || []);
+    const fsimWorld = (typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null;
+    return applyTerrainEdits(baseHeight, x, z, fsimWorld?.terrainEdits || []);
 }
 
 export function getLodForRingDistance(ringDistance, currentLod = null) {

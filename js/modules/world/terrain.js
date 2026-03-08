@@ -30,9 +30,13 @@ import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
 import { setStaticSampler, QuadtreeMapSampler } from './terrain/TerrainUtils.js';
 
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {
+  const hasWindow = typeof window !== 'undefined';
+  const windowRef = hasWindow ? window : null;
+  const locationSearch = windowRef?.location?.search || '';
+
   // Load static world data early
   loadStaticWorld().then(success => {
-    if (success && window.fsimWorld) {
+    if (success && windowRef?.fsimWorld) {
       // Also set it on the main thread for physics/etc
       fetch('/world/world.bin')
         .then(r => r.arrayBuffer())
@@ -60,10 +64,11 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   };
 
   // Parse URL params once — these never change at runtime
-  const urlParams = new URLSearchParams(window.location.search);
+  const urlParams = new URLSearchParams(locationSearch);
   const _fogDisabled = urlParams.get('fog') === '0';
   const _isFastLoad  = urlParams.get('fastload') === '1';
-  const _renderDist  = urlParams.has('renderDist') ? parseInt(urlParams.get('renderDist'), 10) : null;
+  const renderDistParam = urlParams.get('renderDist');
+  const _renderDist  = renderDistParam !== null ? parseInt(renderDistParam, 10) : null;
   const _renderDistance = _renderDist !== null ? _renderDist : (_isFastLoad ? 4 : 8);
 
   if (_fogDisabled) {

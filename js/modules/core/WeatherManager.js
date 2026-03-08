@@ -36,10 +36,11 @@ export function createWeatherManager({
     }
 
     function applyLightingPreset(presetId) {
-        const preset = LIGHTING_PRESETS[presetId];
+        const resolvedPresetId = presetId === 'day' ? 'daytime' : presetId;
+        const preset = LIGHTING_PRESETS[resolvedPresetId];
         if (!preset) return;
 
-        WEATHER.lightingPresetId = presetId;
+        WEATHER.lightingPresetId = resolvedPresetId;
         WEATHER.clearColor = preset.clearColor;
         WEATHER.stormColor = preset.stormColor;
         WEATHER.lightAmbientBase = preset.ambientBase;
