@@ -98,7 +98,7 @@ export function calculateAerodynamics(ctx) {
     const { liftForce, sideForce, dragForce, thrustForce, liftRatio } = solveAerodynamics(ctx, airVel, localVel);
 
     // Solve Ground
-    const { wheelForceSum, wheelTorqueSum, contactCount, noseWheelLoad } = solveGroundPhysics(ctx, liftRatio);
+    const { wheelForceSum, wheelTorqueSum, contactCount } = solveGroundPhysics(ctx, liftRatio);
     p.onGround = contactCount > 0;
 
     // Forces
@@ -111,10 +111,6 @@ export function calculateAerodynamics(ctx) {
     const torqueLocal = solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor);
 
     p.externalTorque.set(0, 0, 0).add(wheelTorqueSum).add(t.torqueWorld.copy(torqueLocal).applyQuaternion(p.quaternion));
-    if (noseWheelLoad > 0) {
-        const taxiFactor = Math.max(0, Math.min(1, (95 - p.airspeed) / 85));
-        p.externalTorque.y += -p.rudder * noseWheelLoad * 0.28 * taxiFactor;
-    }
 
     // Acceleration & G-Factor
     const up = t.up.set(0, 1, 0).applyQuaternion(p.quaternion);

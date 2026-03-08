@@ -1,5 +1,18 @@
 import { getPhysicsTmp } from './PhysicsUtils.js';
 
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function smoothstep01(t) {
+    const x = clamp(t, 0, 1);
+    return x * x * (3 - 2 * x);
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
 export function updateGearAnimation(p, AIRCRAFT, dt) {
     if (p.gearDown && p.gearTransition < 1.0) p.gearTransition = Math.min(1.0, p.gearTransition + dt * 0.2);
     if (!p.gearDown && p.gearTransition > 0.0) p.gearTransition = Math.max(0.0, p.gearTransition - dt * 0.2);
@@ -62,18 +75,25 @@ export function solveGroundPhysics(ctx, liftRatio) {
         let wFwd = t.wheelForward.copy(baseForward);
         let wRight = t.wheelRight.copy(baseRight);
         if (wheel.isNose) {
-            const steerFade = Math.max(0, p.airspeed - 30) / 50;
-            const steerAngle = -p.rudder * 0.62 * Math.max(0, 1.0 - steerFade * steerFade * (3 - 2 * steerFade));
+            const steerBlend = smoothstep01((p.airspeed - 18) / 52);
+            const steerAuthority = 1.0 - steerBlend;
+            const steerAngle = -p.rudder * 0.62 * steerAuthority;
             wFwd.applyAxisAngle(t.worldUp, steerAngle).normalize();
             wRight.crossVectors(t.worldUp, wFwd).normalize();
         }
 
         const longVel = pointVel.dot(wFwd);
         const latVel = pointVel.dot(wRight);
+        const rolloutBlend = smoothstep01((p.airspeed - 12) / 58);
+        const highSpeedBlend = smoothstep01((p.airspeed - 45) / 45);
         const muLong = p.brakes ? 0.95 : 0.12;
-        const muLat = wheel.isNose ? 0.95 : (p.airspeed < 40 ? 0.46 : 0.72);
+        const muLat = wheel.isNose
+            ? lerp(1.05, 0.38, highSpeedBlend)
+            : lerp(0.52, 0.74, rolloutBlend);
         const longDamp = p.brakes ? 220000 : 42000;
-        const latDamp = wheel.isNose ? 180000 : (p.airspeed < 40 ? 76000 : 128000);
+        const latDamp = wheel.isNose
+            ? lerp(210000, 90000, highSpeedBlend)
+            : lerp(76000, 128000, rolloutBlend);
 
         let fLong = Math.max(-normMag * muLong, Math.min(normMag * muLong, -longVel * longDamp));
         let fLat = Math.max(-normMag * muLat, Math.min(normMag * muLat, -latVel * latDamp));

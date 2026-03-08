@@ -89,6 +89,7 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
 
     const airspeed = Math.max(0, p.airspeed || localVel.length());
     const speedNorm = clamp((airspeed - 20) / 150, 0, 1);
+    const groundRudderAuthority = p.onGround ? clamp((airspeed - 28) / 45, 0, 1) : 1;
     const targetRollRate = getTargetRollRate(airspeed, p.aileron);
     const rollRateError = targetRollRate - angVelLocal.z;
     const rollRateTorque = rollRateError
@@ -98,7 +99,7 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
 
     const torque = t.torqueLocal.set(
         p.elevator * 180000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier,
-        -p.rudder * 120000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier,
+        -p.rudder * 120000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier * groundRudderAuthority,
         rollRateTorque
     );
 

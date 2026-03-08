@@ -320,6 +320,43 @@ test('solveStabilityTorques – roll rate contributes yaw coupling', () => {
     assert.notEqual(withRollRateYaw, noRollYaw, 'Roll rate should contribute to yaw coupling');
 });
 
+test('solveStabilityTorques – ground rudder authority is suppressed at taxi speed', () => {
+    const lowTaxiCtx = makeCtx({
+        airspeed: 12,
+        aileron: 0,
+        elevator: 0,
+        rudder: 1.0,
+        aoa: 0,
+        slip: 0,
+        onGround: true
+    });
+    const higherSpeedCtx = makeCtx({
+        airspeed: 90,
+        aileron: 0,
+        elevator: 0,
+        rudder: 1.0,
+        aoa: 0,
+        slip: 0,
+        onGround: true
+    });
+
+    const lowTaxiYaw = solveStabilityTorques(
+        lowTaxiCtx,
+        new THREE.Vector3(0, 0, -12),
+        new THREE.Vector3(0, 0, 0),
+        0.28
+    ).y;
+    const higherSpeedYaw = solveStabilityTorques(
+        higherSpeedCtx,
+        new THREE.Vector3(0, 0, -90),
+        new THREE.Vector3(0, 0, 0),
+        1.1
+    ).y;
+
+    assert.ok(Math.abs(lowTaxiYaw) < 1000, `Low-speed ground rudder torque should be minimal, got ${lowTaxiYaw}`);
+    assert.ok(Math.abs(higherSpeedYaw) > Math.abs(lowTaxiYaw), 'Ground rudder authority should increase with speed');
+});
+
 // ── Approach-Cone Gear Automation ────────────────────────────────────────────
 // Runway thresholds: Z = -2000 and Z = +2000. Runway axis along Z.
 // Approach cone: 15° half-angle. Arm altitude: 1200 m AGL. Radius: 12000 m.
