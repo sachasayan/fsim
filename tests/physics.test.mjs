@@ -264,6 +264,62 @@ test('solveStabilityTorques – pitch/yaw damping increases with airspeed', () =
     assert.ok(highY < lowY, `Expected stronger high-speed yaw damping (${highY} vs ${lowY})`);
 });
 
+test('solveStabilityTorques – aileron input introduces adverse yaw moment', () => {
+    const localVel = new THREE.Vector3(0, 0, -110);
+    const angVelLocal = new THREE.Vector3(0, 0, 0);
+    const speedFactor = 1.0;
+
+    const neutralCtx = makeCtx({
+        airspeed: 110,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+    const rollInputCtx = makeCtx({
+        airspeed: 110,
+        aileron: 0.7,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+
+    const neutralYaw = solveStabilityTorques(neutralCtx, localVel, angVelLocal, speedFactor).y;
+    const rollInputYaw = solveStabilityTorques(rollInputCtx, localVel, angVelLocal, speedFactor).y;
+    assert.notEqual(rollInputYaw, neutralYaw, 'Aileron input should alter yaw torque for adverse yaw coupling');
+});
+
+test('solveStabilityTorques – roll rate contributes yaw coupling', () => {
+    const localVel = new THREE.Vector3(0, 0, -120);
+    const speedFactor = 1.0;
+    const neutralRateCtx = makeCtx({
+        airspeed: 120,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+    const rollingCtx = makeCtx({
+        airspeed: 120,
+        aileron: 0,
+        elevator: 0,
+        rudder: 0,
+        aoa: 0,
+        slip: 0,
+        onGround: false
+    });
+
+    const noRollYaw = solveStabilityTorques(neutralRateCtx, localVel, new THREE.Vector3(0, 0, 0), speedFactor).y;
+    const withRollRateYaw = solveStabilityTorques(rollingCtx, localVel, new THREE.Vector3(0, 0, 0.6), speedFactor).y;
+    assert.notEqual(withRollRateYaw, noRollYaw, 'Roll rate should contribute to yaw coupling');
+});
+
 // ── Approach-Cone Gear Automation ────────────────────────────────────────────
 // Runway thresholds: Z = -2000 and Z = +2000. Runway axis along Z.
 // Approach cone: 15° half-angle. Arm altitude: 1200 m AGL. Radius: 12000 m.

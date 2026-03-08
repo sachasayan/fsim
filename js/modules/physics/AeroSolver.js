@@ -8,6 +8,8 @@ export const FLIGHT_TUNING = {
     rollRateGain: 460000,
     pitchDampingBase: 170000,
     yawDampingBase: 140000,
+    adverseYawAileronGain: 36000,
+    adverseYawRollRateGain: 52000,
     rollDampingBase: 220000,
     rollDampingQuadratic: 120000,
     maxRollRateDegLow: 35,
@@ -106,6 +108,10 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
     torque.x += -p.aoa * 80000 * speedFactor;
     torque.y += -p.slip * 120000 * speedFactor;
     torque.z += p.slip * 60000 * speedFactor;
+    // Adverse yaw: aileron deflection and roll rate create opposing yaw that
+    // encourages coordinated rudder use without heavy-handed auto-coordination.
+    torque.y += p.aileron * FLIGHT_TUNING.adverseYawAileronGain * speedFactor * (0.65 + 0.9 * speedNorm);
+    torque.y += -angVelLocal.z * FLIGHT_TUNING.adverseYawRollRateGain * speedFactor * (0.6 + 0.8 * speedNorm);
 
     // Local damping
     const pitchLinearDamping = FLIGHT_TUNING.pitchDampingBase * (0.7 + 1.0 * speedNorm);
