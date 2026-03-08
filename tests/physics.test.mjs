@@ -12,7 +12,6 @@ const AIRCRAFT = {
     cdBase: 0.025,
     clSlope: 0.1,
     stallAngle: 35,
-    inertia: new THREE.Vector3(100000, 150000, 200000),
     gearHeight: 3.5,
     movableSurfaces: {}
 };

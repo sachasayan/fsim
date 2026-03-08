@@ -71,13 +71,8 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
         const rbMass = body.mass ? body.mass() : NaN;
         const rbInertia = body.principalInertia ? body.principalInertia() : null;
         console.info('[physics] Rapier body scale', {
-          targetMass: AIRCRAFT.mass,
+          configuredMass: AIRCRAFT.mass,
           rigidBodyMass: Number.isFinite(rbMass) ? Number(rbMass.toFixed(1)) : 'unknown',
-          targetInertia: {
-            x: AIRCRAFT.inertia.x,
-            y: AIRCRAFT.inertia.y,
-            z: AIRCRAFT.inertia.z
-          },
           rigidBodyInertia: rbInertia
             ? {
               x: Number(rbInertia.x.toFixed(1)),
