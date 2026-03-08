@@ -3,6 +3,30 @@ import { QuadtreeMapSampler, setStaticSampler, getTerrainHeight } from './module
 import { MapTileManager } from './modules/ui/MapTileManager.js';
 import { applyTerrainEdits } from './modules/world/terrain/TerrainEdits.js';
 import { DISTRICT_TYPES, getDistrictType, getDistrictsForCity, normalizeMapData } from './modules/world/MapDataUtils.js';
+import { TOOL_SHORTCUTS, CONTROL_GROUPS, CONTROL_GROUP_BY_ID, COLORS } from './modules/editor/constants.js';
+import { isCity, isDistrict, isTerrainEdit, getLayerGroupId as getLayerGroupIdForObject, objectLabel } from './modules/editor/objectTypes.js';
+import { districtContainsPoint, getVertexHitIndex, getClosestTerrainSegmentIndex, terrainEditContainsPoint } from './modules/editor/geometry.js';
+import {
+    getTerrainEditBounds as getTerrainEditBoundsExt,
+    refreshTerrainEditGeometry as refreshTerrainEditGeometryExt,
+    invalidateTerrainEdit as invalidateTerrainEditExt,
+    isTerrainStroke as isTerrainStrokeExt,
+    moveTerrainStrokePoint as moveTerrainStrokePointExt,
+    insertTerrainStrokePoint as insertTerrainStrokePointExt,
+    removeTerrainStrokePoint as removeTerrainStrokePointExt,
+    createTerrainStroke as createTerrainStrokeExt,
+    appendTerrainStrokePoint as appendTerrainStrokePointExt
+} from './modules/editor/terrainEdits.js';
+import {
+    createLayerState,
+    createLayerIdentity,
+    isGroupVisible as getGroupVisible,
+    isGroupLocked as getGroupLocked,
+    isObjectVisible as getObjectVisibleForLayer,
+    isObjectLocked as getObjectLockedForLayer,
+    getLayerGroupsData as buildLayerGroupsData,
+    getObjectByLayerKey as resolveObjectByLayerKey
+} from './modules/editor/layers.js';
 
 const canvas = document.getElementById('map-canvas');
 const ctx = canvas.getContext('2d');
@@ -30,42 +54,10 @@ let _sidebarLivePending = false;
 let _layersRenderPending = false;
 let vantageEntries = [];
 
-const objectUidByRef = new WeakMap();
-let nextObjectUid = 1;
-const layerState = {
-    groupVisibility: new Map(),
-    groupLocked: new Map(),
-    collapsed: new Map(),
-    itemVisibility: new Map(),
-    itemLocked: new Map()
-};
-
-const TOOL_SHORTCUTS = {
-    v: 'select',
-    h: 'pan',
-    c: 'add-city',
-    d: 'add-district',
-    e: 'edit-poly',
-    r: 'terrain-raise',
-    l: 'terrain-lower',
-    f: 'terrain-flatten'
-};
+const layerState = createLayerState();
+const { getObjectUid, getLayerKey } = createLayerIdentity(getLayerGroupIdForObject);
 
 let _rafPending = false;
-const CONTROL_GROUPS = [
-    { ids: ['prop-density', 'prop-density-range'], valueId: 'prop-density-value' },
-    { ids: ['prop-terrain-radius', 'prop-terrain-radius-range'], valueId: 'prop-terrain-radius-value' },
-    { ids: ['prop-terrain-delta', 'prop-terrain-delta-range'], valueId: 'prop-terrain-delta-value' },
-    { ids: ['prop-terrain-target', 'prop-terrain-target-range'], valueId: 'prop-terrain-target-value' },
-    { ids: ['prop-terrain-opacity', 'prop-terrain-opacity-range'], valueId: 'prop-terrain-opacity-value' },
-    { ids: ['prop-alt', 'prop-alt-range'], valueId: 'prop-alt-value' },
-    { ids: ['prop-tilt', 'prop-tilt-range'], valueId: 'prop-tilt-value' },
-    { ids: ['terrain-brush-radius', 'terrain-brush-radius-range'], valueId: 'terrain-brush-radius-value' },
-    { ids: ['terrain-brush-strength', 'terrain-brush-strength-range'], valueId: 'terrain-brush-strength-value' }
-];
-const CONTROL_GROUP_BY_ID = new Map(
-    CONTROL_GROUPS.flatMap(group => group.ids.map(id => [id, group]))
-);
 
 function scheduleRender() {
     if (!_rafPending) {
@@ -92,51 +84,24 @@ function scheduleLayersPanelRender() {
     });
 }
 
-function getObjectUid(obj) {
-    if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return 'none';
-    if (!objectUidByRef.has(obj)) objectUidByRef.set(obj, nextObjectUid++);
-    return String(objectUidByRef.get(obj));
-}
-
 function getLayerGroupId(obj) {
-    if (isCity(obj)) return 'cities';
-    if (isDistrict(obj)) return 'districts';
-    if (isTerrainEdit(obj)) return 'terrain';
-    return 'vantage';
-}
-
-function getLayerKey(obj) {
-    return `${getLayerGroupId(obj)}:${getObjectUid(obj)}`;
+    return getLayerGroupIdForObject(obj);
 }
 
 function isGroupVisible(groupId) {
-    return layerState.groupVisibility.get(groupId) !== false;
+    return getGroupVisible(layerState, groupId);
 }
 
 function isGroupLocked(groupId) {
-    return layerState.groupLocked.get(groupId) === true;
+    return getGroupLocked(layerState, groupId);
 }
 
 function isObjectVisible(obj) {
-    const groupId = getLayerGroupId(obj);
-    if (!isGroupVisible(groupId)) return false;
-    return layerState.itemVisibility.get(getLayerKey(obj)) !== false;
+    return getObjectVisibleForLayer(layerState, obj, getLayerGroupIdForObject, getLayerKey);
 }
 
 function isObjectLocked(obj) {
-    const groupId = getLayerGroupId(obj);
-    if (isGroupLocked(groupId)) return true;
-    return layerState.itemLocked.get(getLayerKey(obj)) === true;
-}
-
-function objectLabel(obj, index = 0, fallback = 'Item') {
-    if (isCity(obj)) return obj.id || `City ${index + 1}`;
-    if (isDistrict(obj)) {
-        const cityRef = obj.city_id ? ` @${obj.city_id}` : '';
-        return `${getDistrictType(obj)}${cityRef}`;
-    }
-    if (isTerrainEdit(obj)) return `${obj.kind} #${index + 1}`;
-    return fallback;
+    return getObjectLockedForLayer(layerState, obj, getLayerGroupIdForObject, getLayerKey);
 }
 
 function rebuildVantageEntries() {
@@ -201,18 +166,47 @@ const tileManager = new MapTileManager({
     onTileReady: scheduleRender
 });
 
-// Constants
-const COLORS = {
-    city: 'rgba(76, 201, 240, 0.4)',
-    citySelected: 'rgba(76, 201, 240, 0.8)',
-    runway: 'rgba(255, 255, 255, 0.5)',
-    district: 'rgba(255, 255, 100, 0.2)',
-    districtSelected: 'rgba(255, 255, 100, 0.6)',
-    accent: '#7dd3fc',
-    grid: 'rgba(255, 255, 255, 0.05)',
-    vantage: 'rgba(158, 255, 102, 0.6)',
-    vantageSelected: 'rgba(158, 255, 102, 1.0)'
-};
+function getTerrainEditBounds(edit) {
+    return getTerrainEditBoundsExt(edit);
+}
+
+function refreshTerrainEditGeometry(edit) {
+    refreshTerrainEditGeometryExt(edit);
+}
+
+function invalidateTerrainEdit(edit) {
+    invalidateTerrainEditExt(edit, tileManager);
+}
+
+function isTerrainStroke(edit) {
+    return isTerrainStrokeExt(edit, isTerrainEdit);
+}
+
+function moveTerrainStrokePoint(edit, index, worldPos) {
+    moveTerrainStrokePointExt(edit, index, worldPos, { isTerrainEdit, tileManager });
+}
+
+function insertTerrainStrokePoint(edit, insertIndex, worldPos) {
+    return insertTerrainStrokePointExt(edit, insertIndex, worldPos, { isTerrainEdit, tileManager });
+}
+
+function removeTerrainStrokePoint(edit, index) {
+    return removeTerrainStrokePointExt(edit, index, { isTerrainEdit, tileManager });
+}
+
+function createTerrainStroke(worldPos) {
+    return createTerrainStrokeExt(worldPos, {
+        currentTool,
+        terrainBrush,
+        sampleTerrainHeight,
+        worldData,
+        tileManager
+    });
+}
+
+function appendTerrainStrokePoint(edit, worldPos) {
+    return appendTerrainStrokePointExt(edit, worldPos, { tileManager });
+}
 
 async function init() {
     resize();
@@ -247,36 +241,6 @@ async function init() {
     setupHotReload();
 }
 
-function isDistrict(obj) {
-    return !!obj?.center && !obj?.road && (!!obj?.district_type || !!obj?.type || Array.isArray(obj?.points));
-}
-
-function isCity(obj) {
-    return !!obj?.center && !!obj?.road;
-}
-
-function isPointInPolygon(x, z, points) {
-    let inside = false;
-    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-        const xi = points[i][0], zi = points[i][1];
-        const xj = points[j][0], zj = points[j][1];
-        const intersect = ((zi > z) !== (zj > z)) &&
-            (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
-        if (intersect) inside = !inside;
-    }
-    return inside;
-}
-
-function districtContainsPoint(district, x, z) {
-    if (district.points?.length >= 3) return isPointInPolygon(x, z, district.points);
-    if (district.radius) return Math.hypot(x - district.center[0], z - district.center[1]) < district.radius;
-    return false;
-}
-
-function cityContainsPoint(city, x, z) {
-    return getDistrictsForCity(worldData, city.id).some(district => districtContainsPoint(district, x, z));
-}
-
 function translateDistrict(district, dx, dz) {
     district.center[0] += dx;
     district.center[1] += dz;
@@ -302,193 +266,6 @@ function findCityForDistrictPlacement() {
     return null;
 }
 
-function isTerrainEdit(obj) {
-    return !!obj && typeof obj.kind === 'string' && Number.isFinite(obj.x) && Number.isFinite(obj.z);
-}
-
-function getTerrainEditBounds(edit) {
-    if (edit?.bounds) return edit.bounds;
-    if (Array.isArray(edit?.points) && edit.points.length > 0) {
-        let minX = Infinity;
-        let maxX = -Infinity;
-        let minZ = Infinity;
-        let maxZ = -Infinity;
-        for (const [x, z] of edit.points) {
-            minX = Math.min(minX, x);
-            maxX = Math.max(maxX, x);
-            minZ = Math.min(minZ, z);
-            maxZ = Math.max(maxZ, z);
-        }
-        return {
-            minX: minX - edit.radius,
-            maxX: maxX + edit.radius,
-            minZ: minZ - edit.radius,
-            maxZ: maxZ + edit.radius
-        };
-    }
-    return {
-        minX: edit.x - edit.radius,
-        maxX: edit.x + edit.radius,
-        minZ: edit.z - edit.radius,
-        maxZ: edit.z + edit.radius
-    };
-}
-
-function refreshTerrainEditGeometry(edit) {
-    if (Array.isArray(edit?.points) && edit.points.length > 0) {
-        let sumX = 0;
-        let sumZ = 0;
-        let minX = Infinity;
-        let maxX = -Infinity;
-        let minZ = Infinity;
-        let maxZ = -Infinity;
-        for (const [x, z] of edit.points) {
-            sumX += x;
-            sumZ += z;
-            minX = Math.min(minX, x);
-            maxX = Math.max(maxX, x);
-            minZ = Math.min(minZ, z);
-            maxZ = Math.max(maxZ, z);
-        }
-        edit.x = Math.round(sumX / edit.points.length);
-        edit.z = Math.round(sumZ / edit.points.length);
-        edit.bounds = {
-            minX: minX - edit.radius,
-            maxX: maxX + edit.radius,
-            minZ: minZ - edit.radius,
-            maxZ: maxZ + edit.radius
-        };
-        return;
-    }
-    edit.bounds = {
-        minX: edit.x - edit.radius,
-        maxX: edit.x + edit.radius,
-        minZ: edit.z - edit.radius,
-        maxZ: edit.z + edit.radius
-    };
-}
-
-function invalidateTerrainEdit(edit) {
-    const bounds = getTerrainEditBounds(edit);
-    tileManager.invalidateWorldRect(bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ);
-}
-
-function isTerrainStroke(edit) {
-    return isTerrainEdit(edit) && Array.isArray(edit.points) && edit.points.length > 0;
-}
-
-function getVertexHitIndex(points, worldPos, threshold) {
-    for (let i = points.length - 1; i >= 0; i--) {
-        const [x, z] = points[i];
-        if (Math.hypot(worldPos.x - x, worldPos.z - z) <= threshold) return i;
-    }
-    return -1;
-}
-
-function getClosestTerrainSegmentIndex(edit, worldPos, threshold) {
-    if (!isTerrainStroke(edit) || edit.points.length < 2) return -1;
-    let bestIndex = -1;
-    let bestDistance = threshold;
-    for (let i = 1; i < edit.points.length; i++) {
-        const [ax, az] = edit.points[i - 1];
-        const [bx, bz] = edit.points[i];
-        const dist = getDistanceToSegment(worldPos.x, worldPos.z, ax, az, bx, bz);
-        if (dist <= bestDistance) {
-            bestDistance = dist;
-            bestIndex = i;
-        }
-    }
-    return bestIndex;
-}
-
-function moveTerrainStrokePoint(edit, index, worldPos) {
-    if (!isTerrainStroke(edit) || index < 0 || index >= edit.points.length) return;
-    invalidateTerrainEdit(edit);
-    edit.points[index][0] = Math.round(worldPos.x);
-    edit.points[index][1] = Math.round(worldPos.z);
-    refreshTerrainEditGeometry(edit);
-    invalidateTerrainEdit(edit);
-}
-
-function insertTerrainStrokePoint(edit, insertIndex, worldPos) {
-    if (!isTerrainStroke(edit)) return false;
-    invalidateTerrainEdit(edit);
-    edit.points.splice(insertIndex, 0, [Math.round(worldPos.x), Math.round(worldPos.z)]);
-    refreshTerrainEditGeometry(edit);
-    invalidateTerrainEdit(edit);
-    return true;
-}
-
-function removeTerrainStrokePoint(edit, index) {
-    if (!isTerrainStroke(edit) || edit.points.length <= 1 || index < 0 || index >= edit.points.length) return false;
-    invalidateTerrainEdit(edit);
-    edit.points.splice(index, 1);
-    refreshTerrainEditGeometry(edit);
-    invalidateTerrainEdit(edit);
-    return true;
-}
-
-function createTerrainStroke(worldPos) {
-    const baseHeight = sampleTerrainHeight(worldPos.x, worldPos.z);
-    const edit = {
-        kind: currentTool.replace('terrain-', ''),
-        x: Math.round(worldPos.x),
-        z: Math.round(worldPos.z),
-        radius: terrainBrush.radius,
-        delta: terrainBrush.strength,
-        points: [[Math.round(worldPos.x), Math.round(worldPos.z)]]
-    };
-    if (edit.kind === 'flatten') {
-        edit.opacity = Math.max(0, Math.min(1, terrainBrush.strength));
-        edit.target_height = Math.round(baseHeight);
-        delete edit.delta;
-    }
-    refreshTerrainEditGeometry(edit);
-    worldData.terrainEdits.push(edit);
-    invalidateTerrainEdit(edit);
-    return edit;
-}
-
-function appendTerrainStrokePoint(edit, worldPos) {
-    if (!Array.isArray(edit?.points) || edit.points.length === 0) return false;
-    const nextPoint = [Math.round(worldPos.x), Math.round(worldPos.z)];
-    const lastPoint = edit.points[edit.points.length - 1];
-    const minSpacing = Math.max(10, edit.radius * 0.12);
-    if (Math.hypot(nextPoint[0] - lastPoint[0], nextPoint[1] - lastPoint[1]) < minSpacing) return false;
-    const prevBounds = getTerrainEditBounds(edit);
-    tileManager.invalidateWorldRect(prevBounds.minX, prevBounds.minZ, prevBounds.maxX, prevBounds.maxZ);
-    edit.points.push(nextPoint);
-    refreshTerrainEditGeometry(edit);
-    invalidateTerrainEdit(edit);
-    return true;
-}
-
-function getDistanceToSegment(x, z, ax, az, bx, bz) {
-    const abx = bx - ax;
-    const abz = bz - az;
-    const lenSq = abx * abx + abz * abz;
-    if (lenSq <= 1e-6) return Math.hypot(x - ax, z - az);
-    const t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / lenSq));
-    const px = ax + abx * t;
-    const pz = az + abz * t;
-    return Math.hypot(x - px, z - pz);
-}
-
-function terrainEditContainsPoint(edit, x, z) {
-    if (Array.isArray(edit?.points) && edit.points.length > 0) {
-        for (let i = 0; i < edit.points.length; i++) {
-            const [px, pz] = edit.points[i];
-            if (Math.hypot(x - px, z - pz) <= edit.radius) return true;
-            if (i > 0) {
-                const [ax, az] = edit.points[i - 1];
-                if (getDistanceToSegment(x, z, ax, az, px, pz) <= edit.radius) return true;
-            }
-        }
-        return false;
-    }
-    return Math.hypot(x - edit.x, z - edit.z) <= edit.radius;
-}
-
 function createPolygonDistrict(center, districtType = 'commercial') {
     const [cx, cz] = center;
     const size = 500;
@@ -506,17 +283,7 @@ function createPolygonDistrict(center, districtType = 'commercial') {
 }
 
 function getLayerGroupsData() {
-    const cities = (worldData?.cities || []).map((city, index) => ({ obj: city, label: objectLabel(city, index, 'City') }));
-    const districts = (worldData?.districts || []).map((district, index) => ({ obj: district, label: objectLabel(district, index, 'District') }));
-    const terrain = (worldData?.terrainEdits || []).map((edit, index) => ({ obj: edit, label: objectLabel(edit, index, 'Terrain Edit') }));
-    const vantage = vantageEntries.map((entry, index) => ({ obj: entry.obj, label: objectLabel(entry.obj, index, entry.id), id: entry.id }));
-
-    return [
-        { id: 'cities', label: 'Cities', items: cities },
-        { id: 'districts', label: 'Districts', items: districts },
-        { id: 'terrain', label: 'Terrain Edits', items: terrain },
-        { id: 'vantage', label: 'Vantage Points', items: vantage }
-    ];
+    return buildLayerGroupsData(worldData, vantageEntries, objectLabel);
 }
 
 function setCanvasToolClass() {
@@ -592,16 +359,7 @@ function renderLayersPanel() {
 }
 
 function getObjectByLayerKey(layerKey) {
-    const [groupId, uid] = String(layerKey).split(':');
-    const groups = getLayerGroupsData();
-    for (let i = 0; i < groups.length; i++) {
-        if (groups[i].id !== groupId) continue;
-        const items = groups[i].items;
-        for (let j = 0; j < items.length; j++) {
-            if (getObjectUid(items[j].obj) === uid) return items[j].obj;
-        }
-    }
-    return null;
+    return resolveObjectByLayerKey(layerKey, getLayerGroupsData(), getObjectUid);
 }
 
 function canInteractWithObject(obj) {
