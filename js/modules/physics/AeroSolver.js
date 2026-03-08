@@ -10,6 +10,9 @@ export const FLIGHT_TUNING = {
     yawDampingBase: 140000,
     adverseYawAileronGain: 36000,
     adverseYawRollRateGain: 52000,
+    rudderSideForceGain: 0.022,
+    rudderSideForceMaxCoeff: 0.18,
+    rudderMomentArm: 12.0,
     rollDampingBase: 220000,
     rollDampingQuadratic: 120000,
     maxRollRateDegLow: 35,
@@ -69,6 +72,17 @@ export function solveAerodynamics(ctx, airVel, localVel) {
         sideForce.copy(right).multiplyScalar(sideMag);
     }
 
+    const rudderForce = t.rudderForce.set(0, 0, 0);
+    const rudderArm = t.rudderArm.set(0, 0, 0);
+    if (p.airspeed > 8.0) {
+        const groundRudderBlend = p.onGround ? clamp((p.airspeed - 55) / 55, 0, 1) : 1;
+        const rudderCy = -p.rudder * FLIGHT_TUNING.rudderSideForceGain * groundRudderBlend;
+        const rudderMax = dynPressure * AIRCRAFT.wingArea * FLIGHT_TUNING.rudderSideForceMaxCoeff * Math.max(0.2, groundRudderBlend);
+        const rudderMag = Math.max(-rudderMax, Math.min(rudderMax, dynPressure * AIRCRAFT.wingArea * rudderCy));
+        rudderForce.copy(right).multiplyScalar(rudderMag);
+        rudderArm.set(0, 0, FLIGHT_TUNING.rudderMomentArm).applyQuaternion(p.quaternion);
+    }
+
     let inducedDrag = (cl * cl) / (Math.PI * 8) * (1.0 - groundEffect * 0.5);
     let cd = currentCdBase + inducedDrag + (p.gearTransition * 0.015);
     if (p.isStalling) cd += 0.2;
@@ -79,7 +93,7 @@ export function solveAerodynamics(ctx, airVel, localVel) {
     const thrustMag = p.throttle * AIRCRAFT.maxThrust;
     const thrustForce = t.thrust.copy(forward).multiplyScalar(thrustMag);
 
-    return { liftForce, sideForce, dragForce, thrustForce, liftRatio };
+    return { liftForce, sideForce, dragForce, thrustForce, liftRatio, rudderForce, rudderArm };
 }
 
 export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
@@ -89,7 +103,6 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
 
     const airspeed = Math.max(0, p.airspeed || localVel.length());
     const speedNorm = clamp((airspeed - 20) / 150, 0, 1);
-    const groundRudderAuthority = p.onGround ? clamp((airspeed - 28) / 45, 0, 1) : 1;
     const targetRollRate = getTargetRollRate(airspeed, p.aileron);
     const rollRateError = targetRollRate - angVelLocal.z;
     const rollRateTorque = rollRateError
@@ -99,7 +112,7 @@ export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
 
     const torque = t.torqueLocal.set(
         p.elevator * 180000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier,
-        -p.rudder * 120000 * speedFactor * FLIGHT_TUNING.controlAuthorityMultiplier * groundRudderAuthority,
+        0,
         rollRateTorque
     );
 
