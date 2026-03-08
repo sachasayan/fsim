@@ -28,6 +28,7 @@ import {
 } from './terrain/TerrainGeneration.js';
 import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
 import { setStaticSampler, QuadtreeMapSampler } from './terrain/TerrainUtils.js';
+import { debugLog } from '../core/logging.js';
 
 export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   const hasWindow = typeof window !== 'undefined';
@@ -419,11 +420,11 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     processPropBuildQueue(propBuildBudget);
 
     if (pendingChunkKeys.size > 0 || pendingPropKeys.size > 0) {
-      console.log(`[terrain] Pending chunks: ${pendingChunkKeys.size}, Pending props: ${pendingPropKeys.size}`);
+      debugLog(`[terrain] Pending chunks: ${pendingChunkKeys.size}, Pending props: ${pendingPropKeys.size}`);
     } else if (terrainChunks.size > 0) {
       const ready = isReady();
       if (ready && !lastReady) {
-        console.log('[terrain] All chunks and props fully loaded.');
+        debugLog('[terrain] All chunks and props fully loaded.');
       }
       lastReady = ready;
     }
@@ -468,7 +469,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     }
 
     if (blocking.length > 0 && window._isReadyLogCounter % 120 === 0) {
-      console.log(`[isReady] size=${terrainChunks.size} blocking=[${blocking.slice(0, 5)}]`);
+      debugLog(`[isReady] size=${terrainChunks.size} blocking=[${blocking.slice(0, 5)}]`);
     }
     window._isReadyLogCounter = (window._isReadyLogCounter || 0) + 1;
 
@@ -476,7 +477,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   };
 
   async function reloadCity(cityId = null) {
-    console.log(`[terrain] Hot-swapping district data: ${cityId || 'all'}`);
+    debugLog(`[terrain] Hot-swapping district data: ${cityId || 'all'}`);
     clearDistrictCache(cityId);
 
     await fetchDistrictIndex();

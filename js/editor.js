@@ -6,6 +6,7 @@ import { DISTRICT_TYPES, getDistrictType, getDistrictsForCity, normalizeMapData 
 import { TOOL_SHORTCUTS, CONTROL_GROUPS, CONTROL_GROUP_BY_ID, COLORS } from './modules/editor/constants.js';
 import { isCity, isDistrict, isTerrainEdit, getLayerGroupId as getLayerGroupIdForObject, objectLabel } from './modules/editor/objectTypes.js';
 import { districtContainsPoint, getVertexHitIndex, getClosestTerrainSegmentIndex, terrainEditContainsPoint } from './modules/editor/geometry.js';
+import { debugLog } from './modules/core/logging.js';
 import {
     getTerrainEditBounds as getTerrainEditBoundsExt,
     refreshTerrainEditGeometry as refreshTerrainEditGeometryExt,
@@ -228,7 +229,7 @@ async function init() {
             const buf = await worldBinResp.arrayBuffer();
             const sampler = new QuadtreeMapSampler(buf);
             setStaticSampler(sampler);
-            console.log(`[Editor] Loaded static world.bin (${(buf.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+            debugLog(`[Editor] Loaded static world.bin (${(buf.byteLength / 1024 / 1024).toFixed(2)} MB)`);
         }
     } catch (e) {
         console.error("Failed to load map data", e);
@@ -369,7 +370,7 @@ function canInteractWithObject(obj) {
 function setupHotReload() {
     const es = new EventSource('/events');
     es.addEventListener('reload-city', async () => {
-        console.log("🔄 World rebuild detected, refreshing terrain...");
+        debugLog("🔄 World rebuild detected, refreshing terrain...");
         try {
             const [worldResp, mapResp] = await Promise.all([
                 fetch('/world/world.bin'),
@@ -389,7 +390,7 @@ function setupHotReload() {
             updateSidebar();
             renderLayersPanel();
             scheduleRender();
-            console.log("✨ Terrain refreshed!");
+            debugLog("✨ Terrain refreshed!");
         } catch (e) {
             console.error("Failed to hot-reload world.bin", e);
         }
@@ -1259,7 +1260,7 @@ async function save() {
                 points: Array.isArray(edit.points) ? edit.points.map(([x, z]) => [x, z]) : undefined
             }))
         };
-        console.log(`[DEBUG] Attempting save to ${window.location.origin}/save`);
+        debugLog(`[Editor] Attempting save to ${window.location.origin}/save`);
         const [resMap, resVantage] = await Promise.all([
             fetch('/save', {
                 method: 'POST',

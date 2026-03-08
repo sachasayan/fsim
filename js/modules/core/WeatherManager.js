@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { LIGHTING_PRESETS } from '../lighting.js';
+import { debugLog } from './logging.js';
 
 export function createWeatherManager({
     scene,
@@ -119,7 +120,7 @@ export function createWeatherManager({
     }
 
     if (initialPreset) {
-        console.log(`WeatherManager: Applying initial lighting preset: ${initialPreset}`);
+        debugLog(`WeatherManager: Applying initial lighting preset: ${initialPreset}`);
         applyLightingPreset(initialPreset);
     }
 

@@ -1,4 +1,5 @@
 import { createRapierWorld } from './rapierWorld.js';
+import { debugInfo } from '../core/logging.js';
 
 export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
   let rapier = null;
@@ -70,7 +71,7 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
       try {
         const rbMass = body.mass ? body.mass() : NaN;
         const rbInertia = body.principalInertia ? body.principalInertia() : null;
-        console.info('[physics] Rapier body scale', {
+        debugInfo('[physics] Rapier body scale', {
           configuredMass: AIRCRAFT.mass,
           rigidBodyMass: Number.isFinite(rbMass) ? Number(rbMass.toFixed(1)) : 'unknown',
           rigidBodyInertia: rbInertia
@@ -86,7 +87,7 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
       }
 
       needsSyncFromState = true;
-      console.info('[physics] Rapier backend initialized (force/torque flight dynamics)');
+      debugInfo('[physics] Rapier backend initialized (force/torque flight dynamics)');
     } catch (err) {
       console.error('[physics] Rapier init failed.', err);
       throw err;

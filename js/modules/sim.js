@@ -16,6 +16,7 @@ import { createAirportSystems } from './sim/AirportSystems.js';
 import { ProceduralAudio } from './audio/AudioSystem.js';
 import { initLiveReload } from './core/LiveReload.js';
 import { startLoaderTips } from './ui/LoaderTips.js';
+import { debugLog } from './core/logging.js';
 
 // Initialize audio nodes early (will be suspended until gesture)
 ProceduralAudio.init();
@@ -454,15 +455,15 @@ setTimeout(() => {
   // Final attempt to resume if not already done
   ProceduralAudio.resume();
 
-  console.log('Finalizing initialization...');
+  debugLog('Finalizing initialization...');
   const loader = document.getElementById('loader');
   if (loader) {
-    console.log('Hiding loader...');
+    debugLog('Hiding loader...');
     loader.style.opacity = '0';
     setTimeout(() => {
       loader.style.display = 'none';
       if (loaderTipsInterval) clearInterval(loaderTipsInterval);
-      console.log('Loader removed.');
+      debugLog('Loader removed.');
     }, 1000);
   }
 
@@ -485,7 +486,7 @@ setTimeout(() => {
     planeGroup.visible = false;
   }
 
-  console.log(`Setting initial position: [${spawnX}, ${spawnY}, ${spawnZ}]`);
+  debugLog(`Setting initial position: [${spawnX}, ${spawnY}, ${spawnZ}]`);
   PHYSICS.position.set(spawnX, spawnY, spawnZ);
   PHYSICS.velocity.set(0, 0, 0);
   PHYSICS.angularVelocity.set(0, 0, 0);

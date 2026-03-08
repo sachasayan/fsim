@@ -4,6 +4,7 @@ import { QuadtreeMapSampler, hash2Local } from './TerrainUtils.js';
 import { setupTerrainMaterial } from './TerrainMaterials.js';
 import { spawnCityBuildingsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
+import { debugLog } from '../../core/logging.js';
 
 export const CHUNK_SIZE = 4000;
 export const TREE_DENSITY_MULTIPLIER = 8.0;
@@ -35,12 +36,12 @@ export async function loadStaticWorld() {
 
         if (meta) {
             Object.assign(window.fsimWorld || (window.fsimWorld = {}), meta);
-            console.log("🌐 Initialized world from baked metadata");
+            debugLog("🌐 Initialized world from baked metadata");
         } else {
             const jsonResp = await fetch('/tools/map.json');
             const mapData = await jsonResp.json();
             Object.assign(window.fsimWorld || (window.fsimWorld = {}), mapData);
-            console.log("⚠️ Baked metadata missing, fallbacked to map.json");
+            debugLog("⚠️ Baked metadata missing, fallbacked to map.json");
         }
 
         // Initialize worker manager if not already

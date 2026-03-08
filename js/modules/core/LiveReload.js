@@ -1,3 +1,5 @@
+import { debugLog } from './logging.js';
+
 /**
  * LiveReload.js
  *
@@ -11,7 +13,7 @@ export function initLiveReload(terrainSystem) {
         return;
     }
 
-    console.log('[LiveReload] Initializing SSE connection...');
+    debugLog('[LiveReload] Initializing SSE connection...');
 
     // If we're on port 5173 (Game), connect to the Dev Server on 5174 for rebuild events
     const ssePort = window.location.port === '5173' ? '5174' : window.location.port;
@@ -19,7 +21,7 @@ export function initLiveReload(terrainSystem) {
 
     es.addEventListener('reload-city', async (event) => {
         const data = JSON.parse(event.data);
-        console.log(`[LiveReload] Received reload signal (timestamp: ${data.timestamp})`);
+        debugLog(`[LiveReload] Received reload signal (timestamp: ${data.timestamp})`);
 
         try {
             // 1. Clear caches and reload static world (world.bin + metadata)
@@ -37,7 +39,7 @@ export function initLiveReload(terrainSystem) {
 
             // 2. Reload city building meshes
             await terrainSystem.reloadCity();
-            console.log('[LiveReload] Hot-swap complete.');
+            debugLog('[LiveReload] Hot-swap complete.');
         } catch (err) {
             console.error('[LiveReload] Hot-swap failed:', err);
         }
