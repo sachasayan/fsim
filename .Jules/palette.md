@@ -1,0 +1,3 @@
+## 2024-05-17 - Communicate WebGL Simulator States with DOM Overlays
+**Learning:** WebGL and Canvas elements are opaque to screen readers, making critical simulator states (like crashes, stalls, or loading progress) inaccessible. Placing standard ARIA attributes (`role="alert"`, `aria-live="assertive"`, `role="status"`) on DOM overlays positioned above the canvas successfully bridges this gap, allowing assistive technologies to announce these critical states when they become visible or change content.
+**Action:** Always use semantic DOM overlays with appropriate `role` and `aria-live` attributes to communicate critical, non-visual states when building Canvas/WebGL interactive applications.
