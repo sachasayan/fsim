@@ -21,21 +21,21 @@
 
 <body>
 
-    <div id="loader">
+    <div id="loader" role="status" aria-live="polite">
         <div class="spinner"></div>
         <h2 id="loader-text">INITIALIZING FLIGHT DYNAMICS</h2>
         <p id="loader-subtext">Generating Procedural World...</p>
     </div>
 
     <div id="game-container"></div>
-    <div id="warning-overlay">STALL</div>
+    <div id="warning-overlay" role="alert" aria-live="assertive">STALL</div>
 
     <!-- NEW CRASH SCREEN OVERLAY -->
-    <div id="crash-screen">
+    <div id="crash-screen" role="alert" aria-live="assertive">
         <h1 class="crash-title">AIRCRAFT DESTROYED
         </h1>
         <p id="crash-reason" class="crash-reason"></p>
-        <button onclick="resetFlight()" class="crash-reset-btn">RESTART
+        <button onclick="resetFlight()" class="crash-reset-btn" aria-label="Restart flight">RESTART
             FLIGHT</button>
     </div>
 
