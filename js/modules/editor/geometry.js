@@ -48,12 +48,29 @@ export function terrainEditContainsPoint(edit, x, z) {
     return Math.hypot(x - edit.x, z - edit.z) <= edit.radius;
 }
 
+export function roadContainsPoint(road, x, z, threshold = 0) {
+    if (!Array.isArray(road?.points) || road.points.length < 2) return false;
+    const effectiveRadius = Math.max((road.width || 0) * 0.5 + (road.feather || 0), threshold);
+    for (let i = 1; i < road.points.length; i++) {
+        const [ax, az] = road.points[i - 1];
+        const [bx, bz] = road.points[i];
+        if (getDistanceToSegment(x, z, ax, az, bx, bz) <= effectiveRadius) return true;
+    }
+    return false;
+}
+
 export function getVertexHitIndex(points, worldPos, threshold) {
+    let bestIndex = -1;
+    let bestDistance = threshold;
     for (let i = points.length - 1; i >= 0; i--) {
         const [x, z] = points[i];
-        if (Math.hypot(worldPos.x - x, worldPos.z - z) <= threshold) return i;
+        const distance = Math.hypot(worldPos.x - x, worldPos.z - z);
+        if (distance <= bestDistance) {
+            bestDistance = distance;
+            bestIndex = i;
+        }
     }
-    return -1;
+    return bestIndex;
 }
 
 export function getClosestTerrainSegmentIndex(edit, worldPos, threshold) {

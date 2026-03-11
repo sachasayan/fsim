@@ -26,6 +26,7 @@ const MIME_TYPES = {
 
 function safeResolve(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
+  if (decoded === '/editor.html' || decoded === '/editor.html/' || decoded === '/js/editor.js') return null;
   let requestPath = decoded === '/' ? '/fsim.html' : decoded;
   const absolutePath = path.resolve(ROOT, `.${requestPath}`);
   if (!absolutePath.startsWith(ROOT)) return null;

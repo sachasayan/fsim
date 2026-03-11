@@ -1,4 +1,6 @@
 export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban'];
+export const ROAD_KINDS = ['road', 'taxiway', 'service'];
+export const ROAD_SURFACES = ['asphalt', 'gravel', 'dirt'];
 
 export function getDistrictType(district) {
     return district?.district_type || district?.type || 'residential';
@@ -85,9 +87,72 @@ export function normalizeTerrainEdit(rawEdit) {
     return edit;
 }
 
+export function normalizeRoad(rawRoad) {
+    const road = rawRoad;
+    road.kind = ROAD_KINDS.includes(road.kind) ? road.kind : 'road';
+    road.surface = ROAD_SURFACES.includes(road.surface) ? road.surface : 'asphalt';
+    road.width = Number.isFinite(road.width) ? road.width : 18;
+    road.feather = Number.isFinite(road.feather) ? road.feather : Math.max(0, road.width * 0.35);
+    road.center = Array.isArray(road.center) && road.center.length >= 2
+        ? [Math.round(road.center[0]), Math.round(road.center[1])]
+        : null;
+
+    if (!Array.isArray(road.points)) {
+        road.points = null;
+        return road;
+    }
+
+    road.points = road.points
+        .filter(point => Array.isArray(point) && point.length >= 2)
+        .map(([x, z]) => [Math.round(x), Math.round(z)]);
+
+    if (road.points.length < 2) {
+        road.points = null;
+        return road;
+    }
+
+    let sumX = 0, sumZ = 0;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, z] of road.points) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+        sumX += x;
+        sumZ += z;
+    }
+
+    if (road.center) {
+        const centroidX = sumX / road.points.length;
+        const centroidZ = sumZ / road.points.length;
+        const maxSpan = Math.max(maxX - minX, maxZ - minZ, road.width, 1);
+        const centroidOffset = Math.hypot(centroidX - road.center[0], centroidZ - road.center[1]);
+        const looksRelative =
+            road.points.some(([x, z]) => Math.abs(x - road.center[0]) > 5000 || Math.abs(z - road.center[1]) > 5000) ||
+            centroidOffset > Math.max(1500, maxSpan * 2.5);
+
+        if (looksRelative) {
+            road.points = road.points.map(([x, z]) => [road.center[0] + x, road.center[1] + z]);
+        }
+    }
+
+    const finalSum = road.points.reduce((acc, [x, z]) => {
+        acc.x += x;
+        acc.z += z;
+        return acc;
+    }, { x: 0, z: 0 });
+    road.center = [
+        Math.round(finalSum.x / road.points.length),
+        Math.round(finalSum.z / road.points.length)
+    ];
+
+    return road;
+}
+
 export function normalizeMapData(data) {
     if (!data.cities) data.cities = [];
     if (!data.districts) data.districts = [];
+    if (!data.roads) data.roads = [];
     if (!data.terrainEdits) data.terrainEdits = [];
 
     const flattenedDistricts = [...data.districts];
@@ -101,6 +166,9 @@ export function normalizeMapData(data) {
     });
 
     data.districts = flattenedDistricts.map(district => normalizeDistrict(district));
+    data.roads = data.roads
+        .map(road => normalizeRoad(road))
+        .filter(road => Array.isArray(road.points) && road.points.length >= 2);
     data.terrainEdits = data.terrainEdits.map(edit => normalizeTerrainEdit(edit));
     return data;
 }

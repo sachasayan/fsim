@@ -2,10 +2,10 @@ import { Noise } from './modules/noise.js';
 import { QuadtreeMapSampler, setStaticSampler, getTerrainHeight } from './modules/world/terrain/TerrainUtils.js';
 import { MapTileManager } from './modules/ui/MapTileManager.js';
 import { applyTerrainEdits } from './modules/world/terrain/TerrainEdits.js';
-import { DISTRICT_TYPES, getDistrictType, getDistrictsForCity, normalizeMapData } from './modules/world/MapDataUtils.js';
+import { DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES, getDistrictType, getDistrictsForCity, normalizeMapData, normalizeRoad } from './modules/world/MapDataUtils.js';
 import { TOOL_SHORTCUTS, CONTROL_GROUPS, CONTROL_GROUP_BY_ID, COLORS } from './modules/editor/constants.js';
-import { isCity, isDistrict, isTerrainEdit, getLayerGroupId as getLayerGroupIdForObject, objectLabel } from './modules/editor/objectTypes.js';
-import { districtContainsPoint, getVertexHitIndex, getClosestTerrainSegmentIndex, terrainEditContainsPoint } from './modules/editor/geometry.js';
+import { isCity, isDistrict, isRoad, isTerrainEdit, getLayerGroupId as getLayerGroupIdForObject, objectLabel } from './modules/editor/objectTypes.js';
+import { districtContainsPoint, getVertexHitIndex, getClosestTerrainSegmentIndex, terrainEditContainsPoint, roadContainsPoint } from './modules/editor/geometry.js';
 import { debugLog } from './modules/core/logging.js';
 import {
     getTerrainEditBounds as getTerrainEditBoundsExt,
@@ -54,6 +54,7 @@ let activePointerId = null;
 let _sidebarLivePending = false;
 let _layersRenderPending = false;
 let vantageEntries = [];
+const VERTEX_HIT_RADIUS_PX = 12;
 
 const layerState = createLayerState();
 const { getObjectUid, getLayerKey } = createLayerIdentity(getLayerGroupIdForObject);
@@ -283,6 +284,55 @@ function createPolygonDistrict(center, districtType = 'commercial') {
     };
 }
 
+function createRoad(center, kind = 'road', surface = 'asphalt') {
+    const [cx, cz] = center;
+    return normalizeRoad({
+        kind,
+        surface,
+        width: kind === 'taxiway' ? 30 : 24,
+        feather: kind === 'taxiway' ? 10 : 8,
+        points: [
+            [cx - 240, cz],
+            [cx + 240, cz]
+        ]
+    });
+}
+
+function getRoadBounds(road) {
+    if (!Array.isArray(road?.points) || road.points.length === 0) {
+        const [cx, cz] = Array.isArray(road?.center) ? road.center : [0, 0];
+        return { minX: cx, maxX: cx, minZ: cz, maxZ: cz };
+    }
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, z] of road.points) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+    }
+    const pad = (road.width || 0) * 0.5 + (road.feather || 0);
+    return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
+}
+
+function refreshRoadGeometry(road) {
+    normalizeRoad(road);
+}
+
+function translateRoad(road, dx, dz) {
+    if (Array.isArray(road?.points)) {
+        for (const point of road.points) {
+            point[0] += dx;
+            point[1] += dz;
+        }
+    }
+    if (Array.isArray(road?.center)) {
+        road.center[0] += dx;
+        road.center[1] += dz;
+    } else {
+        refreshRoadGeometry(road);
+    }
+}
+
 function getLayerGroupsData() {
     return buildLayerGroupsData(worldData, vantageEntries, objectLabel);
 }
@@ -294,6 +344,7 @@ function setCanvasToolClass() {
         'tool-edit-poly',
         'tool-add-city',
         'tool-add-district',
+        'tool-add-road',
         'tool-terrain-raise',
         'tool-terrain-lower',
         'tool-terrain-flatten',
@@ -308,12 +359,16 @@ function updateSidebarLiveFields() {
     const coordX = document.getElementById('prop-cx');
     const coordZ = document.getElementById('prop-cz');
     const terrainPoints = document.getElementById('prop-terrain-points');
+    const roadPoints = document.getElementById('prop-road-points');
     if (coordX && coordZ) {
-        coordX.value = isCity(selectedObject) || isDistrict(selectedObject) ? selectedObject.center[0] : selectedObject.x;
-        coordZ.value = isCity(selectedObject) || isDistrict(selectedObject) ? selectedObject.center[1] : selectedObject.z;
+        coordX.value = isCity(selectedObject) || isDistrict(selectedObject) || isRoad(selectedObject) ? selectedObject.center[0] : selectedObject.x;
+        coordZ.value = isCity(selectedObject) || isDistrict(selectedObject) || isRoad(selectedObject) ? selectedObject.center[1] : selectedObject.z;
     }
     if (terrainPoints && isTerrainEdit(selectedObject)) {
         terrainPoints.value = String(Array.isArray(selectedObject.points) ? selectedObject.points.length : 0);
+    }
+    if (roadPoints && isRoad(selectedObject)) {
+        roadPoints.value = String(Array.isArray(selectedObject.points) ? selectedObject.points.length : 0);
     }
 }
 
@@ -520,6 +575,72 @@ function render() {
         }
     }
 
+    const roads = worldData.roads || [];
+    for (let i = 0; i < roads.length; i++) {
+        const road = roads[i];
+        if (!isObjectVisible(road)) continue;
+        const bounds = getRoadBounds(road);
+        if (bounds.maxX < minX || bounds.minX > maxX || bounds.maxZ < minZ || bounds.minZ > maxZ) continue;
+        if (!Array.isArray(road.points) || road.points.length < 2) continue;
+
+        const isSelected = selectedObject === road;
+        const isHovered = hoverObject === road && !isSelected;
+        const fillStyle = road.surface === 'asphalt'
+            ? 'rgba(255, 159, 67, 0.18)'
+            : road.surface === 'gravel'
+                ? 'rgba(214, 190, 150, 0.18)'
+                : 'rgba(164, 120, 82, 0.18)';
+        const strokeStyle = isSelected
+            ? COLORS.roadSelected
+            : isHovered
+                ? '#ffe9c7'
+                : road.surface === 'asphalt'
+                    ? COLORS.road
+                    : road.surface === 'gravel'
+                        ? '#d6be96'
+                        : '#a47852';
+        const roadWidthPx = Math.max(3, road.width * zoom);
+        const haloWidthPx = Math.max(roadWidthPx + 2, (road.width + road.feather * 2) * zoom);
+
+        ctx.beginPath();
+        for (let p = 0; p < road.points.length; p++) {
+            const pos = toScreen(road.points[p][0], road.points[p][1]);
+            if (p === 0) ctx.moveTo(pos.x, pos.y);
+            else ctx.lineTo(pos.x, pos.y);
+        }
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = haloWidthPx;
+        ctx.strokeStyle = fillStyle;
+        ctx.stroke();
+
+        ctx.beginPath();
+        for (let p = 0; p < road.points.length; p++) {
+            const pos = toScreen(road.points[p][0], road.points[p][1]);
+            if (p === 0) ctx.moveTo(pos.x, pos.y);
+            else ctx.lineTo(pos.x, pos.y);
+        }
+        ctx.lineWidth = isSelected ? roadWidthPx + 2 : roadWidthPx;
+        ctx.strokeStyle = strokeStyle;
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+
+        if (isSelected && currentTool === 'edit-poly') {
+            for (let p = 0; p < road.points.length; p++) {
+                const vp = toScreen(road.points[p][0], road.points[p][1]);
+                if (!isScreenPointVisible(vp.x, vp.y)) continue;
+                ctx.fillStyle = (draggedVertex && draggedVertex.object === road && draggedVertex.index === p) ? '#fff' : strokeStyle;
+                ctx.beginPath();
+                ctx.arc(vp.x, vp.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#08111f';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+        }
+    }
+
     const cities = worldData.cities || [];
     for (let i = 0; i < cities.length; i++) {
         const city = cities[i];
@@ -684,6 +805,14 @@ function getCanvasPointFromEvent(event) {
 function findObjectAtWorldPos(worldPos, { allowLocked = false } = {}) {
     if (!worldData) return null;
 
+    const roads = worldData.roads || [];
+    for (let i = roads.length - 1; i >= 0; i--) {
+        const road = roads[i];
+        if (!isObjectVisible(road)) continue;
+        if (!allowLocked && isObjectLocked(road)) continue;
+        if (roadContainsPoint(road, worldPos.x, worldPos.z, 6 / camera.zoom)) return road;
+    }
+
     const districts = worldData.districts || [];
     for (let i = districts.length - 1; i >= 0; i--) {
         const district = districts[i];
@@ -728,12 +857,14 @@ function setupInputs() {
         const point = getCanvasPointFromEvent(e);
         const worldPos = screenToWorld(point.x, point.y);
         if (selectedObject && selectedObject.points) {
-            const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, 100 / camera.zoom);
+            const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, VERTEX_HIT_RADIUS_PX / camera.zoom);
             if (hitVertex !== -1) {
+                if (isRoad(selectedObject) && selectedObject.points.length <= 2) return;
                 if (isTerrainStroke(selectedObject)) {
                     removeTerrainStrokePoint(selectedObject, hitVertex);
                 } else {
                     selectedObject.points.splice(hitVertex, 1);
+                    if (isRoad(selectedObject)) refreshRoadGeometry(selectedObject);
                 }
                 updateSidebar();
                 scheduleRender();
@@ -755,6 +886,11 @@ function setupInputs() {
                     refreshTerrainEditGeometry(selectedObject);
                     invalidateTerrainEdit(selectedObject);
                 }
+            } else if (isRoad(selectedObject)) {
+                const insertIndex = getClosestTerrainSegmentIndex(selectedObject, worldPos, Math.max(selectedObject.width + selectedObject.feather, 30 / camera.zoom));
+                if (insertIndex !== -1) selectedObject.points.splice(insertIndex, 0, [Math.round(worldPos.x), Math.round(worldPos.z)]);
+                else selectedObject.points.push([Math.round(worldPos.x), Math.round(worldPos.z)]);
+                refreshRoadGeometry(selectedObject);
             } else {
                 // Add vertex at mouse position
                 selectedObject.points.push([Math.round(worldPos.x), Math.round(worldPos.z)]);
@@ -779,7 +915,7 @@ function setupInputs() {
         }
 
         if (currentTool === 'edit-poly' && selectedObject && selectedObject.points && !isObjectLocked(selectedObject)) {
-            const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, 100 / camera.zoom);
+            const hitVertex = getVertexHitIndex(selectedObject.points, worldPos, VERTEX_HIT_RADIUS_PX / camera.zoom);
             if (hitVertex !== -1) {
                 draggedVertex = { object: selectedObject, index: hitVertex };
                 return;
@@ -815,6 +951,15 @@ function setupInputs() {
             if (parentCity) newDistrict.city_id = parentCity.id;
             worldData.districts.push(newDistrict);
             setSelection(newDistrict);
+            setTool('edit-poly');
+            return;
+        }
+
+        if (currentTool === 'add-road') {
+            const roadCenter = [Math.round(worldPos.x / 100) * 100, Math.round(worldPos.z / 100) * 100];
+            const newRoad = createRoad(roadCenter);
+            worldData.roads.push(newRoad);
+            setSelection(newRoad);
             setTool('edit-poly');
             return;
         }
@@ -857,6 +1002,7 @@ function setupInputs() {
             } else {
                 d.points[idx][0] = Math.round(worldPos.x);
                 d.points[idx][1] = Math.round(worldPos.z);
+                if (isRoad(d)) refreshRoadGeometry(d);
             }
             scheduleSidebarLiveUpdate();
             scheduleRender();
@@ -882,6 +1028,8 @@ function setupInputs() {
                 const nextZ = Math.round(worldPos.z / 100) * 100;
                 if (isDistrict(selectedObject)) {
                     translateDistrict(selectedObject, nextX - selectedObject.center[0], nextZ - selectedObject.center[1]);
+                } else if (isRoad(selectedObject)) {
+                    translateRoad(selectedObject, nextX - selectedObject.center[0], nextZ - selectedObject.center[1]);
                 } else if (isCity(selectedObject)) {
                     translateCity(selectedObject, nextX - selectedObject.center[0], nextZ - selectedObject.center[1]);
                 } else {
@@ -1009,6 +1157,7 @@ function setupInputs() {
     document.getElementById('tool-select').onclick = () => setTool('select');
     document.getElementById('tool-add-city').onclick = () => setTool('add-city');
     document.getElementById('tool-add-district').onclick = () => setTool('add-district');
+    document.getElementById('tool-add-road').onclick = () => setTool('add-road');
     document.getElementById('tool-edit-poly').onclick = () => setTool('edit-poly');
     document.getElementById('tool-terrain-raise').onclick = () => setTool('terrain-raise');
     document.getElementById('tool-terrain-lower').onclick = () => setTool('terrain-lower');
@@ -1030,6 +1179,7 @@ function setupInputs() {
             const val = parseFloat(e.target.value);
             if (id === 'prop-cx') {
                 if (isDistrict(selectedObject)) translateDistrict(selectedObject, val - selectedObject.center[0], 0);
+                else if (isRoad(selectedObject)) translateRoad(selectedObject, val - selectedObject.center[0], 0);
                 else if (isCity(selectedObject)) translateCity(selectedObject, val - selectedObject.center[0], 0);
                 else if (isTerrainEdit(selectedObject)) {
                     if (Array.isArray(selectedObject.points) && selectedObject.points.length > 0) {
@@ -1044,6 +1194,7 @@ function setupInputs() {
             }
             if (id === 'prop-cz') {
                 if (isDistrict(selectedObject)) translateDistrict(selectedObject, 0, val - selectedObject.center[1]);
+                else if (isRoad(selectedObject)) translateRoad(selectedObject, 0, val - selectedObject.center[1]);
                 else if (isCity(selectedObject)) translateCity(selectedObject, 0, val - selectedObject.center[1]);
                 else if (isTerrainEdit(selectedObject)) {
                     if (Array.isArray(selectedObject.points) && selectedObject.points.length > 0) {
@@ -1079,6 +1230,20 @@ function setupInputs() {
         scheduleRender();
     };
 
+    document.getElementById('prop-road-kind').onchange = e => {
+        if (!isRoad(selectedObject) || isObjectLocked(selectedObject)) return;
+        selectedObject.kind = ROAD_KINDS.includes(e.target.value) ? e.target.value : 'road';
+        scheduleLayersPanelRender();
+        scheduleRender();
+    };
+
+    document.getElementById('prop-road-surface').onchange = e => {
+        if (!isRoad(selectedObject) || isObjectLocked(selectedObject)) return;
+        selectedObject.surface = ROAD_SURFACES.includes(e.target.value) ? e.target.value : 'asphalt';
+        scheduleLayersPanelRender();
+        scheduleRender();
+    };
+
     ['prop-terrain-radius', 'prop-terrain-radius-range', 'prop-terrain-delta', 'prop-terrain-delta-range', 'prop-terrain-target', 'prop-terrain-target-range', 'prop-terrain-opacity', 'prop-terrain-opacity-range'].forEach(id => {
         document.getElementById(id).oninput = e => {
             if (!isTerrainEdit(selectedObject) || isObjectLocked(selectedObject)) return;
@@ -1093,6 +1258,19 @@ function setupInputs() {
             if (id.startsWith('prop-terrain-opacity')) selectedObject.opacity = val;
             refreshTerrainEditGeometry(selectedObject);
             invalidateTerrainEdit(selectedObject);
+            scheduleSidebarLiveUpdate();
+            scheduleRender();
+        };
+    });
+    ['prop-road-width', 'prop-road-width-range', 'prop-road-feather', 'prop-road-feather-range'].forEach(id => {
+        document.getElementById(id).oninput = e => {
+            if (!isRoad(selectedObject) || isObjectLocked(selectedObject)) return;
+            const val = parseFloat(e.target.value);
+            if (!Number.isFinite(val)) return;
+            syncControlGroup(id, val);
+            if (id.startsWith('prop-road-width')) selectedObject.width = val;
+            if (id.startsWith('prop-road-feather')) selectedObject.feather = val;
+            refreshRoadGeometry(selectedObject);
             scheduleSidebarLiveUpdate();
             scheduleRender();
         };
@@ -1123,7 +1301,7 @@ function jumpToSim() {
 
 function deleteObject() {
     if (!selectedObject || isObjectLocked(selectedObject)) return;
-    const label = selectedObject.id || (isDistrict(selectedObject) ? getDistrictType(selectedObject) : isTerrainEdit(selectedObject) ? selectedObject.kind : 'selection');
+    const label = selectedObject.id || (isRoad(selectedObject) ? selectedObject.kind : isDistrict(selectedObject) ? getDistrictType(selectedObject) : isTerrainEdit(selectedObject) ? selectedObject.kind : 'selection');
     if (confirm(`Delete ${label}?`)) {
         const cityIdx = worldData.cities.indexOf(selectedObject);
         if (cityIdx !== -1) {
@@ -1133,6 +1311,9 @@ function deleteObject() {
         } else if (isDistrict(selectedObject)) {
             const dIdx = worldData.districts.indexOf(selectedObject);
             if (dIdx !== -1) worldData.districts.splice(dIdx, 1);
+        } else if (isRoad(selectedObject)) {
+            const roadIdx = worldData.roads.indexOf(selectedObject);
+            if (roadIdx !== -1) worldData.roads.splice(roadIdx, 1);
         } else if (isTerrainEdit(selectedObject)) {
             const editIdx = worldData.terrainEdits.indexOf(selectedObject);
             if (editIdx !== -1) worldData.terrainEdits.splice(editIdx, 1);
@@ -1166,6 +1347,7 @@ function updateSidebar({ full = true } = {}) {
     const noSel = document.getElementById('no-selection');
     const badge = document.getElementById('prop-type-badge');
     const districtProps = document.getElementById('district-only-props');
+    const roadProps = document.getElementById('road-only-props');
     const terrainProps = document.getElementById('terrain-only-props');
     const vantageProps = document.getElementById('vantage-only-props');
     const terrainDeltaRow = document.getElementById('terrain-delta-row');
@@ -1174,7 +1356,9 @@ function updateSidebar({ full = true } = {}) {
     const coordX = document.getElementById('prop-cx');
     const coordZ = document.getElementById('prop-cz');
     const terrainPoints = document.getElementById('prop-terrain-points');
+    const roadPoints = document.getElementById('prop-road-points');
     const terrainHint = document.getElementById('terrain-edit-hint');
+    const roadHint = document.getElementById('road-edit-hint');
 
     if (selectedObject) {
         selPanel.style.display = 'block';
@@ -1182,11 +1366,13 @@ function updateSidebar({ full = true } = {}) {
 
         const citySelected = isCity(selectedObject);
         const districtSelected = isDistrict(selectedObject);
+        const roadSelected = isRoad(selectedObject);
         const terrainSelected = isTerrainEdit(selectedObject);
-        badge.innerText = citySelected ? "CITY" : districtSelected ? "DISTRICT" : terrainSelected ? "TERRAIN" : "VANTAGE POINT";
+        badge.innerText = citySelected ? "CITY" : districtSelected ? "DISTRICT" : roadSelected ? "ROAD" : terrainSelected ? "TERRAIN" : "VANTAGE POINT";
         districtProps.style.display = districtSelected ? "block" : "none";
+        roadProps.style.display = roadSelected ? "block" : "none";
         terrainProps.style.display = terrainSelected ? "block" : "none";
-        vantageProps.style.display = citySelected || districtSelected || terrainSelected ? "none" : "block";
+        vantageProps.style.display = citySelected || districtSelected || roadSelected || terrainSelected ? "none" : "block";
         const terrainStrokeSelected = terrainSelected && Array.isArray(selectedObject.points) && selectedObject.points.length > 0;
         const isLocked = isObjectLocked(selectedObject);
         coordX.readOnly = terrainStrokeSelected || isLocked;
@@ -1195,12 +1381,21 @@ function updateSidebar({ full = true } = {}) {
         badge.style.color = isLocked ? '#ff9da0' : 'var(--accent)';
         badge.style.borderColor = isLocked ? 'rgba(239,68,68,0.35)' : 'rgba(56, 189, 248, 0.2)';
 
-        document.getElementById('prop-id').value = selectedObject.id || (districtSelected ? getDistrictType(selectedObject) : terrainSelected ? selectedObject.kind : "Vantage Point");
-        document.getElementById('prop-cx').value = citySelected || districtSelected ? selectedObject.center[0] : selectedObject.x;
-        document.getElementById('prop-cz').value = citySelected || districtSelected ? selectedObject.center[1] : selectedObject.z;
+        document.getElementById('prop-id').value = selectedObject.id || (roadSelected ? selectedObject.kind : districtSelected ? getDistrictType(selectedObject) : terrainSelected ? selectedObject.kind : "Vantage Point");
+        document.getElementById('prop-cx').value = citySelected || districtSelected || roadSelected ? selectedObject.center[0] : selectedObject.x;
+        document.getElementById('prop-cz').value = citySelected || districtSelected || roadSelected ? selectedObject.center[1] : selectedObject.z;
 
         if (districtSelected) {
             document.getElementById('prop-district-type').value = getDistrictType(selectedObject);
+        } else if (roadSelected) {
+            document.getElementById('prop-road-kind').value = selectedObject.kind;
+            document.getElementById('prop-road-surface').value = selectedObject.surface;
+            setSyncedControlValue('prop-road-width', selectedObject.width);
+            setSyncedControlValue('prop-road-feather', selectedObject.feather);
+            roadPoints.value = String(Array.isArray(selectedObject.points) ? selectedObject.points.length : 0);
+            roadHint.innerHTML = currentTool === 'edit-poly'
+                ? 'Drag vertices to reshape the polyline. Double-click near a segment to insert a point, and right-click a point to remove it.'
+                : 'Switch to <strong>Edit Poly</strong> to reshape this road point-by-point.';
         } else if (terrainSelected) {
             document.getElementById('prop-terrain-kind').value = selectedObject.kind;
             setSyncedControlValue('prop-terrain-radius', selectedObject.radius);
@@ -1227,10 +1422,12 @@ function updateSidebar({ full = true } = {}) {
         coordX.readOnly = false;
         coordZ.readOnly = false;
         terrainPoints.value = '';
+        roadPoints.value = '';
         badge.style.background = 'rgba(56, 189, 248, 0.15)';
         badge.style.color = 'var(--accent)';
         badge.style.borderColor = 'rgba(56, 189, 248, 0.2)';
         terrainHint.innerHTML = 'Use <strong>Edit Poly</strong> to drag stroke points, double-click the stroke to add one, and right-click a point to remove it.';
+        roadHint.innerHTML = 'Use <strong>Edit Poly</strong> to drag road vertices, double-click near a segment to add one, and right-click a point to remove it.';
     }
     scheduleLayersPanelRender();
 }
@@ -1244,6 +1441,10 @@ async function save() {
         normalizeMapData(worldData);
         const mapPayload = {
             ...worldData,
+            roads: (worldData.roads || []).map(({ center, ...road }) => ({
+                ...road,
+                points: Array.isArray(road.points) ? road.points.map(([x, z]) => [x, z]) : []
+            })),
             terrainEdits: (worldData.terrainEdits || []).map(({ bounds, ...edit }) => ({
                 ...edit,
                 points: Array.isArray(edit.points) ? edit.points.map(([x, z]) => [x, z]) : undefined

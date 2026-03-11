@@ -11,7 +11,7 @@ const execAsync = promisify(exec);
 // Path to project root
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const PORT = Number(process.env.PORT || 5174);
+const PORT = Number(process.env.PORT || 5173);
 
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -31,7 +31,8 @@ const MIME_TYPES = {
 
 function safeResolve(urlPath) {
     const decoded = decodeURIComponent(urlPath.split('?')[0]);
-    const absolutePath = path.resolve(ROOT, `.${decoded}`);
+    const requestPath = decoded === '/' ? '/fsim.html' : decoded;
+    const absolutePath = path.resolve(ROOT, `.${requestPath}`);
     if (!absolutePath.startsWith(ROOT)) return null;
     return absolutePath;
 }
@@ -116,20 +117,6 @@ const server = http.createServer(async (req, res) => {
                     res.writeHead(500); res.end('Error: ' + err.message);
                 }
             });
-            return;
-        }
-
-        // Landing Page
-        if (url.pathname === '/') {
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(`
-        <body style="font-family: Inter, sans-serif; background: #111; color: #eee; padding: 2rem;">
-          <h1>🚀 fsim Build & Tools Server</h1>
-          <p>This server handles map saving and world baking. It is NOT the game server.</p>
-          <hr style="border: 0; border-top: 1px solid #333; margin: 2rem 0;">
-          <a href="/editor.html" style="color: #4cc9f0; font-weight: bold; font-size: 1.2rem;">Open Map Editor &rarr;</a>
-        </body>
-      `);
             return;
         }
 

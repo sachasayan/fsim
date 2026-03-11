@@ -18,6 +18,38 @@ test('taxiway centerline stamps asphalt', () => {
     assert.ok(asphalt > 0.9);
 });
 
+test('authored road centerline stamps asphalt', () => {
+    const worldData = {
+        roads: [
+            {
+                surface: 'asphalt',
+                width: 30,
+                feather: 10,
+                points: [[100, 100], [300, 100]]
+            }
+        ]
+    };
+
+    const [asphalt] = getTerrainSurfaceOverrides(200, 100, worldData);
+    assert.ok(asphalt > 0.9);
+});
+
+test('authored roads override legacy taxiway fallback', () => {
+    const worldData = {
+        roads: [
+            {
+                surface: 'asphalt',
+                width: 24,
+                feather: 8,
+                points: [[2000, 2000], [2200, 2000]]
+            }
+        ]
+    };
+
+    const [asphalt] = getTerrainSurfaceOverrides(-80, 1400, worldData);
+    assert.equal(asphalt, 0);
+});
+
 test('open terrain remains unstamped', () => {
     const [asphalt] = getTerrainSurfaceOverrides(900, 900);
     assert.equal(asphalt, 0);

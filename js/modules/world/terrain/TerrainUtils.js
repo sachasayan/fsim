@@ -226,8 +226,14 @@ export class QuadtreeMapSampler {
 }
 
 let _staticSampler = null;
+let _staticWorldMetadata = null;
 export function setStaticSampler(sampler) {
     _staticSampler = sampler;
+    _staticWorldMetadata = sampler?.getMetadata?.() || null;
+}
+
+export function getStaticWorldMetadata() {
+    return _staticWorldMetadata;
 }
 
 export function getTerrainHeight(x, z, Noise, octaves = 6) {

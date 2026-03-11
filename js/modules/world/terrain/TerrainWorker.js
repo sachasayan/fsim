@@ -1,4 +1,4 @@
-import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, QuadtreeMapSampler, setStaticSampler } from './TerrainUtils.js';
+import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, QuadtreeMapSampler, setStaticSampler, getStaticWorldMetadata } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
 import { SEA_LEVEL, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
 import { getTerrainSurfaceWeights } from './TerrainSurfaceWeights.js';
@@ -93,6 +93,7 @@ let matricesGenerated = 0; // tracking stats if needed
 
 function buildChunkBase(job) {
     const { cx, cz, lodCfg, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols } = job;
+    const staticWorldMetadata = getStaticWorldMetadata();
 
     // Process terrain
     for (let i = 0; i < positions.length; i += 3) {
@@ -111,7 +112,7 @@ function buildChunkBase(job) {
 
         const col = srgbArrayToLinear(getTerrainBaseSrgb(height));
         const weights = getTerrainSurfaceWeights(height, slope);
-        const overrides = getTerrainSurfaceOverrides(vx, vz);
+        const overrides = getTerrainSurfaceOverrides(vx, vz, staticWorldMetadata);
 
         colors[i] = col.r;
         colors[i + 1] = col.g;

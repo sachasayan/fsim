@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { fetchDistrictIndex, loadDistrictChunk } from './CityChunkLoader.js';
 import { QuadtreeMapSampler, hash2Local } from './TerrainUtils.js';
+import { normalizeMapData } from '../MapDataUtils.js';
 import { spawnCityBuildingsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
 import { debugLog } from '../../core/logging.js';
@@ -34,11 +35,13 @@ export async function loadStaticWorld() {
         const meta = sampler.getMetadata();
 
         if (meta) {
+            normalizeMapData(meta);
             Object.assign(window.fsimWorld || (window.fsimWorld = {}), meta);
             debugLog("🌐 Initialized world from baked metadata");
         } else {
             const jsonResp = await fetch('/tools/map.json');
             const mapData = await jsonResp.json();
+            normalizeMapData(mapData);
             Object.assign(window.fsimWorld || (window.fsimWorld = {}), mapData);
             debugLog("⚠️ Baked metadata missing, fallbacked to map.json");
         }

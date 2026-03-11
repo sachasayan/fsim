@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node tools/dev-server.mjs",
     "start": "node server.js",
+    "serve": "node server.js",
     "build:world": "node tools/bake-map.mjs && node tools/build-world.mjs",
-    "server": "node tools/dev-server.mjs",
+    "server": "node server.js",
     "smoke": "node scripts/smoke.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "screenshot:batch": "node scripts/screenshot-batcher.mjs",
