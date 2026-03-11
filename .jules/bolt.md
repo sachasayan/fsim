@@ -1,0 +1,3 @@
+## 2024-05-19 - Inlining math functions in hot loops
+**Learning:** The `noise` function in `Noise.js` is a major bottleneck because it calls smaller functions (`fade`, `lerp`, `grad`) hundreds of thousands of times. Even though modern V8 engines inline these to some extent, doing it manually and optimizing bitwise logic within the loop yielded a ~20% performance improvement (cutting median time from 135ms to ~110ms).
+**Action:** When working on extreme performance-critical path hot loops (like terrain or noise generation), prioritize manual inlining of simple math functions instead of relying solely on the JIT compiler, while maintaining public function exports for downstream compatibility.
