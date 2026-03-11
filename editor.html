@@ -54,6 +54,10 @@
             cursor: default;
         }
 
+        #canvas-container.tool-select.dragging {
+            cursor: grabbing;
+        }
+
         #canvas-container.tool-pan {
             cursor: grab;
         }
@@ -531,7 +535,7 @@
         <div id="canvas-container">
             <canvas id="map-canvas"></canvas>
             <div class="toolbar">
-                <button class="tool-btn tool-icon active" id="tool-select" aria-label="Select (V)" title="Select (V)">
+                <button class="tool-btn tool-icon active" id="tool-select" aria-label="Select / Pan (V)" title="Select / Pan (V)">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18l5-6 4 6 5-2-4-6 6-4z"></path></svg>
                     <span class="tool-label">Select</span>
                 </button>
@@ -562,10 +566,6 @@
                 <button class="tool-btn tool-icon" id="tool-terrain-flatten" aria-label="Terrain Flatten (F)" title="Terrain Flatten (F)">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16h16"></path><path d="M4 11h16"></path><path d="M4 8h16"></path></svg>
                     <span class="tool-label">Flatten</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-pan" aria-label="Pan (H)" title="Pan (H)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M8 7l4-4 4 4"></path><path d="M8 17l4 4 4-4"></path><path d="M7 8L3 12l4 4"></path><path d="M17 8l4 4-4 4"></path></svg>
-                    <span class="tool-label">Pan</span>
                 </button>
             </div>
             <div id="coords">X: 0, Z: 0</div>

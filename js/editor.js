@@ -55,6 +55,8 @@ let _sidebarLivePending = false;
 let _layersRenderPending = false;
 let vantageEntries = [];
 const VERTEX_HIT_RADIUS_PX = 12;
+const PAN_DRAG_THRESHOLD_PX = 4;
+let pendingCanvasPan = null;
 
 const layerState = createLayerState();
 const { getObjectUid, getLayerKey } = createLayerIdentity(getLayerGroupIdForObject);
@@ -965,8 +967,19 @@ function setupInputs() {
         }
 
         const found = findObjectAtWorldPos(worldPos);
-        setSelection(found);
-        if (found && !isTerrainEdit(found) && !isObjectLocked(found)) isDragging = true;
+        if (found) {
+            setSelection(found);
+            if (!isTerrainEdit(found) && !isObjectLocked(found)) isDragging = true;
+            return;
+        }
+
+        if (currentTool === 'select') {
+            pendingCanvasPan = { x: point.x, y: point.y };
+            lastMouse = { x: point.x, y: point.y };
+            return;
+        }
+
+        setSelection(null);
     });
 
     window.addEventListener('pointermove', e => {
@@ -982,6 +995,14 @@ function setupInputs() {
         }
         if (point.inside) {
             coordsDiv.innerText = `X: ${Math.round(worldPos.x)}, Z: ${Math.round(worldPos.z)}`;
+        }
+
+        if (pendingCanvasPan && !isPanning) {
+            const dragDistance = Math.hypot(point.x - pendingCanvasPan.x, point.y - pendingCanvasPan.y);
+            if (dragDistance >= PAN_DRAG_THRESHOLD_PX) {
+                isPanning = true;
+                setCanvasToolClass();
+            }
         }
 
         if (isPanning) {
@@ -1057,6 +1078,10 @@ function setupInputs() {
             }
             activePointerId = null;
         }
+        if (pendingCanvasPan && !isPanning && !isDragging && !draggedVertex && !isPaintingTerrain) {
+            setSelection(null);
+        }
+        pendingCanvasPan = null;
         isPanning = false;
         isDragging = false;
         draggedVertex = null;
@@ -1067,6 +1092,7 @@ function setupInputs() {
 
     window.addEventListener('pointercancel', () => {
         activePointerId = null;
+        pendingCanvasPan = null;
         isPanning = false;
         isDragging = false;
         draggedVertex = null;
@@ -1162,7 +1188,6 @@ function setupInputs() {
     document.getElementById('tool-terrain-raise').onclick = () => setTool('terrain-raise');
     document.getElementById('tool-terrain-lower').onclick = () => setTool('terrain-lower');
     document.getElementById('tool-terrain-flatten').onclick = () => setTool('terrain-flatten');
-    document.getElementById('tool-pan').onclick = () => setTool('pan');
     window.addEventListener('keydown', e => {
         const activeTag = document.activeElement?.tagName || '';
         if (activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
@@ -1331,7 +1356,8 @@ function deleteObject() {
 function setTool(tool) {
     currentTool = tool;
     document.querySelectorAll('.toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById('tool-' + tool).classList.add('active');
+    const button = document.getElementById('tool-' + tool);
+    if (button) button.classList.add('active');
     setCanvasToolClass();
     updateSidebar();
     scheduleRender();

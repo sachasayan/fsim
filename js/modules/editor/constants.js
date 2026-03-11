@@ -1,6 +1,6 @@
 export const TOOL_SHORTCUTS = {
     v: 'select',
-    h: 'pan',
+    h: 'select',
     c: 'add-city',
     d: 'add-district',
     w: 'add-road',
