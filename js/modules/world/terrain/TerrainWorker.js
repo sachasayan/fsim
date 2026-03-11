@@ -1,6 +1,8 @@
 import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, QuadtreeMapSampler, setStaticSampler } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
 import { SEA_LEVEL, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
+import { getTerrainSurfaceWeights } from './TerrainSurfaceWeights.js';
+import { getTerrainSurfaceOverrides } from './TerrainSurfaceOverrides.js';
 
 // Re-declare constants from TerrainGeneration to avoid importing THREE
 const TREE_DENSITY_MULTIPLIER = 4.0;
@@ -90,7 +92,7 @@ function srgbArrayToLinear(rgb) {
 let matricesGenerated = 0; // tracking stats if needed
 
 function buildChunkBase(job) {
-    const { cx, cz, lodCfg, positions, colors, wPos, wCols } = job;
+    const { cx, cz, lodCfg, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols } = job;
 
     // Process terrain
     for (let i = 0; i < positions.length; i += 3) {
@@ -102,11 +104,28 @@ function buildChunkBase(job) {
         let height = getTerrainHeight(vx, vz, Noise);
         positions[i + 1] = height;
 
+        const sampleDist = Math.max(12, 90 / Math.max(1, lodCfg.terrainRes));
+        const hx = getTerrainHeight(vx + sampleDist, vz, Noise);
+        const hz = getTerrainHeight(vx, vz + sampleDist, Noise);
+        const slope = Math.max(Math.abs(hx - height), Math.abs(hz - height)) / sampleDist;
+
         const col = srgbArrayToLinear(getTerrainBaseSrgb(height));
+        const weights = getTerrainSurfaceWeights(height, slope);
+        const overrides = getTerrainSurfaceOverrides(vx, vz);
 
         colors[i] = col.r;
         colors[i + 1] = col.g;
         colors[i + 2] = col.b;
+
+        const weightIndex = (i / 3) * 4;
+        surfaceWeights[weightIndex] = weights[0];
+        surfaceWeights[weightIndex + 1] = weights[1];
+        surfaceWeights[weightIndex + 2] = weights[2];
+        surfaceWeights[weightIndex + 3] = weights[3];
+        surfaceOverrides[weightIndex] = overrides[0];
+        surfaceOverrides[weightIndex + 1] = overrides[1];
+        surfaceOverrides[weightIndex + 2] = overrides[2];
+        surfaceOverrides[weightIndex + 3] = overrides[3];
     }
 
     // Process water
@@ -126,7 +145,7 @@ function buildChunkBase(job) {
         wCols[i + 2] = col.b;
     }
 
-    return { cx, cz, positions, colors, wPos, wCols };
+    return { cx, cz, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols };
 }
 
 function buildChunkProps(job) {
@@ -267,7 +286,7 @@ self.onmessage = function (e) {
                 jobId,
                 type: 'chunkBase_done',
                 result: result
-            }, [result.positions.buffer, result.colors.buffer, result.wPos.buffer, result.wCols.buffer]);
+            }, [result.positions.buffer, result.colors.buffer, result.surfaceWeights.buffer, result.surfaceOverrides.buffer, result.wPos.buffer, result.wCols.buffer]);
         } else if (type === 'chunkProps') {
             const result = buildChunkProps(payload);
             const transferables = [];

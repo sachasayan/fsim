@@ -40,7 +40,7 @@ export function createTaxiwaySystem({ scene, renderer, getTerrainHeight }) {
         envMapIntensity: 0.3
     });
 
-    function createTaxiwayFromSpline(points, width = 20) {
+    function createTaxiwayFromSpline(points, width = AIRPORT_CONFIG.TAXIWAY.width) {
         const curve = new THREE.CatmullRomCurve3(points);
         const segments = 40;
         const curvePoints = curve.getPoints(segments);

@@ -1,6 +1,10 @@
-import * as THREE from 'three';
-
 export const AIRPORT_CONFIG = {
+    RUNWAY: {
+        x: 0,
+        z: 0,
+        width: 100,
+        length: 4000
+    },
     // Principal coordinates
     TOWER: {
         x: -190,
@@ -11,6 +15,9 @@ export const AIRPORT_CONFIG = {
         z: -450,
         width: 180,
         depth: 600
+    },
+    TAXIWAY: {
+        width: 20
     },
     HANGARS: [
         { x: -190, z: -480, angle: Math.PI / 2 },

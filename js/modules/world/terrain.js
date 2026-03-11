@@ -124,7 +124,12 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     uTerrainAtmosStrength: { value: 0.25 },
     uTerrainFoliageNearStart: { value: 120.0 },
     uTerrainFoliageNearEnd: { value: 1200.0 },
-    uTerrainFoliageStrength: { value: 0.38 }
+    uTerrainFoliageStrength: { value: 0.38 },
+    uTerrainSandColor: { value: new THREE.Color(194 / 255, 178 / 255, 128 / 255) },
+    uTerrainGrassColor: { value: new THREE.Color(42 / 255, 75 / 255, 42 / 255) },
+    uTerrainRockColor: { value: new THREE.Color(85 / 255, 85 / 255, 85 / 255) },
+    uTerrainSnowColor: { value: new THREE.Color(1, 1, 1) },
+    uTerrainAsphaltColor: { value: new THREE.Color(0x353b42) }
   };
 
   setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, false);

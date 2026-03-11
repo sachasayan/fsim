@@ -394,13 +394,25 @@ export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphere
         shader.uniforms.uTerrainFoliageNearStart = terrainDetailUniforms.uTerrainFoliageNearStart;
         shader.uniforms.uTerrainFoliageNearEnd = terrainDetailUniforms.uTerrainFoliageNearEnd;
         shader.uniforms.uTerrainFoliageStrength = terrainDetailUniforms.uTerrainFoliageStrength;
+        shader.uniforms.uTerrainSandColor = terrainDetailUniforms.uTerrainSandColor;
+        shader.uniforms.uTerrainGrassColor = terrainDetailUniforms.uTerrainGrassColor;
+        shader.uniforms.uTerrainRockColor = terrainDetailUniforms.uTerrainRockColor;
+        shader.uniforms.uTerrainSnowColor = terrainDetailUniforms.uTerrainSnowColor;
+        shader.uniforms.uTerrainAsphaltColor = terrainDetailUniforms.uTerrainAsphaltColor;
 
         shader.vertexShader = replaceInclude(shader.vertexShader, 'common', `#include <common>
+    attribute vec4 surfaceWeights;
+    attribute vec4 surfaceOverrides;
     varying vec3 vTerrainWorldPos;
-        varying vec3 vTerrainWorldNormal;
-        varying float vTerrainDist;
-        varying float vTerrainSlope;
-        uniform vec3 uAtmosCameraPos;`);
+    varying vec3 vTerrainWorldNormal;
+    varying float vTerrainDist;
+    varying float vTerrainSlope;
+    varying vec4 vTerrainSurfaceWeights;
+    varying vec4 vTerrainSurfaceOverrides;
+    uniform vec3 uAtmosCameraPos;`);
+        shader.vertexShader = replaceInclude(shader.vertexShader, 'begin_vertex', `#include <begin_vertex>
+    vTerrainSurfaceWeights = surfaceWeights;
+    vTerrainSurfaceOverrides = surfaceOverrides;`);
         shader.vertexShader = replaceInclude(shader.vertexShader, 'worldpos_vertex', `#include <worldpos_vertex>
     vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
 #ifdef USE_INSTANCING
@@ -432,6 +444,13 @@ uniform float uTerrainFoliageNearStart;
 uniform float uTerrainFoliageNearEnd;
 uniform float uTerrainFoliageStrength;
 uniform float uTime;
+uniform vec3 uTerrainSandColor;
+uniform vec3 uTerrainGrassColor;
+uniform vec3 uTerrainRockColor;
+uniform vec3 uTerrainSnowColor;
+uniform vec3 uTerrainAsphaltColor;
+varying vec4 vTerrainSurfaceWeights;
+varying vec4 vTerrainSurfaceOverrides;
 
 ${ShaderLibrary.terrain_city_pars_fragment}
 `);
@@ -439,6 +458,17 @@ ${ShaderLibrary.terrain_city_pars_fragment}
             'vec4 diffuseColor = vec4( diffuse, opacity );',
             `vec4 diffuseColor = vec4(diffuse, opacity);
 ${ShaderLibrary.terrain_city_fragment}
+
+    vec4 terrainWeights = clamp(vTerrainSurfaceWeights, 0.0, 1.0);
+    float terrainWeightSum = max(dot(terrainWeights, vec4(1.0)), 0.0001);
+    terrainWeights /= terrainWeightSum;
+    vec3 baseTerrainColor =
+        uTerrainSandColor * terrainWeights.x +
+        uTerrainGrassColor * terrainWeights.y +
+        uTerrainRockColor * terrainWeights.z +
+        uTerrainSnowColor * terrainWeights.w;
+    float asphaltWeight = clamp(vTerrainSurfaceOverrides.x, 0.0, 1.0);
+    diffuseColor.rgb = mix(baseTerrainColor, uTerrainAsphaltColor, asphaltWeight);
 
 #ifndef IS_FAR_LOD
     vec2 baseUv = vTerrainWorldPos.xz * uTerrainDetailScale;
@@ -450,7 +480,7 @@ ${ShaderLibrary.terrain_city_fragment}
     float rockDetail = mix(detailA.g, detailB.g, 0.5);
     float slopeMask = smoothstep(uTerrainSlopeStart, uTerrainSlopeEnd, vTerrainSlope);
     float heightMask = smoothstep(uTerrainRockHeightStart, uTerrainRockHeightEnd, vTerrainWorldPos.y);
-    float rockMask = max(slopeMask, heightMask);
+    float rockMask = max(max(slopeMask, heightMask), terrainWeights.z) * (1.0 - asphaltWeight);
     float detailLuma = mix(grassDetail, rockDetail, rockMask);
     float detailBoost = mix(0.2, 2.0, detailLuma);
 diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
@@ -463,13 +493,14 @@ diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrai
 diffuseColor.rgb *= mix(1.0, mix(0.85, 1.15, macro), nearMid * (1.0 - rockMask * 0.4) * (1.0 - isCity));
     
     float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, vTerrainDist);
-    float foliage = (1.0 - rockMask) * (1.0 - isCity) * foliageFade * smoothstep(0.48, 0.86, grassDetail);
+    float foliage = terrainWeights.y * (1.0 - asphaltWeight) * (1.0 - rockMask * 0.65) * (1.0 - isCity) * foliageFade * smoothstep(0.48, 0.86, grassDetail);
     
     float phase = vTerrainWorldPos.x * 24.0 + vTerrainWorldPos.z * 21.0 + pNoise.r * 6.0;
     float micro = abs(fract(phase * 0.15915 - 0.5) * 4.0 - 2.0) - 1.0; 
     float blade = smoothstep(0.01, 0.99, abs(micro));
 diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
 diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(0.78, 0.95, detailA.g), asphaltWeight);
 #endif
 
 ${ShaderLibrary.terrain_city_pavement_fragment}

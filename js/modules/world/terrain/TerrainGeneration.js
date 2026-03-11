@@ -86,6 +86,8 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.terrainRes, lodCfg.terrainRes);
         geometry.rotateX(-Math.PI / 2);
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
+        geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
+        geometry.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
         terrainMesh = new THREE.Mesh(geometry, lod === 0 ? terrainMaterial : terrainFarMaterial);
         terrainMesh.receiveShadow = receiveTerrainShadows;
         chunkGroup.add(terrainMesh);
@@ -112,6 +114,8 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         cx, cz, lodCfg,
         positions: tGeo.attributes.position.array.slice(),
         colors: new Float32Array(tGeo.attributes.color.array.length),
+        surfaceWeights: new Float32Array(tGeo.attributes.surfaceWeights.array.length),
+        surfaceOverrides: new Float32Array(tGeo.attributes.surfaceOverrides.array.length),
         wPos: wGeo.attributes.position.array.slice(),
         wCols: new Float32Array(wGeo.attributes.color.array.length)
     };
@@ -119,6 +123,8 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     const transferables = [
         payload.positions.buffer,
         payload.colors.buffer,
+        payload.surfaceWeights.buffer,
+        payload.surfaceOverrides.buffer,
         payload.wPos.buffer,
         payload.wCols.buffer
     ];
@@ -133,6 +139,10 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     tGeo.attributes.position.needsUpdate = true;
     tGeo.attributes.color.array.set(result.colors);
     tGeo.attributes.color.needsUpdate = true;
+    tGeo.attributes.surfaceWeights.array.set(result.surfaceWeights);
+    tGeo.attributes.surfaceWeights.needsUpdate = true;
+    tGeo.attributes.surfaceOverrides.array.set(result.surfaceOverrides);
+    tGeo.attributes.surfaceOverrides.needsUpdate = true;
     tGeo.computeVertexNormals();
 
     wGeo.attributes.position.array.set(result.wPos);
