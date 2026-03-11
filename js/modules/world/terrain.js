@@ -30,7 +30,7 @@ import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
 import { setStaticSampler, QuadtreeMapSampler } from './terrain/TerrainUtils.js';
 import { debugLog } from '../core/logging.js';
 
-export function createTerrainSystem({ scene, Noise, PHYSICS }) {
+export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
   const hasWindow = typeof window !== 'undefined';
   const windowRef = hasWindow ? window : null;
   const locationSearch = windowRef?.location?.search || '';
@@ -106,6 +106,8 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   let pendingPropQueueDirty = false;
   const chunkPools = [[], [], [], []];
   const instancedMeshPools = new Map();
+  let bootstrapMode = true;
+  let warmupPromise = null;
 
   const terrainDetailTex = createPackedTerrainDetailTexture();
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
@@ -256,6 +258,11 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     pendingQueueDirty = true;
   }
 
+  function getTargetLod(ringDistance, currentLod = null) {
+    const lod = getLodForRingDistance(ringDistance, currentLod);
+    return bootstrapMode ? (ringDistance === 0 ? lod : 3) : lod;
+  }
+
   function removePendingPropJobs(key) {
     if (!pendingPropKeys.has(key)) return;
     for (let i = pendingPropBuilds.length - 1; i >= 0; i--) {
@@ -377,7 +384,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     lastProcessedChunkX = px;
     lastProcessedChunkZ = pz;
 
-    const renderDistance = _renderDistance;
+    const renderDistance = bootstrapMode ? 0 : _renderDistance;
 
     const activeChunks = new Map();
 
@@ -386,7 +393,7 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         const cx = px + dx; const cz = pz + dz; const key = `${cx}, ${cz}`;
         const ringDistance = Math.max(Math.abs(dx), Math.abs(dz));
         const currentLod = terrainChunks.has(key) ? terrainChunks.get(key).lod : null;
-        const lod = getLodForRingDistance(ringDistance, currentLod);
+        const lod = getTargetLod(ringDistance, currentLod);
         activeChunks.set(key, lod);
         if (!terrainChunks.has(key)) enqueueChunkBuild(cx, cz, lod, ringDistance);
         else { const chunkState = terrainChunks.get(key); if (chunkState.lod !== lod) enqueueChunkBuild(cx, cz, lod, ringDistance + 0.25); }
@@ -409,8 +416,10 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
         terrainChunks.delete(key);
       }
     }
-    const buildBudget = (pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2) * (_isFastLoad ? 40 : 1);
-    const propBuildBudget = (pendingPropBuilds.length > 160 ? 2 : 1) * (_isFastLoad ? 80 : 1);
+    const buildBudgetBase = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
+    const propBuildBudgetBase = pendingPropBuilds.length > 160 ? 2 : 1;
+    const buildBudget = buildBudgetBase * (_isFastLoad ? 40 : bootstrapMode ? 2 : 1);
+    const propBuildBudget = propBuildBudgetBase * (_isFastLoad ? 80 : bootstrapMode ? 2 : 1);
     processChunkBuildQueue(buildBudget);
     processPropBuildQueue(propBuildBudget);
 
@@ -445,6 +454,97 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
   }
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
+
+  function warmupShaders(camera) {
+    if (warmupPromise) return warmupPromise;
+    warmupPromise = (async () => {
+      if (!renderer) return;
+
+      updateTerrainAtmosphere(camera);
+
+      const warmupScene = new THREE.Scene();
+      const warmupCamera = camera ? camera.clone() : new THREE.PerspectiveCamera(60, 1, 1, 10000);
+      warmupCamera.position.set(0, 200, 320);
+      warmupCamera.lookAt(0, 0, 0);
+      warmupCamera.updateMatrixWorld(true);
+
+      const terrainGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
+      terrainGeo.rotateX(-Math.PI / 2);
+      terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 3).fill(1), 3));
+      terrainGeo.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array([
+        0.05, 0.85, 0.10, 0.00,
+        0.00, 0.75, 0.25, 0.00,
+        0.00, 0.30, 0.70, 0.00,
+        0.00, 0.05, 0.15, 0.80
+      ]), 4));
+      terrainGeo.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 4), 4));
+
+      const waterGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
+      waterGeo.rotateX(-Math.PI / 2);
+      waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3).fill(0.7), 3));
+
+      const terrainNearMesh = new THREE.Mesh(terrainGeo, terrainMaterial);
+      terrainNearMesh.position.set(-320, 0, 0);
+      const terrainFarMesh = new THREE.Mesh(terrainGeo, terrainFarMaterial);
+      terrainFarMesh.position.set(0, 0, 0);
+      const waterNearMesh = new THREE.Mesh(waterGeo, waterMaterial);
+      waterNearMesh.position.set(320, 0, 0);
+      const waterFarMesh = new THREE.Mesh(waterGeo, waterFarMaterial);
+      waterFarMesh.position.set(640, 0, 0);
+
+      warmupScene.add(terrainNearMesh, terrainFarMesh, waterNearMesh, waterFarMesh);
+
+      if (typeof renderer.compileAsync === 'function') {
+        await renderer.compileAsync(warmupScene, warmupCamera);
+      } else {
+        renderer.compile(warmupScene, warmupCamera);
+      }
+
+      terrainGeo.dispose();
+      waterGeo.dispose();
+    })().catch((error) => {
+      console.warn('[terrain] Shader warmup failed:', error);
+    });
+    return warmupPromise;
+  }
+
+  function completeBootstrap() {
+    if (!bootstrapMode) return;
+    bootstrapMode = false;
+    debugLog('[terrain] Bootstrap LOD complete; refining outer rings.');
+  }
+
+  function getBootstrapDebugInfo() {
+    const activeRenderDistance = bootstrapMode ? 0 : _renderDistance;
+    const ringChunkCount = (ring) => {
+      if (ring < 0) return 0;
+      const width = ring * 2 + 1;
+      return width * width;
+    };
+
+    const ringBands = bootstrapMode
+      ? [{ label: 'R0', start: 0, end: 0, mode: 'normal detail' }]
+      : [{ label: `R0-R${_renderDistance}`, start: 0, end: _renderDistance, mode: 'full terrain active' }];
+
+    const bands = ringBands.map((band) => ({
+      ...band,
+      chunks: ringChunkCount(band.end) - ringChunkCount(band.start - 1),
+      spanKm: ((band.end * 2 + 1) * CHUNK_SIZE) / 1000
+    }));
+
+    return {
+      bootstrapMode,
+      renderDistance: _renderDistance,
+      activeRenderDistance,
+      totalActiveChunks: ringChunkCount(activeRenderDistance),
+      loadedChunks: terrainChunks.size,
+      pendingChunkBuilds: pendingChunkBuilds.length,
+      pendingPropBuilds: pendingPropBuilds.length,
+      activeBuildKeys: pendingChunkKeys.size,
+      activePropKeys: pendingPropKeys.size,
+      bands
+    };
+  }
 
   const isReady = () => {
     if (terrainChunks.size === 0) return false;
@@ -511,5 +611,15 @@ export function createTerrainSystem({ scene, Noise, PHYSICS }) {
     }
   }
 
-  return { waterMaterial, getTerrainHeight: getTerrainHeightWithNoise, updateTerrain, updateTerrainAtmosphere, isReady, reloadCity };
+  return {
+    waterMaterial,
+    getTerrainHeight: getTerrainHeightWithNoise,
+    updateTerrain,
+    updateTerrainAtmosphere,
+    isReady,
+    reloadCity,
+    warmupShaders,
+    completeBootstrap,
+    getBootstrapDebugInfo
+  };
 }

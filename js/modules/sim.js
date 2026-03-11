@@ -91,6 +91,9 @@ const {
   updateControlSurfaces,
   isReady,
   reloadCity,
+  warmupShaders,
+  completeBootstrap,
+  getBootstrapDebugInfo,
   updateWorldObjects,
   updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
@@ -453,6 +456,7 @@ function animate() {
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
+    updateBootstrapDebugOverlay();
   }
 
   cameraController.updateCamera(dt);
@@ -466,6 +470,66 @@ function animate() {
 
 // Initialize Loader Tips
 const loaderTipsInterval = startLoaderTips('loader-subtext', 150);
+let loaderHidden = false;
+const terrainBootstrapDebug = document.getElementById('terrain-bootstrap-debug');
+
+function hideLoader() {
+  if (loaderHidden) return;
+  loaderHidden = true;
+  const loader = document.getElementById('loader');
+  if (!loader) return;
+  debugLog('Hiding loader...');
+  loader.style.opacity = '0';
+  setTimeout(() => {
+    loader.style.display = 'none';
+    if (loaderTipsInterval) clearInterval(loaderTipsInterval);
+    debugLog('Loader removed.');
+  }, 1000);
+}
+
+function updateBootstrapDebugOverlay() {
+  if (!terrainBootstrapDebug || loaderHidden || typeof getBootstrapDebugInfo !== 'function') return;
+  const info = getBootstrapDebugInfo();
+  if (!info) return;
+
+  const ringLines = info.bands.map((band) =>
+    `${band.label.padEnd(6)} ${band.mode.padEnd(18)} ${String(band.chunks).padStart(3)} chunks   ${band.spanKm.toFixed(0).padStart(2)} km span`
+  );
+
+  terrainBootstrapDebug.innerHTML = [
+    '<strong>Terrain Bootstrap</strong>',
+    `mode         ${info.bootstrapMode ? 'bootstrap' : 'refine'}`,
+    `active set   R0-R${info.activeRenderDistance} (${info.totalActiveChunks} chunks total)`,
+    `target dist  R0-R${info.renderDistance}`,
+    '',
+    ...ringLines,
+    '',
+    `loaded       ${info.loadedChunks}/${info.totalActiveChunks}`,
+    `base queue   ${info.pendingChunkBuilds} pending (${info.activeBuildKeys} active keys)`,
+    `prop queue   ${info.pendingPropBuilds} pending (${info.activePropKeys} active keys)`
+  ].join('\n');
+}
+
+updateBootstrapDebugOverlay();
+
+function waitForStartupReady({ warmupPromise, maxWaitMs = 12000 }) {
+  return Promise.resolve(warmupPromise).then(() => new Promise((resolve) => {
+    const startTime = performance.now();
+    function tick() {
+      const terrainReady = isReady();
+      const timedOut = (performance.now() - startTime) >= maxWaitMs;
+      if (terrainReady || timedOut) {
+        if (timedOut && !terrainReady) {
+          debugLog('[startup] Terrain preload timed out; presenting coarse terrain and refining asynchronously.');
+        }
+        resolve();
+        return;
+      }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  }));
+}
 
 // Initialization complete
 setTimeout(() => {
@@ -473,17 +537,6 @@ setTimeout(() => {
   ProceduralAudio.resume();
 
   debugLog('Finalizing initialization...');
-  const loader = document.getElementById('loader');
-  if (loader) {
-    debugLog('Hiding loader...');
-    loader.style.opacity = '0';
-    setTimeout(() => {
-      loader.style.display = 'none';
-      if (loaderTipsInterval) clearInterval(loaderTipsInterval);
-      debugLog('Loader removed.');
-    }, 1000);
-  }
-
   const urlParams = new URLSearchParams(window.location.search);
   const spawnX = urlParams.has('x') ? parseFloat(urlParams.get('x')) : 0;
   const spawnY = urlParams.has('y') ? parseFloat(urlParams.get('y')) : AIRCRAFT.gearHeight;
@@ -523,4 +576,12 @@ setTimeout(() => {
 
   physicsAdapter.syncFromState();
   animate();
+
+  const warmupPromise = warmupShaders(camera);
+  waitForStartupReady({ warmupPromise }).then(() => {
+    completeBootstrap();
+    updateTerrain();
+    updateBootstrapDebugOverlay();
+    hideLoader();
+  });
 }, 1500);

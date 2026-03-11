@@ -16,7 +16,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const lodManager = createWorldLodManager();
 
   const environment = createEnvironment({ scene, renderer, WEATHER });
-  const terrain = createTerrainSystem({ scene, Noise, PHYSICS });
+  const terrain = createTerrainSystem({ scene, renderer, Noise, PHYSICS });
   const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
   const tower = createTowerSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
   const apron = createApron({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });

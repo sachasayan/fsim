@@ -545,6 +545,28 @@
             transition: opacity 1s;
         }
 
+        #terrain-bootstrap-debug {
+            margin-top: 22px;
+            min-width: 320px;
+            max-width: 420px;
+            padding: 14px 16px;
+            background: rgba(8, 12, 16, 0.84);
+            border: 1px solid rgba(125, 180, 220, 0.35);
+            border-radius: 10px;
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+            color: #d7e6f2;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            letter-spacing: 0.02em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+
+        #terrain-bootstrap-debug strong {
+            color: #ffffff;
+        }
+
         .spinner {
             width: 50px;
             height: 50px;
