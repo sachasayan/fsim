@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import {
-    appendMaterialProgramCacheKey,
-    chainMaterialShaderPatch
-} from '../shaders/ShaderPatchUtils.js';
+    configureMaterialShaderPipeline,
+    createShaderPatch,
+    setMaterialShaderBaseKey,
+    upsertMaterialShaderPatch
+} from '../shaders/MaterialShaderPipeline.js';
 import {
     applyBuildingPopInShaderPatch,
     applyDetailedBuildingShaderPatch,
@@ -14,26 +16,38 @@ import {
 } from './TerrainShaderPatches.js';
 
 export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphereUniforms, strength = 0.5, desat = 0.0) {
-    material.onBeforeCompile = (shader) => {
-        applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength, desat });
-    };
-    material.customProgramCacheKey = () => `atmos-${programKey}`;
+    setMaterialShaderBaseKey(material, programKey);
+    upsertMaterialShaderPatch(material, createShaderPatch({
+        id: 'distance-atmosphere',
+        cacheKey: `distance-atmosphere-${programKey}`,
+        metadata: { programKey, strength, desat },
+        apply(shader) {
+            applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength, desat });
+        }
+    }));
 }
 
 export function applyWaterDualScrollToMaterial(material, timeUniform) {
-    chainMaterialShaderPatch(material, (shader) => {
-        applyWaterDualScrollShaderPatch(shader, { timeUniform });
-    });
-    appendMaterialProgramCacheKey(material, '-dualscroll');
+    upsertMaterialShaderPatch(material, createShaderPatch({
+        id: 'water-dual-scroll',
+        cacheKey: 'water-dual-scroll',
+        apply(shader) {
+            applyWaterDualScrollShaderPatch(shader, { timeUniform });
+        }
+    }));
 }
 
 // Injects distance-based pop-in scale into a building material's vertex shader.
 // Buildings scale from 0 -> 1 over the range [fadeNear, fadeFar] (in world-space units).
 export function setupBuildingPopIn(material, cameraPosUniform, fadeNear = 6800, fadeFar = 7800) {
-    chainMaterialShaderPatch(material, (shader) => {
-        applyBuildingPopInShaderPatch(shader, { cameraPosUniform, fadeNear, fadeFar });
-    });
-    appendMaterialProgramCacheKey(material, `-bldg-popin-${fadeNear}-${fadeFar}`);
+    upsertMaterialShaderPatch(material, createShaderPatch({
+        id: 'building-pop-in',
+        cacheKey: `building-pop-in-${fadeNear}-${fadeFar}`,
+        metadata: { fadeNear, fadeFar },
+        apply(shader) {
+            applyBuildingPopInShaderPatch(shader, { cameraPosUniform, fadeNear, fadeFar });
+        }
+    }));
 }
 
 export function makeTreeBillboardMaterial(texture, tint) {
@@ -47,11 +61,17 @@ export function makeTreeBillboardMaterial(texture, tint) {
         metalness: 0.0
     });
 
-    mat.onBeforeCompile = (shader) => {
-        applyTreeBillboardShaderPatch(shader);
-    };
-
-    mat.customProgramCacheKey = () => 'treeBillboard';
+    configureMaterialShaderPipeline(mat, {
+        baseCacheKey: 'treeBillboard',
+        patches: [
+            createShaderPatch({
+                id: 'tree-billboard-align',
+                apply(shader) {
+                    applyTreeBillboardShaderPatch(shader);
+                }
+            })
+        ]
+    });
     return mat;
 }
 
@@ -63,32 +83,56 @@ export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
         side: THREE.DoubleSide
     });
 
-    mat.onBeforeCompile = (shader) => {
-        applyTreeDepthShaderPatch(shader, { mainCameraPosUniform });
-    };
-
-    mat.customProgramCacheKey = () => 'treeDepthBillboard_v3';
+    configureMaterialShaderPipeline(mat, {
+        baseCacheKey: 'treeDepthBillboard_v3',
+        patches: [
+            createShaderPatch({
+                id: 'tree-depth-billboard',
+                apply(shader) {
+                    applyTreeDepthShaderPatch(shader, { mainCameraPosUniform });
+                }
+            })
+        ]
+    });
     return mat;
 }
 
 export function createDetailedBuildingMat(style, cameraPosUniform = null) {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
-    mat.onBeforeCompile = (shader) => {
-        applyDetailedBuildingShaderPatch(shader, { style, cameraPosUniform });
-    };
-    mat.customProgramCacheKey = () => `detailed-building-mat-v3-${style}${cameraPosUniform ? '-popin' : ''}`;
+    configureMaterialShaderPipeline(mat, {
+        baseCacheKey: `detailed-building-mat-v3-${style}${cameraPosUniform ? '-popin' : ''}`,
+        patches: [
+            createShaderPatch({
+                id: 'detailed-building-style',
+                cacheKey: `detailed-building-style-${style}`,
+                metadata: { style, cameraPopIn: Boolean(cameraPosUniform) },
+                apply(shader) {
+                    applyDetailedBuildingShaderPatch(shader, { style, cameraPosUniform });
+                }
+            })
+        ]
+    });
     return mat;
 }
 
 export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, timeUniform, isFarLOD = false) {
-    material.onBeforeCompile = (shader) => {
-        applyTerrainDetailShaderPatch(shader, {
-            terrainDetailUniforms,
-            atmosphereUniforms,
-            timeUniform,
-            isFarLOD
-        });
-    };
     const fragId = isFarLOD ? 'far' : 'near';
-    material.customProgramCacheKey = () => `terrain-detail-v8-${fragId}`;
+    configureMaterialShaderPipeline(material, {
+        baseCacheKey: `terrain-detail-v8-${fragId}`,
+        patches: [
+            createShaderPatch({
+                id: 'terrain-detail',
+                cacheKey: `terrain-detail-${fragId}`,
+                metadata: { isFarLOD },
+                apply(shader) {
+                    applyTerrainDetailShaderPatch(shader, {
+                        terrainDetailUniforms,
+                        atmosphereUniforms,
+                        timeUniform,
+                        isFarLOD
+                    });
+                }
+            })
+        ]
+    });
 }

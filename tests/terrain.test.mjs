@@ -58,6 +58,7 @@ global.document = {
 
 test('terrain tests', async (t) => {
     const { createTerrainSystem } = await import('../js/modules/world/terrain.js');
+    const loadStaticWorldFn = async () => false;
 
     const mockNoise = {
         noise: (x, y) => 0,
@@ -68,7 +69,7 @@ test('terrain tests', async (t) => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS });
+        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, loadStaticWorldFn });
 
         assert.ok(system.waterMaterial instanceof THREE.Material);
         assert.equal(typeof system.getTerrainHeight, 'function');
@@ -80,7 +81,7 @@ test('terrain tests', async (t) => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS });
+        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, loadStaticWorldFn });
 
         const camera = new THREE.PerspectiveCamera();
         camera.position.set(100, 200, 300);
@@ -101,7 +102,7 @@ test('terrain tests', async (t) => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS });
+        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, loadStaticWorldFn });
 
         // Ensure no pending builds before updateTerrain
         system.updateTerrain();

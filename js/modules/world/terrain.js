@@ -30,7 +30,13 @@ import {
 import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
 import { debugLog } from '../core/logging.js';
 
-export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
+export function createTerrainSystem({
+  scene,
+  renderer,
+  Noise,
+  PHYSICS,
+  loadStaticWorldFn = loadStaticWorld
+}) {
   const hasWindow = typeof window !== 'undefined';
   const windowRef = hasWindow ? window : null;
   const locationSearch = windowRef?.location?.search || '';
@@ -135,7 +141,7 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
   setupTerrainMaterial(terrainFarMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, true);
 
   // Load static world data after uniforms exist so the moving road-marking atlas can populate immediately.
-  loadStaticWorld().then(success => {
+  Promise.resolve(loadStaticWorldFn()).then(success => {
     if (success && windowRef?.fsimWorld) {
       roadMarkingOverlay.update(PHYSICS.position.x, PHYSICS.position.z, windowRef.fsimWorld);
       terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
@@ -525,6 +531,7 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
     }
 
     return {
+      id: 'terrain-system',
       objects,
       dispose() {
         terrainGeo.dispose();

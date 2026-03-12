@@ -31,17 +31,43 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     cloudSystem.getShaderWarmupSpec
   ].filter(Boolean);
   let warmupPromise = null;
+  let shaderValidationReport = null;
 
-  function warmupShaders(camera) {
-    if (warmupPromise) return warmupPromise;
+  function validateShaders(camera, { force = false } = {}) {
+    if (warmupPromise && !force) return warmupPromise;
     warmupPromise = warmupShaderPrograms({
       renderer,
       camera,
       providers: warmupProviders
+    }).then((report) => {
+      shaderValidationReport = report;
+      return report;
     }).catch((error) => {
       console.warn('[world] Shader warmup failed:', error);
+      shaderValidationReport = {
+        compiled: false,
+        skipped: false,
+        mode: typeof renderer?.compileAsync === 'function' ? 'compileAsync' : 'compile',
+        providerCount: warmupProviders.length,
+        objectCount: 0,
+        durationMs: 0,
+        providers: warmupProviders.map((provider, index) => ({
+          id: provider.shaderProviderId || provider.name || `provider-${index}`,
+          objectCount: 0
+        })),
+        error: String(error?.message || error)
+      };
+      return shaderValidationReport;
     });
     return warmupPromise;
+  }
+
+  function warmupShaders(camera) {
+    return validateShaders(camera);
+  }
+
+  function getShaderValidationReport() {
+    return shaderValidationReport;
   }
 
   // Register objects for centralized LOD management
@@ -61,6 +87,8 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...cloudSystem,
     ...particles,
     ...aircraft,
+    validateShaders,
+    getShaderValidationReport,
     warmupShaders,
     updateWorldObjects: (time) => {
       radar.update(time);

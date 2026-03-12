@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
 import { applyInstancedRunwayLightShaderPatch } from './shaders/RunwayShaderPatches.js';
+import { configureMaterialShaderPipeline, createShaderPatch } from './shaders/MaterialShaderPipeline.js';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
@@ -281,9 +282,19 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
       color: baseEmissive, // Basic material uses 'color' for its brightness, not 'emissive'. We manually boost it in the shader.
     });
 
-    mat.onBeforeCompile = (shader) => {
-      applyInstancedRunwayLightShaderPatch(shader, { intensity });
-    };
+    configureMaterialShaderPipeline(mat, {
+      baseCacheKey: `runway-light-${intensity}`,
+      patches: [
+        createShaderPatch({
+          id: 'instanced-runway-light',
+          cacheKey: `instanced-runway-light-${intensity}`,
+          metadata: { intensity },
+          apply(shader) {
+            applyInstancedRunwayLightShaderPatch(shader, { intensity });
+          }
+        })
+      ]
+    });
     return mat;
   }
 
@@ -415,6 +426,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     lightMesh.updateMatrixWorld(true);
 
     return {
+      id: 'runway-system',
       objects: [runwayMesh, lightMesh],
       dispose() {
         runwayGeo.dispose();

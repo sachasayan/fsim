@@ -92,6 +92,8 @@ const {
   isReady,
   reloadCity,
   warmupShaders,
+  validateShaders,
+  getShaderValidationReport,
   completeBootstrap,
   updateWorldObjects,
   updateWorldLOD
@@ -133,6 +135,7 @@ const inputHandler = createInputHandler({ keys, PHYSICS, cameraController });
 inputHandler.init();
 
 const hud = createHUD({ PHYSICS, WEATHER, getTerrainHeight });
+const shouldLogShaderValidation = urlParamsForInit.get('validateShaders') === '1';
 
 window.fsimWorld = {
   isReady,
@@ -148,7 +151,10 @@ window.fsimWorld = {
   cloudMaterial,
   updateTerrainAtmosphere,
   updateTerrain, // Export updateTerrain for explicit batcher control
-  waterMaterial
+  waterMaterial,
+  validateShaders,
+  getShaderValidationReport,
+  shaderValidation: null
 };
 
 // Initialize LiveReload functionality
@@ -549,7 +555,13 @@ setTimeout(() => {
   physicsAdapter.syncFromState();
   animate();
 
-  const warmupPromise = warmupShaders(camera);
+  const warmupPromise = warmupShaders(camera).then((report) => {
+    window.fsimWorld.shaderValidation = report;
+    if (shouldLogShaderValidation) {
+      console.info('[shader-validation]', report);
+    }
+    return report;
+  });
   waitForStartupReady({ warmupPromise }).then(() => {
     completeBootstrap();
     updateTerrain();

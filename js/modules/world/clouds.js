@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CLOUD_NOISE } from './cloudNoise.js';
 import { applyNearCloudShaderPatch } from './shaders/CloudShaderPatches.js';
+import { configureMaterialShaderPipeline, createShaderPatch } from './shaders/MaterialShaderPipeline.js';
 
 export function createCloudSystem({ scene }) {
   const voxelSize = 220;
@@ -60,9 +61,17 @@ export function createCloudSystem({ scene }) {
     uCloudPhaseStrength: { value: 0.25 }
   };
 
-  voxelMat.onBeforeCompile = (shader) => {
-    applyNearCloudShaderPatch(shader, { sharedCloudUniforms });
-  };
+  configureMaterialShaderPipeline(voxelMat, {
+    baseCacheKey: 'near-clouds',
+    patches: [
+      createShaderPatch({
+        id: 'near-cloud-lighting',
+        apply(shader) {
+          applyNearCloudShaderPatch(shader, { sharedCloudUniforms });
+        }
+      })
+    ]
+  });
 
   const clouds = new THREE.Group();
   scene.add(clouds);
@@ -282,6 +291,7 @@ export function createCloudSystem({ scene }) {
     farCloudMesh.updateMatrixWorld(true);
 
     return {
+      id: 'cloud-system',
       objects: [nearCloudMesh, farCloudMesh],
       dispose() {
         nearCloudGeo.dispose();
