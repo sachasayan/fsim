@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 
 export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AIRCRAFT, getTerrainHeight }) {
+  function isGuiEvent(event) {
+    return event.target instanceof Element && event.target.closest('.lil-gui');
+  }
+
   const cameraParams = {
     distance: 80,
     height: 15,
@@ -26,7 +30,11 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
   const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   const lookQuat = new THREE.Quaternion();
 
-  window.addEventListener('mousedown', () => {
+  window.addEventListener('mousedown', (event) => {
+    if (isGuiEvent(event)) {
+      isDragging = false;
+      return;
+    }
     isDragging = true;
   });
 
@@ -35,6 +43,7 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
   });
 
   window.addEventListener('mousemove', (e) => {
+    if (isGuiEvent(e)) return;
     if (isDragging && cameraMode !== 2) {
       camRotX -= e.movementX * 0.005;
       camRotY -= e.movementY * 0.005;
@@ -43,6 +52,7 @@ export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AI
   });
 
   window.addEventListener('wheel', (e) => {
+    if (isGuiEvent(e)) return;
     if (cameraMode === 0) {
       cameraParams.distance += e.deltaY * 0.05;
       cameraParams.distance = Math.max(30, Math.min(200, cameraParams.distance));
