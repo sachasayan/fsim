@@ -1,7 +1,14 @@
 import * as THREE from 'three';
-import { CLOUD_NOISE } from './cloudNoise.js';
-import { applyNearCloudShaderPatch } from './shaders/CloudShaderPatches.js';
-import { configureMaterialShaderPipeline, createShaderPatch } from './shaders/MaterialShaderPipeline.js';
+import {
+  createFarCloudUniforms,
+  getFarCloudOwnedShaderSource,
+  getNearCloudOwnedShaderSource,
+  getNearCloudUniformBindings
+} from './shaders/CloudOwnedShaderSource.js';
+import {
+  configureMaterialShaderPipeline,
+  createOwnedShaderSourcePatch
+} from './shaders/MaterialShaderPipeline.js';
 
 export function createCloudSystem({ scene }) {
   const voxelSize = 220;
@@ -62,12 +69,18 @@ export function createCloudSystem({ scene }) {
   };
 
   configureMaterialShaderPipeline(voxelMat, {
-    baseCacheKey: 'near-clouds',
+    baseCacheKey: 'near-clouds-owned-v1',
     patches: [
-      createShaderPatch({
-        id: 'near-cloud-lighting',
-        apply(shader) {
-          applyNearCloudShaderPatch(shader, { sharedCloudUniforms });
+      createOwnedShaderSourcePatch({
+        id: 'near-cloud-owned-source',
+        cacheKey: 'near-cloud-owned-source-v1',
+        metadata: {
+          shaderFamily: 'basic',
+          cloudLayer: 'near'
+        },
+        source: getNearCloudOwnedShaderSource(),
+        uniformBindings() {
+          return getNearCloudUniformBindings(sharedCloudUniforms);
         }
       })
     ]
@@ -118,112 +131,23 @@ export function createCloudSystem({ scene }) {
   });
 
   function makeFarCloudMaterial() {
-    const uniforms = {
-      uTime: { value: 0 },
-      uCloudCameraPos: { value: new THREE.Vector3() },
-      uSunDir: { value: new THREE.Vector3(0.25, 0.85, 0.45).normalize() },
-      uColor: { value: new THREE.Color(0xffffff) },
-      uOpacity: { value: 0.28 },
-      uDomainRadius: { value: 114000.0 },
-      uFarFadeStart: { value: cloudTuning.farFadeStart },
-      uFarFadeEnd: { value: cloudTuning.farFadeEnd }
-    };
+    const uniforms = createFarCloudUniforms({ cloudTuning });
+    const source = getFarCloudOwnedShaderSource();
 
-    const vertexShader = `
-      varying vec3 vWorldPos;
-      void main() {
-        vec4 world = modelMatrix * vec4(position, 1.0);
-        vWorldPos = world.xyz;
-        gl_Position = projectionMatrix * viewMatrix * world;
-      }
-    `;
-
-    const fragmentShader = `
-      varying vec3 vWorldPos;
-      uniform float uTime;
-      uniform vec3 uCloudCameraPos;
-      uniform vec3 uSunDir;
-      uniform vec3 uColor;
-      uniform float uOpacity;
-      uniform float uDomainRadius;
-      uniform float uFarFadeStart;
-      uniform float uFarFadeEnd;
-
-      float hash2(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-      }
-
-      float noise2(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        vec2 u = f * f * (3.0 - 2.0 * f);
-        float a = hash2(i + vec2(0.0, 0.0));
-        float b = hash2(i + vec2(1.0, 0.0));
-        float c = hash2(i + vec2(0.0, 1.0));
-        float d = hash2(i + vec2(1.0, 1.0));
-        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-      }
-
-      float fbm(vec2 p) {
-        float sum = 0.0;
-        float amp = 0.6;
-        float freq = 1.0;
-        for (int i = 0; i < 3; i++) {
-          sum += noise2(p * freq) * amp;
-          freq *= 2.1;
-          amp *= 0.45;
-        }
-        return sum;
-      }
-
-      void main() {
-        vec2 wind = vec2(uTime * 0.0012, -uTime * 0.0007);
-        vec2 p = (vWorldPos.xz * 0.00008) + wind;
-        
-        // Simplified warping: one FBM call instead of two nested ones
-        float n = fbm(p + fbm(p * 0.5) * 0.3);
-        
-        float coverage = smoothstep(0.58, 0.82, n);
-        float alpha = coverage;
-
-        float dist = distance(vWorldPos.xz, uCloudCameraPos.xz);
-        float farFade = smoothstep(uFarFadeStart, uFarFadeEnd, dist);
-        alpha *= farFade;
-        float domainFade = 1.0 - smoothstep(uDomainRadius * 0.7, uDomainRadius, dist);
-        alpha *= domainFade;
-
-        // Soft edge rolloff.
-        float edge = fwidth(alpha) * 2.0 + 0.02;
-        alpha = smoothstep(0.05 - edge, 1.0 + edge, alpha);
-
-        vec3 lightDir = normalize(uSunDir);
-        vec3 viewDir = normalize(uCloudCameraPos - vWorldPos);
-        float cosTheta = dot(viewDir, -lightDir);
-        
-        // Dual-lobe Henyey-Greenstein phase function for forward and backward scattering
-        float g1 = 0.65;
-        float g2 = -0.15;
-        float phase1 = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosTheta, 1.5);
-        float phase2 = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * cosTheta, 1.5);
-        float phase = mix(phase1, phase2, 0.4) * 0.25;
-        
-        vec3 sunScatterColor = vec3(1.0, 0.97, 0.88);
-        vec3 phaseTint = mix(uColor, sunScatterColor, 0.8);
-        vec3 finalColor = mix(uColor, phaseTint, clamp(phase, 0.0, 1.0));
-
-        if (alpha < 0.01) discard;
-        gl_FragColor = vec4(finalColor, alpha * uOpacity);
-      }
-    `;
-
-    return new THREE.ShaderMaterial({
+    const material = new THREE.ShaderMaterial({
       uniforms,
-      vertexShader,
-      fragmentShader,
+      vertexShader: source.vertexShader,
+      fragmentShader: source.fragmentShader,
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide
     });
+
+    configureMaterialShaderPipeline(material, {
+      baseCacheKey: 'far-clouds-owned-v1'
+    });
+
+    return material;
   }
 
   const farCloudMat = makeFarCloudMaterial();

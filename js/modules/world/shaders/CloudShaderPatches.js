@@ -3,13 +3,19 @@ import {
     replaceShaderSnippet
 } from './ShaderPatchUtils.js';
 
+export function createNearCloudUniformBindings(sharedCloudUniforms) {
+    return {
+        uCloudCameraPos: sharedCloudUniforms.uCloudCameraPos,
+        uNearFadeStart: sharedCloudUniforms.uNearFadeStart,
+        uNearFadeEnd: sharedCloudUniforms.uNearFadeEnd,
+        uCloudMinLight: sharedCloudUniforms.uCloudMinLight,
+        uCloudSunDir: sharedCloudUniforms.uCloudSunDir,
+        uCloudPhaseStrength: sharedCloudUniforms.uCloudPhaseStrength
+    };
+}
+
 export function applyNearCloudShaderPatch(shader, { sharedCloudUniforms }) {
-    shader.uniforms.uCloudCameraPos = sharedCloudUniforms.uCloudCameraPos;
-    shader.uniforms.uNearFadeStart = sharedCloudUniforms.uNearFadeStart;
-    shader.uniforms.uNearFadeEnd = sharedCloudUniforms.uNearFadeEnd;
-    shader.uniforms.uCloudMinLight = sharedCloudUniforms.uCloudMinLight;
-    shader.uniforms.uCloudSunDir = sharedCloudUniforms.uCloudSunDir;
-    shader.uniforms.uCloudPhaseStrength = sharedCloudUniforms.uCloudPhaseStrength;
+    Object.assign(shader.uniforms, createNearCloudUniformBindings(sharedCloudUniforms));
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
