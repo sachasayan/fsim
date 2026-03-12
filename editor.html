@@ -5,13 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FSIM | 2D World Designer</title>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #030712;
-            --panel: rgba(17, 24, 39, 0.7);
+            --panel: rgba(17, 24, 39, 0.76);
             --accent: #38bdf8;
             --accent-glow: rgba(56, 189, 248, 0.4);
             --accent-strong: #7dd3fc;
@@ -22,82 +20,55 @@
             --glass: rgba(255, 255, 255, 0.03);
             --success: #10b981;
             --danger: #ef4444;
+            --warning: #f59e0b;
         }
 
-        body,
-        html {
+        html,
+        body {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: var(--bg);
+            background: radial-gradient(circle at top, #111827 0%, #030712 62%);
             color: var(--text);
             font-family: 'Outfit', sans-serif;
             -webkit-font-smoothing: antialiased;
         }
 
+        #editor-app,
+        #editor-container {
+            width: 100%;
+            height: 100%;
+        }
+
         #editor-container {
             display: flex;
-            width: 100vw;
-            height: 100vh;
         }
 
         #canvas-container {
-            flex-grow: 1;
             position: relative;
-            cursor: default;
+            flex: 1;
             background: radial-gradient(circle at center, #111827 0%, #030712 100%);
-        }
-
-        #canvas-container.tool-select {
-            cursor: default;
-        }
-
-        #canvas-container.tool-select.dragging {
-            cursor: grabbing;
-        }
-
-        #canvas-container.tool-pan {
-            cursor: grab;
-        }
-
-        #canvas-container.tool-pan.dragging {
-            cursor: grabbing;
-        }
-
-        #canvas-container.tool-edit-poly {
-            cursor: cell;
-        }
-
-        #canvas-container.tool-add-city,
-        #canvas-container.tool-add-district,
-        #canvas-container.tool-add-road {
-            cursor: copy;
-        }
-
-        #canvas-container.tool-terrain-raise,
-        #canvas-container.tool-terrain-lower,
-        #canvas-container.tool-terrain-flatten {
-            cursor: crosshair;
         }
 
         canvas {
             display: block;
+            width: 100%;
+            height: 100%;
         }
 
         #sidebar {
-            width: 340px;
+            width: 360px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding: 24px 20px;
+            overflow-y: auto;
             background: var(--panel);
             backdrop-filter: blur(24px) saturate(180%);
             border-left: 1px solid var(--border);
-            padding: 32px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 28px;
-            z-index: 10;
-            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
-            overflow-y: auto;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.45);
         }
 
         .toolbar {
@@ -107,26 +78,26 @@
             display: flex;
             gap: 6px;
             flex-wrap: wrap;
-            background: var(--panel);
             padding: 6px;
+            max-width: min(88vw, 640px);
+            background: var(--panel);
+            border: 1px solid var(--border);
             border-radius: 16px;
             backdrop-filter: blur(20px) saturate(150%);
-            border: 1px solid var(--border);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-            max-width: min(88vw, 560px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
         }
 
         .tool-btn {
-            background: transparent;
             border: 1px solid transparent;
+            border-radius: 12px;
+            background: transparent;
             color: var(--text-dim);
             padding: 8px 10px;
-            border-radius: 12px;
             cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            font-size: 10px;
-            letter-spacing: 0.06em;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            transition: 160ms ease;
         }
 
         .tool-btn:hover {
@@ -135,20 +106,24 @@
             border-color: var(--border);
         }
 
-        .tool-btn.active {
+        .tool-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .tool-btn.active,
+        .save-btn {
             background: var(--accent);
-            color: #000;
+            color: #04131d;
             box-shadow: 0 0 20px var(--accent-glow);
         }
 
         .tool-btn.tool-icon {
-            min-width: 58px;
+            min-width: 62px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
             gap: 4px;
-            line-height: 1;
         }
 
         .tool-btn.tool-icon svg {
@@ -161,19 +136,18 @@
             stroke-linejoin: round;
         }
 
-        .tool-btn.tool-icon .tool-label {
+        .tool-label {
             font-size: 9px;
             text-transform: uppercase;
         }
 
         h2 {
             margin: 0;
-            font-size: 20px;
-            font-weight: 800;
-            color: var(--text);
-            letter-spacing: -0.025em;
             display: flex;
             align-items: center;
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.025em;
         }
 
         .section-title {
@@ -183,112 +157,29 @@
             letter-spacing: 0.1em;
             font-weight: 700;
             margin-bottom: 4px;
-            opacity: 0.8;
+            opacity: 0.85;
         }
 
         .property-panel {
-            background: var(--glass);
-            border: 1px solid var(--border);
-            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
             padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        #layers-panel {
-            max-height: 32vh;
-            overflow-y: auto;
-        }
-
-        .layers-group {
+            border-radius: 16px;
             border: 1px solid var(--border);
-            border-radius: 12px;
-            overflow: hidden;
-            background: rgba(5, 10, 20, 0.35);
+            background: var(--glass);
         }
 
-        .layers-group-header {
-            width: 100%;
-            display: grid;
-            grid-template-columns: auto 1fr auto auto;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.03);
-            color: var(--text);
-            padding: 9px 10px;
-            font-size: 11px;
+        .muted-panel {
+            min-height: 120px;
+            justify-content: center;
         }
 
-        .layers-group-header .chevron {
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--accent-strong);
-            opacity: 0.8;
-        }
-
-        .layer-count {
+        .empty-copy {
+            margin: 0;
             color: var(--text-dim);
-            font-size: 10px;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .layer-toggle {
-            border: 1px solid var(--border);
-            background: rgba(0, 0, 0, 0.35);
-            color: var(--text-dim);
-            width: 24px;
-            height: 24px;
-            border-radius: 7px;
-            font-size: 12px;
-            cursor: pointer;
-        }
-
-        .layer-toggle:hover {
-            color: var(--text);
-            border-color: rgba(125, 211, 252, 0.35);
-        }
-
-        .layers-items {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .layer-item {
-            display: grid;
-            grid-template-columns: auto auto minmax(0, 1fr);
-            align-items: center;
-            gap: 6px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 8px 10px;
-        }
-
-        .layer-item:hover,
-        .layer-item.selected {
-            background: rgba(56, 189, 248, 0.1);
-        }
-
-        .layer-group-name,
-        .layer-item-select {
-            border: 0;
-            background: transparent;
-            color: var(--text);
-            font-size: 11px;
-            text-align: left;
-            cursor: pointer;
-        }
-
-        .layer-item-name {
-            font-size: 11px;
-            text-align: left;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: var(--text-dim);
-        }
-
-        .layer-item.selected .layer-item-name,
-        .layer-item-select:hover .layer-item-name {
-            color: var(--text);
+            font-size: 13px;
+            text-align: center;
         }
 
         .property-group {
@@ -297,27 +188,15 @@
             gap: 12px;
         }
 
+        .inline-actions {
+            flex-direction: row;
+            flex-wrap: wrap;
+        }
+
         .property-row {
             display: flex;
             flex-direction: column;
-            align-items: stretch;
             gap: 8px;
-        }
-
-        .hint-card {
-            border-radius: 12px;
-            border: 1px solid rgba(56, 189, 248, 0.16);
-            background: rgba(56, 189, 248, 0.08);
-            color: var(--text-dim);
-            font-size: 12px;
-            line-height: 1.45;
-            padding: 12px 14px;
-        }
-
-        label {
-            font-size: 13px;
-            color: var(--text-dim);
-            font-weight: 400;
         }
 
         .field-label {
@@ -334,60 +213,29 @@
             align-items: center;
         }
 
-        .control-cluster {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            width: 100%;
+        label {
+            font-size: 13px;
+            color: var(--text-dim);
         }
 
         input[type="number"],
         input[type="text"],
+        input[type="search"],
         select {
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px solid var(--border);
-            color: #fff;
-            padding: 8px 12px;
+            width: 100%;
+            box-sizing: border-box;
             border-radius: 8px;
-            width: 80px;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.38);
+            color: var(--text);
+            padding: 8px 12px;
             font-size: 13px;
             font-family: 'JetBrains Mono', monospace;
             outline: none;
-            transition: border-color 0.2s;
-        }
-
-        input[type="number"],
-        input[type="text"] {
-            width: 96px;
-        }
-
-        input[type="text"][readonly] {
-            width: 100%;
-            color: var(--accent-strong);
-            background: rgba(7, 11, 24, 0.85);
-        }
-
-        select {
-            width: 100%;
-            min-width: 170px;
-            appearance: none;
-            padding-right: 34px;
-            background-image:
-                linear-gradient(45deg, transparent 50%, var(--accent-strong) 50%),
-                linear-gradient(135deg, var(--accent-strong) 50%, transparent 50%),
-                linear-gradient(to right, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
-            background-position:
-                calc(100% - 18px) calc(50% - 3px),
-                calc(100% - 12px) calc(50% - 3px),
-                calc(100% - 38px) 50%;
-            background-size: 6px 6px, 6px 6px, 1px 60%;
-            background-repeat: no-repeat;
         }
 
         input[type="range"] {
             width: 100%;
-            height: 18px;
-            margin: 0;
             appearance: none;
             background: transparent;
             cursor: pointer;
@@ -397,48 +245,22 @@
             height: 6px;
             border-radius: 999px;
             background: linear-gradient(90deg, rgba(56, 189, 248, 0.85), rgba(125, 211, 252, 0.4));
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
 
         input[type="range"]::-webkit-slider-thumb {
             appearance: none;
             width: 16px;
             height: 16px;
-            border-radius: 50%;
             margin-top: -5px;
-            border: 2px solid #08111f;
-            background: #f8fbff;
-            box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
-        }
-
-        input[type="range"]::-moz-range-track {
-            height: 6px;
-            border: 0;
-            border-radius: 999px;
-            background: linear-gradient(90deg, rgba(56, 189, 248, 0.85), rgba(125, 211, 252, 0.4));
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 16px;
-            height: 16px;
-            border: 2px solid #08111f;
             border-radius: 50%;
+            border: 2px solid #08111f;
             background: #f8fbff;
             box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
         }
 
-        input:focus {
-            border-color: var(--accent);
-        }
-
-        select:focus {
-            border-color: var(--accent);
-        }
-
-        .value-pill {
+        .value-pill,
+        .status-chip {
             min-width: 48px;
-            text-align: center;
             padding: 6px 10px;
             border-radius: 999px;
             border: 1px solid rgba(56, 189, 248, 0.2);
@@ -446,369 +268,224 @@
             color: var(--accent-strong);
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.04em;
+            text-align: center;
             font-family: 'JetBrains Mono', monospace;
         }
 
-        .save-btn {
-            margin-top: auto;
-            background: var(--accent);
-            color: #000;
-            border: none;
-            padding: 16px;
-            border-radius: 14px;
-            font-weight: 800;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-size: 14px;
+        .status-chip.dirty {
+            border-color: rgba(245, 158, 11, 0.35);
+            color: #fcd34d;
+            background: rgba(245, 158, 11, 0.12);
         }
 
-        .save-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px var(--accent-glow);
+        .status-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
-        .save-btn:active {
-            transform: translateY(0);
+        .status-badge {
+            margin-left: 10px;
+            font-size: 9px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .hint-card {
+            border-radius: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.16);
+            background: rgba(56, 189, 248, 0.08);
+            color: var(--text-dim);
+            font-size: 12px;
+            line-height: 1.45;
+            padding: 12px 14px;
+        }
+
+        .error-card {
+            border-color: rgba(239, 68, 68, 0.28);
+            background: rgba(239, 68, 68, 0.12);
+            color: #fecaca;
+        }
+
+        .help-card p {
+            margin: 0 0 8px;
+        }
+
+        .help-card p:last-child {
+            margin-bottom: 0;
         }
 
         #coords {
             position: absolute;
             bottom: 24px;
             left: 24px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            color: var(--text-dim);
-            background: var(--panel);
-            backdrop-filter: blur(10px);
-            padding: 6px 14px;
             border-radius: 10px;
             border: 1px solid var(--border);
+            background: var(--panel);
+            backdrop-filter: blur(10px);
+            color: var(--text-dim);
+            padding: 6px 14px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
             letter-spacing: 0.05em;
         }
 
-        .status-badge {
-            font-size: 9px;
-            padding: 3px 8px;
-            border-radius: 6px;
-            background: rgba(56, 189, 248, 0.15);
-            color: var(--accent);
-            margin-left: 10px;
-            font-weight: 700;
-            border: 1px solid rgba(56, 189, 248, 0.2);
+        .layers-group {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: rgba(5, 10, 20, 0.35);
         }
 
-        /* Animations */
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateX(20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
+        .layers-group-header {
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 10px;
+            background: rgba(255, 255, 255, 0.03);
         }
 
-        #selection-panel {
-            animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        .layer-controls {
+            display: flex;
+            gap: 6px;
+        }
+
+        .layer-toggle,
+        .layer-group-name,
+        .layer-item-select {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.25);
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 11px;
+            padding: 6px 8px;
+        }
+
+        .layer-group-name,
+        .layer-item-select {
+            text-align: left;
+            border: 0;
+            background: transparent;
+            color: var(--text);
+            padding: 0;
+        }
+
+        .layer-count {
+            color: var(--text-dim);
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .layers-items {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .layer-item {
+            display: grid;
+            grid-template-columns: auto auto minmax(0, 1fr);
+            gap: 6px;
+            align-items: center;
+            padding: 8px 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .layer-item.selected,
+        .layer-item:hover {
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        .layer-item-name {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .footer-panel {
+            margin-top: auto;
+        }
+
+        .secondary-action {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        .danger-action {
+            background: rgba(255, 89, 94, 0.16);
+            color: #fecaca;
+            border-color: rgba(255, 89, 94, 0.3);
+        }
+
+        .accent-action {
+            background: #9eff66;
+            color: #04131d;
+        }
+
+        .save-btn {
+            border: 0;
+            border-radius: 14px;
+            padding: 14px 16px;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .toast {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            max-width: 320px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.24);
+            background: rgba(10, 18, 28, 0.92);
+            color: var(--text);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .toast-success {
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .toast-error {
+            border-color: rgba(239, 68, 68, 0.32);
         }
 
         @media (max-width: 1080px) {
             #sidebar {
                 width: 320px;
-                padding: 20px 16px;
+                padding: 18px 16px;
             }
 
             .toolbar {
-                max-width: min(92vw, 480px);
+                max-width: min(92vw, 520px);
             }
         }
     </style>
 </head>
 
 <body>
-    <div id="editor-container">
-        <div id="canvas-container">
-            <canvas id="map-canvas"></canvas>
-            <div class="toolbar">
-                <button class="tool-btn tool-icon active" id="tool-select" aria-label="Select / Pan (V)" title="Select / Pan (V)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18l5-6 4 6 5-2-4-6 6-4z"></path></svg>
-                    <span class="tool-label">Select</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-add-city" aria-label="Add City (C)" title="Add City (C)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l4 2V7l4 2V5l4 2v13z"></path><path d="M14 14h6"></path><path d="M17 11v6"></path></svg>
-                    <span class="tool-label">City</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-add-district" aria-label="Add District (D)" title="Add District (D)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"></path><path d="M12 10v4"></path><path d="M10 12h4"></path></svg>
-                    <span class="tool-label">District</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-add-road" aria-label="Add Road (W)" title="Add Road (W)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3l2 7-2 11"></path><path d="M16 3l-2 7 2 11"></path><path d="M11 6h2"></path><path d="M10 11h4"></path><path d="M11 16h2"></path></svg>
-                    <span class="tool-label">Road</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-edit-poly" aria-label="Edit Polygon (E)" title="Edit Polygon (E)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6l7-3 7 4v9l-7 5-7-4z"></path><circle cx="5" cy="6" r="1.7"></circle><circle cx="12" cy="3" r="1.7"></circle><circle cx="19" cy="7" r="1.7"></circle></svg>
-                    <span class="tool-label">Edit</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-terrain-raise" aria-label="Terrain Raise (R)" title="Terrain Raise (R)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16"></path><path d="M12 6v8"></path><path d="M9 9l3-3 3 3"></path></svg>
-                    <span class="tool-label">Raise</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-terrain-lower" aria-label="Terrain Lower (L)" title="Terrain Lower (L)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16"></path><path d="M12 6v8"></path><path d="M9 11l3 3 3-3"></path></svg>
-                    <span class="tool-label">Lower</span>
-                </button>
-                <button class="tool-btn tool-icon" id="tool-terrain-flatten" aria-label="Terrain Flatten (F)" title="Terrain Flatten (F)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16h16"></path><path d="M4 11h16"></path><path d="M4 8h16"></path></svg>
-                    <span class="tool-label">Flatten</span>
-                </button>
-            </div>
-            <div id="coords">X: 0, Z: 0</div>
-        </div>
-        <div id="sidebar">
-            <h2>WORLD EDITOR <span class="status-badge">v1.0</span></h2>
-
-            <div class="property-panel" id="layers-panel">
-                <div class="section-title">Layers</div>
-                <div id="layers-groups"></div>
-            </div>
-
-            <div id="selection-panel" style="display: none;">
-                <div class="section-title">Selection Properties <span id="prop-type-badge"
-                        class="status-badge">CITY</span></div>
-                <div class="property-group">
-                    <div class="property-row">
-                        <div class="field-label">
-                            <label>ID</label>
-                        </div>
-                        <input type="text" id="prop-id" readonly>
-                    </div>
-                    <div class="property-row">
-                        <div class="field-label">
-                            <label>Coord X</label>
-                        </div>
-                        <input type="number" id="prop-cx">
-                    </div>
-                    <div class="property-row">
-                        <div class="field-label">
-                            <label>Coord Z</label>
-                        </div>
-                        <input type="number" id="prop-cz">
-                    </div>
-
-                    <div id="district-only-props" style="display: none;">
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>District Type</label>
-                            </div>
-                            <div class="control-cluster">
-                                <select id="prop-district-type">
-                                    <option value="financial_core">financial_core</option>
-                                    <option value="commercial">commercial</option>
-                                    <option value="residential">residential</option>
-                                    <option value="industrial">industrial</option>
-                                    <option value="suburban">suburban</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="road-only-props" style="display: none;">
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Road Kind</label>
-                            </div>
-                            <div class="control-cluster">
-                                <select id="prop-road-kind">
-                                    <option value="road">road</option>
-                                    <option value="taxiway">taxiway</option>
-                                    <option value="service">service</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Surface</label>
-                            </div>
-                            <div class="control-cluster">
-                                <select id="prop-road-surface">
-                                    <option value="asphalt">asphalt</option>
-                                    <option value="gravel">gravel</option>
-                                    <option value="dirt">dirt</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Width</label>
-                                <span class="value-pill" id="prop-road-width-value">24</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-road-width-range" min="4" max="120" step="1">
-                                <input type="number" id="prop-road-width" min="4" max="120" step="1">
-                            </div>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Feather</label>
-                                <span class="value-pill" id="prop-road-feather-value">8</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-road-feather-range" min="0" max="80" step="1">
-                                <input type="number" id="prop-road-feather" min="0" max="80" step="1">
-                            </div>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Vertices</label>
-                            </div>
-                            <input type="text" id="prop-road-points" readonly>
-                        </div>
-                        <div class="hint-card" id="road-edit-hint">
-                            Use <strong>Edit Poly</strong> to drag road vertices, double-click near a segment to add one, and right-click a point to remove it.
-                        </div>
-                    </div>
-
-                    <div id="terrain-only-props" style="display: none;">
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Brush Kind</label>
-                            </div>
-                            <input type="text" id="prop-terrain-kind" readonly>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Radius</label>
-                                <span class="value-pill" id="prop-terrain-radius-value">300</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-terrain-radius-range" min="50" max="2000" step="10">
-                                <input type="number" id="prop-terrain-radius" min="50" max="2000" step="10">
-                            </div>
-                        </div>
-                        <div class="property-row" id="terrain-delta-row">
-                            <div class="field-label">
-                                <label>Delta</label>
-                                <span class="value-pill" id="prop-terrain-delta-value">40</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-terrain-delta-range" min="1" max="200" step="1">
-                                <input type="number" id="prop-terrain-delta" min="1" max="200" step="1">
-                            </div>
-                        </div>
-                        <div class="property-row" id="terrain-target-row" style="display: none;">
-                            <div class="field-label">
-                                <label>Target H</label>
-                                <span class="value-pill" id="prop-terrain-target-value">0</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-terrain-target-range" min="-200" max="1200" step="5">
-                                <input type="number" id="prop-terrain-target" min="-200" max="1200" step="5">
-                            </div>
-                        </div>
-                        <div class="property-row" id="terrain-opacity-row" style="display: none;">
-                            <div class="field-label">
-                                <label>Opacity</label>
-                                <span class="value-pill" id="prop-terrain-opacity-value">1</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-terrain-opacity-range" step="0.05" min="0" max="1">
-                                <input type="number" id="prop-terrain-opacity" step="0.05" min="0" max="1">
-                            </div>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Stroke Points</label>
-                            </div>
-                            <input type="text" id="prop-terrain-points" readonly>
-                        </div>
-                        <div class="hint-card" id="terrain-edit-hint">
-                            Use <strong>Edit Poly</strong> to drag stroke points, double-click the stroke to add one, and right-click a point to remove it.
-                        </div>
-                    </div>
-
-                    <div id="vantage-only-props" style="display: none;">
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Altitude (m)</label>
-                                <span class="value-pill" id="prop-alt-value">0</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-alt-range" min="0" max="3000" step="10">
-                                <input type="number" id="prop-alt" min="0" max="3000" step="10">
-                            </div>
-                        </div>
-                        <div class="property-row">
-                            <div class="field-label">
-                                <label>Tilt (°)</label>
-                                <span class="value-pill" id="prop-tilt-value">45</span>
-                            </div>
-                            <div class="control-stack">
-                                <input type="range" id="prop-tilt-range" min="5" max="85" step="1">
-                                <input type="number" id="prop-tilt" min="5" max="85" step="1">
-                            </div>
-                        </div>
-                        <button class="tool-btn" id="jump-sim-btn"
-                            style="margin-top: 10px; background: #9eff66; color: #000; width: 100%;">LAUNCH IN
-                            SIM</button>
-                    </div>
-
-                    <div class="property-group" style="margin-top: 15px;">
-                        <button class="tool-btn" id="tool-delete"
-                            style="background: rgba(255, 89, 94, 0.2); color: #ff595e; border-color: rgba(255,89,94,0.3); width: 100%;">Delete
-                            Selected</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="no-selection">
-                <p style="color: #8892b0; font-size: 13px; text-align: center; margin-top: 40px;">
-                    Select an object to edit its properties.
-                </p>
-            </div>
-
-            <div class="property-panel">
-                <div class="section-title">Terrain Brush</div>
-                <div class="property-group">
-                    <div class="property-row">
-                        <div class="field-label">
-                            <label>Radius</label>
-                            <span class="value-pill" id="terrain-brush-radius-value">300</span>
-                        </div>
-                        <div class="control-stack">
-                            <input type="range" id="terrain-brush-radius-range" value="300" min="50" max="2000" step="10">
-                            <input type="number" id="terrain-brush-radius" value="300" min="50" max="2000" step="10">
-                        </div>
-                    </div>
-                    <div class="property-row">
-                        <div class="field-label">
-                            <label>Strength</label>
-                            <span class="value-pill" id="terrain-brush-strength-value">40</span>
-                        </div>
-                        <div class="control-stack">
-                            <input type="range" id="terrain-brush-strength-range" value="40" min="0" max="200" step="1">
-                            <input type="number" id="terrain-brush-strength" value="40" step="1" min="0" max="200">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <button class="save-btn" id="save-btn">SAVE CHANGES</button>
-        </div>
-
-        <script type="importmap">
+    <div id="editor-app"></div>
+    <script type="importmap">
         {
             "imports": {
                 "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
             }
         }
     </script>
-        <script type="module" src="./js/editor.js"></script>
+    <script type="module" src="./js/editor.js"></script>
 </body>
 
 </html>
