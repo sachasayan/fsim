@@ -35,7 +35,7 @@ test('getForestProfile returns parkland when urbanScore > 0.35', () => {
     const profile = getForestProfile(0, 0, 100, 0, 0.4, mockNoise);
     assert.equal(profile.kind, 'parkland');
     assert.equal(profile.density, 0.06);
-    assert.deepEqual(profile.typeWeights, { broadleaf: 0.55, poplar: 0.35, conifer: 0.1 });
+    assert.deepEqual(profile.typeWeights, { broadleaf: 0.68, poplar: 0.24, dry: 0.08 });
 });
 
 test('getForestProfile returns alpine when height > 280', () => {
@@ -44,7 +44,7 @@ test('getForestProfile returns alpine when height > 280', () => {
     const profile = getForestProfile(0, 0, 300, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'alpine');
     assert.equal(profile.density, 0.08 + 0.5 * 0.08); // forestNoise = 0.5
-    assert.deepEqual(profile.typeWeights, { conifer: 0.72, dry: 0.2, poplar: 0.08 });
+    assert.deepEqual(profile.typeWeights, { poplar: 0.34, broadleaf: 0.24, dry: 0.42 });
 });
 
 test('getForestProfile returns alpine when heat < 0.28', () => {
@@ -67,7 +67,7 @@ test('getForestProfile returns dense_mixed when moisture > 0.66', () => {
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'dense_mixed');
     assert.equal(profile.density, 0.16 + 0.5 * 0.1);
-    assert.deepEqual(profile.typeWeights, { conifer: 0.46, broadleaf: 0.34, poplar: 0.2 });
+    assert.deepEqual(profile.typeWeights, { broadleaf: 0.72, poplar: 0.2, dry: 0.08 });
 });
 
 test('getForestProfile returns dry_scrub when moisture < 0.35', () => {
@@ -79,7 +79,7 @@ test('getForestProfile returns dry_scrub when moisture < 0.35', () => {
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'dry_scrub');
     assert.equal(profile.density, 0.05 + 0.5 * 0.05);
-    assert.deepEqual(profile.typeWeights, { dry: 0.52, poplar: 0.18, broadleaf: 0.16, conifer: 0.14 });
+    assert.deepEqual(profile.typeWeights, { dry: 0.58, broadleaf: 0.24, poplar: 0.18 });
 });
 
 test('getForestProfile returns temperate_mixed as default', () => {
@@ -91,7 +91,15 @@ test('getForestProfile returns temperate_mixed as default', () => {
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'temperate_mixed');
     assert.equal(profile.density, 0.1 + 0.5 * 0.07);
-    assert.deepEqual(profile.typeWeights, { broadleaf: 0.42, conifer: 0.35, poplar: 0.2, dry: 0.03 });
+    assert.deepEqual(profile.typeWeights, { broadleaf: 0.62, poplar: 0.26, dry: 0.12 });
+});
+
+test('getForestProfile never emits conifer weights in leafy-only mode', () => {
+    const profileA = getForestProfile(0, 0, 100, 0.4, 0.1, createMockNoise(0.5, 0.1));
+    const profileB = getForestProfile(0, 0, 320, 0.6, 0.1, createMockNoise(0.2, -0.3));
+
+    assert.ok(!('conifer' in profileA.typeWeights));
+    assert.ok(!('conifer' in profileB.typeWeights));
 });
 
 // ─── hash2 ───────────────────────────────────────────────────────────────────

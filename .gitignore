@@ -26,3 +26,5 @@ world/chunks/*/mask.png
 # Files we don't need to commit
 node_modules
 screenshots
+playwright-report
+test-results

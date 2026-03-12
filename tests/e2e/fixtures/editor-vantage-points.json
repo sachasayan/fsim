@@ -1,0 +1,11 @@
+{
+    "fixture_overview": {
+        "x": 1200,
+        "y": 300,
+        "z": 900,
+        "tilt": 45,
+        "fog": 0.15,
+        "clouds": 0.2,
+        "lighting": "noon"
+    }
+}

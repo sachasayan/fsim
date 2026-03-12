@@ -1,0 +1,62 @@
+{
+    "_comment": "Fixture data for editor Playwright tests.",
+    "worldSeed": 42,
+    "chunkSize": 2048,
+    "cities": [
+        {
+            "id": "fixture_city",
+            "center": [
+                1200,
+                900
+            ]
+        }
+    ],
+    "districts": [
+        {
+            "center": [
+                1200,
+                900
+            ],
+            "radius": 500,
+            "points": [
+                [
+                    700,
+                    400
+                ],
+                [
+                    1700,
+                    400
+                ],
+                [
+                    1700,
+                    1400
+                ],
+                [
+                    700,
+                    1400
+                ]
+            ],
+            "city_id": "fixture_city",
+            "district_type": "commercial"
+        }
+    ],
+    "roads": [
+        {
+            "kind": "road",
+            "surface": "asphalt",
+            "width": 24,
+            "feather": 8,
+            "points": [
+                [
+                    400,
+                    900
+                ],
+                [
+                    2000,
+                    900
+                ]
+            ]
+        }
+    ],
+    "terrainEdits": []
+}

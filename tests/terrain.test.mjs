@@ -30,6 +30,8 @@ global.document = {
                 width: 0,
                 height: 0,
                 getContext: () => ({
+                    createLinearGradient: () => ({ addColorStop: () => { } }),
+                    createRadialGradient: () => ({ addColorStop: () => { } }),
                     clearRect: () => { },
                     fillRect: () => { },
                     beginPath: () => { },

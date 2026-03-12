@@ -12,6 +12,12 @@ const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 5173);
+const IS_EDITOR_E2E = process.env.FSIM_EDITOR_E2E === '1';
+const EDITOR_E2E_FIXTURES = {
+    'tools/map.json': path.join(ROOT, 'tests', 'e2e', 'fixtures', 'editor-map.json'),
+    'config/vantage_points.json': path.join(ROOT, 'tests', 'e2e', 'fixtures', 'editor-vantage-points.json')
+};
+const editorE2eData = new Map();
 
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -30,9 +36,15 @@ const MIME_TYPES = {
 };
 
 function injectRuntimeFlags(filePath, content) {
-    if (path.basename(filePath) !== 'fsim.html') return content;
-    const runtimeScript = '<script>window.__FSIM_RUNTIME__={mode:"dev",showDebugUi:true};</script>';
-    return content.replace('</head>', `    ${runtimeScript}\n</head>`);
+    const scripts = [];
+    if (path.basename(filePath) === 'fsim.html') {
+        scripts.push('<script>window.__FSIM_RUNTIME__={mode:"dev",showDebugUi:true};</script>');
+    }
+    if (IS_EDITOR_E2E && path.basename(filePath) === 'editor.html') {
+        scripts.push('<script>window.__FSIM_EDITOR_E2E__=true;</script>');
+    }
+    if (scripts.length === 0) return content;
+    return content.replace('</head>', `    ${scripts.join('\n    ')}\n</head>`);
 }
 
 function safeResolve(urlPath) {
@@ -47,6 +59,19 @@ const clients = new Set();
 function broadcast(event, data) {
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const client of clients) client.res.write(msg);
+}
+
+async function initializeEditorE2eData() {
+    if (!IS_EDITOR_E2E) return;
+    for (const [routePath, fixturePath] of Object.entries(EDITOR_E2E_FIXTURES)) {
+        const content = JSON.parse(await readFile(fixturePath, 'utf8'));
+        editorE2eData.set(routePath, content);
+    }
+}
+
+function sendJson(res, payload, statusCode = 200) {
+    res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(JSON.stringify(payload));
 }
 
 const MAP_FILE = path.join(ROOT, 'tools', 'map.json');
@@ -88,7 +113,7 @@ function scheduleWorldRebuild(reason) {
     }, 150);
 }
 
-if (existsSync(MAP_FILE)) {
+if (!IS_EDITOR_E2E && existsSync(MAP_FILE)) {
     console.log(`Watching ${path.dirname(MAP_FILE)} for ${path.basename(MAP_FILE)} changes...`);
     const watcher = watch(path.dirname(MAP_FILE));
     (async () => {
@@ -108,6 +133,8 @@ if (existsSync(MAP_FILE)) {
     })();
 }
 
+await initializeEditorE2eData();
+
 const server = http.createServer(async (req, res) => {
     try {
         const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -126,6 +153,14 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        if (IS_EDITOR_E2E && req.method === 'GET') {
+            const fixtureKey = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
+            if (editorE2eData.has(fixtureKey)) {
+                sendJson(res, editorE2eData.get(fixtureKey));
+                return;
+            }
+        }
+
         // MAP SAVE API
         if ((url.pathname === '/save' || url.pathname === '/save/') && req.method === 'POST') {
             let body = '';
@@ -133,21 +168,25 @@ const server = http.createServer(async (req, res) => {
             req.on('end', async () => {
                 try {
                     const data = JSON.parse(body);
-                    if (data.path && data.content) {
+                    if (data.path && data.content !== undefined) {
                         const targetPath = path.resolve(ROOT, data.path);
                         if (!targetPath.startsWith(ROOT)) {
                             res.writeHead(403); res.end('Forbidden');
                             return;
                         }
                         console.log(`💾 Saving ${data.path}...`);
-                        await writeFile(targetPath, JSON.stringify(data.content, null, 4));
-                        console.log(`✅ Saved ${data.path}`);
-                        if (targetPath === MAP_FILE) {
-                            suppressWatcherUntil = Date.now() + 2000;
-                            await rebuildWorld('map.json saved via API');
+                        if (IS_EDITOR_E2E) {
+                            editorE2eData.set(data.path, structuredClone(data.content));
+                            console.log(`✅ Saved ${data.path} to in-memory E2E fixture store`);
+                        } else {
+                            await writeFile(targetPath, JSON.stringify(data.content, null, 4));
+                            console.log(`✅ Saved ${data.path}`);
+                            if (targetPath === MAP_FILE) {
+                                suppressWatcherUntil = Date.now() + 2000;
+                                await rebuildWorld('map.json saved via API');
+                            }
                         }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ success: true }));
+                        sendJson(res, { success: true });
                     } else {
                         res.writeHead(400); res.end('Bad Request');
                     }

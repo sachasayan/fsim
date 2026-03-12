@@ -22,7 +22,8 @@ function ToolButton({ active, id, label, shortcut, onClick, children }) {
         type: 'button',
         onClick,
         title: `${label} (${shortcut})`,
-        'aria-label': `${label} (${shortcut})`
+        'aria-label': `${label} (${shortcut})`,
+        'data-testid': id
     }, children, h('span', { className: 'tool-label' }, label));
 }
 
@@ -69,12 +70,29 @@ function RangeNumberField({ label, value, min, max, step, disabled, onChange }) 
     });
 }
 
+function numberFieldTestId(label) {
+    return `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+}
+
+function NumberInputField({ label, value, disabled, onChange }) {
+    return h(FieldRow, {
+        label,
+        children: h('input', {
+            type: 'number',
+            disabled,
+            value,
+            onChange,
+            'data-testid': numberFieldTestId(label)
+        })
+    });
+}
+
 function InspectorPanel({ store, controller }) {
     const state = useStore(store, value => value);
     const selected = getEntityById(state.document, state.selection.selectedId);
 
     if (!selected) {
-        return h('div', { id: 'no-selection', className: 'property-panel muted-panel' },
+        return h('div', { id: 'no-selection', className: 'property-panel muted-panel', 'data-testid': 'inspector-empty' },
             h('p', { className: 'empty-copy' }, 'Select an object to edit its properties.')
         );
     }
@@ -102,40 +120,35 @@ function InspectorPanel({ store, controller }) {
         store.runCommand({ type: 'move-entity', entityId: state.selection.selectedId, nextPoint: point });
     }
 
-    return h('div', { id: 'selection-panel', className: 'property-panel' }, [
+    return h('div', { id: 'selection-panel', className: 'property-panel', 'data-testid': 'inspector-panel' }, [
         h('div', { className: 'section-title', key: 'title' }, [
             'Selection Properties ',
             h('span', {
                 id: 'prop-type-badge',
                 className: 'status-badge',
-                key: 'badge'
+                key: 'badge',
+                'data-testid': 'inspector-type-badge'
             }, isCity(selected) ? 'CITY' : isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE')
         ]),
         h('div', { className: 'property-group', key: 'group' }, [
             h(FieldRow, {
                 key: 'id',
                 label: 'ID',
-                children: h('input', { type: 'text', readOnly: true, value: getEntityLabel(state.document, state.selection.selectedId) })
+                children: h('input', { type: 'text', readOnly: true, value: getEntityLabel(state.document, state.selection.selectedId), 'data-testid': 'field-id' })
             }),
-            h(FieldRow, {
+            h(NumberInputField, {
                 key: 'x',
                 label: 'Coord X',
-                children: h('input', {
-                    type: 'number',
-                    disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
-                    value: selected.center ? selected.center[0] : selected.x,
-                    onChange: event => updateCenter(0, Number(event.target.value))
-                })
+                disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
+                value: selected.center ? selected.center[0] : selected.x,
+                onChange: event => updateCenter(0, Number(event.target.value))
             }),
-            h(FieldRow, {
+            h(NumberInputField, {
                 key: 'z',
                 label: 'Coord Z',
-                children: h('input', {
-                    type: 'number',
-                    disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
-                    value: selected.center ? selected.center[1] : selected.z,
-                    onChange: event => updateCenter(1, Number(event.target.value))
-                })
+                disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
+                value: selected.center ? selected.center[1] : selected.z,
+                onChange: event => updateCenter(1, Number(event.target.value))
             }),
             isDistrict(selected) ? h('div', { key: 'district' }, [
                 h(FieldRow, {
@@ -143,7 +156,8 @@ function InspectorPanel({ store, controller }) {
                     children: h('select', {
                         disabled: locked,
                         value: getDistrictType(selected),
-                        onChange: event => updateProperty('district_type', event.target.value)
+                        onChange: event => updateProperty('district_type', event.target.value),
+                        'data-testid': 'field-district-type'
                     }, DISTRICT_TYPES.map(option => h('option', { key: option, value: option }, option)))
                 })
             ]) : null,
@@ -153,7 +167,8 @@ function InspectorPanel({ store, controller }) {
                     children: h('select', {
                         disabled: locked,
                         value: selected.kind,
-                        onChange: event => updateProperty('kind', event.target.value)
+                        onChange: event => updateProperty('kind', event.target.value),
+                        'data-testid': 'field-road-kind'
                     }, ROAD_KINDS.map(option => h('option', { key: option, value: option }, option)))
                 }),
                 h(FieldRow, {
@@ -161,7 +176,8 @@ function InspectorPanel({ store, controller }) {
                     children: h('select', {
                         disabled: locked,
                         value: selected.surface,
-                        onChange: event => updateProperty('surface', event.target.value)
+                        onChange: event => updateProperty('surface', event.target.value),
+                        'data-testid': 'field-road-surface'
                     }, ROAD_SURFACES.map(option => h('option', { key: option, value: option }, option)))
                 }),
                 h(RangeNumberField, {
@@ -286,20 +302,21 @@ function LayersPanel({ store }) {
         })
     }));
 
-    return h('div', { className: 'property-panel', id: 'layers-panel' }, [
+    return h('div', { className: 'property-panel', id: 'layers-panel', 'data-testid': 'layers-panel' }, [
         h('div', { className: 'section-title', key: 'title' }, 'Layers'),
         h('input', {
             key: 'filter',
             type: 'search',
             placeholder: 'Filter layers',
             value: state.layers.filterText,
-            onChange: event => store.dispatch({ type: 'set-layer-filter', value: event.target.value })
+            onChange: event => store.dispatch({ type: 'set-layer-filter', value: event.target.value }),
+            'data-testid': 'layers-filter'
         }),
-        h('div', { id: 'layers-groups', key: 'groups' }, groups.map(group => {
+        h('div', { id: 'layers-groups', key: 'groups', 'data-testid': 'layers-groups' }, groups.map(group => {
             const collapsed = state.layers.collapsed[group.id] === true;
             const visible = state.layers.groupVisibility[group.id] !== false;
             const locked = state.layers.groupLocked[group.id] === true;
-            return h('div', { className: 'layers-group', key: group.id }, [
+            return h('div', { className: 'layers-group', key: group.id, 'data-testid': `layer-group-${group.id}` }, [
                 h('div', { className: 'layers-group-header', key: 'header' }, [
                     h('button', {
                         key: 'collapse',
@@ -334,7 +351,7 @@ function LayersPanel({ store }) {
                 collapsed ? null : h('div', { className: 'layers-items', key: 'items' }, group.items.map(item => {
                     const itemVisible = state.layers.itemVisibility[item.id] !== false;
                     const itemLocked = state.layers.itemLocked[item.id] === true;
-                    return h('div', { className: `layer-item${state.selection.selectedId === item.id ? ' selected' : ''}`, key: item.id }, [
+                    return h('div', { className: `layer-item${state.selection.selectedId === item.id ? ' selected' : ''}`, key: item.id, 'data-testid': `layer-item-${item.id}` }, [
                         h('button', {
                             className: 'layer-toggle',
                             type: 'button',
@@ -348,7 +365,8 @@ function LayersPanel({ store }) {
                         h('button', {
                             className: 'layer-item-select',
                             type: 'button',
-                            onClick: () => store.dispatch({ type: 'set-selection', selectedId: item.id })
+                            onClick: () => store.dispatch({ type: 'set-selection', selectedId: item.id }),
+                            'data-testid': `layer-select-${item.id}`
                         }, h('span', { className: 'layer-item-name' }, item.label))
                     ]);
                 }))
@@ -393,16 +411,16 @@ function FooterPanel({ store, controller, onSave }) {
                 : 'Saved';
     return h('div', { className: 'property-panel footer-panel' }, [
         h('div', { className: 'status-row', key: 'status' }, [
-            h('span', { className: `status-chip ${state.history.dirty ? 'dirty' : 'clean'}` }, state.history.dirty ? 'Unsaved changes' : 'Up to date'),
-            h('span', { className: 'status-chip' }, state.tools.snappingEnabled ? 'Grid snap on' : 'Grid snap off'),
-            h('span', { className: 'status-chip' }, `Undo ${state.history.undoStack.length}`)
+            h('span', { className: `status-chip ${state.history.dirty ? 'dirty' : 'clean'}`, 'data-testid': 'dirty-state-chip' }, state.history.dirty ? 'Unsaved changes' : 'Up to date'),
+            h('span', { className: 'status-chip', 'data-testid': 'grid-snap-chip' }, state.tools.snappingEnabled ? 'Grid snap on' : 'Grid snap off'),
+            h('span', { className: 'status-chip', 'data-testid': 'undo-count-chip' }, `Undo ${state.history.undoStack.length}`)
         ]),
         state.ui.saveError ? h('div', { className: 'hint-card error-card', key: 'error' }, state.ui.saveError) : null,
         h('div', { className: 'property-group inline-actions', key: 'actions' }, [
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'undo' }) }, 'Undo'),
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'redo' }) }, 'Redo'),
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => controller.resetView() }, 'Reset View'),
-            h('button', { className: 'save-btn', type: 'button', onClick: onSave }, saveLabel)
+            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'undo-button' }, 'Undo'),
+            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'redo-button' }, 'Redo'),
+            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'reset-view-button' }, 'Reset View'),
+            h('button', { className: 'save-btn', type: 'button', onClick: onSave, 'data-testid': 'save-button' }, saveLabel)
         ])
     ]);
 }
@@ -428,7 +446,7 @@ function HelpPanel({ store }) {
 function Toast({ store }) {
     const toast = useStore(store, state => state.ui.toast);
     if (!toast) return null;
-    return h('div', { className: `toast toast-${toast.tone || 'info'}` }, toast.message);
+    return h('div', { className: `toast toast-${toast.tone || 'info'}`, 'data-testid': 'toast' }, toast.message);
 }
 
 export function EditorApp({ store, controller, canvasRef, coordsRef, onSave }) {
@@ -449,8 +467,8 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave }) {
     return h(React.Fragment, null, [
         h('div', { id: 'editor-container', key: 'layout' }, [
             h('div', { id: 'canvas-container', className: `tool-${currentTool}`, key: 'canvas-area' }, [
-                h('canvas', { id: 'map-canvas', ref: canvasRef, key: 'canvas' }),
-                h('div', { className: 'toolbar', key: 'toolbar' }, toolDefs.map(([tool, label, shortcut, path]) => (
+                h('canvas', { id: 'map-canvas', ref: canvasRef, key: 'canvas', 'data-testid': 'map-canvas' }),
+                h('div', { className: 'toolbar', key: 'toolbar', 'data-testid': 'toolbar' }, toolDefs.map(([tool, label, shortcut, path]) => (
                     h(ToolButton, {
                         key: tool,
                         id: `tool-${tool}`,
@@ -460,9 +478,9 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave }) {
                         onClick: () => store.dispatch({ type: 'set-tool', tool })
                     }, h(Icon, { path }))
                 ))),
-                h('div', { id: 'coords', ref: coordsRef, key: 'coords' }, 'X: 0, Z: 0')
+                h('div', { id: 'coords', ref: coordsRef, key: 'coords', 'data-testid': 'coords-readout' }, 'X: 0, Z: 0')
             ]),
-            h('aside', { id: 'sidebar', key: 'sidebar' }, [
+            h('aside', { id: 'sidebar', key: 'sidebar', 'data-testid': 'sidebar' }, [
                 h('h2', { key: 'heading' }, ['WORLD EDITOR ', h('span', { className: 'status-badge', key: 'badge' }, 'v2.0')]),
                 h(LayersPanel, { store, key: 'layers' }),
                 h(InspectorPanel, { store, controller, key: 'inspector' }),

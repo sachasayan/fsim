@@ -15,7 +15,7 @@ test('makeTreeBillboardMaterial creates material with correct properties', () =>
     assert.equal(material.color.getHex(), mockTint, 'Material color should match the provided tint');
     assert.equal(material.transparent, true, 'Material should be transparent');
     assert.equal(material.alphaTest, 0.12, 'Material alphaTest should be 0.12');
-    assert.equal(material.side, THREE.FrontSide, 'Material uses FrontSide for billboard (camera-facing quads need no back face)');
-    assert.equal(material.roughness, 1.0, 'Material roughness should be 1.0');
+    assert.equal(material.side, THREE.DoubleSide, 'Material uses DoubleSide so crossed cards and billboards share the same material path');
+    assert.equal(material.roughness, 0.9, 'Material roughness should be 0.9');
     assert.equal(material.metalness, 0.0, 'Material metalness should be 0.0');
 });

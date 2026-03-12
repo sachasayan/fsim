@@ -5,6 +5,8 @@ import { createEditorDocument, resolveSelectionAfterReload } from './core/docume
 import { createEditorStore } from './core/store.js';
 import { EditorApp } from './ui/app.js';
 
+const isEditorE2e = window.__FSIM_EDITOR_E2E__ === true;
+
 async function loadInitialDocument() {
     const [worldResp, vantageResp] = await Promise.all([
         fetch('/tools/map.json'),
@@ -27,6 +29,10 @@ export async function initEditor() {
     const store = createEditorStore(initialDocument);
     const canvasRef = { current: null };
     const coordsRef = { current: null };
+
+    if (isEditorE2e) {
+        window.__EDITOR_TEST__ = { store };
+    }
 
     let controller = null;
 

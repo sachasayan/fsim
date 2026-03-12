@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    applyTreeBillboardShaderPatch,
     applyDetailedBuildingShaderPatch,
     applyDistanceAtmosphereShaderPatch,
     applyTerrainDetailShaderPatch,
@@ -69,12 +70,27 @@ test('building pop-in and tree depth helpers expose expected uniform bindings', 
     const depthCameraUniform = { value: 'depth-camera' };
 
     const popInBindings = createBuildingPopInUniformBindings(cameraPosUniform, 100, 200);
-    const depthBindings = createTreeDepthUniformBindings(depthCameraUniform);
+    const depthBindings = createTreeDepthUniformBindings(depthCameraUniform, 300, 500);
 
     assert.equal(popInBindings.uBldgCameraPos, cameraPosUniform);
     assert.equal(popInBindings.uBldgFadeNear.value, 100);
     assert.equal(popInBindings.uBldgFadeFar.value, 200);
     assert.equal(depthBindings.uMainCameraPos, depthCameraUniform);
+    assert.equal(depthBindings.uTreeShadowFadeNear.value, 300);
+    assert.equal(depthBindings.uTreeShadowFadeFar.value, 500);
+});
+
+test('applyTreeBillboardShaderPatch injects leafy shading and supports static crossed cards', () => {
+    const cameraFacingShader = makeShader();
+    const crossedShader = makeShader();
+
+    applyTreeBillboardShaderPatch(cameraFacingShader);
+    applyTreeBillboardShaderPatch(crossedShader, { cameraFacing: false });
+
+    assert.match(cameraFacingShader.vertexShader, /vec3 cameraDir = cameraPosition -/);
+    assert.match(cameraFacingShader.fragmentShader, /float treeVerticalShade = mix\(0\.82, 1\.08, smoothstep\(0\.06, 0\.88, vTreeUv\.y\)\);/);
+    assert.doesNotMatch(crossedShader.vertexShader, /vec3 cameraDir = cameraPosition -/);
+    assert.match(crossedShader.fragmentShader, /roughnessFactor = mix\(roughnessFactor \* 0\.82, min\(1\.0, roughnessFactor \* 1\.08\), treeCanopyRoughness\);/);
 });
 
 test('applyDetailedBuildingShaderPatch injects building varyings and style fragments', () => {
@@ -94,11 +110,13 @@ test('applyTreeDepthShaderPatch configures DEPTH_PACKING and shadow culling logi
     const shader = makeShader();
     const mainCameraPosUniform = { value: { x: 0, y: 0, z: 0 } };
 
-    applyTreeDepthShaderPatch(shader, { mainCameraPosUniform });
+    applyTreeDepthShaderPatch(shader, { mainCameraPosUniform, shadowFadeNear: 1400, shadowFadeFar: 2100 });
 
     assert.equal(shader.defines.DEPTH_PACKING, 3201);
     assert.equal(shader.uniforms.uMainCameraPos, mainCameraPosUniform);
-    assert.match(shader.vertexShader, /float shadowScale = 1\.0 - smoothstep\(600\.0, 800\.0, distToCamera\);/);
+    assert.equal(shader.uniforms.uTreeShadowFadeNear.value, 1400);
+    assert.equal(shader.uniforms.uTreeShadowFadeFar.value, 2100);
+    assert.match(shader.vertexShader, /float shadowScale = 1\.0 - smoothstep\(uTreeShadowFadeNear, uTreeShadowFadeFar, distToCamera\);/);
 });
 
 test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define', () => {
