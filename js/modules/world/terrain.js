@@ -468,9 +468,7 @@ export function createTerrainSystem({
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
 
-  function getShaderWarmupSpec(camera) {
-    updateTerrainAtmosphere(camera);
-
+  function createTerrainWarmupGeometry() {
     const terrainGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
     terrainGeo.rotateX(-Math.PI / 2);
     terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 3).fill(1), 3));
@@ -481,63 +479,200 @@ export function createTerrainSystem({
       0.00, 0.05, 0.15, 0.80
     ]), 4));
     terrainGeo.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 4), 4));
+    return terrainGeo;
+  }
 
+  function createWaterWarmupGeometry() {
     const waterGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
     waterGeo.rotateX(-Math.PI / 2);
     waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3).fill(0.7), 3));
+    return waterGeo;
+  }
 
+  function createTreeWarmupGeometry() {
     const treeGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
     treeGeo.translate(0, 0.5, 0);
+    return treeGeo;
+  }
+
+  function createBuildingWarmupGeometry() {
     const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
     buildingGeo.translate(0, 0.5, 0);
+    return buildingGeo;
+  }
+
+  function makeWarmupInstancedMesh(geometry, material, position, tint = null) {
     const warmupDummy = new THREE.Object3D();
-
-    function makeWarmupInstancedMesh(geometry, material, position, tint = null) {
-      const mesh = new THREE.InstancedMesh(geometry, material, 1);
-      warmupDummy.position.copy(position);
-      warmupDummy.scale.set(18, 18, 18);
-      warmupDummy.rotation.set(0, 0, 0);
-      warmupDummy.updateMatrix();
-      mesh.setMatrixAt(0, warmupDummy.matrix);
-      mesh.instanceMatrix.needsUpdate = true;
-      if (tint) {
-        mesh.setColorAt(0, tint);
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      }
-      return mesh;
+    const mesh = new THREE.InstancedMesh(geometry, material, 1);
+    warmupDummy.position.copy(position);
+    warmupDummy.scale.set(18, 18, 18);
+    warmupDummy.rotation.set(0, 0, 0);
+    warmupDummy.updateMatrix();
+    mesh.setMatrixAt(0, warmupDummy.matrix);
+    mesh.instanceMatrix.needsUpdate = true;
+    if (tint) {
+      mesh.setColorAt(0, tint);
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
+    mesh.updateMatrixWorld(true);
+    return mesh;
+  }
 
-    const objects = [
-      new THREE.Mesh(terrainGeo, terrainMaterial),
-      new THREE.Mesh(terrainGeo, terrainFarMaterial),
-      new THREE.Mesh(waterGeo, waterMaterial),
-      new THREE.Mesh(waterGeo, waterFarMaterial),
-      makeWarmupInstancedMesh(treeGeo, treeBillboardMats.conifer, new THREE.Vector3(960, 0, 0)),
-      makeWarmupInstancedMesh(treeGeo, treeDepthMats.conifer, new THREE.Vector3(1120, 0, 0)),
-      makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.commercial, new THREE.Vector3(1280, 0, 0)),
-      makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.residential, new THREE.Vector3(1440, 0, 0)),
-      makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.industrial, new THREE.Vector3(1600, 0, 0)),
-      makeWarmupInstancedMesh(buildingGeo, baseBuildingMat, new THREE.Vector3(1760, 0, 0))
+  function getShaderValidationVariants() {
+    return [
+      {
+        id: 'terrain-near-surface',
+        metadata: { system: 'terrain', variant: 'terrain-near' },
+        build(camera) {
+          updateTerrainAtmosphere(camera);
+          const terrainGeo = createTerrainWarmupGeometry();
+          const mesh = new THREE.Mesh(terrainGeo, terrainMaterial);
+          mesh.position.set(-320, 0, 0);
+          mesh.updateMatrixWorld(true);
+          return {
+            objects: [mesh],
+            dispose() {
+              terrainGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'terrain-far-surface',
+        metadata: { system: 'terrain', variant: 'terrain-far' },
+        build(camera) {
+          updateTerrainAtmosphere(camera);
+          const terrainGeo = createTerrainWarmupGeometry();
+          const mesh = new THREE.Mesh(terrainGeo, terrainFarMaterial);
+          mesh.position.set(0, 0, 0);
+          mesh.updateMatrixWorld(true);
+          return {
+            objects: [mesh],
+            dispose() {
+              terrainGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'water-near-surface',
+        metadata: { system: 'terrain', variant: 'water-near' },
+        build(camera) {
+          updateTerrainAtmosphere(camera);
+          const waterGeo = createWaterWarmupGeometry();
+          const mesh = new THREE.Mesh(waterGeo, waterMaterial);
+          mesh.position.set(320, 0, 0);
+          mesh.updateMatrixWorld(true);
+          return {
+            objects: [mesh],
+            dispose() {
+              waterGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'water-far-surface',
+        metadata: { system: 'terrain', variant: 'water-far' },
+        build(camera) {
+          updateTerrainAtmosphere(camera);
+          const waterGeo = createWaterWarmupGeometry();
+          const mesh = new THREE.Mesh(waterGeo, waterFarMaterial);
+          mesh.position.set(640, 0, 0);
+          mesh.updateMatrixWorld(true);
+          return {
+            objects: [mesh],
+            dispose() {
+              waterGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'tree-billboard',
+        metadata: { system: 'terrain', variant: 'tree-billboard' },
+        build() {
+          const treeGeo = createTreeWarmupGeometry();
+          const mesh = makeWarmupInstancedMesh(treeGeo, treeBillboardMats.conifer, new THREE.Vector3(960, 0, 0));
+          return {
+            objects: [mesh],
+            dispose() {
+              treeGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'tree-depth',
+        metadata: { system: 'terrain', variant: 'tree-depth' },
+        build() {
+          const treeGeo = createTreeWarmupGeometry();
+          const mesh = makeWarmupInstancedMesh(treeGeo, treeDepthMats.conifer, new THREE.Vector3(1120, 0, 0));
+          return {
+            objects: [mesh],
+            dispose() {
+              treeGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'building-commercial',
+        metadata: { system: 'terrain', variant: 'building-commercial' },
+        build() {
+          const buildingGeo = createBuildingWarmupGeometry();
+          const mesh = makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.commercial, new THREE.Vector3(1280, 0, 0));
+          return {
+            objects: [mesh],
+            dispose() {
+              buildingGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'building-residential',
+        metadata: { system: 'terrain', variant: 'building-residential' },
+        build() {
+          const buildingGeo = createBuildingWarmupGeometry();
+          const mesh = makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.residential, new THREE.Vector3(1440, 0, 0));
+          return {
+            objects: [mesh],
+            dispose() {
+              buildingGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'building-industrial',
+        metadata: { system: 'terrain', variant: 'building-industrial' },
+        build() {
+          const buildingGeo = createBuildingWarmupGeometry();
+          const mesh = makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.industrial, new THREE.Vector3(1600, 0, 0));
+          return {
+            objects: [mesh],
+            dispose() {
+              buildingGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'building-pop-in-base',
+        metadata: { system: 'terrain', variant: 'building-pop-in-base' },
+        build() {
+          const buildingGeo = createBuildingWarmupGeometry();
+          const mesh = makeWarmupInstancedMesh(buildingGeo, baseBuildingMat, new THREE.Vector3(1760, 0, 0));
+          return {
+            objects: [mesh],
+            dispose() {
+              buildingGeo.dispose();
+            }
+          };
+        }
+      }
     ];
-
-    objects[0].position.set(-320, 0, 0);
-    objects[1].position.set(0, 0, 0);
-    objects[2].position.set(320, 0, 0);
-    objects[3].position.set(640, 0, 0);
-    for (const object of objects) {
-      object.updateMatrixWorld(true);
-    }
-
-    return {
-      id: 'terrain-system',
-      objects,
-      dispose() {
-        terrainGeo.dispose();
-        waterGeo.dispose();
-        treeGeo.dispose();
-        buildingGeo.dispose();
-      }
-    };
   }
 
   function completeBootstrap() {
@@ -618,7 +753,7 @@ export function createTerrainSystem({
     updateTerrainAtmosphere,
     isReady,
     reloadCity,
-    getShaderWarmupSpec,
+    getShaderValidationVariants,
     completeBootstrap
   };
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { listShaderVariants } from './ShaderVariantRegistry.js';
 
 function buildWarmupCamera(camera) {
     const warmupCamera = camera ? camera.clone() : new THREE.PerspectiveCamera(60, 1, 1, 10000);
@@ -8,15 +9,16 @@ function buildWarmupCamera(camera) {
     return warmupCamera;
 }
 
-function normalizeWarmupSpec(spec, fallbackId) {
+function normalizeWarmupSpec(spec, fallbackId, metadata = null) {
     if (!spec) return null;
     if (Array.isArray(spec)) {
-        return { id: fallbackId, objects: spec };
+        return { id: fallbackId, objects: spec, metadata };
     }
     return {
         id: spec.id || fallbackId,
         objects: spec.objects || [],
-        dispose: spec.dispose || null
+        dispose: spec.dispose || null,
+        metadata: spec.metadata || metadata || null
     };
 }
 
@@ -53,15 +55,23 @@ function describeWarmupMaterials(objects) {
     return materials;
 }
 
-export async function validateShaderPrograms({ renderer, camera, providers = [] }) {
+function resolveVariantEntries({ registry = null, variants = [], providers = [] }) {
+    if (registry) return listShaderVariants(registry);
+    if (Array.isArray(variants) && variants.length > 0) return variants;
+    return providers;
+}
+
+export async function validateShaderPrograms({ renderer, camera, registry = null, variants = [], providers = [] }) {
     const startedAt = performance.now();
     const report = {
         compiled: false,
         skipped: false,
         mode: typeof renderer?.compileAsync === 'function' ? 'compileAsync' : 'compile',
+        variantCount: 0,
         providerCount: 0,
         objectCount: 0,
         durationMs: 0,
+        variants: [],
         providers: []
     };
 
@@ -73,20 +83,32 @@ export async function validateShaderPrograms({ renderer, camera, providers = [] 
 
     const warmupScene = new THREE.Scene();
     const disposers = [];
+    const variantEntries = resolveVariantEntries({ registry, variants, providers });
 
-    for (const [index, provider] of providers.entries()) {
-        if (typeof provider !== 'function') continue;
-        const fallbackId = provider.shaderProviderId || provider.name || `provider-${index}`;
-        const spec = normalizeWarmupSpec(provider(camera), fallbackId);
+    for (const [index, variant] of variantEntries.entries()) {
+        if (!variant) continue;
+        const build = typeof variant === 'function' ? variant : variant.build;
+        if (typeof build !== 'function') continue;
+        const fallbackId = typeof variant === 'function'
+            ? (variant.shaderProviderId || build.name || `provider-${index}`)
+            : (variant.id || variant.shaderProviderId || build.name || `variant-${index}`);
+        const spec = normalizeWarmupSpec(build(camera), fallbackId, variant.metadata || null);
         if (!spec) continue;
 
-        report.providerCount += 1;
-        report.objectCount += spec.objects.length;
-        report.providers.push({
+        const entryReport = {
             id: spec.id,
             objectCount: spec.objects.length,
             materials: describeWarmupMaterials(spec.objects)
-        });
+        };
+        if (spec.metadata) {
+            entryReport.metadata = spec.metadata;
+        }
+
+        report.variantCount += 1;
+        report.providerCount += 1;
+        report.objectCount += spec.objects.length;
+        report.variants.push(entryReport);
+        report.providers.push(entryReport);
 
         for (const object of spec.objects) {
             warmupScene.add(object);

@@ -94,6 +94,7 @@ const {
   warmupShaders,
   validateShaders,
   getShaderValidationReport,
+  getShaderValidationVariants,
   completeBootstrap,
   updateWorldObjects,
   updateWorldLOD
@@ -154,6 +155,7 @@ window.fsimWorld = {
   waterMaterial,
   validateShaders,
   getShaderValidationReport,
+  getShaderValidationVariants,
   shaderValidation: null
 };
 

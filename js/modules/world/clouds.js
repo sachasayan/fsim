@@ -190,38 +190,58 @@ export function createCloudSystem({ scene }) {
     }
   }
 
-  function getShaderWarmupSpec(camera = null) {
-    if (camera) {
-      sharedCloudUniforms.uCloudCameraPos.value.copy(camera.position);
-      farCloudMat.uniforms.uCloudCameraPos.value.copy(camera.position);
-    }
+  function getShaderValidationVariants() {
+    return [
+      {
+        id: 'cloud-near',
+        metadata: { system: 'clouds', variant: 'near' },
+        build(camera = null) {
+          if (camera) {
+            sharedCloudUniforms.uCloudCameraPos.value.copy(camera.position);
+          }
 
-    const nearCloudGeo = new THREE.PlaneGeometry(1, 1);
-    const farCloudGeo = new THREE.PlaneGeometry(240000, 240000, 1, 1);
-    const warmupDummy = new THREE.Object3D();
-    warmupDummy.position.set(0, 3200, 0);
-    warmupDummy.scale.set(1800, 900, 1);
-    warmupDummy.updateMatrix();
+          const nearCloudGeo = new THREE.PlaneGeometry(1, 1);
+          const warmupDummy = new THREE.Object3D();
+          warmupDummy.position.set(0, 3200, 0);
+          warmupDummy.scale.set(1800, 900, 1);
+          warmupDummy.updateMatrix();
 
-    const nearCloudMesh = new THREE.InstancedMesh(nearCloudGeo, voxelMat, 1);
-    nearCloudMesh.setMatrixAt(0, warmupDummy.matrix);
-    nearCloudMesh.instanceMatrix.needsUpdate = true;
+          const nearCloudMesh = new THREE.InstancedMesh(nearCloudGeo, voxelMat, 1);
+          nearCloudMesh.setMatrixAt(0, warmupDummy.matrix);
+          nearCloudMesh.instanceMatrix.needsUpdate = true;
+          nearCloudMesh.updateMatrixWorld(true);
 
-    const farCloudMesh = new THREE.Mesh(farCloudGeo, farCloudMat);
-    farCloudMesh.rotation.x = -Math.PI / 2;
-    farCloudMesh.position.y = 3600;
+          return {
+            objects: [nearCloudMesh],
+            dispose() {
+              nearCloudGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'cloud-far',
+        metadata: { system: 'clouds', variant: 'far' },
+        build(camera = null) {
+          if (camera) {
+            farCloudMat.uniforms.uCloudCameraPos.value.copy(camera.position);
+          }
 
-    nearCloudMesh.updateMatrixWorld(true);
-    farCloudMesh.updateMatrixWorld(true);
+          const farCloudGeo = new THREE.PlaneGeometry(240000, 240000, 1, 1);
+          const farCloudMesh = new THREE.Mesh(farCloudGeo, farCloudMat);
+          farCloudMesh.rotation.x = -Math.PI / 2;
+          farCloudMesh.position.y = 3600;
+          farCloudMesh.updateMatrixWorld(true);
 
-    return {
-      id: 'cloud-system',
-      objects: [nearCloudMesh, farCloudMesh],
-      dispose() {
-        nearCloudGeo.dispose();
-        farCloudGeo.dispose();
+          return {
+            objects: [farCloudMesh],
+            dispose() {
+              farCloudGeo.dispose();
+            }
+          };
+        }
       }
-    };
+    ];
   }
 
   function getCloudTuning() {
@@ -243,5 +263,5 @@ export function createCloudSystem({ scene }) {
     farCloudMat.uniforms.uFarFadeEnd.value = cloudTuning.farFadeEnd;
   }
 
-  return { clouds, cloudMaterial: voxelMat, updateClouds, getCloudTuning, setCloudTuning, getShaderWarmupSpec };
+  return { clouds, cloudMaterial: voxelMat, updateClouds, getCloudTuning, setCloudTuning, getShaderValidationVariants };
 }

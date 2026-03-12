@@ -11,6 +11,11 @@ import { createAircraftSystem } from './aircraft.js';
 
 import { createWorldLodManager } from './WorldLodManager.js';
 import { warmupShaderPrograms } from './ShaderWarmup.js';
+import {
+  createShaderVariantRegistry,
+  listShaderVariants,
+  registerShaderVariants
+} from './ShaderVariantRegistry.js';
 
 export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER }) {
   const lodManager = createWorldLodManager();
@@ -25,11 +30,13 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
   const aircraft = createAircraftSystem({ scene, renderer });
-  const warmupProviders = [
-    terrain.getShaderWarmupSpec,
-    runway.getShaderWarmupSpec,
-    cloudSystem.getShaderWarmupSpec
-  ].filter(Boolean);
+  const shaderVariantRegistry = createShaderVariantRegistry();
+  registerShaderVariants(shaderVariantRegistry, [
+    terrain.getShaderValidationVariants?.(),
+    runway.getShaderValidationVariants?.(),
+    cloudSystem.getShaderValidationVariants?.()
+  ]);
+  const shaderVariants = listShaderVariants(shaderVariantRegistry);
   let warmupPromise = null;
   let shaderValidationReport = null;
 
@@ -38,7 +45,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     warmupPromise = warmupShaderPrograms({
       renderer,
       camera,
-      providers: warmupProviders
+      registry: shaderVariantRegistry
     }).then((report) => {
       shaderValidationReport = report;
       return report;
@@ -48,15 +55,18 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
         compiled: false,
         skipped: false,
         mode: typeof renderer?.compileAsync === 'function' ? 'compileAsync' : 'compile',
-        providerCount: warmupProviders.length,
+        variantCount: shaderVariants.length,
+        providerCount: shaderVariants.length,
         objectCount: 0,
         durationMs: 0,
-        providers: warmupProviders.map((provider, index) => ({
-          id: provider.shaderProviderId || provider.name || `provider-${index}`,
-          objectCount: 0
+        variants: shaderVariants.map((variant, index) => ({
+          id: variant.id || `variant-${index}`,
+          objectCount: 0,
+          metadata: variant.metadata || null
         })),
         error: String(error?.message || error)
       };
+      shaderValidationReport.providers = shaderValidationReport.variants;
       return shaderValidationReport;
     });
     return warmupPromise;
@@ -68,6 +78,13 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
 
   function getShaderValidationReport() {
     return shaderValidationReport;
+  }
+
+  function getShaderValidationVariants() {
+    return shaderVariants.map((variant) => ({
+      id: variant.id,
+      metadata: variant.metadata || null
+    }));
   }
 
   // Register objects for centralized LOD management
@@ -89,6 +106,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...aircraft,
     validateShaders,
     getShaderValidationReport,
+    getShaderValidationVariants,
     warmupShaders,
     updateWorldObjects: (time) => {
       radar.update(time);

@@ -411,35 +411,51 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   }
   const lightGroup = createRunwayLights();
 
-  function getShaderWarmupSpec() {
-    const runwayGeo = new THREE.PlaneGeometry(100, 400);
-    runwayGeo.rotateX(-Math.PI / 2);
-    const lightGeo = new THREE.SphereGeometry(1, 4, 4);
-    const warmupDummy = new THREE.Object3D();
+  function getShaderValidationVariants() {
+    return [
+      {
+        id: 'runway-surface',
+        metadata: { system: 'runway', variant: 'surface' },
+        build() {
+          const runwayGeo = new THREE.PlaneGeometry(100, 400);
+          runwayGeo.rotateX(-Math.PI / 2);
+          const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
+          runwayMesh.position.set(0, 0.2, 0);
+          runwayMesh.updateMatrixWorld(true);
 
-    const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
-    runwayMesh.position.set(0, 0.2, 0);
+          return {
+            objects: [runwayMesh],
+            dispose() {
+              runwayGeo.dispose();
+            }
+          };
+        }
+      },
+      {
+        id: 'runway-light',
+        metadata: { system: 'runway', variant: 'light' },
+        build() {
+          const lightGeo = new THREE.SphereGeometry(1, 4, 4);
+          const warmupDummy = new THREE.Object3D();
+          const lightMesh = new THREE.InstancedMesh(lightGeo, warmupLightMaterial, 1);
+          warmupDummy.position.set(0, 2, 0);
+          warmupDummy.scale.set(1.5, 1.5, 1.5);
+          warmupDummy.updateMatrix();
+          lightMesh.setMatrixAt(0, warmupDummy.matrix);
+          lightMesh.setColorAt(0, new THREE.Color(0xffffff));
+          lightMesh.instanceMatrix.needsUpdate = true;
+          if (lightMesh.instanceColor) lightMesh.instanceColor.needsUpdate = true;
+          lightMesh.updateMatrixWorld(true);
 
-    const lightMesh = new THREE.InstancedMesh(lightGeo, warmupLightMaterial, 1);
-    warmupDummy.position.set(0, 2, 0);
-    warmupDummy.scale.set(1.5, 1.5, 1.5);
-    warmupDummy.updateMatrix();
-    lightMesh.setMatrixAt(0, warmupDummy.matrix);
-    lightMesh.setColorAt(0, new THREE.Color(0xffffff));
-    lightMesh.instanceMatrix.needsUpdate = true;
-    if (lightMesh.instanceColor) lightMesh.instanceColor.needsUpdate = true;
-
-    runwayMesh.updateMatrixWorld(true);
-    lightMesh.updateMatrixWorld(true);
-
-    return {
-      id: 'runway-system',
-      objects: [runwayMesh, lightMesh],
-      dispose() {
-        runwayGeo.dispose();
-        lightGeo.dispose();
+          return {
+            objects: [lightMesh],
+            dispose() {
+              lightGeo.dispose();
+            }
+          };
+        }
       }
-    };
+    ];
   }
 
   let currentLOD = -1;
@@ -463,5 +479,5 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     }
   }
 
-  return { alsStrobes, strobeColorOn, strobeColorOff, updateLOD, position: new THREE.Vector3(0, 0, 0), getShaderWarmupSpec };
+  return { alsStrobes, strobeColorOn, strobeColorOff, updateLOD, position: new THREE.Vector3(0, 0, 0), getShaderValidationVariants };
 }
