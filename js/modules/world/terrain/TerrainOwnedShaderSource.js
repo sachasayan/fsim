@@ -5,6 +5,9 @@ import {
     createTerrainDetailUniformBindings
 } from './TerrainShaderPatches.js';
 
+const SOURCE_CACHE = new Map();
+const DESCRIPTOR_CACHE = new Map();
+
 const TERRAIN_DETAIL_UNIFORM_KEYS = [
     'uTerrainDetailTex',
     'uRoadMarkingTex',
@@ -40,9 +43,6 @@ const ATMOSPHERE_UNIFORM_KEYS = [
     'uAtmosNear',
     'uAtmosFar'
 ];
-
-const SOURCE_CACHE = new Map();
-const DESCRIPTOR_CACHE = new Map();
 
 function makePlaceholderUniformMap(keys) {
     return Object.fromEntries(keys.map((key) => [key, { value: null }]));

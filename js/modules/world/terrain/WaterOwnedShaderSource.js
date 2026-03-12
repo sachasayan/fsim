@@ -8,15 +8,15 @@ import {
     createWaterDualScrollUniformBindings
 } from './TerrainShaderPatches.js';
 
+const SOURCE_CACHE = new Map();
+const DESCRIPTOR_CACHE = new Map();
+
 const ATMOSPHERE_UNIFORM_KEYS = [
     'uAtmosCameraPos',
     'uAtmosColor',
     'uAtmosNear',
     'uAtmosFar'
 ];
-
-const SOURCE_CACHE = new Map();
-const DESCRIPTOR_CACHE = new Map();
 
 function makePlaceholderUniformMap(keys) {
     return Object.fromEntries(keys.map((key) => [key, { value: null }]));

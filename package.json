@@ -19,7 +19,7 @@
     "test": "npm run test:unit && npm run smoke"
   },
   "dependencies": {
-    "three": "^0.183.2",
+    "three": "0.160.0",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {

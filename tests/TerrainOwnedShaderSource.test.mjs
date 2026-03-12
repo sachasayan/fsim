@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 
 import {
     getTerrainShaderDescriptor,
@@ -7,6 +8,14 @@ import {
     getTerrainOwnedUniformBindings
 } from '../js/modules/world/terrain/TerrainOwnedShaderSource.js';
 import { describeOwnedShaderDescriptor } from '../js/modules/world/shaders/ShaderDescriptor.js';
+import { applyTerrainDetailShaderPatch } from '../js/modules/world/terrain/TerrainShaderPatches.js';
+
+function normalizeShaderSource(source) {
+    return source
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/\s+/g, '')
+        .trim();
+}
 
 test('getTerrainOwnedShaderSource caches and returns owned terrain shader variants', () => {
     const nearSourceA = getTerrainOwnedShaderSource({ isFarLOD: false });
@@ -97,4 +106,66 @@ test('getTerrainShaderDescriptor returns cached near/far descriptors with stable
             isFarLOD: true
         }
     });
+});
+
+test('terrain owned shader templates match the legacy terrain patch output', () => {
+    const terrainDetailUniforms = Object.fromEntries([
+        'uTerrainDetailTex',
+        'uRoadMarkingTex',
+        'uRoadMarkingCenter',
+        'uRoadMarkingWorldSize',
+        'uRoadMarkingOpacity',
+        'uRoadMarkingFadeStart',
+        'uRoadMarkingFadeEnd',
+        'uRoadMarkingBodyStart',
+        'uRoadMarkingBodyEnd',
+        'uRoadMarkingCoreStart',
+        'uRoadMarkingCoreEnd',
+        'uTerrainDetailScale',
+        'uTerrainDetailStrength',
+        'uTerrainSlopeStart',
+        'uTerrainSlopeEnd',
+        'uTerrainRockHeightStart',
+        'uTerrainRockHeightEnd',
+        'uTerrainAtmosStrength',
+        'uTerrainFoliageNearStart',
+        'uTerrainFoliageNearEnd',
+        'uTerrainFoliageStrength',
+        'uTerrainSandColor',
+        'uTerrainGrassColor',
+        'uTerrainRockColor',
+        'uTerrainSnowColor',
+        'uTerrainAsphaltColor'
+    ].map((key) => [key, { value: null }]));
+    const atmosphereUniforms = Object.fromEntries([
+        'uAtmosCameraPos',
+        'uAtmosColor',
+        'uAtmosNear',
+        'uAtmosFar'
+    ].map((key) => [key, { value: null }]));
+
+    function buildLegacyTerrainSource(isFarLOD) {
+        const shader = {
+            uniforms: {},
+            defines: {},
+            vertexShader: THREE.ShaderLib.standard.vertexShader,
+            fragmentShader: THREE.ShaderLib.standard.fragmentShader
+        };
+        applyTerrainDetailShaderPatch(shader, {
+            terrainDetailUniforms,
+            atmosphereUniforms,
+            timeUniform: { value: 0 },
+            isFarLOD
+        });
+        return shader;
+    }
+
+    const legacyNear = buildLegacyTerrainSource(false);
+    const legacyFar = buildLegacyTerrainSource(true);
+    const ownedNear = getTerrainOwnedShaderSource({ isFarLOD: false });
+    const ownedFar = getTerrainOwnedShaderSource({ isFarLOD: true });
+
+    assert.equal(normalizeShaderSource(ownedNear.vertexShader), normalizeShaderSource(legacyNear.vertexShader));
+    assert.equal(normalizeShaderSource(ownedNear.fragmentShader), normalizeShaderSource(legacyNear.fragmentShader));
+    assert.equal(normalizeShaderSource(ownedFar.fragmentShader), normalizeShaderSource(legacyFar.fragmentShader));
 });

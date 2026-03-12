@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 
 import {
     getWaterShaderDescriptor,
@@ -7,6 +8,17 @@ import {
     getWaterOwnedUniformBindings
 } from '../js/modules/world/terrain/WaterOwnedShaderSource.js';
 import { describeOwnedShaderDescriptor } from '../js/modules/world/shaders/ShaderDescriptor.js';
+import {
+    applyDistanceAtmosphereShaderPatch,
+    applyWaterDualScrollShaderPatch
+} from '../js/modules/world/terrain/TerrainShaderPatches.js';
+
+function normalizeShaderSource(source) {
+    return source
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/\s+/g, '')
+        .trim();
+}
 
 test('water owned shader sources are cached and expose expected near/far behavior', () => {
     const nearSourceA = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08 });
@@ -87,4 +99,43 @@ test('getWaterShaderDescriptor returns cached descriptors with variant metadata'
             dualScroll: false
         }
     });
+});
+
+test('water owned shader templates match the legacy water patch output', () => {
+    const atmosphereUniforms = Object.fromEntries([
+        'uAtmosCameraPos',
+        'uAtmosColor',
+        'uAtmosNear',
+        'uAtmosFar'
+    ].map((key) => [key, { value: null }]));
+
+    function buildLegacyWaterSource(isFarLOD) {
+        const shader = {
+            uniforms: {},
+            defines: {},
+            vertexShader: isFarLOD ? THREE.ShaderLib.basic.vertexShader : THREE.ShaderLib.standard.vertexShader,
+            fragmentShader: isFarLOD ? THREE.ShaderLib.basic.fragmentShader : THREE.ShaderLib.standard.fragmentShader
+        };
+        applyDistanceAtmosphereShaderPatch(shader, {
+            atmosphereUniforms,
+            strength: 0.74,
+            desat: 0.08
+        });
+        if (!isFarLOD) {
+            applyWaterDualScrollShaderPatch(shader, {
+                timeUniform: { value: 0 }
+            });
+        }
+        return shader;
+    }
+
+    const legacyNear = buildLegacyWaterSource(false);
+    const legacyFar = buildLegacyWaterSource(true);
+    const ownedNear = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08 });
+    const ownedFar = getWaterOwnedShaderSource({ isFarLOD: true, strength: 0.74, desat: 0.08 });
+
+    assert.equal(normalizeShaderSource(ownedNear.vertexShader), normalizeShaderSource(legacyNear.vertexShader));
+    assert.equal(normalizeShaderSource(ownedNear.fragmentShader), normalizeShaderSource(legacyNear.fragmentShader));
+    assert.equal(normalizeShaderSource(ownedFar.vertexShader), normalizeShaderSource(legacyFar.vertexShader));
+    assert.equal(normalizeShaderSource(ownedFar.fragmentShader), normalizeShaderSource(legacyFar.fragmentShader));
 });
