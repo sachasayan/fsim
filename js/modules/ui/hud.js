@@ -38,7 +38,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     };
 
     const tileManager = new MapTileManager({
-        getTerrainHeight,
+        sampleTerrainHeight: getTerrainHeight,
         tileSize: 128,
         pixelRatio: 0.5,
         useHillshading: false

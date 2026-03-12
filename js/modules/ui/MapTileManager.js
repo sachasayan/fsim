@@ -5,8 +5,8 @@ import { MAP_COLORS } from './MapColors.js';
  * Uses async tile rendering with placeholder fallback so zoom/pan never stutter.
  */
 export class MapTileManager {
-    constructor({ getTerrainHeight, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null }) {
-        this.getTerrainHeight = getTerrainHeight;
+    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null }) {
+        this.sampleTerrainHeight = this.resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise });
         this.tileSize = tileSize;
         this.pixelRatio = pixelRatio;
         this.useHillshading = useHillshading;
@@ -19,6 +19,19 @@ export class MapTileManager {
         this.isProcessingQueue = false;
         this.maxCacheSize = 512;
         this.cacheGeneration = 0;
+    }
+
+    resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise }) {
+        if (typeof sampleTerrainHeight === 'function') return sampleTerrainHeight;
+        if (typeof getTerrainHeight !== 'function') {
+            throw new Error('MapTileManager requires a terrain height sampler');
+        }
+
+        if (Noise != null && getTerrainHeight.length >= 3) {
+            return (x, z) => getTerrainHeight(x, z, Noise);
+        }
+
+        return (x, z) => getTerrainHeight(x, z);
     }
 
     /**
@@ -92,12 +105,12 @@ export class MapTileManager {
                 const wx = startX + (px / this.pixelRatio) * lod;
                 const wz = startZ + (py / this.pixelRatio) * lod;
 
-                const h = this.getTerrainHeight(wx, wz, this.Noise);
+                const h = this.sampleTerrainHeight(wx, wz);
                 let r, g, b;
 
                 if (this.useHillshading) {
-                    const hRight = this.getTerrainHeight(wx + slopeDist, wz, this.Noise);
-                    const hDown = this.getTerrainHeight(wx, wz + slopeDist, this.Noise);
+                    const hRight = this.sampleTerrainHeight(wx + slopeDist, wz);
+                    const hDown = this.sampleTerrainHeight(wx, wz + slopeDist);
                     [r, g, b] = MAP_COLORS.getTerrainColorArray(h, (hRight - h) / slopeDist, (hDown - h) / slopeDist);
                 } else {
                     [r, g, b] = MAP_COLORS.getTerrainColorArray(h, 0, 0);

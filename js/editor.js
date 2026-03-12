@@ -163,10 +163,9 @@ function sampleTerrainHeight(x, z) {
 }
 
 const tileManager = new MapTileManager({
-    getTerrainHeight: sampleTerrainHeight,
+    sampleTerrainHeight,
     tileSize: 256,
     useHillshading: true,
-    Noise,
     onTileReady: scheduleRender
 });
 

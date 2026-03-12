@@ -52,6 +52,45 @@ export function createShaderPatch({ id, apply, cacheKey = id, metadata = {} }) {
     return { id, apply, cacheKey, metadata };
 }
 
+export function createOwnedShaderSourcePatch({
+    id,
+    cacheKey = id,
+    source,
+    uniformBindings = null,
+    metadata = {}
+}) {
+    return createShaderPatch({
+        id,
+        cacheKey,
+        metadata: {
+            ...metadata,
+            ownedSource: true
+        },
+        apply(shader, renderer) {
+            const resolvedSource = typeof source === 'function' ? source(shader, renderer) : source;
+            if (resolvedSource?.vertexShader) {
+                shader.vertexShader = resolvedSource.vertexShader;
+            }
+            if (resolvedSource?.fragmentShader) {
+                shader.fragmentShader = resolvedSource.fragmentShader;
+            }
+            if (resolvedSource?.defines) {
+                shader.defines = {
+                    ...(shader.defines || {}),
+                    ...resolvedSource.defines
+                };
+            }
+
+            if (uniformBindings) {
+                const resolvedBindings = typeof uniformBindings === 'function'
+                    ? uniformBindings(shader, renderer)
+                    : uniformBindings;
+                Object.assign(shader.uniforms, resolvedBindings);
+            }
+        }
+    });
+}
+
 export function setMaterialShaderBaseKey(material, baseCacheKey) {
     const state = ensurePipelineState(material);
     state.baseCacheKey = baseCacheKey;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
     configureMaterialShaderPipeline,
+    createOwnedShaderSourcePatch,
     createShaderPatch,
     setMaterialShaderBaseKey,
     upsertMaterialShaderPatch
@@ -9,11 +10,14 @@ import {
     applyBuildingPopInShaderPatch,
     applyDetailedBuildingShaderPatch,
     applyDistanceAtmosphereShaderPatch,
-    applyTerrainDetailShaderPatch,
     applyTreeBillboardShaderPatch,
     applyTreeDepthShaderPatch,
     applyWaterDualScrollShaderPatch
 } from './TerrainShaderPatches.js';
+import {
+    getTerrainOwnedShaderSource,
+    getTerrainOwnedUniformBindings
+} from './TerrainOwnedShaderSource.js';
 
 export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphereUniforms, strength = 0.5, desat = 0.0) {
     setMaterialShaderBaseKey(material, programKey);
@@ -118,18 +122,21 @@ export function createDetailedBuildingMat(style, cameraPosUniform = null) {
 export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, timeUniform, isFarLOD = false) {
     const fragId = isFarLOD ? 'far' : 'near';
     configureMaterialShaderPipeline(material, {
-        baseCacheKey: `terrain-detail-v8-${fragId}`,
+        baseCacheKey: `terrain-owned-standard-v1-${fragId}`,
         patches: [
-            createShaderPatch({
-                id: 'terrain-detail',
-                cacheKey: `terrain-detail-${fragId}`,
-                metadata: { isFarLOD },
-                apply(shader) {
-                    applyTerrainDetailShaderPatch(shader, {
+            createOwnedShaderSourcePatch({
+                id: 'terrain-owned-source',
+                cacheKey: `terrain-owned-source-${fragId}`,
+                metadata: {
+                    isFarLOD,
+                    shaderFamily: 'standard'
+                },
+                source: getTerrainOwnedShaderSource({ isFarLOD }),
+                uniformBindings() {
+                    return getTerrainOwnedUniformBindings({
                         terrainDetailUniforms,
                         atmosphereUniforms,
-                        timeUniform,
-                        isFarLOD
+                        timeUniform
                     });
                 }
             })

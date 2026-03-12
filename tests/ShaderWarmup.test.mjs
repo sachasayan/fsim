@@ -32,7 +32,7 @@ test('warmupShaderPrograms uses compileAsync when available and disposes provide
     assert.equal(report.mode, 'compileAsync');
     assert.equal(report.providerCount, 1);
     assert.equal(report.objectCount, 1);
-    assert.deepEqual(report.providers, [{ id: 'provider-0', objectCount: 1 }]);
+    assert.deepEqual(report.providers, [{ id: 'provider-0', objectCount: 1, materials: [] }]);
 });
 
 test('warmupShaderPrograms falls back to compile when compileAsync is unavailable', async () => {
@@ -56,4 +56,5 @@ test('warmupShaderPrograms falls back to compile when compileAsync is unavailabl
     assert.equal(compileCount, 1);
     assert.equal(report.compiled, true);
     assert.equal(report.mode, 'compile');
+    assert.deepEqual(report.providers, [{ id: 'provider-0', objectCount: 1, materials: [] }]);
 });

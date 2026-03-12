@@ -20,6 +20,39 @@ function normalizeWarmupSpec(spec, fallbackId) {
     };
 }
 
+function describeWarmupMaterials(objects) {
+    const materials = [];
+    const seen = new Set();
+
+    function collectFromMaterial(material) {
+        if (!material) return;
+        const list = Array.isArray(material) ? material : [material];
+        for (const entry of list) {
+            const pipeline = entry?.userData?.shaderPipeline;
+            if (!pipeline) continue;
+            const key = `${pipeline.baseCacheKey || 'none'}::${pipeline.patches.join('+')}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            materials.push({
+                type: entry.type || 'Material',
+                baseCacheKey: pipeline.baseCacheKey,
+                patches: [...pipeline.patches]
+            });
+        }
+    }
+
+    for (const object of objects) {
+        if (!object) continue;
+        if (typeof object.traverse === 'function') {
+            object.traverse((child) => collectFromMaterial(child.material));
+        } else {
+            collectFromMaterial(object.material);
+        }
+    }
+
+    return materials;
+}
+
 export async function validateShaderPrograms({ renderer, camera, providers = [] }) {
     const startedAt = performance.now();
     const report = {
@@ -51,7 +84,8 @@ export async function validateShaderPrograms({ renderer, camera, providers = [] 
         report.objectCount += spec.objects.length;
         report.providers.push({
             id: spec.id,
-            objectCount: spec.objects.length
+            objectCount: spec.objects.length,
+            materials: describeWarmupMaterials(spec.objects)
         });
 
         for (const object of spec.objects) {

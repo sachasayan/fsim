@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     configureMaterialShaderPipeline,
+    createOwnedShaderSourcePatch,
     createShaderPatch,
     describeMaterialShaderPipeline,
     setMaterialShaderBaseKey,
@@ -75,4 +76,39 @@ test('upsertMaterialShaderPatch replaces patches by id and updates metadata', ()
             metadata: { version: 2 }
         }
     ]);
+});
+
+test('createOwnedShaderSourcePatch replaces shader sources and binds uniforms', () => {
+    const material = { userData: {} };
+    const shader = {
+        uniforms: { diffuse: { value: 'existing' } },
+        defines: { STANDARD: '' },
+        vertexShader: 'old-vertex',
+        fragmentShader: 'old-fragment'
+    };
+    const liveUniform = { value: 7 };
+
+    configureMaterialShaderPipeline(material, {
+        baseCacheKey: 'owned',
+        patches: [
+            createOwnedShaderSourcePatch({
+                id: 'owned-source',
+                source: {
+                    vertexShader: 'new-vertex',
+                    fragmentShader: 'new-fragment',
+                    defines: { USE_COLOR: '' }
+                },
+                uniformBindings: {
+                    uLive: liveUniform
+                }
+            })
+        ]
+    });
+
+    material.onBeforeCompile(shader);
+
+    assert.equal(shader.vertexShader, 'new-vertex');
+    assert.equal(shader.fragmentShader, 'new-fragment');
+    assert.equal(shader.uniforms.uLive, liveUniform);
+    assert.ok(Object.prototype.hasOwnProperty.call(shader.defines, 'USE_COLOR'));
 });

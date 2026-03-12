@@ -1,0 +1,85 @@
+import * as THREE from 'three';
+import {
+    applyTerrainDetailShaderPatch,
+    createTerrainDetailUniformBindings
+} from './TerrainShaderPatches.js';
+
+const TERRAIN_DETAIL_UNIFORM_KEYS = [
+    'uTerrainDetailTex',
+    'uRoadMarkingTex',
+    'uRoadMarkingCenter',
+    'uRoadMarkingWorldSize',
+    'uRoadMarkingOpacity',
+    'uRoadMarkingFadeStart',
+    'uRoadMarkingFadeEnd',
+    'uRoadMarkingBodyStart',
+    'uRoadMarkingBodyEnd',
+    'uRoadMarkingCoreStart',
+    'uRoadMarkingCoreEnd',
+    'uTerrainDetailScale',
+    'uTerrainDetailStrength',
+    'uTerrainSlopeStart',
+    'uTerrainSlopeEnd',
+    'uTerrainRockHeightStart',
+    'uTerrainRockHeightEnd',
+    'uTerrainAtmosStrength',
+    'uTerrainFoliageNearStart',
+    'uTerrainFoliageNearEnd',
+    'uTerrainFoliageStrength',
+    'uTerrainSandColor',
+    'uTerrainGrassColor',
+    'uTerrainRockColor',
+    'uTerrainSnowColor',
+    'uTerrainAsphaltColor'
+];
+
+const ATMOSPHERE_UNIFORM_KEYS = [
+    'uAtmosCameraPos',
+    'uAtmosColor',
+    'uAtmosNear',
+    'uAtmosFar'
+];
+
+const SOURCE_CACHE = new Map();
+
+function makePlaceholderUniformMap(keys) {
+    return Object.fromEntries(keys.map((key) => [key, { value: null }]));
+}
+
+function buildTerrainOwnedShaderSource(isFarLOD) {
+    const shader = {
+        uniforms: {},
+        defines: {},
+        vertexShader: THREE.ShaderLib.standard.vertexShader,
+        fragmentShader: THREE.ShaderLib.standard.fragmentShader
+    };
+
+    applyTerrainDetailShaderPatch(shader, {
+        terrainDetailUniforms: makePlaceholderUniformMap(TERRAIN_DETAIL_UNIFORM_KEYS),
+        atmosphereUniforms: makePlaceholderUniformMap(ATMOSPHERE_UNIFORM_KEYS),
+        timeUniform: { value: 0 },
+        isFarLOD
+    });
+
+    return {
+        vertexShader: shader.vertexShader,
+        fragmentShader: shader.fragmentShader,
+        defines: shader.defines || {}
+    };
+}
+
+export function getTerrainOwnedShaderSource({ isFarLOD = false } = {}) {
+    const cacheKey = isFarLOD ? 'far' : 'near';
+    if (!SOURCE_CACHE.has(cacheKey)) {
+        SOURCE_CACHE.set(cacheKey, buildTerrainOwnedShaderSource(isFarLOD));
+    }
+    return SOURCE_CACHE.get(cacheKey);
+}
+
+export function getTerrainOwnedUniformBindings({
+    terrainDetailUniforms,
+    atmosphereUniforms,
+    timeUniform
+}) {
+    return createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform);
+}

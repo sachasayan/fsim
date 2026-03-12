@@ -7,6 +7,42 @@ import {
 
 const DIFFUSE_COLOR_SNIPPET = 'vec4 diffuseColor = vec4( diffuse, opacity );';
 
+export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform) {
+    return {
+        uTime: timeUniform,
+        uTerrainDetailTex: terrainDetailUniforms.uTerrainDetailTex,
+        uRoadMarkingTex: terrainDetailUniforms.uRoadMarkingTex,
+        uRoadMarkingCenter: terrainDetailUniforms.uRoadMarkingCenter,
+        uRoadMarkingWorldSize: terrainDetailUniforms.uRoadMarkingWorldSize,
+        uRoadMarkingOpacity: terrainDetailUniforms.uRoadMarkingOpacity,
+        uRoadMarkingFadeStart: terrainDetailUniforms.uRoadMarkingFadeStart,
+        uRoadMarkingFadeEnd: terrainDetailUniforms.uRoadMarkingFadeEnd,
+        uRoadMarkingBodyStart: terrainDetailUniforms.uRoadMarkingBodyStart,
+        uRoadMarkingBodyEnd: terrainDetailUniforms.uRoadMarkingBodyEnd,
+        uRoadMarkingCoreStart: terrainDetailUniforms.uRoadMarkingCoreStart,
+        uRoadMarkingCoreEnd: terrainDetailUniforms.uRoadMarkingCoreEnd,
+        uTerrainDetailScale: terrainDetailUniforms.uTerrainDetailScale,
+        uTerrainDetailStrength: terrainDetailUniforms.uTerrainDetailStrength,
+        uTerrainSlopeStart: terrainDetailUniforms.uTerrainSlopeStart,
+        uTerrainSlopeEnd: terrainDetailUniforms.uTerrainSlopeEnd,
+        uTerrainRockHeightStart: terrainDetailUniforms.uTerrainRockHeightStart,
+        uTerrainRockHeightEnd: terrainDetailUniforms.uTerrainRockHeightEnd,
+        uAtmosCameraPos: atmosphereUniforms.uAtmosCameraPos,
+        uAtmosColor: atmosphereUniforms.uAtmosColor,
+        uAtmosNear: atmosphereUniforms.uAtmosNear,
+        uAtmosFar: atmosphereUniforms.uAtmosFar,
+        uTerrainAtmosStrength: terrainDetailUniforms.uTerrainAtmosStrength,
+        uTerrainFoliageNearStart: terrainDetailUniforms.uTerrainFoliageNearStart,
+        uTerrainFoliageNearEnd: terrainDetailUniforms.uTerrainFoliageNearEnd,
+        uTerrainFoliageStrength: terrainDetailUniforms.uTerrainFoliageStrength,
+        uTerrainSandColor: terrainDetailUniforms.uTerrainSandColor,
+        uTerrainGrassColor: terrainDetailUniforms.uTerrainGrassColor,
+        uTerrainRockColor: terrainDetailUniforms.uTerrainRockColor,
+        uTerrainSnowColor: terrainDetailUniforms.uTerrainSnowColor,
+        uTerrainAsphaltColor: terrainDetailUniforms.uTerrainAsphaltColor
+    };
+}
+
 export function applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength = 0.5, desat = 0.0 }) {
     shader.uniforms.uAtmosCameraPos = atmosphereUniforms.uAtmosCameraPos;
     shader.uniforms.uAtmosColor = atmosphereUniforms.uAtmosColor;
@@ -416,37 +452,10 @@ export function applyTerrainDetailShaderPatch(shader, {
     timeUniform,
     isFarLOD = false
 }) {
-    shader.uniforms.uTime = timeUniform;
-    shader.uniforms.uTerrainDetailTex = terrainDetailUniforms.uTerrainDetailTex;
-    shader.uniforms.uRoadMarkingTex = terrainDetailUniforms.uRoadMarkingTex;
-    shader.uniforms.uRoadMarkingCenter = terrainDetailUniforms.uRoadMarkingCenter;
-    shader.uniforms.uRoadMarkingWorldSize = terrainDetailUniforms.uRoadMarkingWorldSize;
-    shader.uniforms.uRoadMarkingOpacity = terrainDetailUniforms.uRoadMarkingOpacity;
-    shader.uniforms.uRoadMarkingFadeStart = terrainDetailUniforms.uRoadMarkingFadeStart;
-    shader.uniforms.uRoadMarkingFadeEnd = terrainDetailUniforms.uRoadMarkingFadeEnd;
-    shader.uniforms.uRoadMarkingBodyStart = terrainDetailUniforms.uRoadMarkingBodyStart;
-    shader.uniforms.uRoadMarkingBodyEnd = terrainDetailUniforms.uRoadMarkingBodyEnd;
-    shader.uniforms.uRoadMarkingCoreStart = terrainDetailUniforms.uRoadMarkingCoreStart;
-    shader.uniforms.uRoadMarkingCoreEnd = terrainDetailUniforms.uRoadMarkingCoreEnd;
-    shader.uniforms.uTerrainDetailScale = terrainDetailUniforms.uTerrainDetailScale;
-    shader.uniforms.uTerrainDetailStrength = terrainDetailUniforms.uTerrainDetailStrength;
-    shader.uniforms.uTerrainSlopeStart = terrainDetailUniforms.uTerrainSlopeStart;
-    shader.uniforms.uTerrainSlopeEnd = terrainDetailUniforms.uTerrainSlopeEnd;
-    shader.uniforms.uTerrainRockHeightStart = terrainDetailUniforms.uTerrainRockHeightStart;
-    shader.uniforms.uTerrainRockHeightEnd = terrainDetailUniforms.uTerrainRockHeightEnd;
-    shader.uniforms.uAtmosCameraPos = atmosphereUniforms.uAtmosCameraPos;
-    shader.uniforms.uAtmosColor = atmosphereUniforms.uAtmosColor;
-    shader.uniforms.uAtmosNear = atmosphereUniforms.uAtmosNear;
-    shader.uniforms.uAtmosFar = atmosphereUniforms.uAtmosFar;
-    shader.uniforms.uTerrainAtmosStrength = terrainDetailUniforms.uTerrainAtmosStrength;
-    shader.uniforms.uTerrainFoliageNearStart = terrainDetailUniforms.uTerrainFoliageNearStart;
-    shader.uniforms.uTerrainFoliageNearEnd = terrainDetailUniforms.uTerrainFoliageNearEnd;
-    shader.uniforms.uTerrainFoliageStrength = terrainDetailUniforms.uTerrainFoliageStrength;
-    shader.uniforms.uTerrainSandColor = terrainDetailUniforms.uTerrainSandColor;
-    shader.uniforms.uTerrainGrassColor = terrainDetailUniforms.uTerrainGrassColor;
-    shader.uniforms.uTerrainRockColor = terrainDetailUniforms.uTerrainRockColor;
-    shader.uniforms.uTerrainSnowColor = terrainDetailUniforms.uTerrainSnowColor;
-    shader.uniforms.uTerrainAsphaltColor = terrainDetailUniforms.uTerrainAsphaltColor;
+    Object.assign(
+        shader.uniforms,
+        createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform)
+    );
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
