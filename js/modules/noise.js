@@ -29,9 +29,12 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
+
+    // Inline fade: t * t * t * (t * (t * 6 - 15) + 10)
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
     let A = this.permutation[X] + Y;
     let AA = this.permutation[A] + Z;
     let AB = this.permutation[A + 1] + Z;
@@ -39,23 +42,28 @@ export const Noise = {
     let BA = this.permutation[B] + Z;
     let BB = this.permutation[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    // Inline lerp: a + t * (b - a)
+    let gAA = this.grad(this.permutation[AA], x, y, z);
+    let gBA = this.grad(this.permutation[BA], x - 1, y, z);
+    let x11 = gAA + u * (gBA - gAA);
+
+    let gAB = this.grad(this.permutation[AB], x, y - 1, z);
+    let gBB = this.grad(this.permutation[BB], x - 1, y - 1, z);
+    let x12 = gAB + u * (gBB - gAB);
+
+    let y1 = x11 + v * (x12 - x11);
+
+    let gAA1 = this.grad(this.permutation[AA + 1], x, y, z - 1);
+    let gBA1 = this.grad(this.permutation[BA + 1], x - 1, y, z - 1);
+    let x21 = gAA1 + u * (gBA1 - gAA1);
+
+    let gAB1 = this.grad(this.permutation[AB + 1], x, y - 1, z - 1);
+    let gBB1 = this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1);
+    let x22 = gAB1 + u * (gBB1 - gAB1);
+
+    let y2 = x21 + v * (x22 - x21);
+
+    return y1 + w * (y2 - y1);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {

@@ -12,8 +12,12 @@ function valueNoise2D(x, z, seed = 0) {
   const z0 = Math.floor(z);
   const x1 = x0 + 1;
   const z1 = z0 + 1;
-  const tx = smoothstep(x - x0);
-  const tz = smoothstep(z - z0);
+
+  // Inline smoothstep
+  const dx = x - x0;
+  const dz = z - z0;
+  const tx = dx * dx * (3 - 2 * dx);
+  const tz = dz * dz * (3 - 2 * dz);
 
   const n00 = hash2D(x0, z0, seed);
   const n10 = hash2D(x1, z0, seed);
