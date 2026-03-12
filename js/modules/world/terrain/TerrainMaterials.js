@@ -18,6 +18,10 @@ import {
     getTerrainOwnedShaderSource,
     getTerrainOwnedUniformBindings
 } from './TerrainOwnedShaderSource.js';
+import {
+    getWaterOwnedShaderSource,
+    getWaterOwnedUniformBindings
+} from './WaterOwnedShaderSource.js';
 
 export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphereUniforms, strength = 0.5, desat = 0.0) {
     setMaterialShaderBaseKey(material, programKey);
@@ -137,6 +141,45 @@ export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphere
                         terrainDetailUniforms,
                         atmosphereUniforms,
                         timeUniform
+                    });
+                }
+            })
+        ]
+    });
+}
+
+export function setupWaterMaterial(
+    material,
+    atmosphereUniforms,
+    timeUniform = null,
+    isFarLOD = false,
+    { strength = 0.74, desat = 0.08 } = {}
+) {
+    if (!isFarLOD && !timeUniform) {
+        throw new Error('setupWaterMaterial requires a timeUniform for near water materials');
+    }
+
+    const fragId = isFarLOD ? 'far' : 'near';
+    const shaderFamily = isFarLOD ? 'basic' : 'standard';
+    configureMaterialShaderPipeline(material, {
+        baseCacheKey: `water-owned-${shaderFamily}-v1-${fragId}`,
+        patches: [
+            createOwnedShaderSourcePatch({
+                id: 'water-owned-source',
+                cacheKey: `water-owned-source-${fragId}-${strength.toFixed(4)}-${desat.toFixed(4)}`,
+                metadata: {
+                    isFarLOD,
+                    shaderFamily,
+                    atmosphereStrength: strength,
+                    atmosphereDesat: desat,
+                    dualScroll: !isFarLOD
+                },
+                source: getWaterOwnedShaderSource({ isFarLOD, strength, desat }),
+                uniformBindings() {
+                    return getWaterOwnedUniformBindings({
+                        atmosphereUniforms,
+                        timeUniform,
+                        isFarLOD
                     });
                 }
             })

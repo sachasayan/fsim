@@ -7,6 +7,15 @@ import {
 
 const DIFFUSE_COLOR_SNIPPET = 'vec4 diffuseColor = vec4( diffuse, opacity );';
 
+export function createDistanceAtmosphereUniformBindings(atmosphereUniforms) {
+    return {
+        uAtmosCameraPos: atmosphereUniforms.uAtmosCameraPos,
+        uAtmosColor: atmosphereUniforms.uAtmosColor,
+        uAtmosNear: atmosphereUniforms.uAtmosNear,
+        uAtmosFar: atmosphereUniforms.uAtmosFar
+    };
+}
+
 export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform) {
     return {
         uTime: timeUniform,
@@ -43,11 +52,14 @@ export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosp
     };
 }
 
+export function createWaterDualScrollUniformBindings(timeUniform) {
+    return {
+        uTime: timeUniform
+    };
+}
+
 export function applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength = 0.5, desat = 0.0 }) {
-    shader.uniforms.uAtmosCameraPos = atmosphereUniforms.uAtmosCameraPos;
-    shader.uniforms.uAtmosColor = atmosphereUniforms.uAtmosColor;
-    shader.uniforms.uAtmosNear = atmosphereUniforms.uAtmosNear;
-    shader.uniforms.uAtmosFar = atmosphereUniforms.uAtmosFar;
+    Object.assign(shader.uniforms, createDistanceAtmosphereUniformBindings(atmosphereUniforms));
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
@@ -86,7 +98,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix); `,
 }
 
 export function applyWaterDualScrollShaderPatch(shader, { timeUniform }) {
-    shader.uniforms.uTime = timeUniform;
+    Object.assign(shader.uniforms, createWaterDualScrollUniformBindings(timeUniform));
 
     shader.fragmentShader = replaceShaderInclude(
         shader.fragmentShader,

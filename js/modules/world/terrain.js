@@ -1,12 +1,11 @@
 import * as THREE from 'three';
 import { createWaterNormalMap, createTreeBillboardTexture, createPackedTerrainDetailTexture } from './terrain/TerrainTextures.js';
 import {
-  applyDistanceAtmosphereToMaterial,
-  applyWaterDualScrollToMaterial,
   makeTreeBillboardMaterial,
   makeTreeDepthMaterial,
   createDetailedBuildingMat,
   setupTerrainMaterial,
+  setupWaterMaterial,
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
 import { RoadMarkingOverlay } from './terrain/RoadMarkingOverlay.js';
@@ -80,9 +79,8 @@ export function createTerrainSystem({
   const waterTimeUniform = { value: 0 };
   waterMaterial.userData.timeUniform = waterTimeUniform;
 
-  applyDistanceAtmosphereToMaterial(waterMaterial, 'water', atmosphereUniforms, 0.74, 0.08);
-  applyWaterDualScrollToMaterial(waterMaterial, waterTimeUniform);
-  applyDistanceAtmosphereToMaterial(waterFarMaterial, 'water-far', atmosphereUniforms, 0.74, 0.08);
+  setupWaterMaterial(waterMaterial, atmosphereUniforms, waterTimeUniform, false);
+  setupWaterMaterial(waterFarMaterial, atmosphereUniforms, null, true);
 
   const LOD_LEVELS = [
     { terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true },

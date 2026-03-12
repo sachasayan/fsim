@@ -5,7 +5,9 @@ import {
     applyDetailedBuildingShaderPatch,
     applyDistanceAtmosphereShaderPatch,
     applyTerrainDetailShaderPatch,
-    applyTreeDepthShaderPatch
+    applyTreeDepthShaderPatch,
+    createDistanceAtmosphereUniformBindings,
+    createWaterDualScrollUniformBindings
 } from '../js/modules/world/terrain/TerrainShaderPatches.js';
 
 function makeShader(overrides = {}) {
@@ -41,6 +43,23 @@ test('applyDistanceAtmosphereShaderPatch injects atmosphere uniforms and blend c
     assert.match(shader.vertexShader, /varying vec3 vAtmosWorldPos;/);
     assert.match(shader.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
     assert.match(shader.fragmentShader, /diffuseColor\.rgb = mix\(diffuseColor\.rgb, uAtmosColor, atmosMix\);/);
+});
+
+test('distance atmosphere and water dual-scroll helpers return live uniform references', () => {
+    const atmosphereUniforms = {
+        uAtmosCameraPos: { value: 'camera' },
+        uAtmosColor: { value: 'color' },
+        uAtmosNear: { value: 1 },
+        uAtmosFar: { value: 2 }
+    };
+    const timeUniform = { value: 42 };
+
+    const atmosphereBindings = createDistanceAtmosphereUniformBindings(atmosphereUniforms);
+    const waterBindings = createWaterDualScrollUniformBindings(timeUniform);
+
+    assert.equal(atmosphereBindings.uAtmosCameraPos, atmosphereUniforms.uAtmosCameraPos);
+    assert.equal(atmosphereBindings.uAtmosFar, atmosphereUniforms.uAtmosFar);
+    assert.equal(waterBindings.uTime, timeUniform);
 });
 
 test('applyDetailedBuildingShaderPatch injects building varyings and style fragments', () => {
