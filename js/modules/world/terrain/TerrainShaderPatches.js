@@ -58,6 +58,20 @@ export function createWaterDualScrollUniformBindings(timeUniform) {
     };
 }
 
+export function createBuildingPopInUniformBindings(cameraPosUniform, fadeNear = 6800, fadeFar = 7800) {
+    return {
+        uBldgCameraPos: cameraPosUniform,
+        uBldgFadeNear: { value: fadeNear },
+        uBldgFadeFar: { value: fadeFar }
+    };
+}
+
+export function createTreeDepthUniformBindings(mainCameraPosUniform) {
+    return {
+        uMainCameraPos: mainCameraPosUniform
+    };
+}
+
 export function applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength = 0.5, desat = 0.0 }) {
     Object.assign(shader.uniforms, createDistanceAtmosphereUniformBindings(atmosphereUniforms));
 
@@ -152,9 +166,7 @@ normal = normalize(tbn_ds * baseNormal);
 }
 
 export function applyBuildingPopInShaderPatch(shader, { cameraPosUniform, fadeNear = 6800, fadeFar = 7800 }) {
-    shader.uniforms.uBldgCameraPos = cameraPosUniform;
-    shader.uniforms.uBldgFadeNear = { value: fadeNear };
-    shader.uniforms.uBldgFadeFar = { value: fadeFar };
+    Object.assign(shader.uniforms, createBuildingPopInUniformBindings(cameraPosUniform, fadeNear, fadeFar));
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
@@ -243,7 +255,7 @@ gl_Position = projectionMatrix * mvPosition;
 export function applyTreeDepthShaderPatch(shader, { mainCameraPosUniform }) {
     shader.defines = shader.defines || {};
     shader.defines.DEPTH_PACKING = 3201;
-    shader.uniforms.uMainCameraPos = mainCameraPosUniform;
+    Object.assign(shader.uniforms, createTreeDepthUniformBindings(mainCameraPosUniform));
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
@@ -391,11 +403,9 @@ if (abs(vBldgNormal.y) < 0.9) {
     return { colorFragment: '', roughFragment: '' };
 }
 
-export function applyDetailedBuildingShaderPatch(shader, { style, cameraPosUniform = null }) {
+export function applyDetailedBuildingShaderPatch(shader, { style, cameraPosUniform = null, fadeNear = 6800, fadeFar = 7800 }) {
     if (cameraPosUniform) {
-        shader.uniforms.uBldgCameraPos = cameraPosUniform;
-        shader.uniforms.uBldgFadeNear = { value: 6800 };
-        shader.uniforms.uBldgFadeFar = { value: 7800 };
+        Object.assign(shader.uniforms, createBuildingPopInUniformBindings(cameraPosUniform, fadeNear, fadeFar));
     }
 
     shader.vertexShader = replaceShaderInclude(

@@ -5,8 +5,14 @@ import {
 
 const DIFFUSE_COLOR_SNIPPET = 'vec4 diffuseColor = vec4( diffuse, opacity );';
 
+export function createRunwayLightUniformBindings(intensity) {
+    return {
+        uIntensity: { value: intensity }
+    };
+}
+
 export function applyInstancedRunwayLightShaderPatch(shader, { intensity }) {
-    shader.uniforms.uIntensity = { value: intensity };
+    Object.assign(shader.uniforms, createRunwayLightUniformBindings(intensity));
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,

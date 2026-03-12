@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
-import { applyInstancedRunwayLightShaderPatch } from './shaders/RunwayShaderPatches.js';
-import { configureMaterialShaderPipeline, createShaderPatch } from './shaders/MaterialShaderPipeline.js';
+import {
+  getRunwayLightOwnedShaderSource,
+  getRunwayLightUniformBindings
+} from './shaders/RunwayOwnedShaderSource.js';
+import { configureMaterialShaderPipeline, createOwnedShaderSourcePatch } from './shaders/MaterialShaderPipeline.js';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
@@ -283,14 +286,18 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     });
 
     configureMaterialShaderPipeline(mat, {
-      baseCacheKey: `runway-light-${intensity}`,
+      baseCacheKey: `runway-light-owned-v1-${intensity}`,
       patches: [
-        createShaderPatch({
-          id: 'instanced-runway-light',
-          cacheKey: `instanced-runway-light-${intensity}`,
-          metadata: { intensity },
-          apply(shader) {
-            applyInstancedRunwayLightShaderPatch(shader, { intensity });
+        createOwnedShaderSourcePatch({
+          id: 'runway-light-owned-source',
+          cacheKey: `runway-light-owned-source-${intensity}`,
+          metadata: {
+            intensity,
+            shaderFamily: 'basic'
+          },
+          source: getRunwayLightOwnedShaderSource({ intensity }),
+          uniformBindings() {
+            return getRunwayLightUniformBindings(intensity);
           }
         })
       ]

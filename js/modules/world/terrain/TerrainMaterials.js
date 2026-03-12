@@ -7,17 +7,21 @@ import {
     upsertMaterialShaderPatch
 } from '../shaders/MaterialShaderPipeline.js';
 import {
-    applyBuildingPopInShaderPatch,
-    applyDetailedBuildingShaderPatch,
     applyDistanceAtmosphereShaderPatch,
-    applyTreeBillboardShaderPatch,
-    applyTreeDepthShaderPatch,
     applyWaterDualScrollShaderPatch
 } from './TerrainShaderPatches.js';
 import {
     getTerrainOwnedShaderSource,
     getTerrainOwnedUniformBindings
 } from './TerrainOwnedShaderSource.js';
+import {
+    getBuildingPopInOwnedShaderSource,
+    getBuildingPopInUniformBindings,
+    getDetailedBuildingOwnedShaderSource,
+    getTreeBillboardOwnedShaderSource,
+    getTreeDepthOwnedShaderSource,
+    getTreeDepthUniformBindings
+} from './TerrainPropOwnedShaderSource.js';
 import {
     getWaterOwnedShaderSource,
     getWaterOwnedUniformBindings
@@ -48,12 +52,18 @@ export function applyWaterDualScrollToMaterial(material, timeUniform) {
 // Injects distance-based pop-in scale into a building material's vertex shader.
 // Buildings scale from 0 -> 1 over the range [fadeNear, fadeFar] (in world-space units).
 export function setupBuildingPopIn(material, cameraPosUniform, fadeNear = 6800, fadeFar = 7800) {
-    upsertMaterialShaderPatch(material, createShaderPatch({
-        id: 'building-pop-in',
-        cacheKey: `building-pop-in-${fadeNear}-${fadeFar}`,
-        metadata: { fadeNear, fadeFar },
-        apply(shader) {
-            applyBuildingPopInShaderPatch(shader, { cameraPosUniform, fadeNear, fadeFar });
+    setMaterialShaderBaseKey(material, `building-pop-in-standard-v1-${fadeNear}-${fadeFar}`);
+    upsertMaterialShaderPatch(material, createOwnedShaderSourcePatch({
+        id: 'building-pop-in-owned-source',
+        cacheKey: `building-pop-in-owned-source-${fadeNear}-${fadeFar}`,
+        metadata: {
+            shaderFamily: 'standard',
+            fadeNear,
+            fadeFar
+        },
+        source: getBuildingPopInOwnedShaderSource({ fadeNear, fadeFar }),
+        uniformBindings() {
+            return getBuildingPopInUniformBindings(cameraPosUniform, fadeNear, fadeFar);
         }
     }));
 }
@@ -70,13 +80,15 @@ export function makeTreeBillboardMaterial(texture, tint) {
     });
 
     configureMaterialShaderPipeline(mat, {
-        baseCacheKey: 'treeBillboard',
+        baseCacheKey: 'tree-billboard-owned-v1',
         patches: [
-            createShaderPatch({
-                id: 'tree-billboard-align',
-                apply(shader) {
-                    applyTreeBillboardShaderPatch(shader);
-                }
+            createOwnedShaderSourcePatch({
+                id: 'tree-billboard-owned-source',
+                cacheKey: 'tree-billboard-owned-source-v1',
+                metadata: {
+                    shaderFamily: 'standard'
+                },
+                source: getTreeBillboardOwnedShaderSource()
             })
         ]
     });
@@ -92,12 +104,17 @@ export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
     });
 
     configureMaterialShaderPipeline(mat, {
-        baseCacheKey: 'treeDepthBillboard_v3',
+        baseCacheKey: 'tree-depth-owned-v1',
         patches: [
-            createShaderPatch({
-                id: 'tree-depth-billboard',
-                apply(shader) {
-                    applyTreeDepthShaderPatch(shader, { mainCameraPosUniform });
+            createOwnedShaderSourcePatch({
+                id: 'tree-depth-owned-source',
+                cacheKey: 'tree-depth-owned-source-v1',
+                metadata: {
+                    shaderFamily: 'depth'
+                },
+                source: getTreeDepthOwnedShaderSource(),
+                uniformBindings() {
+                    return getTreeDepthUniformBindings(mainCameraPosUniform);
                 }
             })
         ]
@@ -108,14 +125,23 @@ export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
 export function createDetailedBuildingMat(style, cameraPosUniform = null) {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3 });
     configureMaterialShaderPipeline(mat, {
-        baseCacheKey: `detailed-building-mat-v3-${style}${cameraPosUniform ? '-popin' : ''}`,
+        baseCacheKey: `detailed-building-owned-v1-${style}${cameraPosUniform ? '-popin' : ''}`,
         patches: [
-            createShaderPatch({
-                id: 'detailed-building-style',
-                cacheKey: `detailed-building-style-${style}`,
-                metadata: { style, cameraPopIn: Boolean(cameraPosUniform) },
-                apply(shader) {
-                    applyDetailedBuildingShaderPatch(shader, { style, cameraPosUniform });
+            createOwnedShaderSourcePatch({
+                id: 'detailed-building-owned-source',
+                cacheKey: `detailed-building-owned-source-${style}${cameraPosUniform ? '-popin' : ''}`,
+                metadata: {
+                    style,
+                    cameraPopIn: Boolean(cameraPosUniform),
+                    shaderFamily: 'standard'
+                },
+                source: getDetailedBuildingOwnedShaderSource({
+                    style,
+                    cameraPopIn: Boolean(cameraPosUniform)
+                }),
+                uniformBindings() {
+                    if (!cameraPosUniform) return {};
+                    return getBuildingPopInUniformBindings(cameraPosUniform);
                 }
             })
         ]

@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyInstancedRunwayLightShaderPatch } from '../js/modules/world/shaders/RunwayShaderPatches.js';
+import {
+    applyInstancedRunwayLightShaderPatch,
+    createRunwayLightUniformBindings
+} from '../js/modules/world/shaders/RunwayShaderPatches.js';
 
 function makeShader() {
     return {
@@ -23,4 +26,10 @@ test('applyInstancedRunwayLightShaderPatch injects intensity and instancing colo
     assert.match(shader.vertexShader, /vInstanceColor = instanceColor;/);
     assert.match(shader.vertexShader, /vDist = - mvPosition\.z;/);
     assert.match(shader.fragmentShader, /float lodFade = smoothstep\(16000\.0, 10000\.0, vDist\);/);
+});
+
+test('createRunwayLightUniformBindings returns intensity uniform value', () => {
+    const bindings = createRunwayLightUniformBindings(12);
+
+    assert.equal(bindings.uIntensity.value, 12);
 });

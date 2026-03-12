@@ -6,7 +6,9 @@ import {
     applyDistanceAtmosphereShaderPatch,
     applyTerrainDetailShaderPatch,
     applyTreeDepthShaderPatch,
+    createBuildingPopInUniformBindings,
     createDistanceAtmosphereUniformBindings,
+    createTreeDepthUniformBindings,
     createWaterDualScrollUniformBindings
 } from '../js/modules/world/terrain/TerrainShaderPatches.js';
 
@@ -60,6 +62,19 @@ test('distance atmosphere and water dual-scroll helpers return live uniform refe
     assert.equal(atmosphereBindings.uAtmosCameraPos, atmosphereUniforms.uAtmosCameraPos);
     assert.equal(atmosphereBindings.uAtmosFar, atmosphereUniforms.uAtmosFar);
     assert.equal(waterBindings.uTime, timeUniform);
+});
+
+test('building pop-in and tree depth helpers expose expected uniform bindings', () => {
+    const cameraPosUniform = { value: 'camera' };
+    const depthCameraUniform = { value: 'depth-camera' };
+
+    const popInBindings = createBuildingPopInUniformBindings(cameraPosUniform, 100, 200);
+    const depthBindings = createTreeDepthUniformBindings(depthCameraUniform);
+
+    assert.equal(popInBindings.uBldgCameraPos, cameraPosUniform);
+    assert.equal(popInBindings.uBldgFadeNear.value, 100);
+    assert.equal(popInBindings.uBldgFadeFar.value, 200);
+    assert.equal(depthBindings.uMainCameraPos, depthCameraUniform);
 });
 
 test('applyDetailedBuildingShaderPatch injects building varyings and style fragments', () => {
