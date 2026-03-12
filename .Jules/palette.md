@@ -1,0 +1,3 @@
+## 2024-05-24 - Canvas Accessibility
+**Learning:** WebGL/Canvas applications need standard ARIA attributes (`role="alert"`, `aria-live="assertive"`, `role="status"`) on DOM overlays positioned above the canvas to communicate critical states (e.g. stalls, loading, crashes) to assistive technologies.
+**Action:** Always add proper ARIA live regions to DOM overlays in WebGL/Canvas applications to ensure accessibility of critical game states.
