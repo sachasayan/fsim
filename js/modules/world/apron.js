@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 
-export function createApron({ scene, renderer, getTerrainHeight }) {
+export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) {
     const apronX = AIRPORT_CONFIG.APRON.x;
     const apronZ = AIRPORT_CONFIG.APRON.z;
     const width = AIRPORT_CONFIG.APRON.width;
@@ -67,9 +68,12 @@ export function createApron({ scene, renderer, getTerrainHeight }) {
     }
 
     const apronMesh = createApronMesh();
+    let currentLOD = -1;
 
     function updateLOD(cameraPos, dist) {
-        if (dist > AIRPORT_CONFIG.LOD.LOW) {
+        const [, lowThreshold] = getAirportThresholds(lodSettings);
+        currentLOD = resolveDistanceLod(dist, currentLOD, [lowThreshold], lodSettings.airport.distanceHysteresis);
+        if (currentLOD === 1) {
             apronMesh.visible = false;
         } else {
             apronMesh.visible = true;

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { AIRPORT_CONFIG } from './config.js';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 
-export function createTowerSystem({ scene, getTerrainHeight }) {
+export function createTowerSystem({ scene, getTerrainHeight, lodSettings }) {
   const towerGroup = new THREE.Group();
 
   const towerX = AIRPORT_CONFIG.TOWER.x;
@@ -106,11 +107,8 @@ export function createTowerSystem({ scene, getTerrainHeight }) {
   let currentLOD = -1;
 
   function updateLOD(cameraPos, dist) {
-    let newLOD = 0;
-    if (dist > AIRPORT_CONFIG.LOD.CULL) newLOD = 3; // Cull
-    else if (dist > AIRPORT_CONFIG.LOD.LOW) newLOD = 2; // Low poly proxy
-    else if (dist > AIRPORT_CONFIG.LOD.MID) newLOD = 1; // Mid detail
-    else newLOD = 0; // High detail
+    const thresholds = getAirportThresholds(lodSettings);
+    const newLOD = resolveDistanceLod(dist, currentLOD, thresholds, lodSettings.airport.distanceHysteresis);
 
     if (newLOD === currentLOD) return;
     currentLOD = newLOD;

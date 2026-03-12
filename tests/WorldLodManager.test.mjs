@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createWorldLodManager } from '../js/modules/world/WorldLodManager.js';
+import { createRuntimeLodSettings } from '../js/modules/world/LodSystem.js';
 
 // Mock object
 class MockLodObject {
@@ -17,7 +18,7 @@ class MockLodObject {
 async function testLodManager() {
     console.log('Testing WorldLodManager...');
 
-    const mgr = createWorldLodManager();
+    const mgr = createWorldLodManager({ lodSettings: createRuntimeLodSettings() });
     const obj = new MockLodObject(100, 0, 0);
 
     mgr.register(obj);
@@ -38,6 +39,9 @@ async function testLodManager() {
     mgr.updateWorldLOD(camPos3);
     if (obj.updateLODCalled !== 2) throw new Error('updateLOD should have been called after moving past threshold');
     if (Math.abs(obj.lastDist - 85) > 0.1) throw new Error(`Expected dist ~85, got ${obj.lastDist}`);
+
+    mgr.updateWorldLOD(camPos3, { force: true });
+    if (obj.updateLODCalled !== 3) throw new Error('force update should bypass the movement threshold');
 
     console.log('✅ WorldLodManager tests passed!');
 }

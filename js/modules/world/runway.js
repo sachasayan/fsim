@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 import {
   getRunwayLightOwnedShaderSource,
   getRunwayLightUniformBindings
 } from './shaders/RunwayOwnedShaderSource.js';
 import { configureMaterialShaderPipeline, createOwnedShaderSourcePatch } from './shaders/MaterialShaderPipeline.js';
 
-export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
+export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSettings }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
   const RUNWAY_LIGHT_GLOW_SCALE = 0.28;
   const RUNWAY_LIGHT_STROBE_SCALE = 0.32;
@@ -460,10 +461,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
 
   let currentLOD = -1;
   function updateLOD(cameraPos, dist) {
-    let newLOD = 0;
-    if (dist > AIRPORT_CONFIG.LOD.CULL) newLOD = 2; // Cull lights completely
-    else if (dist > AIRPORT_CONFIG.LOD.LOW) newLOD = 1; // Simplify
-    else newLOD = 0; // High detail
+    const [, lowThreshold, cullThreshold] = getAirportThresholds(lodSettings);
+    const newLOD = resolveDistanceLod(dist, currentLOD, [lowThreshold, cullThreshold], lodSettings.airport.distanceHysteresis);
 
     if (newLOD === currentLOD) return;
     currentLOD = newLOD;

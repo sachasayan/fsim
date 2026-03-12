@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 
-export function createRadarSystem({ scene, getTerrainHeight }) {
+export function createRadarSystem({ scene, getTerrainHeight, lodSettings }) {
     const radarGroup = new THREE.Group();
     const radarX = -250;
     const radarZ = -450;
@@ -45,6 +46,7 @@ export function createRadarSystem({ scene, getTerrainHeight }) {
     radarGroup.add(dishGroup);
     radarGroup.position.set(radarX, ty, radarZ);
     scene.add(radarGroup);
+    let currentLOD = -1;
 
     function update(time) {
         // Rotate the dish
@@ -52,7 +54,9 @@ export function createRadarSystem({ scene, getTerrainHeight }) {
     }
 
     function updateLOD(cameraPos, dist) {
-        if (dist > AIRPORT_CONFIG.LOD.CULL) {
+        const [, , cullThreshold] = getAirportThresholds(lodSettings);
+        currentLOD = resolveDistanceLod(dist, currentLOD, [cullThreshold], lodSettings.airport.distanceHysteresis);
+        if (currentLOD === 1) {
             radarGroup.visible = false;
         } else {
             radarGroup.visible = true;

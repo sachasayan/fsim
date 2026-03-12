@@ -58,6 +58,7 @@ global.document = {
 
 test('terrain tests', async (t) => {
     const { createTerrainSystem } = await import('../js/modules/world/terrain.js');
+    const { createRuntimeLodSettings } = await import('../js/modules/world/LodSystem.js');
     const loadStaticWorldFn = async () => false;
 
     const mockNoise = {
@@ -68,8 +69,9 @@ test('terrain tests', async (t) => {
     await t.test('createTerrainSystem returns expected interface', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         assert.ok(system.waterMaterial instanceof THREE.Material);
         assert.equal(typeof system.getTerrainHeight, 'function');
@@ -80,8 +82,9 @@ test('terrain tests', async (t) => {
     await t.test('updateTerrainAtmosphere modifies atmosphere uniforms', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         const camera = new THREE.PerspectiveCamera();
         camera.position.set(100, 200, 300);
@@ -101,8 +104,9 @@ test('terrain tests', async (t) => {
     await t.test('updateTerrain queues chunk builds', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         // Ensure no pending builds before updateTerrain
         system.updateTerrain();

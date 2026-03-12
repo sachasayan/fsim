@@ -4,6 +4,7 @@ import GUI from 'lil-gui';
 import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
 import { createWorldObjects } from './world/objects.js';
+import { createRuntimeLodSettings, normalizeLodSettings } from './world/LodSystem.js';
 import { calculateAerodynamics } from './physics/updatePhysics.js';
 import { createPhysicsAdapter } from './physics/physicsAdapter.js';
 import { createCameraController } from './camera/updateCamera.js';
@@ -47,6 +48,7 @@ const debugView = {
   slewMode: false,
   slewSpeed: 250
 };
+const lodSettings = createRuntimeLodSettings({ urlSearch: window.location.search });
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
 
@@ -114,9 +116,40 @@ const {
   getShaderValidationSummary,
   getShaderValidationVariants,
   completeBootstrap,
+  lodSettings: worldLodSettings,
   updateWorldObjects,
+  invalidateWorldLod,
   updateWorldLOD
-} = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
+} = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER, lodSettings });
+
+function refreshLodState() {
+  normalizeLodSettings(worldLodSettings);
+  updateTerrain();
+  invalidateWorldLod();
+  updateWorldLOD(camera.position, { force: true });
+  debugGui?.controllersRecursive?.().forEach((controller) => controller.updateDisplay());
+}
+
+if (debugGui) {
+  const lodFolder = debugGui.addFolder('LOD');
+  const worldFolder = lodFolder.addFolder('World');
+  worldFolder.add(worldLodSettings.world, 'updateIntervalMs', 16, 1000, 1).name('Update Interval');
+  worldFolder.add(worldLodSettings.world, 'cameraMoveThreshold', 0, 100, 1).name('Move Threshold');
+
+  const airportFolder = lodFolder.addFolder('Airport');
+  airportFolder.add(worldLodSettings.airport.thresholds, 'mid', 1000, 50000, 100).name('Mid Distance').onFinishChange(refreshLodState);
+  airportFolder.add(worldLodSettings.airport.thresholds, 'low', 1000, 80000, 100).name('Low Distance').onFinishChange(refreshLodState);
+  airportFolder.add(worldLodSettings.airport.thresholds, 'cull', 1000, 120000, 100).name('Cull Distance').onFinishChange(refreshLodState);
+  airportFolder.add(worldLodSettings.airport, 'distanceHysteresis', 0, 5000, 50).name('Hysteresis').onFinishChange(refreshLodState);
+  airportFolder.add(worldLodSettings.airport, 'shadowHighDetailDistance', 1000, 30000, 100).name('Shadow Distance').onFinishChange(refreshLodState);
+
+  const terrainFolder = lodFolder.addFolder('Terrain');
+  terrainFolder.add(worldLodSettings.terrain, 'renderDistance', 0, 16, 1).name('Render Distance').onFinishChange(refreshLodState);
+  terrainFolder.add(worldLodSettings.terrain.ringThresholds, '0', 0, 8, 1).name('LOD0 Ring').onFinishChange(refreshLodState);
+  terrainFolder.add(worldLodSettings.terrain.ringThresholds, '1', 1, 12, 1).name('LOD1 Ring').onFinishChange(refreshLodState);
+  terrainFolder.add(worldLodSettings.terrain.ringThresholds, '2', 2, 16, 1).name('LOD2 Ring').onFinishChange(refreshLodState);
+  terrainFolder.add(worldLodSettings.terrain, 'ringHysteresis', 0, 4, 1).name('Ring Hysteresis').onFinishChange(refreshLodState);
+}
 
 // ==========================================
 // 3. MANAGERS
@@ -170,6 +203,8 @@ window.fsimWorld = {
   cloudMaterial,
   updateTerrainAtmosphere,
   updateTerrain, // Export updateTerrain for explicit batcher control
+  refreshLodState,
+  lodSettings: worldLodSettings,
   waterMaterial,
   debugGui,
   debugView,
@@ -212,7 +247,6 @@ let prevShadowExtent = -1;
 let lastTerrainChunkX = Number.POSITIVE_INFINITY;
 let lastTerrainChunkZ = Number.POSITIVE_INFINITY;
 let lastTerrainUpdateMs = 0;
-const TERRAIN_UPDATE_INTERVAL_MS = 120;
 const SHADOW_MAP_NEAR = 2048;
 const SHADOW_MAP_FAR = 1024;
 let currentShadowMapSize = SHADOW_MAP_NEAR;
@@ -524,7 +558,7 @@ function animate() {
   // Terrain and World LOD update
   const chunkX = Math.floor(PHYSICS.position.x / 4000);
   const chunkZ = Math.floor(PHYSICS.position.z / 4000);
-  const terrainDue = (now - lastTerrainUpdateMs) >= TERRAIN_UPDATE_INTERVAL_MS;
+  const terrainDue = (now - lastTerrainUpdateMs) >= worldLodSettings.world.updateIntervalMs;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
   if (terrainDue || chunkChanged) {
     updateTerrain();

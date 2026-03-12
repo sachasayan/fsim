@@ -15,6 +15,7 @@ import {
   getTerrainHeight,
   getLodForRingDistance
 } from './terrain/TerrainUtils.js';
+import { normalizeLodSettings } from './LodSystem.js';
 import {
   fetchDistrictIndex,
   clearDistrictCache
@@ -28,17 +29,20 @@ import {
 } from './terrain/TerrainGeneration.js';
 import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
 import { debugLog } from '../core/logging.js';
+import { createRuntimeLodSettings } from './LodSystem.js';
 
 export function createTerrainSystem({
   scene,
   renderer,
   Noise,
   PHYSICS,
+  lodSettings = null,
   loadStaticWorldFn = loadStaticWorld
 }) {
   const hasWindow = typeof window !== 'undefined';
   const windowRef = hasWindow ? window : null;
   const locationSearch = windowRef?.location?.search || '';
+  lodSettings = lodSettings || createRuntimeLodSettings({ urlSearch: locationSearch });
 
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -61,9 +65,7 @@ export function createTerrainSystem({
   const urlParams = new URLSearchParams(locationSearch);
   const _fogDisabled = urlParams.get('fog') === '0';
   const _isFastLoad  = urlParams.get('fastload') === '1';
-  const renderDistParam = urlParams.get('renderDist');
-  const _renderDist  = renderDistParam !== null ? parseInt(renderDistParam, 10) : null;
-  const _renderDistance = _renderDist !== null ? _renderDist : (_isFastLoad ? 4 : 8);
+  normalizeLodSettings(lodSettings);
 
   if (_fogDisabled) {
     atmosphereUniforms.uAtmosNear.value = 1e6;
@@ -82,12 +84,7 @@ export function createTerrainSystem({
   setupWaterMaterial(waterMaterial, atmosphereUniforms, waterTimeUniform, false);
   setupWaterMaterial(waterFarMaterial, atmosphereUniforms, null, true);
 
-  const LOD_LEVELS = [
-    { terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true },
-    { terrainRes: 32, waterRes: 16, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false },
-    { terrainRes: 12, waterRes: 4, propDensity: 0.2, enableBuildings: true, enableTrees: true, enableBoats: false },
-    { terrainRes: 2, waterRes: 2, propDensity: 0.0, enableBuildings: false, enableTrees: false, enableBoats: false }
-  ];
+  const LOD_LEVELS = lodSettings.terrain.lodLevels;
 
   const terrainChunks = new Map();
   const pendingChunkBuilds = [];
@@ -268,7 +265,7 @@ export function createTerrainSystem({
   }
 
   function getTargetLod(ringDistance, currentLod = null) {
-    const lod = getLodForRingDistance(ringDistance, currentLod);
+    const lod = getLodForRingDistance(ringDistance, currentLod, lodSettings.terrain);
     return bootstrapMode ? (ringDistance === 0 ? lod : 3) : lod;
   }
 
@@ -393,7 +390,7 @@ export function createTerrainSystem({
     lastProcessedChunkX = px;
     lastProcessedChunkZ = pz;
 
-    const renderDistance = bootstrapMode ? 0 : _renderDistance;
+    const renderDistance = bootstrapMode ? 0 : lodSettings.terrain.renderDistance;
 
     const activeChunks = new Map();
 

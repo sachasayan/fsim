@@ -1,4 +1,5 @@
 import { applyTerrainEdits } from './TerrainEdits.js';
+import { resolveTerrainRingLod } from '../LodSystem.js';
 
 export function hash2(x, z, seed = 0) {
     const n = Math.sin(x * 127.1 + z * 311.7 + seed * 74.7) * 43758.5453123;
@@ -261,32 +262,6 @@ export function getTerrainHeight(x, z, Noise, octaves = 6) {
     return applyTerrainEdits(baseHeight, x, z, fsimWorld?.terrainEdits || []);
 }
 
-export function getLodForRingDistance(ringDistance, currentLod = null) {
-    // Hysteresis band to avoid rapid LOD toggling near ring boundaries.
-    if (currentLod === 0) {
-        if (ringDistance <= 1) return 0;
-        if (ringDistance <= 3) return 1;
-        if (ringDistance <= 6) return 2;
-        return 3;
-    }
-    if (currentLod === 1) {
-        if (ringDistance <= 1) return 0;
-        if (ringDistance <= 4) return 1;
-        if (ringDistance <= 7) return 2;
-        return 3;
-    }
-    if (currentLod === 2) {
-        if (ringDistance <= 2) return 1;
-        if (ringDistance <= 7) return 2;
-        return 3;
-    }
-    if (currentLod === 3) {
-        if (ringDistance <= 6) return 2;
-        return 3;
-    }
-
-    if (ringDistance <= 1) return 0;
-    if (ringDistance <= 3) return 1;
-    if (ringDistance <= 6) return 2;
-    return 3;
+export function getLodForRingDistance(ringDistance, currentLod = null, terrainSettings = null) {
+    return resolveTerrainRingLod(ringDistance, currentLod, terrainSettings);
 }

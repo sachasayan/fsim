@@ -10,6 +10,7 @@ import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
 
 import { createWorldLodManager } from './WorldLodManager.js';
+import { createRuntimeLodSettings, normalizeLodSettings } from './LodSystem.js';
 import { summarizeShaderValidationReport, warmupShaderPrograms } from './ShaderWarmup.js';
 import {
   createShaderVariantRegistry,
@@ -17,16 +18,18 @@ import {
   registerShaderVariants
 } from './ShaderVariantRegistry.js';
 
-export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER }) {
-  const lodManager = createWorldLodManager();
+export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER, lodSettings }) {
+  lodSettings = lodSettings || createRuntimeLodSettings();
+  normalizeLodSettings(lodSettings);
+  const lodManager = createWorldLodManager({ lodSettings });
 
   const environment = createEnvironment({ scene, renderer, WEATHER });
-  const terrain = createTerrainSystem({ scene, renderer, Noise, PHYSICS });
-  const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
-  const tower = createTowerSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
-  const apron = createApron({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
-  const hangar = createHangarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
-  const radar = createRadarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
+  const terrain = createTerrainSystem({ scene, renderer, Noise, PHYSICS, lodSettings });
+  const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
+  const tower = createTowerSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
+  const apron = createApron({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
+  const hangar = createHangarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
+  const radar = createRadarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
   const aircraft = createAircraftSystem({ scene, renderer });
@@ -109,6 +112,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   lodManager.register(radar);
 
   return {
+    lodSettings,
     ...environment,
     ...terrain,
     ...runway,
@@ -126,6 +130,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     updateWorldObjects: (time) => {
       radar.update(time);
     },
+    invalidateWorldLod: lodManager.invalidate,
     updateWorldLOD: lodManager.updateWorldLOD
   };
 }

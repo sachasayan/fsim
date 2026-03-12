@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { AIRPORT_CONFIG } from './config.js';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 
-export function createHangarSystem({ scene, getTerrainHeight }) {
+export function createHangarSystem({ scene, getTerrainHeight, lodSettings }) {
     const towerX = AIRPORT_CONFIG.TOWER.x;
     const towerZ = AIRPORT_CONFIG.TOWER.z;
     const hangarGroup = new THREE.Group();
@@ -77,10 +78,8 @@ export function createHangarSystem({ scene, getTerrainHeight }) {
     let currentLOD = -1;
 
     function updateLOD(cameraPos, dist) {
-        let newLOD = 0;
-        if (dist > AIRPORT_CONFIG.LOD.CULL) newLOD = 2; // Cull
-        else if (dist > AIRPORT_CONFIG.LOD.LOW) newLOD = 1; // Proxy
-        else newLOD = 0; // High detail
+        const [, lowThreshold, cullThreshold] = getAirportThresholds(lodSettings);
+        const newLOD = resolveDistanceLod(dist, currentLOD, [lowThreshold, cullThreshold], lodSettings.airport.distanceHysteresis);
 
         if (newLOD === currentLOD) return;
         currentLOD = newLOD;
@@ -100,7 +99,7 @@ export function createHangarSystem({ scene, getTerrainHeight }) {
             highDetailGroup.visible = true;
 
             // Optional: Toggle shadows based on distance within high detail range
-            const castShadows = dist < 10000;
+            const castShadows = dist < lodSettings.airport.shadowHighDetailDistance;
             highDetailGroup.traverse((obj) => {
                 if (obj.isMesh) obj.castShadow = castShadows;
             });
