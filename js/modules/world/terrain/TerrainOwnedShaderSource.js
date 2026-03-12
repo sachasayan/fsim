@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 import {
     applyTerrainDetailShaderPatch,
     createTerrainDetailUniformBindings
@@ -41,6 +42,7 @@ const ATMOSPHERE_UNIFORM_KEYS = [
 ];
 
 const SOURCE_CACHE = new Map();
+const DESCRIPTOR_CACHE = new Map();
 
 function makePlaceholderUniformMap(keys) {
     return Object.fromEntries(keys.map((key) => [key, { value: null }]));
@@ -82,4 +84,37 @@ export function getTerrainOwnedUniformBindings({
     timeUniform
 }) {
     return createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform);
+}
+
+export function getTerrainShaderDescriptor({ isFarLOD = false } = {}) {
+    const cacheKey = isFarLOD ? 'far' : 'near';
+    if (!DESCRIPTOR_CACHE.has(cacheKey)) {
+        const fragId = isFarLOD ? 'far' : 'near';
+        DESCRIPTOR_CACHE.set(cacheKey, createOwnedShaderDescriptor({
+            id: `terrain-owned-${fragId}`,
+            baseCacheKey: `terrain-owned-standard-v1-${fragId}`,
+            patchId: 'terrain-owned-source',
+            patchCacheKey: `terrain-owned-source-${fragId}`,
+            metadata: {
+                system: 'terrain',
+                shaderFamily: 'standard',
+                shaderVariant: fragId,
+                isFarLOD
+            },
+            source: getTerrainOwnedShaderSource({ isFarLOD }),
+            uniformBindings({
+                terrainDetailUniforms,
+                atmosphereUniforms,
+                timeUniform
+            }) {
+                return getTerrainOwnedUniformBindings({
+                    terrainDetailUniforms,
+                    atmosphereUniforms,
+                    timeUniform
+                });
+            }
+        }));
+    }
+
+    return DESCRIPTOR_CACHE.get(cacheKey);
 }

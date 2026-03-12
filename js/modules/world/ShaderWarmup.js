@@ -35,11 +35,16 @@ function describeWarmupMaterials(objects) {
             const key = `${pipeline.baseCacheKey || 'none'}::${pipeline.patches.join('+')}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            materials.push({
+            const materialReport = {
                 type: entry.type || 'Material',
                 baseCacheKey: pipeline.baseCacheKey,
                 patches: [...pipeline.patches]
-            });
+            };
+            const descriptorId = entry?.userData?.shaderDescriptor?.id;
+            if (descriptorId) {
+                materialReport.descriptorId = descriptorId;
+            }
+            materials.push(materialReport);
         }
     }
 

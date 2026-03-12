@@ -6,13 +6,13 @@ import {
     setMaterialShaderBaseKey,
     upsertMaterialShaderPatch
 } from '../shaders/MaterialShaderPipeline.js';
+import { applyOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 import {
     applyDistanceAtmosphereShaderPatch,
     applyWaterDualScrollShaderPatch
 } from './TerrainShaderPatches.js';
 import {
-    getTerrainOwnedShaderSource,
-    getTerrainOwnedUniformBindings
+    getTerrainShaderDescriptor
 } from './TerrainOwnedShaderSource.js';
 import {
     getBuildingPopInOwnedShaderSource,
@@ -23,8 +23,7 @@ import {
     getTreeDepthUniformBindings
 } from './TerrainPropOwnedShaderSource.js';
 import {
-    getWaterOwnedShaderSource,
-    getWaterOwnedUniformBindings
+    getWaterShaderDescriptor
 } from './WaterOwnedShaderSource.js';
 
 export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphereUniforms, strength = 0.5, desat = 0.0) {
@@ -150,28 +149,15 @@ export function createDetailedBuildingMat(style, cameraPosUniform = null) {
 }
 
 export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, timeUniform, isFarLOD = false) {
-    const fragId = isFarLOD ? 'far' : 'near';
-    configureMaterialShaderPipeline(material, {
-        baseCacheKey: `terrain-owned-standard-v1-${fragId}`,
-        patches: [
-            createOwnedShaderSourcePatch({
-                id: 'terrain-owned-source',
-                cacheKey: `terrain-owned-source-${fragId}`,
-                metadata: {
-                    isFarLOD,
-                    shaderFamily: 'standard'
-                },
-                source: getTerrainOwnedShaderSource({ isFarLOD }),
-                uniformBindings() {
-                    return getTerrainOwnedUniformBindings({
-                        terrainDetailUniforms,
-                        atmosphereUniforms,
-                        timeUniform
-                    });
-                }
-            })
-        ]
-    });
+    applyOwnedShaderDescriptor(
+        material,
+        getTerrainShaderDescriptor({ isFarLOD }),
+        {
+            terrainDetailUniforms,
+            atmosphereUniforms,
+            timeUniform
+        }
+    );
 }
 
 export function setupWaterMaterial(
@@ -185,30 +171,12 @@ export function setupWaterMaterial(
         throw new Error('setupWaterMaterial requires a timeUniform for near water materials');
     }
 
-    const fragId = isFarLOD ? 'far' : 'near';
-    const shaderFamily = isFarLOD ? 'basic' : 'standard';
-    configureMaterialShaderPipeline(material, {
-        baseCacheKey: `water-owned-${shaderFamily}-v1-${fragId}`,
-        patches: [
-            createOwnedShaderSourcePatch({
-                id: 'water-owned-source',
-                cacheKey: `water-owned-source-${fragId}-${strength.toFixed(4)}-${desat.toFixed(4)}`,
-                metadata: {
-                    isFarLOD,
-                    shaderFamily,
-                    atmosphereStrength: strength,
-                    atmosphereDesat: desat,
-                    dualScroll: !isFarLOD
-                },
-                source: getWaterOwnedShaderSource({ isFarLOD, strength, desat }),
-                uniformBindings() {
-                    return getWaterOwnedUniformBindings({
-                        atmosphereUniforms,
-                        timeUniform,
-                        isFarLOD
-                    });
-                }
-            })
-        ]
-    });
+    applyOwnedShaderDescriptor(
+        material,
+        getWaterShaderDescriptor({ isFarLOD, strength, desat }),
+        {
+            atmosphereUniforms,
+            timeUniform
+        }
+    );
 }

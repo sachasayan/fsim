@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    getTerrainShaderDescriptor,
     getTerrainOwnedShaderSource,
     getTerrainOwnedUniformBindings
 } from '../js/modules/world/terrain/TerrainOwnedShaderSource.js';
+import { describeOwnedShaderDescriptor } from '../js/modules/world/shaders/ShaderDescriptor.js';
 
 test('getTerrainOwnedShaderSource caches and returns owned terrain shader variants', () => {
     const nearSourceA = getTerrainOwnedShaderSource({ isFarLOD: false });
@@ -63,4 +65,36 @@ test('getTerrainOwnedUniformBindings returns live uniform references', () => {
     assert.equal(bindings.uTerrainDetailTex, terrainDetailUniforms.uTerrainDetailTex);
     assert.equal(bindings.uAtmosColor, atmosphereUniforms.uAtmosColor);
     assert.equal(bindings.uTime, timeUniform);
+});
+
+test('getTerrainShaderDescriptor returns cached near/far descriptors with stable metadata', () => {
+    const nearDescriptorA = getTerrainShaderDescriptor({ isFarLOD: false });
+    const nearDescriptorB = getTerrainShaderDescriptor({ isFarLOD: false });
+    const farDescriptor = getTerrainShaderDescriptor({ isFarLOD: true });
+
+    assert.equal(nearDescriptorA, nearDescriptorB);
+    assert.deepEqual(describeOwnedShaderDescriptor(nearDescriptorA), {
+        id: 'terrain-owned-near',
+        baseCacheKey: 'terrain-owned-standard-v1-near',
+        patchId: 'terrain-owned-source',
+        patchCacheKey: 'terrain-owned-source-near',
+        metadata: {
+            system: 'terrain',
+            shaderFamily: 'standard',
+            shaderVariant: 'near',
+            isFarLOD: false
+        }
+    });
+    assert.deepEqual(describeOwnedShaderDescriptor(farDescriptor), {
+        id: 'terrain-owned-far',
+        baseCacheKey: 'terrain-owned-standard-v1-far',
+        patchId: 'terrain-owned-source',
+        patchCacheKey: 'terrain-owned-source-far',
+        metadata: {
+            system: 'terrain',
+            shaderFamily: 'standard',
+            shaderVariant: 'far',
+            isFarLOD: true
+        }
+    });
 });
