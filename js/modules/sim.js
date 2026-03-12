@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import Stats from 'three/addons/libs/stats.module.js';
+import GUI from 'lil-gui';
 import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
 import { createWorldObjects } from './world/objects.js';
@@ -40,6 +41,12 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x3a2e3f);
 scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015);
 const urlParamsForInit = new URLSearchParams(window.location.search);
+const runtimeConfig = window.__FSIM_RUNTIME__ || {};
+const shouldShowDebugUi = runtimeConfig.showDebugUi === true || urlParamsForInit.get('debug') === '1';
+const debugView = {
+  slewMode: false,
+  slewSpeed: 250
+};
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
 
@@ -53,7 +60,17 @@ const {
 } = createRendererManager({ container, scene, camera });
 
 const stats = new Stats();
-document.body.appendChild(stats.dom);
+if (shouldShowDebugUi) {
+  document.body.appendChild(stats.dom);
+}
+let debugGui = null;
+if (shouldShowDebugUi) {
+  debugGui = new GUI({ title: 'Debug View' });
+  const cameraFolder = debugGui.addFolder('Camera');
+  cameraFolder.add(debugView, 'slewMode').name('Slew Mode');
+  cameraFolder.add(debugView, 'slewSpeed', 25, 1000, 5).name('Slew Speed');
+  cameraFolder.open();
+}
 
 const { AIRCRAFT, PHYSICS, WEATHER, keys, runtime } = createSimulationState({ scene });
 const physicsAdapter = createPhysicsAdapter({ PHYSICS, AIRCRAFT });
@@ -154,6 +171,8 @@ window.fsimWorld = {
   updateTerrainAtmosphere,
   updateTerrain, // Export updateTerrain for explicit batcher control
   waterMaterial,
+  debugGui,
+  debugView,
   validateShaders,
   getShaderValidationReport,
   getShaderValidationSummary,
@@ -181,6 +200,9 @@ const tmpTouchPosL = new THREE.Vector3();
 const tmpTouchPosR = new THREE.Vector3();
 const tmpTouchVel = new THREE.Vector3();
 const tmpTipVel = new THREE.Vector3();
+const tmpSlewForward = new THREE.Vector3();
+const tmpSlewRight = new THREE.Vector3();
+const tmpSlewUp = new THREE.Vector3();
 
 const prevPhysicsPos = new THREE.Vector3();
 const prevPhysicsQuat = new THREE.Quaternion();
@@ -197,6 +219,39 @@ let currentShadowMapSize = SHADOW_MAP_NEAR;
 
 const PHYSICS_STEP = 1 / 75;
 const MAX_PHYSICS_STEPS_PER_FRAME = 4;
+
+function updateSlewMode(dt) {
+  const slewStep = debugView.slewSpeed * dt;
+  const yawStep = dt * 1.2;
+
+  tmpSlewForward.set(0, 0, -1).applyQuaternion(PHYSICS.quaternion);
+  tmpSlewRight.set(1, 0, 0).applyQuaternion(PHYSICS.quaternion);
+  tmpSlewUp.set(0, 1, 0);
+
+  if (keys.ArrowUp) PHYSICS.position.addScaledVector(tmpSlewForward, slewStep);
+  if (keys.ArrowDown) PHYSICS.position.addScaledVector(tmpSlewForward, -slewStep);
+  if (keys.ArrowRight) PHYSICS.position.addScaledVector(tmpSlewRight, slewStep);
+  if (keys.ArrowLeft) PHYSICS.position.addScaledVector(tmpSlewRight, -slewStep);
+  if (keys.a) PHYSICS.position.addScaledVector(tmpSlewUp, slewStep);
+  if (keys.z) PHYSICS.position.addScaledVector(tmpSlewUp, -slewStep);
+
+  if (keys.q || keys.e) {
+    tmpCrashSpinQuat.setFromAxisAngle(tmpSlewUp, (keys.q ? yawStep : 0) + (keys.e ? -yawStep : 0));
+    PHYSICS.quaternion.premultiply(tmpCrashSpinQuat).normalize();
+  }
+
+  PHYSICS.velocity.set(0, 0, 0);
+  PHYSICS.angularVelocity.set(0, 0, 0);
+  PHYSICS.externalForce.set(0, 0, 0);
+  PHYSICS.externalTorque.set(0, 0, 0);
+  PHYSICS.airspeed = 0;
+  PHYSICS.gForce = 1.0;
+  PHYSICS.aoa = 0;
+  PHYSICS.slip = 0;
+  PHYSICS.onGround = false;
+
+  physicsAdapter.syncFromState();
+}
 
 // --- CRASH LOGIC & RESET ---
 window.triggerCrash = function (reason) {
@@ -363,7 +418,13 @@ function animate() {
   // 8. Physics Steps
   runtime.physicsAccumulator = Math.min(runtime.physicsAccumulator + dt, PHYSICS_STEP * MAX_PHYSICS_STEPS_PER_FRAME);
   let physicsSteps = 0;
-  while (runtime.physicsAccumulator >= PHYSICS_STEP && physicsSteps < MAX_PHYSICS_STEPS_PER_FRAME) {
+  if (debugView.slewMode) {
+    runtime.physicsAccumulator = 0;
+    prevPhysicsPos.copy(PHYSICS.position);
+    prevPhysicsQuat.copy(PHYSICS.quaternion);
+    updateSlewMode(dt);
+  }
+  while (!debugView.slewMode && runtime.physicsAccumulator >= PHYSICS_STEP && physicsSteps < MAX_PHYSICS_STEPS_PER_FRAME) {
     prevPhysicsPos.copy(PHYSICS.position);
     prevPhysicsQuat.copy(PHYSICS.quaternion);
 
@@ -416,8 +477,13 @@ function animate() {
   }
 
   const alpha = runtime.physicsAccumulator / PHYSICS_STEP;
-  planeGroup.position.lerpVectors(prevPhysicsPos, PHYSICS.position, alpha);
-  planeGroup.quaternion.slerpQuaternions(prevPhysicsQuat, PHYSICS.quaternion, alpha);
+  if (debugView.slewMode) {
+    planeGroup.position.copy(PHYSICS.position);
+    planeGroup.quaternion.copy(PHYSICS.quaternion);
+  } else {
+    planeGroup.position.lerpVectors(prevPhysicsPos, PHYSICS.position, alpha);
+    planeGroup.quaternion.slerpQuaternions(prevPhysicsQuat, PHYSICS.quaternion, alpha);
+  }
 
   // 9. Post-Physics Sync
   const cameraMode = cameraController.getMode();

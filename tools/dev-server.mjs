@@ -29,6 +29,12 @@ const MIME_TYPES = {
     '.txt': 'text/plain; charset=utf-8'
 };
 
+function injectRuntimeFlags(filePath, content) {
+    if (path.basename(filePath) !== 'fsim.html') return content;
+    const runtimeScript = '<script>window.__FSIM_RUNTIME__={mode:"dev",showDebugUi:true};</script>';
+    return content.replace('</head>', `    ${runtimeScript}\n</head>`);
+}
+
 function safeResolve(urlPath) {
     const decoded = decodeURIComponent(urlPath.split('?')[0]);
     const requestPath = decoded === '/' ? '/fsim.html' : decoded;
@@ -162,7 +168,10 @@ const server = http.createServer(async (req, res) => {
 
         const ext = path.extname(absolutePath).toLowerCase();
         const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-        const content = await readFile(absolutePath);
+        const rawContent = await readFile(absolutePath);
+        const content = ext === '.html'
+            ? injectRuntimeFlags(absolutePath, rawContent.toString('utf8'))
+            : rawContent;
         res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-cache' });
         res.end(content);
 
