@@ -94,6 +94,7 @@ const {
   warmupShaders,
   validateShaders,
   getShaderValidationReport,
+  getShaderValidationSummary,
   getShaderValidationVariants,
   completeBootstrap,
   updateWorldObjects,
@@ -155,8 +156,10 @@ window.fsimWorld = {
   waterMaterial,
   validateShaders,
   getShaderValidationReport,
+  getShaderValidationSummary,
   getShaderValidationVariants,
-  shaderValidation: null
+  shaderValidation: getShaderValidationReport(),
+  shaderValidationSummary: getShaderValidationSummary()
 };
 
 // Initialize LiveReload functionality
@@ -559,8 +562,9 @@ setTimeout(() => {
 
   const warmupPromise = warmupShaders(camera).then((report) => {
     window.fsimWorld.shaderValidation = report;
+    window.fsimWorld.shaderValidationSummary = report.summary;
     if (shouldLogShaderValidation) {
-      console.info('[shader-validation]', report);
+      console.info('[shader-validation]', report.summary);
     }
     return report;
   });

@@ -55,48 +55,110 @@ function describeWarmupMaterials(objects) {
     return materials;
 }
 
-function resolveVariantEntries({ registry = null, variants = [], providers = [] }) {
+function resolveVariantEntries({ registry = null, variants = [] }) {
     if (registry) return listShaderVariants(registry);
-    if (Array.isArray(variants) && variants.length > 0) return variants;
-    return providers;
+    return Array.isArray(variants) ? variants : [];
 }
 
-export async function validateShaderPrograms({ renderer, camera, registry = null, variants = [], providers = [] }) {
+function getVariantSystem(metadata = null) {
+    return metadata?.system || 'unknown';
+}
+
+function getMaterialPipelineKey(material) {
+    const patches = Array.isArray(material?.patches) ? material.patches : [];
+    return `${material?.baseCacheKey || 'none'}::${patches.join('+')}`;
+}
+
+export function summarizeShaderValidationReport(report) {
+    const variants = Array.isArray(report?.variants) ? report.variants : [];
+    const systems = new Map();
+
+    for (const variant of variants) {
+        const systemId = variant?.system || getVariantSystem(variant?.metadata);
+        let systemSummary = systems.get(systemId);
+        if (!systemSummary) {
+            systemSummary = {
+                id: systemId,
+                variantCount: 0,
+                objectCount: 0,
+                materialCount: 0,
+                variants: [],
+                pipelineKeys: new Set()
+            };
+            systems.set(systemId, systemSummary);
+        }
+
+        systemSummary.variantCount += 1;
+        systemSummary.objectCount += variant?.objectCount || 0;
+        systemSummary.materialCount += Array.isArray(variant?.materials) ? variant.materials.length : 0;
+        if (variant?.id) {
+            systemSummary.variants.push(variant.id);
+        }
+
+        for (const material of variant?.materials || []) {
+            systemSummary.pipelineKeys.add(getMaterialPipelineKey(material));
+        }
+    }
+
+    return {
+        result: report?.error ? 'error' : (report?.skipped ? 'skipped' : (report?.compiled ? 'compiled' : 'pending')),
+        systemCount: systems.size,
+        totalVariants: typeof report?.variantCount === 'number' ? report.variantCount : variants.length,
+        totalObjects: typeof report?.objectCount === 'number' ? report.objectCount : 0,
+        durationMs: typeof report?.durationMs === 'number' ? report.durationMs : 0,
+        error: report?.error || null,
+        systems: Array.from(systems.values()).map((entry) => ({
+            id: entry.id,
+            variantCount: entry.variantCount,
+            objectCount: entry.objectCount,
+            materialCount: entry.materialCount,
+            variants: entry.variants,
+            pipelineKeys: Array.from(entry.pipelineKeys)
+        }))
+    };
+}
+
+function finalizeShaderValidationReport(report, startedAt) {
+    report.durationMs = performance.now() - startedAt;
+    report.summary = summarizeShaderValidationReport(report);
+    return report;
+}
+
+export async function validateShaderPrograms({ renderer, camera, registry = null, variants = [] }) {
     const startedAt = performance.now();
     const report = {
         compiled: false,
         skipped: false,
         mode: typeof renderer?.compileAsync === 'function' ? 'compileAsync' : 'compile',
         variantCount: 0,
-        providerCount: 0,
         objectCount: 0,
         durationMs: 0,
-        variants: [],
-        providers: []
+        variants: []
     };
 
     if (!renderer) {
         report.skipped = true;
-        report.durationMs = performance.now() - startedAt;
-        return report;
+        return finalizeShaderValidationReport(report, startedAt);
     }
 
     const warmupScene = new THREE.Scene();
     const disposers = [];
-    const variantEntries = resolveVariantEntries({ registry, variants, providers });
+    const variantEntries = resolveVariantEntries({ registry, variants });
 
     for (const [index, variant] of variantEntries.entries()) {
         if (!variant) continue;
         const build = typeof variant === 'function' ? variant : variant.build;
         if (typeof build !== 'function') continue;
         const fallbackId = typeof variant === 'function'
-            ? (variant.shaderProviderId || build.name || `provider-${index}`)
-            : (variant.id || variant.shaderProviderId || build.name || `variant-${index}`);
+            ? (variant.shaderVariantId || variant.shaderProviderId || build.name || `variant-${index}`)
+            : (variant.id || variant.shaderVariantId || variant.shaderProviderId || build.name || `variant-${index}`);
         const spec = normalizeWarmupSpec(build(camera), fallbackId, variant.metadata || null);
         if (!spec) continue;
 
+        const system = getVariantSystem(spec.metadata);
         const entryReport = {
             id: spec.id,
+            system,
             objectCount: spec.objects.length,
             materials: describeWarmupMaterials(spec.objects)
         };
@@ -105,10 +167,8 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
         }
 
         report.variantCount += 1;
-        report.providerCount += 1;
         report.objectCount += spec.objects.length;
         report.variants.push(entryReport);
-        report.providers.push(entryReport);
 
         for (const object of spec.objects) {
             warmupScene.add(object);
@@ -120,8 +180,7 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
 
     if (warmupScene.children.length === 0) {
         report.skipped = true;
-        report.durationMs = performance.now() - startedAt;
-        return report;
+        return finalizeShaderValidationReport(report, startedAt);
     }
 
     const warmupCamera = buildWarmupCamera(camera);
@@ -133,14 +192,13 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
             renderer.compile(warmupScene, warmupCamera);
         }
         report.compiled = true;
-        report.durationMs = performance.now() - startedAt;
     } finally {
         for (const dispose of disposers.reverse()) {
             dispose();
         }
     }
 
-    return report;
+    return finalizeShaderValidationReport(report, startedAt);
 }
 
 export async function warmupShaderPrograms(options) {

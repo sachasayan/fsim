@@ -10,7 +10,7 @@ import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
 
 import { createWorldLodManager } from './WorldLodManager.js';
-import { warmupShaderPrograms } from './ShaderWarmup.js';
+import { summarizeShaderValidationReport, warmupShaderPrograms } from './ShaderWarmup.js';
 import {
   createShaderVariantRegistry,
   listShaderVariants,
@@ -37,8 +37,34 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     cloudSystem.getShaderValidationVariants?.()
   ]);
   const shaderVariants = listShaderVariants(shaderVariantRegistry);
+  const shaderVariantManifest = shaderVariants.map((variant) => ({
+    id: variant.id,
+    system: variant.metadata?.system || 'unknown',
+    metadata: variant.metadata || null
+  }));
   let warmupPromise = null;
   let shaderValidationReport = null;
+
+  function createShaderValidationSnapshot(overrides = {}) {
+    const snapshot = {
+      compiled: false,
+      skipped: false,
+      mode: typeof renderer?.compileAsync === 'function' ? 'compileAsync' : 'compile',
+      variantCount: shaderVariantManifest.length,
+      objectCount: 0,
+      durationMs: 0,
+      variants: shaderVariantManifest.map((variant) => ({
+        id: variant.id,
+        system: variant.system,
+        objectCount: 0,
+        materials: [],
+        metadata: variant.metadata
+      })),
+      ...overrides
+    };
+    snapshot.summary = summarizeShaderValidationReport(snapshot);
+    return snapshot;
+  }
 
   function validateShaders(camera, { force = false } = {}) {
     if (warmupPromise && !force) return warmupPromise;
@@ -51,22 +77,9 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
       return report;
     }).catch((error) => {
       console.warn('[world] Shader warmup failed:', error);
-      shaderValidationReport = {
-        compiled: false,
-        skipped: false,
-        mode: typeof renderer?.compileAsync === 'function' ? 'compileAsync' : 'compile',
-        variantCount: shaderVariants.length,
-        providerCount: shaderVariants.length,
-        objectCount: 0,
-        durationMs: 0,
-        variants: shaderVariants.map((variant, index) => ({
-          id: variant.id || `variant-${index}`,
-          objectCount: 0,
-          metadata: variant.metadata || null
-        })),
+      shaderValidationReport = createShaderValidationSnapshot({
         error: String(error?.message || error)
-      };
-      shaderValidationReport.providers = shaderValidationReport.variants;
+      });
       return shaderValidationReport;
     });
     return warmupPromise;
@@ -77,14 +90,15 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   }
 
   function getShaderValidationReport() {
-    return shaderValidationReport;
+    return shaderValidationReport || createShaderValidationSnapshot({});
+  }
+
+  function getShaderValidationSummary() {
+    return shaderValidationReport?.summary || createShaderValidationSnapshot({}).summary;
   }
 
   function getShaderValidationVariants() {
-    return shaderVariants.map((variant) => ({
-      id: variant.id,
-      metadata: variant.metadata || null
-    }));
+    return shaderVariantManifest.map((variant) => ({ ...variant }));
   }
 
   // Register objects for centralized LOD management
@@ -106,6 +120,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...aircraft,
     validateShaders,
     getShaderValidationReport,
+    getShaderValidationSummary,
     getShaderValidationVariants,
     warmupShaders,
     updateWorldObjects: (time) => {

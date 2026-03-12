@@ -8,7 +8,7 @@ import {
     registerShaderVariants
 } from '../js/modules/world/ShaderVariantRegistry.js';
 
-test('warmupShaderPrograms uses compileAsync when available and disposes provider resources', async () => {
+test('warmupShaderPrograms uses compileAsync when available and disposes variant resources', async () => {
     let compileCount = 0;
     let disposed = false;
 
@@ -20,7 +20,7 @@ test('warmupShaderPrograms uses compileAsync when available and disposes provide
                 assert.ok(camera.isPerspectiveCamera);
             }
         },
-        providers: [
+        variants: [
             () => ({
                 objects: [new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())],
                 dispose() {
@@ -34,9 +34,17 @@ test('warmupShaderPrograms uses compileAsync when available and disposes provide
     assert.equal(disposed, true);
     assert.equal(report.compiled, true);
     assert.equal(report.mode, 'compileAsync');
-    assert.equal(report.providerCount, 1);
+    assert.equal(report.variantCount, 1);
     assert.equal(report.objectCount, 1);
-    assert.deepEqual(report.providers, [{ id: 'provider-0', objectCount: 1, materials: [] }]);
+    assert.equal(report.summary.result, 'compiled');
+    assert.equal(report.summary.totalVariants, 1);
+    assert.equal(report.summary.systemCount, 1);
+    assert.deepEqual(report.variants, [{
+        id: 'variant-0',
+        system: 'unknown',
+        objectCount: 1,
+        materials: []
+    }]);
 });
 
 test('warmupShaderPrograms falls back to compile when compileAsync is unavailable', async () => {
@@ -50,7 +58,7 @@ test('warmupShaderPrograms falls back to compile when compileAsync is unavailabl
                 assert.ok(camera.isPerspectiveCamera);
             }
         },
-        providers: [
+        variants: [
             () => ({
                 objects: [new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial())]
             })
@@ -60,7 +68,12 @@ test('warmupShaderPrograms falls back to compile when compileAsync is unavailabl
     assert.equal(compileCount, 1);
     assert.equal(report.compiled, true);
     assert.equal(report.mode, 'compile');
-    assert.deepEqual(report.providers, [{ id: 'provider-0', objectCount: 1, materials: [] }]);
+    assert.deepEqual(report.variants, [{
+        id: 'variant-0',
+        system: 'unknown',
+        objectCount: 1,
+        materials: []
+    }]);
 });
 
 test('warmupShaderPrograms compiles declared shader variants from a registry and preserves metadata', async () => {
@@ -102,10 +115,10 @@ test('warmupShaderPrograms compiles declared shader variants from a registry and
     assert.equal(compileCount, 1);
     assert.equal(disposed, true);
     assert.equal(report.variantCount, 1);
-    assert.equal(report.providerCount, 1);
     assert.deepEqual(report.variants, [
         {
             id: 'terrain-near',
+            system: 'terrain',
             objectCount: 1,
             materials: [
                 {
@@ -117,4 +130,22 @@ test('warmupShaderPrograms compiles declared shader variants from a registry and
             metadata: { system: 'terrain', variant: 'near' }
         }
     ]);
+    assert.deepEqual(report.summary, {
+        result: 'compiled',
+        systemCount: 1,
+        totalVariants: 1,
+        totalObjects: 1,
+        durationMs: report.durationMs,
+        error: null,
+        systems: [
+            {
+                id: 'terrain',
+                variantCount: 1,
+                objectCount: 1,
+                materialCount: 1,
+                variants: ['terrain-near'],
+                pipelineKeys: ['terrain-owned-standard-v1-near::terrain-owned-source']
+            }
+        ]
+    });
 });
