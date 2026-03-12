@@ -244,18 +244,18 @@
             ]
         },
         {
-            "kind": "taxiway",
+            "kind": "road",
             "surface": "asphalt",
             "width": 24,
-            "feather": 8,
+            "feather": 27,
             "points": [
                 [
-                    -194,
-                    1811
+                    -213,
+                    1833
                 ],
                 [
-                    -29,
-                    1808
+                    -51,
+                    1988
                 ]
             ]
         }

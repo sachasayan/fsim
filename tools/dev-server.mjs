@@ -43,29 +43,58 @@ function broadcast(event, data) {
     for (const client of clients) client.res.write(msg);
 }
 
-// Watch tools/map.json -> triggers world bake
 const MAP_FILE = path.join(ROOT, 'tools', 'map.json');
 let buildLock = false;
+let rebuildQueued = false;
+let rebuildDebounce = null;
+let suppressWatcherUntil = 0;
+
+async function rebuildWorld(reason) {
+    if (buildLock) {
+        rebuildQueued = true;
+        return;
+    }
+
+    buildLock = true;
+    console.log(`\n🔄 ${reason}, rebuilding world...`);
+    try {
+        const { stdout } = await execAsync(`${process.execPath} tools/commit-map-save.mjs`);
+        console.log(stdout);
+        broadcast('reload-city', { timestamp: Date.now() });
+    } catch (err) {
+        console.error(`❌ Build failed:`, err.message);
+    } finally {
+        setTimeout(() => {
+            buildLock = false;
+            if (rebuildQueued) {
+                rebuildQueued = false;
+                rebuildWorld('Queued map change');
+            }
+        }, 1000);
+    }
+}
+
+function scheduleWorldRebuild(reason) {
+    if (rebuildDebounce) clearTimeout(rebuildDebounce);
+    rebuildDebounce = setTimeout(() => {
+        rebuildDebounce = null;
+        rebuildWorld(reason);
+    }, 150);
+}
 
 if (existsSync(MAP_FILE)) {
-    console.log(`Watching ${MAP_FILE} for changes...`);
-    const watcher = watch(MAP_FILE);
+    console.log(`Watching ${path.dirname(MAP_FILE)} for ${path.basename(MAP_FILE)} changes...`);
+    const watcher = watch(path.dirname(MAP_FILE));
     (async () => {
         try {
             for await (const event of watcher) {
-                if (event.eventType === 'change' && !buildLock) {
-                    buildLock = true;
-                    console.log(`\n🔄 map.json changed, rebuilding world...`);
-                    try {
-                        const { stdout } = await execAsync(`${process.execPath} tools/commit-map-save.mjs`);
-                        console.log(stdout);
-                        broadcast('reload-city', { timestamp: Date.now() });
-                    } catch (err) {
-                        console.error(`❌ Build failed:`, err.message);
-                    } finally {
-                        setTimeout(() => { buildLock = false; }, 1000);
-                    }
-                }
+                const changedPath = event.filename
+                    ? path.resolve(path.dirname(MAP_FILE), event.filename.toString())
+                    : null;
+                if (changedPath !== MAP_FILE) continue;
+                if (Date.now() < suppressWatcherUntil) continue;
+                if (event.eventType !== 'change' && event.eventType !== 'rename') continue;
+                scheduleWorldRebuild(`map.json ${event.eventType} detected`);
             }
         } catch (err) {
             console.error('Watcher error:', err);
@@ -107,6 +136,10 @@ const server = http.createServer(async (req, res) => {
                         console.log(`💾 Saving ${data.path}...`);
                         await writeFile(targetPath, JSON.stringify(data.content, null, 4));
                         console.log(`✅ Saved ${data.path}`);
+                        if (targetPath === MAP_FILE) {
+                            suppressWatcherUntil = Date.now() + 2000;
+                            await rebuildWorld('map.json saved via API');
+                        }
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ success: true }));
                     } else {
