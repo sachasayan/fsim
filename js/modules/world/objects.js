@@ -3,7 +3,6 @@ import { createTerrainSystem } from './terrain.js';
 import { createRunwaySystem } from './runway.js';
 import { createTowerSystem } from './tower.js';
 import { createApron } from './apron.js';
-import { createTaxiwaySystem } from './taxiway.js';
 import { createHangarSystem } from './hangar.js';
 import { createRadarSystem } from './radar.js';
 import { createCloudSystem } from './clouds.js';
@@ -20,7 +19,6 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
   const tower = createTowerSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
   const apron = createApron({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
-  const taxiway = createTaxiwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight });
   const hangar = createHangarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
   const radar = createRadarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight });
   const cloudSystem = createCloudSystem({ scene });
@@ -31,7 +29,6 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   lodManager.register(runway);
   lodManager.register(tower);
   lodManager.register(apron);
-  lodManager.register(taxiway);
   lodManager.register(hangar);
   lodManager.register(radar);
 
@@ -41,7 +38,6 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...runway,
     ...tower,
     ...apron,
-    ...taxiway,
     ...hangar,
     ...cloudSystem,
     ...particles,

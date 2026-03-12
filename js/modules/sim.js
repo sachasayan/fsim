@@ -93,7 +93,6 @@ const {
   reloadCity,
   warmupShaders,
   completeBootstrap,
-  getBootstrapDebugInfo,
   updateWorldObjects,
   updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER });
@@ -456,7 +455,6 @@ function animate() {
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
-    updateBootstrapDebugOverlay();
   }
 
   cameraController.updateCamera(dt);
@@ -471,7 +469,6 @@ function animate() {
 // Initialize Loader Tips
 const loaderTipsInterval = startLoaderTips('loader-subtext', 150);
 let loaderHidden = false;
-const terrainBootstrapDebug = document.getElementById('terrain-bootstrap-debug');
 
 function hideLoader() {
   if (loaderHidden) return;
@@ -486,31 +483,6 @@ function hideLoader() {
     debugLog('Loader removed.');
   }, 1000);
 }
-
-function updateBootstrapDebugOverlay() {
-  if (!terrainBootstrapDebug || loaderHidden || typeof getBootstrapDebugInfo !== 'function') return;
-  const info = getBootstrapDebugInfo();
-  if (!info) return;
-
-  const ringLines = info.bands.map((band) =>
-    `${band.label.padEnd(6)} ${band.mode.padEnd(18)} ${String(band.chunks).padStart(3)} chunks   ${band.spanKm.toFixed(0).padStart(2)} km span`
-  );
-
-  terrainBootstrapDebug.innerHTML = [
-    '<strong>Terrain Bootstrap</strong>',
-    `mode         ${info.bootstrapMode ? 'bootstrap' : 'refine'}`,
-    `active set   R0-R${info.activeRenderDistance} (${info.totalActiveChunks} chunks total)`,
-    `target dist  R0-R${info.renderDistance}`,
-    '',
-    ...ringLines,
-    '',
-    `loaded       ${info.loadedChunks}/${info.totalActiveChunks}`,
-    `base queue   ${info.pendingChunkBuilds} pending (${info.activeBuildKeys} active keys)`,
-    `prop queue   ${info.pendingPropBuilds} pending (${info.activePropKeys} active keys)`
-  ].join('\n');
-}
-
-updateBootstrapDebugOverlay();
 
 function waitForStartupReady({ warmupPromise, maxWaitMs = 12000 }) {
   return Promise.resolve(warmupPromise).then(() => new Promise((resolve) => {
@@ -581,7 +553,6 @@ setTimeout(() => {
   waitForStartupReady({ warmupPromise }).then(() => {
     completeBootstrap();
     updateTerrain();
-    updateBootstrapDebugOverlay();
     hideLoader();
   });
 }, 1500);

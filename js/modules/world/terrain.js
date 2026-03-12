@@ -9,6 +9,7 @@ import {
   setupTerrainMaterial,
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
+import { RoadMarkingOverlay } from './terrain/RoadMarkingOverlay.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
@@ -27,7 +28,6 @@ import {
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
 import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
-import { setStaticSampler, QuadtreeMapSampler } from './terrain/TerrainUtils.js';
 import { debugLog } from '../core/logging.js';
 
 export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
@@ -35,18 +35,6 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
   const windowRef = hasWindow ? window : null;
   const locationSearch = windowRef?.location?.search || '';
 
-  // Load static world data early
-  loadStaticWorld().then(success => {
-    if (success && windowRef?.fsimWorld) {
-      // Also set it on the main thread for physics/etc
-      fetch('/world/world.bin')
-        .then(r => r.arrayBuffer())
-        .then(buf => {
-          const sampler = new QuadtreeMapSampler(buf);
-          setStaticSampler(sampler);
-        });
-    }
-  });
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.62,
@@ -110,6 +98,7 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
   let warmupPromise = null;
 
   const terrainDetailTex = createPackedTerrainDetailTexture();
+  const roadMarkingOverlay = new RoadMarkingOverlay();
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
   const terrainFarMaterial = terrainMaterial.clone();
   terrainFarMaterial.roughness = 1.0;
@@ -117,6 +106,16 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
 
   const terrainDetailUniforms = {
     uTerrainDetailTex: { value: terrainDetailTex },
+    uRoadMarkingTex: { value: roadMarkingOverlay.texture },
+    uRoadMarkingCenter: { value: new THREE.Vector2(0, 0) },
+    uRoadMarkingWorldSize: { value: roadMarkingOverlay.worldSize },
+    uRoadMarkingOpacity: { value: 1.0 },
+    uRoadMarkingFadeStart: { value: 180.0 },
+    uRoadMarkingFadeEnd: { value: 460.0 },
+    uRoadMarkingBodyStart: { value: 0.2 },
+    uRoadMarkingBodyEnd: { value: 0.45 },
+    uRoadMarkingCoreStart: { value: 0.55 },
+    uRoadMarkingCoreEnd: { value: 0.8 },
     uTerrainDetailScale: { value: 0.16 },
     uTerrainDetailStrength: { value: 1.1 },
     uTerrainSlopeStart: { value: 0.26 },
@@ -136,6 +135,14 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
 
   setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, false);
   setupTerrainMaterial(terrainFarMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, true);
+
+  // Load static world data after uniforms exist so the moving road-marking atlas can populate immediately.
+  loadStaticWorld().then(success => {
+    if (success && windowRef?.fsimWorld) {
+      roadMarkingOverlay.update(PHYSICS.position.x, PHYSICS.position.z, windowRef.fsimWorld);
+      terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
+    }
+  });
 
   const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
   treeBillboardGeo.translate(0, 0.5, 0);
@@ -435,9 +442,13 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
   }
 
   function updateTerrainAtmosphere(camera, weatherColor = null) {
+    terrainDetailUniforms.uTerrainAtmosStrength.value = 0.25;
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
+      if (windowRef?.fsimWorld && roadMarkingOverlay.update(camera.position.x, camera.position.z, windowRef.fsimWorld)) {
+        terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
+      }
     }
     if (weatherColor) atmosphereColor.copy(weatherColor);
     else {
@@ -514,38 +525,6 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
     debugLog('[terrain] Bootstrap LOD complete; refining outer rings.');
   }
 
-  function getBootstrapDebugInfo() {
-    const activeRenderDistance = bootstrapMode ? 0 : _renderDistance;
-    const ringChunkCount = (ring) => {
-      if (ring < 0) return 0;
-      const width = ring * 2 + 1;
-      return width * width;
-    };
-
-    const ringBands = bootstrapMode
-      ? [{ label: 'R0', start: 0, end: 0, mode: 'normal detail' }]
-      : [{ label: `R0-R${_renderDistance}`, start: 0, end: _renderDistance, mode: 'full terrain active' }];
-
-    const bands = ringBands.map((band) => ({
-      ...band,
-      chunks: ringChunkCount(band.end) - ringChunkCount(band.start - 1),
-      spanKm: ((band.end * 2 + 1) * CHUNK_SIZE) / 1000
-    }));
-
-    return {
-      bootstrapMode,
-      renderDistance: _renderDistance,
-      activeRenderDistance,
-      totalActiveChunks: ringChunkCount(activeRenderDistance),
-      loadedChunks: terrainChunks.size,
-      pendingChunkBuilds: pendingChunkBuilds.length,
-      pendingPropBuilds: pendingPropBuilds.length,
-      activeBuildKeys: pendingChunkKeys.size,
-      activePropKeys: pendingPropKeys.size,
-      bands
-    };
-  }
-
   const isReady = () => {
     if (terrainChunks.size === 0) return false;
 
@@ -619,7 +598,6 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
     isReady,
     reloadCity,
     warmupShaders,
-    completeBootstrap,
-    getBootstrapDebugInfo
+    completeBootstrap
   };
 }
