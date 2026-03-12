@@ -132,7 +132,7 @@ export function createTerrainSystem({
     uTerrainGrassColor: { value: new THREE.Color(42 / 255, 75 / 255, 42 / 255) },
     uTerrainRockColor: { value: new THREE.Color(85 / 255, 85 / 255, 85 / 255) },
     uTerrainSnowColor: { value: new THREE.Color(1, 1, 1) },
-    uTerrainAsphaltColor: { value: new THREE.Color(0x353b42) }
+    uTerrainAsphaltColor: { value: new THREE.Color(0x000000) }
   };
 
   setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, false);

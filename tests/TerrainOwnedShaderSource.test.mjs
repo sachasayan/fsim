@@ -25,6 +25,12 @@ test('getTerrainOwnedShaderSource caches and returns owned terrain shader varian
     assert.equal(nearSourceA, nearSourceB);
     assert.match(nearSourceA.vertexShader, /attribute vec4 surfaceWeights;/);
     assert.match(nearSourceA.fragmentShader, /vec3 roadMarkingSrgbToLinear\(vec3 value\)/);
+    assert.match(nearSourceA.fragmentShader, /vec3 resolveRoadMarkingColor\(vec4 sampleColor\)/);
+    assert.match(nearSourceA.fragmentShader, /baseTerrainColor \*= naturalTerrainVertexTint;/);
+    assert.match(nearSourceA.fragmentShader, /float asphaltMacro = mix\(detailA\.g, detailB\.g, 0\.55\);/);
+    assert.match(nearSourceA.fragmentShader, /float asphaltTone = clamp\(\(asphaltMacro - 0\.5\) \* 1\.6 \+ \(asphaltMicro - 0\.5\) \* 0\.7 \+ 0\.5, 0\.0, 1\.0\);/);
+    assert.match(nearSourceA.fragmentShader, /vec3 asphaltDarkColor = asphaltBaseColor \* vec3\(0\.58, 0\.6, 0\.64\);/);
+    assert.doesNotMatch(nearSourceA.fragmentShader, /#include <color_fragment>/);
     assert.match(farSource.fragmentShader, /#define IS_FAR_LOD/);
 });
 

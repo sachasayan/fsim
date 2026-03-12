@@ -182,51 +182,35 @@
                 ]
             ],
             "city_id": "city_b"
+        },
+        {
+            "district_type": "commercial",
+            "center": [
+                700,
+                -4100
+            ],
+            "radius": 500,
+            "points": [
+                [
+                    200,
+                    -4600
+                ],
+                [
+                    1200,
+                    -4600
+                ],
+                [
+                    1200,
+                    -3600
+                ],
+                [
+                    200,
+                    -3600
+                ]
+            ]
         }
     ],
     "roads": [
-        {
-            "id": "airport_taxiway_north",
-            "kind": "taxiway",
-            "surface": "asphalt",
-            "width": 30,
-            "feather": 10,
-            "points": [
-                [
-                    0,
-                    1800
-                ],
-                [
-                    -314,
-                    1792
-                ],
-                [
-                    -289,
-                    -128
-                ]
-            ]
-        },
-        {
-            "id": "airport_taxiway_south",
-            "kind": "taxiway",
-            "surface": "asphalt",
-            "width": 30,
-            "feather": 10,
-            "points": [
-                [
-                    0,
-                    -1800
-                ],
-                [
-                    -319,
-                    -1818
-                ],
-                [
-                    -282,
-                    -403
-                ]
-            ]
-        },
         {
             "kind": "taxiway",
             "surface": "asphalt",
@@ -240,6 +224,38 @@
                 [
                     -659,
                     860
+                ]
+            ]
+        },
+        {
+            "kind": "taxiway",
+            "surface": "asphalt",
+            "width": 24,
+            "feather": 8,
+            "points": [
+                [
+                    -201,
+                    -1806
+                ],
+                [
+                    -200,
+                    1806
+                ]
+            ]
+        },
+        {
+            "kind": "taxiway",
+            "surface": "asphalt",
+            "width": 24,
+            "feather": 8,
+            "points": [
+                [
+                    -194,
+                    1811
+                ],
+                [
+                    -29,
+                    1808
                 ]
             ]
         }

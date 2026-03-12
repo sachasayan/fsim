@@ -563,6 +563,12 @@ vec3 roadMarkingSrgbToLinear(vec3 value) {
     return mix(lower, higher, cutoff);
 }
 
+vec3 resolveRoadMarkingColor(vec4 sampleColor) {
+    if (sampleColor.a <= 0.0001) return vec3(0.0);
+    vec3 linearColor = roadMarkingSrgbToLinear(sampleColor.rgb);
+    return clamp(linearColor / sampleColor.a, 0.0, 1.0);
+}
+
 ${ShaderLibrary.terrain_city_pars_fragment}
 `
     );
@@ -584,10 +590,15 @@ ${ShaderLibrary.terrain_city_fragment}
         uTerrainGrassColor * terrainWeights.y +
         uTerrainRockColor * terrainWeights.z +
         uTerrainSnowColor * terrainWeights.w;
+    vec3 asphaltBaseColor = uTerrainAsphaltColor;
+#ifdef USE_COLOR
+    vec3 naturalTerrainVertexTint = clamp(vColor.rgb, 0.0, 1.0);
+    baseTerrainColor *= naturalTerrainVertexTint;
+#endif
     float asphaltWeight = clamp(vTerrainSurfaceOverrides.x, 0.0, 1.0);
     float asphaltSurface = smoothstep(0.01, 0.04, asphaltWeight);
     float naturalSurface = 1.0 - asphaltSurface;
-    diffuseColor.rgb = mix(baseTerrainColor, uTerrainAsphaltColor, asphaltSurface);
+    diffuseColor.rgb = mix(baseTerrainColor, asphaltBaseColor, asphaltSurface);
 
 #ifndef IS_FAR_LOD
     vec2 baseUv = vTerrainWorldPos.xz * uTerrainDetailScale;
@@ -619,29 +630,64 @@ diffuseColor.rgb *= mix(1.0, mix(0.85, 1.15, macro), nearMid * naturalSurface * 
     float blade = smoothstep(0.01, 0.99, abs(micro));
 diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
 diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
-    float asphaltDetail = mix(0.94, 1.02, detailA.g);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * asphaltDetail, asphaltSurface * 0.12);
+    float asphaltMacro = mix(detailA.g, detailB.g, 0.55);
+    float asphaltMicro = mix(detailA.a, detailB.a, 0.5);
+    float asphaltTone = clamp((asphaltMacro - 0.5) * 1.6 + (asphaltMicro - 0.5) * 0.7 + 0.5, 0.0, 1.0);
+    float asphaltPatchMask = smoothstep(0.58, 0.82, detailB.r + asphaltMacro * 0.25);
+    float asphaltCrackMask = smoothstep(0.62, 0.9, 1.0 - detailA.a) * smoothstep(0.34, 0.76, asphaltMacro);
+    float asphaltDustMask = smoothstep(0.5, 0.84, detailA.r) * (1.0 - asphaltPatchMask);
+    vec3 asphaltDarkColor = asphaltBaseColor * vec3(0.58, 0.6, 0.64);
+    vec3 asphaltMidColor = asphaltBaseColor * vec3(0.95, 0.98, 1.02);
+    vec3 asphaltLightColor = asphaltBaseColor * vec3(1.28, 1.24, 1.16);
+    vec3 asphaltPatchColor = asphaltBaseColor * vec3(0.82, 0.84, 0.88);
+    vec3 asphaltCrackColor = asphaltBaseColor * vec3(0.36, 0.38, 0.42);
+    vec3 asphaltDetailColor = mix(
+        asphaltDarkColor,
+        asphaltMidColor,
+        smoothstep(0.18, 0.72, asphaltTone)
+    );
+    asphaltDetailColor = mix(
+        asphaltDetailColor,
+        asphaltLightColor,
+        smoothstep(0.74, 0.98, asphaltTone) * 0.75
+    );
+    asphaltDetailColor = mix(asphaltDetailColor, asphaltPatchColor, asphaltPatchMask * 0.65);
+    asphaltDetailColor = mix(asphaltDetailColor, asphaltCrackColor, asphaltCrackMask * 0.88);
+    asphaltDetailColor = mix(
+        asphaltDetailColor,
+        asphaltDetailColor * vec3(1.12, 1.09, 1.03) + vec3(0.015, 0.012, 0.006),
+        asphaltDustMask * 0.35
+    );
+    diffuseColor.rgb = mix(diffuseColor.rgb, asphaltDetailColor, asphaltSurface);
 
     vec2 markingUv = (vTerrainWorldPos.xz - uRoadMarkingCenter) / uRoadMarkingWorldSize + vec2(0.5);
     vec2 markingMask = step(vec2(0.0), markingUv) * step(markingUv, vec2(1.0));
     float markingInBounds = markingMask.x * markingMask.y;
     vec4 roadMarking = texture2D(uRoadMarkingTex, markingUv);
-    roadMarking.rgb = roadMarkingSrgbToLinear(roadMarking.rgb);
+    vec3 roadMarkingColor = resolveRoadMarkingColor(roadMarking);
     float markingFade = 1.0 - smoothstep(uRoadMarkingFadeStart, uRoadMarkingFadeEnd, vTerrainDist);
     float markingBodyMask = smoothstep(uRoadMarkingBodyStart, uRoadMarkingBodyEnd, roadMarking.a);
     float markingCoreMask = smoothstep(uRoadMarkingCoreStart, uRoadMarkingCoreEnd, roadMarking.a);
     markingCoverage = markingBodyMask * markingInBounds * markingFade * uRoadMarkingOpacity;
     markingCore = markingCoreMask * markingInBounds * markingFade * uRoadMarkingOpacity;
-    vec3 roadSurfaceColor = mix(diffuseColor.rgb, uTerrainAsphaltColor, asphaltSurface);
-    markingComposite = mix(roadSurfaceColor, roadMarking.rgb, markingCoverage);
+    vec3 roadSurfaceColor = mix(diffuseColor.rgb, asphaltDetailColor, asphaltSurface);
+    markingComposite = mix(roadSurfaceColor, roadMarkingColor, markingCoverage);
     diffuseColor.rgb = mix(diffuseColor.rgb, markingComposite, step(0.01, markingCoverage));
-    diffuseColor.rgb = mix(diffuseColor.rgb, roadMarking.rgb, markingCore);
+    diffuseColor.rgb = mix(diffuseColor.rgb, roadMarkingColor, markingCore);
 #endif
 
 ${ShaderLibrary.terrain_city_pavement_fragment}
         float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, vTerrainDist) * uTerrainAtmosStrength;
         diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, terrainAtmos);`,
         'terrain diffuseColor assignment'
+    );
+
+    // Terrain owns its full surface color composition, so the stock vertex-color
+    // modulation would re-tint asphalt and road markings with underlying grass.
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'color_fragment',
+        ''
     );
 
     if (isFarLOD) {
