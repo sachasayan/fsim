@@ -1,8 +1,5 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { createPostProcessingStack } from './PostProcessingStack.js';
 
 export function createRendererManager({ container, scene, camera }) {
     const renderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true });
@@ -27,19 +24,17 @@ export function createRendererManager({ container, scene, camera }) {
         container.appendChild(renderer.domElement);
     }
 
-    const renderScene = new RenderPass(scene, camera);
-    const pixelRatio = renderer.getPixelRatio();
-    const smaaPass = new SMAAPass(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-
-    bloomPass.threshold = 5.0;
-    bloomPass.strength = 0.8;
-    bloomPass.radius = 0.4;
-
-    const composer = new EffectComposer(renderer);
-    composer.addPass(renderScene);
-    composer.addPass(smaaPass);
-    composer.addPass(bloomPass);
+    const postStack = createPostProcessingStack({
+        renderer,
+        scene,
+        camera,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        pixelRatio: renderer.getPixelRatio()
+    });
+    const composer = postStack.composer;
+    const smaaPass = postStack.getPass('smaa');
+    const bloomPass = postStack.getPass('bloom');
 
     let adaptiveQualityEnabled = true;
     let frameTimeEmaMs = 16.67;
@@ -56,9 +51,7 @@ export function createRendererManager({ container, scene, camera }) {
         renderer.setPixelRatio(currentPixelRatio);
         renderer.setSize(viewportWidth, viewportHeight, false);
 
-        const pr = renderer.getPixelRatio();
-        smaaPass.setSize(viewportWidth * pr, viewportHeight * pr);
-        composer.setSize(viewportWidth, viewportHeight);
+        postStack.resize(viewportWidth, viewportHeight, renderer.getPixelRatio());
     }
 
     function updateAdaptiveQuality(dtSeconds) {
@@ -79,8 +72,7 @@ export function createRendererManager({ container, scene, camera }) {
             }
         }
 
-        // At low internal resolution, SMAA cost/benefit drops.
-        smaaPass.enabled = currentPixelRatio >= 0.95;
+        postStack.update({ pixelRatio: currentPixelRatio, frameTimeEmaMs });
     }
 
     function setAdaptiveQualityEnabled(enabled) {
@@ -96,9 +88,7 @@ export function createRendererManager({ container, scene, camera }) {
 
         renderer.setSize(viewportWidth, viewportHeight);
 
-        const pr = renderer.getPixelRatio();
-        smaaPass.setSize(viewportWidth * pr, viewportHeight * pr);
-        composer.setSize(viewportWidth, viewportHeight);
+        postStack.resize(viewportWidth, viewportHeight, renderer.getPixelRatio());
     }
 
     return {

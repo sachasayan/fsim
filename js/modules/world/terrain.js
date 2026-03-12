@@ -95,8 +95,6 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
   const chunkPools = [[], [], [], []];
   const instancedMeshPools = new Map();
   let bootstrapMode = true;
-  let warmupPromise = null;
-
   const terrainDetailTex = createPackedTerrainDetailTexture();
   const roadMarkingOverlay = new RoadMarkingOverlay();
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
@@ -466,57 +464,75 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
 
-  function warmupShaders(camera) {
-    if (warmupPromise) return warmupPromise;
-    warmupPromise = (async () => {
-      if (!renderer) return;
+  function getShaderWarmupSpec(camera) {
+    updateTerrainAtmosphere(camera);
 
-      updateTerrainAtmosphere(camera);
+    const terrainGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
+    terrainGeo.rotateX(-Math.PI / 2);
+    terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 3).fill(1), 3));
+    terrainGeo.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array([
+      0.05, 0.85, 0.10, 0.00,
+      0.00, 0.75, 0.25, 0.00,
+      0.00, 0.30, 0.70, 0.00,
+      0.00, 0.05, 0.15, 0.80
+    ]), 4));
+    terrainGeo.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 4), 4));
 
-      const warmupScene = new THREE.Scene();
-      const warmupCamera = camera ? camera.clone() : new THREE.PerspectiveCamera(60, 1, 1, 10000);
-      warmupCamera.position.set(0, 200, 320);
-      warmupCamera.lookAt(0, 0, 0);
-      warmupCamera.updateMatrixWorld(true);
+    const waterGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
+    waterGeo.rotateX(-Math.PI / 2);
+    waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3).fill(0.7), 3));
 
-      const terrainGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
-      terrainGeo.rotateX(-Math.PI / 2);
-      terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 3).fill(1), 3));
-      terrainGeo.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array([
-        0.05, 0.85, 0.10, 0.00,
-        0.00, 0.75, 0.25, 0.00,
-        0.00, 0.30, 0.70, 0.00,
-        0.00, 0.05, 0.15, 0.80
-      ]), 4));
-      terrainGeo.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 4), 4));
+    const treeGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+    treeGeo.translate(0, 0.5, 0);
+    const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
+    buildingGeo.translate(0, 0.5, 0);
+    const warmupDummy = new THREE.Object3D();
 
-      const waterGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
-      waterGeo.rotateX(-Math.PI / 2);
-      waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3).fill(0.7), 3));
-
-      const terrainNearMesh = new THREE.Mesh(terrainGeo, terrainMaterial);
-      terrainNearMesh.position.set(-320, 0, 0);
-      const terrainFarMesh = new THREE.Mesh(terrainGeo, terrainFarMaterial);
-      terrainFarMesh.position.set(0, 0, 0);
-      const waterNearMesh = new THREE.Mesh(waterGeo, waterMaterial);
-      waterNearMesh.position.set(320, 0, 0);
-      const waterFarMesh = new THREE.Mesh(waterGeo, waterFarMaterial);
-      waterFarMesh.position.set(640, 0, 0);
-
-      warmupScene.add(terrainNearMesh, terrainFarMesh, waterNearMesh, waterFarMesh);
-
-      if (typeof renderer.compileAsync === 'function') {
-        await renderer.compileAsync(warmupScene, warmupCamera);
-      } else {
-        renderer.compile(warmupScene, warmupCamera);
+    function makeWarmupInstancedMesh(geometry, material, position, tint = null) {
+      const mesh = new THREE.InstancedMesh(geometry, material, 1);
+      warmupDummy.position.copy(position);
+      warmupDummy.scale.set(18, 18, 18);
+      warmupDummy.rotation.set(0, 0, 0);
+      warmupDummy.updateMatrix();
+      mesh.setMatrixAt(0, warmupDummy.matrix);
+      mesh.instanceMatrix.needsUpdate = true;
+      if (tint) {
+        mesh.setColorAt(0, tint);
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       }
+      return mesh;
+    }
 
-      terrainGeo.dispose();
-      waterGeo.dispose();
-    })().catch((error) => {
-      console.warn('[terrain] Shader warmup failed:', error);
-    });
-    return warmupPromise;
+    const objects = [
+      new THREE.Mesh(terrainGeo, terrainMaterial),
+      new THREE.Mesh(terrainGeo, terrainFarMaterial),
+      new THREE.Mesh(waterGeo, waterMaterial),
+      new THREE.Mesh(waterGeo, waterFarMaterial),
+      makeWarmupInstancedMesh(treeGeo, treeBillboardMats.conifer, new THREE.Vector3(960, 0, 0)),
+      makeWarmupInstancedMesh(treeGeo, treeDepthMats.conifer, new THREE.Vector3(1120, 0, 0)),
+      makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.commercial, new THREE.Vector3(1280, 0, 0)),
+      makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.residential, new THREE.Vector3(1440, 0, 0)),
+      makeWarmupInstancedMesh(buildingGeo, detailedBuildingMats.industrial, new THREE.Vector3(1600, 0, 0)),
+      makeWarmupInstancedMesh(buildingGeo, baseBuildingMat, new THREE.Vector3(1760, 0, 0))
+    ];
+
+    objects[0].position.set(-320, 0, 0);
+    objects[1].position.set(0, 0, 0);
+    objects[2].position.set(320, 0, 0);
+    objects[3].position.set(640, 0, 0);
+    for (const object of objects) {
+      object.updateMatrixWorld(true);
+    }
+
+    return {
+      objects,
+      dispose() {
+        terrainGeo.dispose();
+        waterGeo.dispose();
+        treeGeo.dispose();
+        buildingGeo.dispose();
+      }
+    };
   }
 
   function completeBootstrap() {
@@ -597,7 +613,7 @@ export function createTerrainSystem({ scene, renderer, Noise, PHYSICS }) {
     updateTerrainAtmosphere,
     isReady,
     reloadCity,
-    warmupShaders,
+    getShaderWarmupSpec,
     completeBootstrap
   };
 }

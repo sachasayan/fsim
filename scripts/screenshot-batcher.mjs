@@ -6,17 +6,46 @@ import { PNG } from 'pngjs';
 
 const ROOT = process.cwd();
 const PORT = 5190;
+const args = process.argv.slice(2);
+
+function parseArgs(argv) {
+    const options = {
+        config: path.join(ROOT, 'config', 'vantage_points.json'),
+        filter: '',
+        width: 1280,
+        height: 720,
+        settle: 1000,
+        noContactSheet: false
+    };
+
+    for (const arg of argv) {
+        if (arg.startsWith('--config=')) options.config = path.resolve(ROOT, arg.slice('--config='.length));
+        if (arg.startsWith('--filter=')) options.filter = arg.slice('--filter='.length);
+        if (arg.startsWith('--width=')) options.width = parseInt(arg.slice('--width='.length), 10);
+        if (arg.startsWith('--height=')) options.height = parseInt(arg.slice('--height='.length), 10);
+        if (arg.startsWith('--settle=')) options.settle = parseInt(arg.slice('--settle='.length), 10);
+        if (arg === '--no-contact-sheet') options.noContactSheet = true;
+    }
+
+    return options;
+}
 
 async function main() {
+    const options = parseArgs(args);
     const screenshotsDir = path.join(ROOT, 'screenshots');
-    const vantagePath = path.join(ROOT, 'config', 'vantage_points.json');
-    const vantagePoints = JSON.parse(fs.readFileSync(vantagePath, 'utf8'));
+    const vantagePoints = JSON.parse(fs.readFileSync(options.config, 'utf8'));
+    const filteredEntries = Object.entries(vantagePoints).filter(([name]) => {
+        return !options.filter || name.includes(options.filter);
+    });
+    if (filteredEntries.length === 0) {
+        throw new Error(`No vantage points matched filter "${options.filter}" in ${options.config}`);
+    }
 
     const batchTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const batchDir = path.join(screenshotsDir, `batch_${batchTimestamp}`);
     fs.mkdirSync(batchDir, { recursive: true });
 
-    console.log(`🚀 Starting HIGH-SPEED SEQUENTIAL batch capture with VISUAL FIXES for ${Object.keys(vantagePoints).length} vantage points...`);
+    console.log(`🚀 Starting HIGH-SPEED SEQUENTIAL batch capture with VISUAL FIXES for ${filteredEntries.length} vantage points...`);
 
     const server = spawn(process.execPath, ['server.js'], {
         cwd: ROOT,
@@ -36,11 +65,11 @@ async function main() {
                 '--use-angle=swiftshader',
                 '--ignore-gpu-blocklist',
                 '--enable-webgl',
-                '--window-size=1280,720'
+                `--window-size=${options.width},${options.height}`
             ]
         });
 
-        const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+        const context = await browser.newContext({ viewport: { width: options.width, height: options.height } });
         const page = await context.newPage();
 
         page.on('console', msg => {
@@ -68,7 +97,7 @@ async function main() {
 
         const capturedFiles = [];
 
-        for (const [name, params] of Object.entries(vantagePoints)) {
+        for (const [name, params] of filteredEntries) {
             console.log(`  [${name}] Teleporting...`);
 
             await page.evaluate((p) => {
@@ -130,7 +159,7 @@ async function main() {
             await page.waitForFunction(() => window.fsimWorld && window.fsimWorld.isReady(), null, { timeout: 120000 });
 
             // Settle for terrain meshes and lighting transitions
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(options.settle);
 
             const imgPath = path.join(batchDir, `${name}.png`);
             await page.screenshot({ path: imgPath, timeout: 60000 });
@@ -139,8 +168,10 @@ async function main() {
         }
 
         await browser.close();
-        console.log('Capture complete. Generating contact sheet...');
-        await generateContactSheet(capturedFiles, path.join(batchDir, 'contact_sheet.png'));
+        if (!options.noContactSheet) {
+            console.log('Capture complete. Generating contact sheet...');
+            await generateContactSheet(capturedFiles, path.join(batchDir, 'contact_sheet.png'));
+        }
 
     } finally {
         server.kill();

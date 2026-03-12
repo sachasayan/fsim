@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
+import { applyInstancedRunwayLightShaderPatch } from './shaders/RunwayShaderPatches.js';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
@@ -268,6 +269,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     return { runwayGroup, runwayMat };
   }
   const { runwayGroup, runwayMat } = createRunwayMesh();
+  let warmupLightMaterial = null;
 
   // Global arrays for ALSF-2 Animation
   const alsStrobes = []; // Now stores { mesh, index, dist, dir }
@@ -280,38 +282,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     });
 
     mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uIntensity = { value: intensity };
-
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <common>',
-        `#include <common>
-         varying vec3 vInstanceColor;
-         varying float vDist;`
-      ).replace(
-        '#include <color_vertex>',
-        `#include <color_vertex>
-         #ifdef USE_INSTANCING_COLOR
-           vInstanceColor = instanceColor;
-         #else
-           vInstanceColor = vec3(1.0);
-         #endif`
-      ).replace(
-        '#include <project_vertex>',
-        `#include <project_vertex>
-         vDist = - mvPosition.z;`
-      );
-
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <common>',
-        `#include <common>
-         uniform float uIntensity;
-         varying vec3 vInstanceColor;
-         varying float vDist;`
-      ).replace(
-        'vec4 diffuseColor = vec4( diffuse, opacity );',
-        `float lodFade = smoothstep(16000.0, 10000.0, vDist);
-         vec4 diffuseColor = vec4( diffuse * vInstanceColor * uIntensity * lodFade, opacity );`
-      );
+      applyInstancedRunwayLightShaderPatch(shader, { intensity });
     };
     return mat;
   }
@@ -325,6 +296,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     const centerMat = createInstancedLightMaterial(0xffffff, 30 * RUNWAY_LIGHT_GLOW_SCALE);
     const alsWhiteMat = createInstancedLightMaterial(0xffffee, 50 * RUNWAY_LIGHT_GLOW_SCALE);
     const strobeMat = createInstancedLightMaterial(0xffffff, 180 * RUNWAY_LIGHT_STROBE_SCALE);
+    warmupLightMaterial = centerMat;
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.9 });
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
 
@@ -421,6 +393,36 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
   }
   const lightGroup = createRunwayLights();
 
+  function getShaderWarmupSpec() {
+    const runwayGeo = new THREE.PlaneGeometry(100, 400);
+    runwayGeo.rotateX(-Math.PI / 2);
+    const lightGeo = new THREE.SphereGeometry(1, 4, 4);
+    const warmupDummy = new THREE.Object3D();
+
+    const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
+    runwayMesh.position.set(0, 0.2, 0);
+
+    const lightMesh = new THREE.InstancedMesh(lightGeo, warmupLightMaterial, 1);
+    warmupDummy.position.set(0, 2, 0);
+    warmupDummy.scale.set(1.5, 1.5, 1.5);
+    warmupDummy.updateMatrix();
+    lightMesh.setMatrixAt(0, warmupDummy.matrix);
+    lightMesh.setColorAt(0, new THREE.Color(0xffffff));
+    lightMesh.instanceMatrix.needsUpdate = true;
+    if (lightMesh.instanceColor) lightMesh.instanceColor.needsUpdate = true;
+
+    runwayMesh.updateMatrixWorld(true);
+    lightMesh.updateMatrixWorld(true);
+
+    return {
+      objects: [runwayMesh, lightMesh],
+      dispose() {
+        runwayGeo.dispose();
+        lightGeo.dispose();
+      }
+    };
+  }
+
   let currentLOD = -1;
   function updateLOD(cameraPos, dist) {
     let newLOD = 0;
@@ -442,5 +444,5 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight }) {
     }
   }
 
-  return { alsStrobes, strobeColorOn, strobeColorOff, updateLOD, position: new THREE.Vector3(0, 0, 0) };
+  return { alsStrobes, strobeColorOn, strobeColorOff, updateLOD, position: new THREE.Vector3(0, 0, 0), getShaderWarmupSpec };
 }

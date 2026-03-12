@@ -12,6 +12,7 @@
     "smoke": "node scripts/smoke.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "screenshot:batch": "node scripts/screenshot-batcher.mjs",
+    "screenshot:shader-pipeline": "node scripts/screenshot-batcher.mjs --config=config/shader_pipeline_vantage_points.json --filter=shader_ --no-contact-sheet",
     "screenshot:cleanup": "node scripts/screenshot-cleanup.mjs",
     "test:unit": "node --test tests/*.test.mjs",
     "test:perf": "node scripts/perf.mjs",

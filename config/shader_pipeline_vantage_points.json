@@ -1,0 +1,42 @@
+{
+    "shader_airport_day": {
+        "x": 1793,
+        "y": 450,
+        "z": 1,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "day",
+        "hideplane": 1,
+        "tilt": 35,
+        "camDist": 120
+    },
+    "shader_airport_dusk": {
+        "x": 1793,
+        "y": 450,
+        "z": 1,
+        "lighting": "dusk",
+        "hideplane": 1,
+        "tilt": 35,
+        "camDist": 120
+    },
+    "shader_city_day_clear": {
+        "x": 8000,
+        "y": 2500,
+        "z": 10000,
+        "fog": 0,
+        "clouds": 0,
+        "lighting": "noon",
+        "hideplane": 1,
+        "renderDist": 6,
+        "tilt": 45
+    },
+    "shader_city_dusk_clouds": {
+        "x": 7500,
+        "y": 1150,
+        "z": 9500,
+        "lighting": "dusk",
+        "hideplane": 1,
+        "renderDist": 4,
+        "tilt": 45
+    }
+}

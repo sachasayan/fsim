@@ -10,6 +10,7 @@ import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
 
 import { createWorldLodManager } from './WorldLodManager.js';
+import { warmupShaderPrograms } from './ShaderWarmup.js';
 
 export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER }) {
   const lodManager = createWorldLodManager();
@@ -24,6 +25,24 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
   const aircraft = createAircraftSystem({ scene, renderer });
+  const warmupProviders = [
+    terrain.getShaderWarmupSpec,
+    runway.getShaderWarmupSpec,
+    cloudSystem.getShaderWarmupSpec
+  ].filter(Boolean);
+  let warmupPromise = null;
+
+  function warmupShaders(camera) {
+    if (warmupPromise) return warmupPromise;
+    warmupPromise = warmupShaderPrograms({
+      renderer,
+      camera,
+      providers: warmupProviders
+    }).catch((error) => {
+      console.warn('[world] Shader warmup failed:', error);
+    });
+    return warmupPromise;
+  }
 
   // Register objects for centralized LOD management
   lodManager.register(runway);
@@ -42,6 +61,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...cloudSystem,
     ...particles,
     ...aircraft,
+    warmupShaders,
     updateWorldObjects: (time) => {
       radar.update(time);
     },
