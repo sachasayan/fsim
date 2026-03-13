@@ -19,6 +19,8 @@ export class MapTileManager {
         this.isProcessingQueue = false;
         this.maxCacheSize = 512;
         this.cacheGeneration = 0;
+        this.queuePriorityDirty = false;
+        this.lastPriorityKey = null;
     }
 
     resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise }) {
@@ -60,6 +62,7 @@ export class MapTileManager {
         if (!this.queuedKeys.has(key)) {
             this.renderQueue.push({ tx, tz, lod, key, generation: this.cacheGeneration });
             this.queuedKeys.add(key);
+            this.queuePriorityDirty = true;
         }
         this.processQueue();
 
@@ -164,6 +167,8 @@ export class MapTileManager {
         this.renderQueue.length = 0;
         this.queuedKeys.clear();
         this.cacheGeneration++;
+        this.queuePriorityDirty = false;
+        this.lastPriorityKey = null;
     }
 
     invalidateWorldRect(minX, minZ, maxX, maxZ) {
@@ -190,6 +195,8 @@ export class MapTileManager {
             if (!keep) this.queuedKeys.delete(job.key);
             return keep;
         });
+        this.queuePriorityDirty = true;
+        this.lastPriorityKey = null;
     }
 
     evictIfNeeded() {
@@ -249,14 +256,24 @@ export class MapTileManager {
                 }
             }
         }
-        this.prioritizeQueue(cameraX, cameraZ);
+        this.prioritizeQueue(cameraX, cameraZ, targetLod);
     }
 
     getNearestLod(lod) {
         return Math.pow(2, Math.ceil(Math.log2(Math.max(lod, 0.5))));
     }
 
-    prioritizeQueue(cameraX, cameraZ) {
+    prioritizeQueue(cameraX, cameraZ, lod) {
+        if (this.renderQueue.length <= 1) {
+            this.queuePriorityDirty = false;
+            this.lastPriorityKey = `${lod}_${Math.floor(cameraX / (this.tileSize * lod))}_${Math.floor(cameraZ / (this.tileSize * lod))}`;
+            return;
+        }
+
+        const worldTileSize = this.tileSize * lod;
+        const priorityKey = `${lod}_${Math.floor(cameraX / worldTileSize)}_${Math.floor(cameraZ / worldTileSize)}`;
+        if (!this.queuePriorityDirty && this.lastPriorityKey === priorityKey) return;
+
         this.renderQueue.sort((a, b) => {
             const aWorldTileSize = this.tileSize * a.lod;
             const bWorldTileSize = this.tileSize * b.lod;
@@ -266,5 +283,7 @@ export class MapTileManager {
             const bDz = (b.tz + 0.5) * bWorldTileSize - cameraZ;
             return (aDx * aDx + aDz * aDz) - (bDx * bDx + bDz * bDz);
         });
+        this.queuePriorityDirty = false;
+        this.lastPriorityKey = priorityKey;
     }
 }

@@ -116,19 +116,23 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     const payload = {
         cx, cz, lodCfg,
         positions: tGeo.attributes.position.array.slice(),
+        normals: new Float32Array(tGeo.attributes.normal.array.length),
         colors: new Float32Array(tGeo.attributes.color.array.length),
         surfaceWeights: new Float32Array(tGeo.attributes.surfaceWeights.array.length),
         surfaceOverrides: new Float32Array(tGeo.attributes.surfaceOverrides.array.length),
         wPos: wGeo.attributes.position.array.slice(),
+        wNormals: new Float32Array(wGeo.attributes.normal.array.length),
         wCols: new Float32Array(wGeo.attributes.color.array.length)
     };
 
     const transferables = [
         payload.positions.buffer,
+        payload.normals.buffer,
         payload.colors.buffer,
         payload.surfaceWeights.buffer,
         payload.surfaceOverrides.buffer,
         payload.wPos.buffer,
+        payload.wNormals.buffer,
         payload.wCols.buffer
     ];
 
@@ -140,19 +144,21 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
 
     tGeo.attributes.position.array.set(result.positions);
     tGeo.attributes.position.needsUpdate = true;
+    tGeo.attributes.normal.array.set(result.normals);
+    tGeo.attributes.normal.needsUpdate = true;
     tGeo.attributes.color.array.set(result.colors);
     tGeo.attributes.color.needsUpdate = true;
     tGeo.attributes.surfaceWeights.array.set(result.surfaceWeights);
     tGeo.attributes.surfaceWeights.needsUpdate = true;
     tGeo.attributes.surfaceOverrides.array.set(result.surfaceOverrides);
     tGeo.attributes.surfaceOverrides.needsUpdate = true;
-    tGeo.computeVertexNormals();
 
     wGeo.attributes.position.array.set(result.wPos);
     wGeo.attributes.position.needsUpdate = true;
+    wGeo.attributes.normal.array.set(result.wNormals);
+    wGeo.attributes.normal.needsUpdate = true;
     wGeo.attributes.color.array.set(result.wCols);
     wGeo.attributes.color.needsUpdate = true;
-    wGeo.computeVertexNormals();
 
     return chunkGroup;
 }

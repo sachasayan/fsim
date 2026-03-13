@@ -61,3 +61,36 @@ test('MapTileManager still binds Noise for legacy getTerrainHeight samplers that
     assert.deepEqual(calls, [[0, 0, noise]]);
     assert.equal(getImageData().data[3], 255);
 });
+
+test('MapTileManager only re-sorts queued tiles when the queue or camera tile changes', () => {
+    const manager = new MapTileManager({
+        sampleTerrainHeight() {
+            return 0;
+        }
+    });
+
+    manager.renderQueue = [
+        { tx: 5, tz: 5, lod: 2 },
+        { tx: 1, tz: 1, lod: 2 },
+        { tx: 3, tz: 3, lod: 2 }
+    ];
+    manager.queuePriorityDirty = true;
+
+    let sortCalls = 0;
+    const originalSort = manager.renderQueue.sort.bind(manager.renderQueue);
+    manager.renderQueue.sort = (compareFn) => {
+        sortCalls++;
+        return originalSort(compareFn);
+    };
+
+    manager.prioritizeQueue(100, 100, 2);
+    manager.prioritizeQueue(110, 120, 2);
+    assert.equal(sortCalls, 1);
+
+    manager.prioritizeQueue(800, 120, 2);
+    assert.equal(sortCalls, 2);
+
+    manager.queuePriorityDirty = true;
+    manager.prioritizeQueue(800, 120, 2);
+    assert.equal(sortCalls, 3);
+});

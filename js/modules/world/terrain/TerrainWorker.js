@@ -90,6 +90,47 @@ function srgbArrayToLinear(rgb) {
 
 let matricesGenerated = 0; // tracking stats if needed
 
+function computeGridNormals(positions, segments) {
+    const verticesPerSide = segments + 1;
+    const normals = new Float32Array(positions.length);
+
+    for (let row = 0; row < verticesPerSide; row++) {
+        const rowOffset = row * verticesPerSide;
+        const rowUp = Math.max(0, row - 1) * verticesPerSide;
+        const rowDown = Math.min(verticesPerSide - 1, row + 1) * verticesPerSide;
+
+        for (let col = 0; col < verticesPerSide; col++) {
+            const colLeft = Math.max(0, col - 1);
+            const colRight = Math.min(verticesPerSide - 1, col + 1);
+            const centerIndex = (rowOffset + col) * 3;
+            const leftIndex = (rowOffset + colLeft) * 3;
+            const rightIndex = (rowOffset + colRight) * 3;
+            const upIndex = (rowUp + col) * 3;
+            const downIndex = (rowDown + col) * 3;
+
+            const dx = positions[rightIndex] - positions[leftIndex];
+            const dz = positions[downIndex + 2] - positions[upIndex + 2];
+            const dyX = positions[rightIndex + 1] - positions[leftIndex + 1];
+            const dyZ = positions[downIndex + 1] - positions[upIndex + 1];
+
+            let nx = -dz * dyX;
+            let ny = dz * dx;
+            let nz = -dyZ * dx;
+            const length = Math.hypot(nx, ny, nz) || 1;
+
+            nx /= length;
+            ny /= length;
+            nz /= length;
+
+            normals[centerIndex] = nx;
+            normals[centerIndex + 1] = ny;
+            normals[centerIndex + 2] = nz;
+        }
+    }
+
+    return normals;
+}
+
 function buildChunkBase(job) {
     const { cx, cz, lodCfg, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols } = job;
     const staticWorldMetadata = getStaticWorldMetadata();
@@ -145,7 +186,10 @@ function buildChunkBase(job) {
         wCols[i + 2] = col.b;
     }
 
-    return { cx, cz, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols };
+    const normals = computeGridNormals(positions, lodCfg.terrainRes);
+    const wNormals = computeGridNormals(wPos, lodCfg.waterRes);
+
+    return { cx, cz, positions, normals, colors, surfaceWeights, surfaceOverrides, wPos, wNormals, wCols };
 }
 
 function buildChunkProps(job) {
@@ -290,7 +334,16 @@ self.onmessage = function (e) {
                 jobId,
                 type: 'chunkBase_done',
                 result: result
-            }, [result.positions.buffer, result.colors.buffer, result.surfaceWeights.buffer, result.surfaceOverrides.buffer, result.wPos.buffer, result.wCols.buffer]);
+            }, [
+                result.positions.buffer,
+                result.normals.buffer,
+                result.colors.buffer,
+                result.surfaceWeights.buffer,
+                result.surfaceOverrides.buffer,
+                result.wPos.buffer,
+                result.wNormals.buffer,
+                result.wCols.buffer
+            ]);
         } else if (type === 'chunkProps') {
             const result = buildChunkProps(payload);
             const transferables = [];
