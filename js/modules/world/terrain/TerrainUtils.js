@@ -1,6 +1,21 @@
 import { applyTerrainEdits } from './TerrainEdits.js';
 import { resolveTerrainRingLod } from '../LodSystem.js';
 
+const NODE_BRANCH = 0;
+const NODE_LEAF = 1;
+const NODE_EMPTY = 2;
+const LEAF_RESOLUTION = 32;
+
+function decodeNodeType(type) {
+    if (type === NODE_BRANCH) return 'branch';
+    if (type === NODE_LEAF) return 'leaf';
+    return 'empty';
+}
+
+function intersectsAabbBounds(a, b) {
+    return a.minX <= b.maxX && a.maxX >= b.minX && a.minZ <= b.maxZ && a.maxZ >= b.minZ;
+}
+
 export function hash2(x, z, seed = 0) {
     const n = Math.sin(x * 127.1 + z * 311.7 + seed * 74.7) * 43758.5453123;
     return n - Math.floor(n);
@@ -148,6 +163,7 @@ export class QuadtreeMapSampler {
 
         this.HEADER_SIZE = 32;
         this.NODE_SIZE = 32;
+        this._nodeCache = new Map();
     }
 
     getMetadata() {
@@ -168,6 +184,175 @@ export class QuadtreeMapSampler {
 
         // Start traversal from Root (Index 0)
         return this._sampleRecursive(0, wx, wz);
+    }
+
+    getRootNode() {
+        return this.getNode(0, 0);
+    }
+
+    getNode(nodeIdx, depth = null) {
+        if (!Number.isInteger(nodeIdx) || nodeIdx < 0 || nodeIdx >= this.numNodes) {
+            return null;
+        }
+
+        const cached = this._nodeCache.get(nodeIdx);
+        if (cached) {
+            if (depth !== null && cached.depth === null) {
+                cached.depth = depth;
+            }
+            return cached;
+        }
+
+        const off = this.HEADER_SIZE + nodeIdx * this.NODE_SIZE;
+        const rawType = this.view.getUint32(off, true);
+        const minX = this.view.getFloat32(off + 4, true);
+        const minZ = this.view.getFloat32(off + 8, true);
+        const size = this.view.getFloat32(off + 12, true);
+        const half = size * 0.5;
+        const node = {
+            id: nodeIdx,
+            rawType,
+            type: decodeNodeType(rawType),
+            depth,
+            minX,
+            minZ,
+            maxX: minX + size,
+            maxZ: minZ + size,
+            size,
+            centerX: minX + half,
+            centerZ: minZ + half,
+            childIds: [],
+            payloadOffset: null,
+            avgHeight: null
+        };
+
+        if (rawType === NODE_BRANCH) {
+            node.childIds = [
+                this.view.getUint32(off + 16, true),
+                this.view.getUint32(off + 20, true),
+                this.view.getUint32(off + 24, true),
+                this.view.getUint32(off + 28, true)
+            ];
+        } else if (rawType === NODE_LEAF) {
+            node.payloadOffset = this.view.getUint32(off + 16, true);
+            node.avgHeight = this.view.getFloat32(off + 20, true);
+        } else {
+            node.avgHeight = this.view.getFloat32(off + 16, true);
+        }
+
+        this._nodeCache.set(nodeIdx, node);
+        return node;
+    }
+
+    getNodeChildren(nodeIdx, depth = null) {
+        const node = this.getNode(nodeIdx, depth);
+        if (!node || node.type !== 'branch') return [];
+        return node.childIds.map((childId) => this.getNode(childId, node.depth === null ? null : node.depth + 1));
+    }
+
+    containsPoint(nodeIdx, wx, wz, depth = null) {
+        const node = this.getNode(nodeIdx, depth);
+        if (!node) return false;
+        return wx >= node.minX && wx <= node.maxX && wz >= node.minZ && wz <= node.maxZ;
+    }
+
+    intersectsAabb(nodeIdx, minX, minZ, maxX, maxZ, depth = null) {
+        const node = this.getNode(nodeIdx, depth);
+        if (!node) return false;
+        return intersectsAabbBounds(node, { minX, minZ, maxX, maxZ });
+    }
+
+    visitNodes(visitor, options = {}) {
+        if (typeof visitor !== 'function') return;
+
+        const {
+            startNodeId = 0,
+            maxDepth = Infinity,
+            intersectsAabb = null,
+            containsPoint = null,
+            leavesOnly = false
+        } = options;
+
+        const stack = [{ nodeId: startNodeId, depth: 0 }];
+        while (stack.length > 0) {
+            const { nodeId, depth } = stack.pop();
+            const node = this.getNode(nodeId, depth);
+            if (!node) continue;
+
+            if (intersectsAabb && !this.intersectsAabb(nodeId, intersectsAabb.minX, intersectsAabb.minZ, intersectsAabb.maxX, intersectsAabb.maxZ, depth)) {
+                continue;
+            }
+            if (containsPoint && !this.containsPoint(nodeId, containsPoint.x, containsPoint.z, depth)) {
+                continue;
+            }
+
+            const shouldVisitNode = !leavesOnly || node.type !== 'branch' || depth >= maxDepth;
+            if (shouldVisitNode) {
+                const result = visitor(node, { depth });
+                if (result === false) {
+                    continue;
+                }
+            }
+
+            if (node.type !== 'branch' || depth >= maxDepth) {
+                continue;
+            }
+
+            for (let index = node.childIds.length - 1; index >= 0; index -= 1) {
+                stack.push({ nodeId: node.childIds[index], depth: depth + 1 });
+            }
+        }
+    }
+
+    visitLeavesInRegion(region, visitor, options = {}) {
+        if (!region || typeof visitor !== 'function') return;
+
+        const {
+            maxDepth = Infinity,
+            minNodeSize = 0,
+            startNodeId = 0
+        } = options;
+        const stack = [{ nodeId: startNodeId, depth: 0 }];
+
+        while (stack.length > 0) {
+            const { nodeId, depth } = stack.pop();
+            const node = this.getNode(nodeId, depth);
+            if (!node || !this.intersectsAabb(nodeId, region.minX, region.minZ, region.maxX, region.maxZ, depth)) {
+                continue;
+            }
+
+            const shouldStop = node.type !== 'branch'
+                || depth >= maxDepth
+                || node.size <= minNodeSize;
+
+            if (shouldStop) {
+                visitor(node, { depth });
+                continue;
+            }
+
+            for (let index = node.childIds.length - 1; index >= 0; index -= 1) {
+                stack.push({ nodeId: node.childIds[index], depth: depth + 1 });
+            }
+        }
+    }
+
+    mapNodeToChunkKeys(nodeIdx, chunkSize, depth = null) {
+        const node = this.getNode(nodeIdx, depth);
+        if (!node || !Number.isFinite(chunkSize) || chunkSize <= 0) return [];
+
+        const minChunkX = Math.floor(node.minX / chunkSize);
+        const maxChunkX = Math.ceil(node.maxX / chunkSize) - 1;
+        const minChunkZ = Math.floor(node.minZ / chunkSize);
+        const maxChunkZ = Math.ceil(node.maxZ / chunkSize) - 1;
+        const keys = [];
+
+        for (let cx = minChunkX; cx <= maxChunkX; cx += 1) {
+            for (let cz = minChunkZ; cz <= maxChunkZ; cz += 1) {
+                keys.push(`${cx}, ${cz}`);
+            }
+        }
+
+        return keys;
     }
 
     _sampleRecursive(nodeIdx, wx, wz) {
@@ -193,19 +378,18 @@ export class QuadtreeMapSampler {
 
         // NODE_LEAF
         const dataOff = this.view.getUint32(off + 16, true);
-        const LEAF_RES = 32; // Hardcoded to match baker
-        const stride = LEAF_RES + 1;
+        const stride = LEAF_RESOLUTION + 1;
 
         // Local relative coord [0, 1]
         const lx = (wx - nx) / size;
         const lz = (wz - nz) / size;
 
-        const px = lx * LEAF_RES;
-        const pz = lz * LEAF_RES;
+        const px = lx * LEAF_RESOLUTION;
+        const pz = lz * LEAF_RESOLUTION;
         const x0 = Math.floor(px);
         const z0 = Math.floor(pz);
-        const x1 = Math.min(LEAF_RES, x0 + 1);
-        const z1 = Math.min(LEAF_RES, z0 + 1);
+        const x1 = Math.min(LEAF_RESOLUTION, x0 + 1);
+        const z1 = Math.min(LEAF_RESOLUTION, z0 + 1);
         const fx = px - x0;
         const fz = pz - z0;
 
@@ -231,6 +415,10 @@ let _staticWorldMetadata = null;
 export function setStaticSampler(sampler) {
     _staticSampler = sampler;
     _staticWorldMetadata = sampler?.getMetadata?.() || null;
+}
+
+export function getStaticSampler() {
+    return _staticSampler;
 }
 
 export function getStaticWorldMetadata() {

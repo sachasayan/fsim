@@ -13,7 +13,8 @@ import { RoadMarkingOverlay } from './terrain/RoadMarkingOverlay.js';
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
   getTerrainHeight,
-  getLodForRingDistance
+  getLodForRingDistance,
+  getStaticSampler
 } from './terrain/TerrainUtils.js';
 import { normalizeLodSettings } from './LodSystem.js';
 import {
@@ -28,6 +29,7 @@ import {
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
 import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsForChunk } from './terrain/BuildingSpawner.js';
+import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionController.js';
 import { debugLog } from '../core/logging.js';
 import { createRuntimeLodSettings } from './LodSystem.js';
 
@@ -96,6 +98,8 @@ export function createTerrainSystem({
   const chunkPools = [[], [], [], []];
   const instancedMeshPools = new Map();
   let bootstrapMode = true;
+  let quadtreeSelectionController = null;
+  let blockingChunkKeys = new Set();
   const terrainDetailTex = createPackedTerrainDetailTexture();
   const roadMarkingOverlay = new RoadMarkingOverlay();
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
@@ -138,6 +142,13 @@ export function createTerrainSystem({
   // Load static world data after uniforms exist so the moving road-marking atlas can populate immediately.
   Promise.resolve(loadStaticWorldFn()).then(success => {
     if (success && windowRef?.fsimWorld) {
+      quadtreeSelectionController = createQuadtreeSelectionController({
+        sampler: getStaticSampler(),
+        chunkSize: CHUNK_SIZE,
+        blockingRadius: CHUNK_SIZE * 2,
+        interestRadius: CHUNK_SIZE * Math.max(3, lodSettings.terrain.renderDistance + 1),
+        minCellSize: CHUNK_SIZE
+      });
       roadMarkingOverlay.update(PHYSICS.position.x, PHYSICS.position.z, windowRef.fsimWorld);
       terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
     }
@@ -298,6 +309,69 @@ export function createTerrainSystem({
     return bootstrapMode ? (ringDistance === 0 ? lod : 3) : lod;
   }
 
+  function ensureQuadtreeSelectionController() {
+    if (quadtreeSelectionController) return quadtreeSelectionController;
+    const sampler = getStaticSampler();
+    if (!sampler) return null;
+    quadtreeSelectionController = createQuadtreeSelectionController({
+      sampler,
+      chunkSize: CHUNK_SIZE,
+      blockingRadius: CHUNK_SIZE * 2,
+      interestRadius: CHUNK_SIZE * Math.max(3, lodSettings.terrain.renderDistance + 1),
+      minCellSize: CHUNK_SIZE
+    });
+    return quadtreeSelectionController;
+  }
+
+  function buildGridActiveChunks(centerChunkX, centerChunkZ) {
+    const renderDistance = bootstrapMode ? 0 : lodSettings.terrain.renderDistance;
+    const activeChunks = new Map();
+    const nextBlockingChunkKeys = new Set();
+
+    for (let dx = -renderDistance; dx <= renderDistance; dx++) {
+      for (let dz = -renderDistance; dz <= renderDistance; dz++) {
+        const cx = centerChunkX + dx;
+        const cz = centerChunkZ + dz;
+        const key = `${cx}, ${cz}`;
+        const ringDistance = Math.max(Math.abs(dx), Math.abs(dz));
+        const currentLod = terrainChunks.has(key) ? terrainChunks.get(key).lod : null;
+        const lod = getTargetLod(ringDistance, currentLod);
+        activeChunks.set(key, lod);
+        nextBlockingChunkKeys.add(key);
+      }
+    }
+
+    return { activeChunks, blockingKeys: nextBlockingChunkKeys };
+  }
+
+  function buildQuadtreeActiveChunks(centerChunkX, centerChunkZ) {
+    const controller = ensureQuadtreeSelectionController();
+    if (!controller || bootstrapMode) {
+      return buildGridActiveChunks(centerChunkX, centerChunkZ);
+    }
+
+    const selection = controller.select({
+      cameraX: PHYSICS.position.x,
+      cameraZ: PHYSICS.position.z
+    });
+    const activeChunks = new Map();
+
+    for (const key of selection.requiredChunkKeys) {
+      const [cxRaw, czRaw] = key.split(',');
+      const cx = Number(cxRaw.trim());
+      const cz = Number(czRaw.trim());
+      if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
+      const ringDistance = Math.max(Math.abs(cx - centerChunkX), Math.abs(cz - centerChunkZ));
+      const currentLod = terrainChunks.has(key) ? terrainChunks.get(key).lod : null;
+      activeChunks.set(key, getTargetLod(ringDistance, currentLod));
+    }
+
+    return {
+      activeChunks,
+      blockingKeys: new Set(selection.blockingChunkKeys)
+    };
+  }
+
   function removePendingPropJobs(key) {
     if (!pendingPropKeys.has(key)) return;
     for (let i = pendingPropBuilds.length - 1; i >= 0; i--) {
@@ -419,19 +493,19 @@ export function createTerrainSystem({
     lastProcessedChunkX = px;
     lastProcessedChunkZ = pz;
 
-    const renderDistance = bootstrapMode ? 0 : lodSettings.terrain.renderDistance;
+    const selectionState = buildQuadtreeActiveChunks(px, pz);
+    const activeChunks = selectionState.activeChunks;
+    blockingChunkKeys = selectionState.blockingKeys;
 
-    const activeChunks = new Map();
-
-    for (let dx = -renderDistance; dx <= renderDistance; dx++) {
-      for (let dz = -renderDistance; dz <= renderDistance; dz++) {
-        const cx = px + dx; const cz = pz + dz; const key = `${cx}, ${cz}`;
-        const ringDistance = Math.max(Math.abs(dx), Math.abs(dz));
-        const currentLod = terrainChunks.has(key) ? terrainChunks.get(key).lod : null;
-        const lod = getTargetLod(ringDistance, currentLod);
-        activeChunks.set(key, lod);
-        if (!terrainChunks.has(key)) enqueueChunkBuild(cx, cz, lod, ringDistance);
-        else { const chunkState = terrainChunks.get(key); if (chunkState.lod !== lod) enqueueChunkBuild(cx, cz, lod, ringDistance + 0.25); }
+    for (const [key, lod] of activeChunks.entries()) {
+      const [cxRaw, czRaw] = key.split(',');
+      const cx = Number(cxRaw.trim());
+      const cz = Number(czRaw.trim());
+      const ringDistance = Math.max(Math.abs(cx - px), Math.abs(cz - pz));
+      if (!terrainChunks.has(key)) enqueueChunkBuild(cx, cz, lod, ringDistance);
+      else {
+        const chunkState = terrainChunks.get(key);
+        if (chunkState.lod !== lod) enqueueChunkBuild(cx, cz, lod, ringDistance + 0.25);
       }
     }
 
@@ -719,11 +793,18 @@ export function createTerrainSystem({
     const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
     if (px !== lastProcessedChunkX || pz !== lastProcessedChunkZ) return false;
 
-    // Queues must be empty
-    if (pendingChunkKeys.size > 0 || pendingPropKeys.size > 0) return false;
+    const readyKeys = blockingChunkKeys.size > 0 ? blockingChunkKeys : new Set(terrainChunks.keys());
+
+    for (const key of pendingChunkKeys) {
+      if (readyKeys.has(key)) return false;
+    }
+    for (const key of pendingPropKeys) {
+      if (readyKeys.has(key)) return false;
+    }
 
     let blocking = [];
     for (const [key, state] of terrainChunks.entries()) {
+      if (!readyKeys.has(key)) continue;
       if (state.state !== 'done' || !state.group) {
         blocking.push(`${key}:${state.state}`);
       }
