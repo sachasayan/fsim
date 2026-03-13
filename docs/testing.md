@@ -51,3 +51,8 @@ The browser perf E2E writes a JSON artifact with:
 - Chromium performance metrics gathered through Playwright CDP
 
 Use it as machine-local regression feedback and as structured input for LLM analysis.
+
+The perf capture intentionally waits for startup to settle before sampling:
+
+- prefer the in-app bootstrap / loader completion signal
+- always allow a 10 second in-game settle window before profiling starts

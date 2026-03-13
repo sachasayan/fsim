@@ -32,7 +32,43 @@ test.describe('fsim perf e2e', () => {
                 window.fsimPerf != null
             );
         }, null, { timeout: 45_000 });
-        await page.waitForTimeout(4_000);
+        await page.evaluate(async () => {
+            const start = performance.now();
+            const maxWaitMs = 10_000;
+
+            function isSettled() {
+                const loader = document.getElementById('loader');
+                const loaderGone = loader
+                    ? getComputedStyle(loader).display === 'none'
+                    : true;
+                return Boolean(
+                    window.fsimWorld?.bootstrapComplete === true ||
+                    window.fsimWorld?.loaderHidden === true ||
+                    loaderGone
+                );
+            }
+
+            if (isSettled()) {
+                await new Promise(resolve => setTimeout(resolve, maxWaitMs));
+                return;
+            }
+
+            await new Promise(resolve => {
+                function tick() {
+                    if (isSettled() || (performance.now() - start) >= maxWaitMs) {
+                        resolve();
+                        return;
+                    }
+                    requestAnimationFrame(tick);
+                }
+                tick();
+            });
+
+            const elapsed = performance.now() - start;
+            if (elapsed < maxWaitMs) {
+                await new Promise(resolve => setTimeout(resolve, maxWaitMs - elapsed));
+            }
+        });
 
         await page.evaluate(() => {
             window.fsimWorld.cameraController.setRotation(0.35, -0.25);
@@ -47,6 +83,7 @@ test.describe('fsim perf e2e', () => {
             warmupFrames: 20,
             sampleFrames: 30,
             metadata: {
+                settleDelayMs: 10_000,
                 cameraMode: window.fsimWorld.cameraController.getMode(),
                 aircraftPosition: {
                     x: window.fsimWorld.PHYSICS.position.x,

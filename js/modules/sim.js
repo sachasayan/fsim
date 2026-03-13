@@ -229,6 +229,8 @@ window.fsimWorld = {
   getShaderValidationReport,
   getShaderValidationSummary,
   getShaderValidationVariants,
+  bootstrapComplete: false,
+  loaderHidden: false,
   shaderValidation: getShaderValidationReport(),
   shaderValidationSummary: getShaderValidationSummary()
 };
@@ -683,6 +685,7 @@ let loaderHidden = false;
 function hideLoader() {
   if (loaderHidden) return;
   loaderHidden = true;
+  window.fsimWorld.loaderHidden = true;
   const loader = document.getElementById('loader');
   if (!loader) return;
   debugLog('Hiding loader...');
@@ -772,6 +775,7 @@ setTimeout(() => {
   });
   waitForStartupReady({ warmupPromise }).then(() => {
     completeBootstrap();
+    window.fsimWorld.bootstrapComplete = true;
     updateTerrain();
     hideLoader();
   });
