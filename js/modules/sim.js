@@ -19,6 +19,7 @@ import { ProceduralAudio } from './audio/AudioSystem.js';
 import { initLiveReload } from './core/LiveReload.js';
 import { startLoaderTips } from './ui/LoaderTips.js';
 import { debugLog } from './core/logging.js';
+import { createCrashSystem, evaluateCrashImpact } from './crash/CrashSystem.js';
 
 // Initialize audio nodes early (will be suspended until gesture)
 ProceduralAudio.init();
@@ -106,6 +107,7 @@ const {
   gearGroup,
   strobes,
   beacons,
+  getBreakupPieceSpecs,
   updateAircraftLOD,
   updateControlSurfaces,
   isReady,
@@ -247,6 +249,9 @@ const tmpTipVel = new THREE.Vector3();
 const tmpSlewForward = new THREE.Vector3();
 const tmpSlewRight = new THREE.Vector3();
 const tmpSlewUp = new THREE.Vector3();
+const tmpImpactVel = new THREE.Vector3();
+const tmpImpactAngVel = new THREE.Vector3();
+const tmpFocusPos = new THREE.Vector3();
 
 const prevPhysicsPos = new THREE.Vector3();
 const prevPhysicsQuat = new THREE.Quaternion();
@@ -262,6 +267,25 @@ let currentShadowMapSize = SHADOW_MAP_NEAR;
 
 const PHYSICS_STEP = 1 / 75;
 const MAX_PHYSICS_STEPS_PER_FRAME = 4;
+const spawnState = {
+  x: 0,
+  y: AIRCRAFT.gearHeight,
+  z: 1900
+};
+
+const crashSystem = createCrashSystem({
+  scene,
+  physicsAdapter,
+  getTerrainHeight,
+  planeGroup,
+  AIRCRAFT,
+  PHYSICS,
+  spawnParticle,
+  getBreakupPieceSpecs,
+  onResetRequested: () => {
+    window.resetFlight();
+  }
+});
 
 function updateSlewMode(dt) {
   const slewStep = debugView.slewSpeed * dt;
@@ -298,30 +322,13 @@ function updateSlewMode(dt) {
 
 // --- CRASH LOGIC & RESET ---
 window.triggerCrash = function (reason) {
-  if (PHYSICS.crashed) return;
-  PHYSICS.crashed = true;
-  PHYSICS.throttle = 0;
-  PHYSICS.velocity.multiplyScalar(0.2);
-
-  document.getElementById('dashboard').style.opacity = '0.3';
-  document.getElementById('crash-screen').style.display = 'flex';
-  document.getElementById('crash-reason').innerText = "CAUSE: " + reason;
-
-  for (let i = 0; i < 300; i++) {
-    let pVel = PHYSICS.velocity.clone().multiplyScalar(0.3).add(new THREE.Vector3((Math.random() - 0.5) * 80, Math.random() * 100, (Math.random() - 0.5) * 80));
-    let size = 20 + Math.random() * 40;
-    let life = 3 + Math.random() * 6;
-    if (Math.random() > 0.4) {
-      spawnParticle(planeGroup.position, pVel, size, 25, life, 1.0, 0.2 + Math.random() * 0.3, 0.0);
-    } else {
-      spawnParticle(planeGroup.position, pVel.multiplyScalar(0.5), size, 40, life * 1.5, 0.05, 0.05, 0.05);
-    }
-  }
+  if (PHYSICS.crashState !== 'active') return;
+  crashSystem.beginCrash({ reason });
 };
 
 window.resetFlight = function () {
-  PHYSICS.crashed = false;
-  PHYSICS.position.set(0, AIRCRAFT.gearHeight, 1900);
+  crashSystem.endCrash();
+  PHYSICS.position.set(spawnState.x, spawnState.y, spawnState.z);
   PHYSICS.velocity.set(0, 0, 0);
   PHYSICS.quaternion.identity();
   PHYSICS.angularVelocity.set(0, 0, 0);
@@ -336,9 +343,10 @@ window.resetFlight = function () {
   PHYSICS.gearDown = true;
   PHYSICS.gearTransition = 1.0;
   PHYSICS.brakes = false;
-
-  document.getElementById('dashboard').style.opacity = '1.0';
-  document.getElementById('crash-screen').style.display = 'none';
+  PHYSICS.onGround = true;
+  PHYSICS.impactSpeed = 0;
+  PHYSICS.impactVerticalSpeed = 0;
+  PHYSICS.impactAngularSpeed = 0;
 
   for (let i = 0; i < MAX_PARTICLES; i++) particles[i].active = false;
   resetTokens();
@@ -472,38 +480,26 @@ function animate() {
   while (!debugView.slewMode && runtime.physicsAccumulator >= PHYSICS_STEP && physicsSteps < MAX_PHYSICS_STEPS_PER_FRAME) {
     prevPhysicsPos.copy(PHYSICS.position);
     prevPhysicsQuat.copy(PHYSICS.quaternion);
+    tmpImpactVel.copy(PHYSICS.velocity);
+    tmpImpactAngVel.copy(PHYSICS.angularVelocity);
+    const wasOnGround = PHYSICS.onGround;
 
     PHYSICS.dt = PHYSICS_STEP;
-    if (!PHYSICS.crashed) {
+    if (PHYSICS.crashState === 'active') {
       calculateAerodynamics({
         THREE, PHYSICS, AIRCRAFT, WEATHER, keys,
         getTerrainHeight, gearGroup, planeGroup, Noise
       });
-    } else if (!PHYSICS.onGround) {
-      PHYSICS.velocity.y -= PHYSICS.gravity * PHYSICS_STEP;
-      PHYSICS.position.add(tmpTouchVel.copy(PHYSICS.velocity).multiplyScalar(PHYSICS_STEP));
-      PHYSICS.quaternion.multiply(
-        tmpCrashSpinQuat.setFromEuler(
-          tmpCrashSpinEuler.set(Math.random() * 0.1, Math.random() * 0.1, Math.random() * 0.1)
-        )
-      ).normalize();
-
-      const terrainY = getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z);
-      if (PHYSICS.position.y <= terrainY + AIRCRAFT.gearHeight) {
-        PHYSICS.position.y = terrainY + AIRCRAFT.gearHeight;
-        PHYSICS.onGround = true;
-        PHYSICS.velocity.set(0, 0, 0);
-      }
     }
 
-    if (PHYSICS.crashed) {
+    if (PHYSICS.crashState !== 'active') {
       PHYSICS.externalForce.set(0, 0, 0);
       PHYSICS.externalTorque.set(0, 0, 0);
     }
 
     physicsAdapter.step(PHYSICS_STEP);
 
-    const terrainFloorY = (PHYSICS.crashed && PHYSICS.onGround)
+    const terrainFloorY = (PHYSICS.crashState !== 'active' && PHYSICS.onGround)
       ? PHYSICS.position.y
       : getTerrainHeight(PHYSICS.position.x, PHYSICS.position.z) + AIRCRAFT.gearHeight;
 
@@ -515,7 +511,27 @@ function animate() {
 
     const agl = PHYSICS.position.y - terrainFloorY;
     const stickyGround = PHYSICS.onGround && agl < 0.45 && PHYSICS.velocity.y <= 1.2;
-    PHYSICS.onGround = agl < 0.25 || stickyGround;
+    if (PHYSICS.crashState === 'active') {
+      PHYSICS.onGround = agl < 0.25 || stickyGround;
+    }
+
+    if (PHYSICS.crashState === 'active') {
+      const impact = evaluateCrashImpact({
+        wasOnGround,
+        isOnGround: PHYSICS.onGround,
+        velocity: tmpImpactVel,
+        angularVelocity: tmpImpactAngVel,
+        quaternion: PHYSICS.quaternion
+      });
+      PHYSICS.impactSpeed = impact.impactSpeed;
+      PHYSICS.impactVerticalSpeed = impact.impactVerticalSpeed;
+      PHYSICS.impactAngularSpeed = impact.impactAngularSpeed;
+      if (impact.triggered) {
+        crashSystem.beginCrash({ reason: impact.reason });
+      }
+    } else {
+      crashSystem.update(PHYSICS_STEP);
+    }
 
     physicsSteps++;
     runtime.physicsAccumulator -= PHYSICS_STEP;
@@ -545,7 +561,7 @@ function animate() {
 
   // Shadow centering
   tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
-  const shadowCenter = planeGroup.position;
+  const shadowCenter = crashSystem.getFocusPosition(tmpFocusPos);
   dirLight.target.position.copy(shadowCenter);
   dirLight.target.updateMatrixWorld();
   dirLight.position.copy(shadowCenter).addScaledVector(tmpShadowSunDir, 2000);
@@ -641,6 +657,9 @@ setTimeout(() => {
   const spawnX = urlParams.has('x') ? parseFloat(urlParams.get('x')) : 0;
   const spawnY = urlParams.has('y') ? parseFloat(urlParams.get('y')) : AIRCRAFT.gearHeight;
   const spawnZ = urlParams.has('z') ? parseFloat(urlParams.get('z')) : 1900;
+  spawnState.x = spawnX;
+  spawnState.y = spawnY;
+  spawnState.z = spawnZ;
 
   if (urlParams.get('fog') === '0') {
     WEATHER.targetFog = 0;

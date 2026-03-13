@@ -8,6 +8,7 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
   let collider = null;
   let runwayCollider = null;
   let needsSyncFromState = false;
+  let mainBodyActive = true;
 
   async function init() {
     try {
@@ -107,28 +108,47 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
 
   function step(dt) {
     if (!rapier || !body || !RAPIER) return;
-    if (needsSyncFromState) syncFromState();
+    if (mainBodyActive && needsSyncFromState) syncFromState();
 
     body.resetForces(true);
     body.resetTorques(true);
-    body.addForce(PHYSICS.externalForce, true);
-    body.addTorque(PHYSICS.externalTorque, true);
+    if (mainBodyActive) {
+      body.addForce(PHYSICS.externalForce, true);
+      body.addTorque(PHYSICS.externalTorque, true);
+    } else {
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
     rapier.step(dt);
 
-    const p = body.translation();
-    const q = body.rotation();
-    const lv = body.linvel();
-    const av = body.angvel();
-    PHYSICS.position.set(p.x, p.y, p.z);
-    PHYSICS.quaternion.set(q.x, q.y, q.z, q.w);
-    PHYSICS.velocity.set(lv.x, lv.y, lv.z);
-    PHYSICS.angularVelocity.set(av.x, av.y, av.z);
+    if (mainBodyActive) {
+      const p = body.translation();
+      const q = body.rotation();
+      const lv = body.linvel();
+      const av = body.angvel();
+      PHYSICS.position.set(p.x, p.y, p.z);
+      PHYSICS.quaternion.set(q.x, q.y, q.z, q.w);
+      PHYSICS.velocity.set(lv.x, lv.y, lv.z);
+      PHYSICS.angularVelocity.set(av.x, av.y, av.z);
+    }
 
   }
   return {
     init,
     step,
     syncFromState,
+    setMainBodyActive: (active) => {
+      mainBodyActive = active;
+      needsSyncFromState = active;
+      if (!body) return;
+      if (!active) {
+        body.resetForces(true);
+        body.resetTorques(true);
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+    },
+    isMainBodyActive: () => mainBodyActive,
     getRapier: () => rapier,
     getBody: () => body,
     getCollider: () => collider,

@@ -39,7 +39,14 @@ export function createSimulationState({ scene }) {
     heightAgl: 0,
     isStalling: false,
     onGround: true,
-    crashed: false
+    crashed: false,
+    crashState: 'active',
+    crashTimer: 0,
+    crashReason: '',
+    impactSpeed: 0,
+    impactVerticalSpeed: 0,
+    impactAngularSpeed: 0,
+    resetDelaySeconds: 5
   };
 
   const presetId = pickLightingPresetId();

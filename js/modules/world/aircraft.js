@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { AIRCRAFT_BREAKUP_PIECES } from './aircraft_breakup.js';
 
 export function createAircraftSystem({ scene }) {
   const planeGroup = new THREE.Group();
@@ -12,6 +13,8 @@ export function createAircraftSystem({ scene }) {
   const gearGroup = new THREE.Group();
   const strobes = [];
   const beacons = [];
+  const breakupSourceLookup = new Map();
+  let breakupPieceSpecs = [];
 
   // We'll add the loaded model to a wrapper so we can scale/rotate it
   const modelWrapper = new THREE.Group();
@@ -33,7 +36,12 @@ export function createAircraftSystem({ scene }) {
   ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf, AIRCRAFT_CONFIG]) => {
     const model = mainGltf.scene;
 
-    const extractGearCluster = (scene, partsList, center, axis) => {
+    const registerBreakupSource = (name, object) => {
+      if (!name || !object) return;
+      breakupSourceLookup.set(name.toLowerCase(), object);
+    };
+
+    const extractGearCluster = (scene, partsList, center, axis, breakupAlias = null) => {
       const cluster = new THREE.Group();
       const extractedChildren = [];
 
@@ -74,11 +82,12 @@ export function createAircraftSystem({ scene }) {
       meshOffset.add(cluster);
 
       model.add(restGroup);
+      if (breakupAlias) registerBreakupSource(breakupAlias, animGroup);
       return animGroup;
     };
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(noseGltf.scene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar'], [-15.5, 0, -1.22], [0, 1, 0]),
+      animGroup: extractGearCluster(noseGltf.scene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar'], [-15.5, 0, -1.22], [0, 1, 0], 'gear_nose'),
       type: 'nose'
     });
 
@@ -93,12 +102,12 @@ export function createAircraftSystem({ scene }) {
     });
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(lwingGltf.scene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag'], [-7.2, -2.88, -0.6], [1, 0, 0]),
+      animGroup: extractGearCluster(lwingGltf.scene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag'], [-7.2, -2.88, -0.6], [1, 0, 0], 'gear_main_lh'),
       type: 'mainLH'
     });
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(rwingGltf.scene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag'], [-7.2, 2.88, -0.6], [1, 0, 0]),
+      animGroup: extractGearCluster(rwingGltf.scene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag'], [-7.2, 2.88, -0.6], [1, 0, 0], 'gear_main_rh'),
       type: 'mainRH'
     });
 
@@ -167,6 +176,7 @@ export function createAircraftSystem({ scene }) {
 
         const name = child.name ? child.name.toLowerCase() : '';
         if (!name) return;
+        registerBreakupSource(name, child);
 
         // Hide floating boxes/artifacts that were exported with the model
         if (name === 'circle_006' || name.startsWith('a-light') || name.startsWith('eexit') || name.startsWith('slat')) {
@@ -228,6 +238,29 @@ export function createAircraftSystem({ scene }) {
     pendingPivots.spoilers.forEach(c => movableSurfaces.spoilers.push(makePivot(c)));
 
     modelWrapper.add(gearGroup); // Placeholder for future gear integration
+
+    breakupPieceSpecs = AIRCRAFT_BREAKUP_PIECES.map((piece) => {
+      const sourceObjects = piece.sourceNodeNames
+        .map((name) => breakupSourceLookup.get(name.toLowerCase()))
+        .filter(Boolean);
+      if (sourceObjects.length === 0) return null;
+
+      const first = sourceObjects[0];
+      first.updateWorldMatrix(true, false);
+      const localPosition = new THREE.Vector3();
+      const localQuaternion = new THREE.Quaternion();
+      const localScale = new THREE.Vector3();
+      const planeInverse = new THREE.Matrix4().copy(planeGroup.matrixWorld).invert();
+      const relative = new THREE.Matrix4().multiplyMatrices(planeInverse, first.matrixWorld);
+      relative.decompose(localPosition, localQuaternion, localScale);
+
+      return {
+        ...piece,
+        sourceObjects,
+        localPosition,
+        localQuaternion
+      };
+    }).filter(Boolean);
   });
 
   const lightBulbGeo = new THREE.SphereGeometry(0.15, 10, 10);
@@ -342,6 +375,7 @@ export function createAircraftSystem({ scene }) {
     gearGroup,
     strobes,
     beacons,
+    getBreakupPieceSpecs: () => breakupPieceSpecs,
     updateAircraftLOD,
     updateControlSurfaces
   };
