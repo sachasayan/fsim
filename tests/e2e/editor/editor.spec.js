@@ -103,4 +103,61 @@ test.describe('editor e2e', () => {
         expect(state.dirty).toBe(false);
         expect(state.serialized.mapPayload.cities[0].center[1]).toBe(1100);
     });
+
+    test('clicking a selected terrain vertex edits it instead of starting a new terrain stroke', async ({ page }) => {
+        await gotoEditor(page);
+
+        const before = await page.evaluate(() => {
+            const store = window.__EDITOR_TEST__.store;
+            const result = store.runCommand({
+                type: 'create-terrain-stroke',
+                worldPos: { x: 0, z: 0 },
+                tool: 'terrain-raise'
+            }, {
+                context: {
+                    terrainStrokeDeps: {
+                        terrainBrush: store.getState().tools.terrainBrush,
+                        sampleTerrainHeight: () => 0,
+                        tileManager: { invalidateWorldRect() {} }
+                    }
+                }
+            });
+
+            store.runCommand({
+                type: 'append-terrain-point',
+                entityId: result.selectionId,
+                worldPos: { x: 400, z: 0 }
+            });
+            store.dispatch({ type: 'set-selection', selectedId: result.selectionId });
+            store.dispatch({ type: 'set-tool', tool: 'terrain-raise' });
+
+            return {
+                terrainCount: store.getState().document.worldData.terrainEdits.length,
+                selectedId: result.selectionId
+            };
+        });
+
+        const canvas = page.getByTestId('map-canvas');
+        const box = await canvas.boundingBox();
+        expect(box).not.toBeNull();
+        await canvas.click({
+            position: {
+                x: Math.round(box.width / 2),
+                y: Math.round(box.height / 2)
+            }
+        });
+
+        const after = await page.evaluate(() => {
+            const store = window.__EDITOR_TEST__.store;
+            return {
+                currentTool: store.getState().tools.currentTool,
+                selectedId: store.getState().selection.selectedId,
+                terrainCount: store.getState().document.worldData.terrainEdits.length
+            };
+        });
+
+        expect(after.currentTool).toBe('edit-poly');
+        expect(after.selectedId).toBe(before.selectedId);
+        expect(after.terrainCount).toBe(before.terrainCount);
+    });
 });

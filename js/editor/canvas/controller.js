@@ -85,6 +85,15 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         }, 2200);
     }
 
+    function beginVertexDrag(selectedId, hitIndex, nextTool = null) {
+        if (nextTool) {
+            store.dispatch({ type: 'set-tool', tool: nextTool });
+        }
+        dragMode = 'vertex';
+        isDragging = true;
+        store.dispatch({ type: 'set-active-vertex', activeVertex: { entityId: selectedId, index: hitIndex } });
+    }
+
     function render() {
         renderEditorScene(ctx, canvas, tileManager, store.getState());
     }
@@ -169,13 +178,19 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
 
             const selected = getEntityById(state.document, state.selection.selectedId);
-            if (state.tools.currentTool === 'edit-poly' && selected?.points) {
+            if (selected?.points) {
                 const hitIndex = getVertexHitIndex(selected.points, world, VERTEX_HIT_RADIUS_PX / state.viewport.zoom);
                 if (hitIndex !== -1) {
-                    dragMode = 'vertex';
-                    isDragging = true;
-                    store.dispatch({ type: 'set-active-vertex', activeVertex: { entityId: state.selection.selectedId, index: hitIndex } });
-                    return;
+                    const canEditVertex = state.tools.currentTool === 'edit-poly'
+                        || (state.tools.currentTool.startsWith('terrain-') && isTerrainEdit(selected));
+                    if (canEditVertex) {
+                        beginVertexDrag(
+                            state.selection.selectedId,
+                            hitIndex,
+                            state.tools.currentTool === 'edit-poly' ? null : 'edit-poly'
+                        );
+                        return;
+                    }
                 }
             }
 

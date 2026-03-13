@@ -75,7 +75,11 @@ export function createEditorStore(initialDocument) {
             selection: {
                 ...current.selection,
                 selectedId: result.selectionId ?? current.selection.selectedId,
-                activeVertex: null
+                activeVertex: command.type === 'move-vertex'
+                    && current.selection.activeVertex?.entityId === command.entityId
+                    && current.selection.activeVertex?.index === command.vertexIndex
+                    ? current.selection.activeVertex
+                    : null
             },
             history: {
                 undoStack: coalesceKey && current.history.lastCoalesceKey === coalesceKey
