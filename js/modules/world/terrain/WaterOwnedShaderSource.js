@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { createOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 
 import {
-    applyDistanceAtmosphereShaderPatch,
+    applyWaterSurfaceColorShaderPatch,
     applyWaterDualScrollShaderPatch,
-    createDistanceAtmosphereUniformBindings,
-    createWaterDualScrollUniformBindings
+    createWaterDualScrollUniformBindings,
+    createWaterSurfaceUniformBindings
 } from './TerrainShaderPatches.js';
 
 const SOURCE_CACHE = new Map();
@@ -16,6 +16,20 @@ const ATMOSPHERE_UNIFORM_KEYS = [
     'uAtmosColor',
     'uAtmosNear',
     'uAtmosFar'
+];
+
+const WATER_SURFACE_UNIFORM_KEYS = [
+    'uWaterDepthTex',
+    'uWaterBoundsMin',
+    'uWaterBoundsSize',
+    'uWaterDepthScale',
+    'uWaterFoamDepth',
+    'uWaterShallowStart',
+    'uWaterShallowEnd',
+    'uWaterDeepEnd',
+    'uWaterFoamColor',
+    'uWaterShallowColor',
+    'uWaterDeepColor'
 ];
 
 function makePlaceholderUniformMap(keys) {
@@ -30,8 +44,9 @@ function buildWaterOwnedShaderSource({ isFarLOD = false, strength = 0.74, desat 
         fragmentShader: isFarLOD ? THREE.ShaderLib.basic.fragmentShader : THREE.ShaderLib.standard.fragmentShader
     };
 
-    applyDistanceAtmosphereShaderPatch(shader, {
+    applyWaterSurfaceColorShaderPatch(shader, {
         atmosphereUniforms: makePlaceholderUniformMap(ATMOSPHERE_UNIFORM_KEYS),
+        waterSurfaceUniforms: makePlaceholderUniformMap(WATER_SURFACE_UNIFORM_KEYS),
         strength,
         desat
     });
@@ -57,10 +72,8 @@ export function getWaterOwnedShaderSource({ isFarLOD = false, strength = 0.74, d
     return SOURCE_CACHE.get(cacheKey);
 }
 
-export function getWaterOwnedUniformBindings({ atmosphereUniforms, timeUniform = null, isFarLOD = false }) {
-    const bindings = {
-        ...createDistanceAtmosphereUniformBindings(atmosphereUniforms)
-    };
+export function getWaterOwnedUniformBindings({ atmosphereUniforms, waterSurfaceUniforms, timeUniform = null, isFarLOD = false }) {
+    const bindings = createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfaceUniforms);
 
     if (!isFarLOD) {
         if (!timeUniform) {
@@ -92,9 +105,10 @@ export function getWaterShaderDescriptor({ isFarLOD = false, strength = 0.74, de
                 dualScroll: !isFarLOD
             },
             source: getWaterOwnedShaderSource({ isFarLOD, strength, desat }),
-            uniformBindings({ atmosphereUniforms, timeUniform = null }) {
+            uniformBindings({ atmosphereUniforms, waterSurfaceUniforms, timeUniform = null }) {
                 return getWaterOwnedUniformBindings({
                     atmosphereUniforms,
+                    waterSurfaceUniforms,
                     timeUniform,
                     isFarLOD
                 });

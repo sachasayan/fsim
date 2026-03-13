@@ -58,6 +58,26 @@ export function createWaterDualScrollUniformBindings(timeUniform) {
     };
 }
 
+export function createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfaceUniforms) {
+    return {
+        uAtmosCameraPos: atmosphereUniforms.uAtmosCameraPos,
+        uAtmosColor: atmosphereUniforms.uAtmosColor,
+        uAtmosNear: atmosphereUniforms.uAtmosNear,
+        uAtmosFar: atmosphereUniforms.uAtmosFar,
+        uWaterDepthTex: waterSurfaceUniforms.uWaterDepthTex,
+        uWaterBoundsMin: waterSurfaceUniforms.uWaterBoundsMin,
+        uWaterBoundsSize: waterSurfaceUniforms.uWaterBoundsSize,
+        uWaterDepthScale: waterSurfaceUniforms.uWaterDepthScale,
+        uWaterFoamDepth: waterSurfaceUniforms.uWaterFoamDepth,
+        uWaterShallowStart: waterSurfaceUniforms.uWaterShallowStart,
+        uWaterShallowEnd: waterSurfaceUniforms.uWaterShallowEnd,
+        uWaterDeepEnd: waterSurfaceUniforms.uWaterDeepEnd,
+        uWaterFoamColor: waterSurfaceUniforms.uWaterFoamColor,
+        uWaterShallowColor: waterSurfaceUniforms.uWaterShallowColor,
+        uWaterDeepColor: waterSurfaceUniforms.uWaterDeepColor
+    };
+}
+
 export function createBuildingPopInUniformBindings(cameraPosUniform, fadeNear = 6800, fadeFar = 7800) {
     return {
         uBldgCameraPos: cameraPosUniform,
@@ -108,6 +128,80 @@ float atmosLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(atmosLuma), ${desat.toFixed(4)} * atmosMix);
 diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix); `,
         'distance atmosphere diffuseColor assignment'
+    );
+
+    return shader;
+}
+
+export function applyWaterSurfaceColorShaderPatch(shader, {
+    atmosphereUniforms,
+    waterSurfaceUniforms,
+    strength = 0.74,
+    desat = 0.08
+}) {
+    Object.assign(shader.uniforms, createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfaceUniforms));
+
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'common',
+        '#include <common>\nvarying vec3 vWaterWorldPos;'
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'worldpos_vertex',
+        `#include <worldpos_vertex>
+    vec4 waterWorldPos = modelMatrix * vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+waterWorldPos = instanceMatrix * waterWorldPos;
+#endif
+vWaterWorldPos = waterWorldPos.xyz; `
+    );
+
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'common',
+        `#include <common>
+varying vec3 vWaterWorldPos;
+uniform vec3 uAtmosCameraPos;
+uniform vec3 uAtmosColor;
+uniform float uAtmosNear;
+uniform float uAtmosFar;
+uniform sampler2D uWaterDepthTex;
+uniform vec2 uWaterBoundsMin;
+uniform vec2 uWaterBoundsSize;
+uniform float uWaterDepthScale;
+uniform float uWaterFoamDepth;
+uniform float uWaterShallowStart;
+uniform float uWaterShallowEnd;
+uniform float uWaterDeepEnd;
+uniform vec3 uWaterFoamColor;
+uniform vec3 uWaterShallowColor;
+uniform vec3 uWaterDeepColor;
+
+vec3 resolveWaterColor(float depth) {
+    if (depth < uWaterFoamDepth) return uWaterFoamColor;
+    if (depth < uWaterShallowStart) {
+        float t = smoothstep(uWaterFoamDepth, uWaterShallowStart, depth);
+        return mix(uWaterFoamColor, uWaterShallowColor, t);
+    }
+    if (depth < uWaterShallowEnd) return uWaterShallowColor;
+    float t = smoothstep(uWaterShallowEnd, uWaterDeepEnd, depth);
+    return mix(uWaterShallowColor, uWaterDeepColor, t);
+}`
+    );
+    shader.fragmentShader = replaceShaderSnippet(
+        shader.fragmentShader,
+        DIFFUSE_COLOR_SNIPPET,
+        `vec2 waterUv = clamp((vWaterWorldPos.xz - uWaterBoundsMin) / max(uWaterBoundsSize, vec2(0.0001)), 0.0, 1.0);
+float waterDepth = texture2D(uWaterDepthTex, waterUv).r * uWaterDepthScale;
+vec3 waterBaseColor = resolveWaterColor(waterDepth);
+vec4 diffuseColor = vec4(waterBaseColor, opacity);
+float atmosDist = distance(vWaterWorldPos, uAtmosCameraPos);
+float atmosMix = smoothstep(uAtmosNear, uAtmosFar, atmosDist) * ${strength.toFixed(4)};
+float atmosLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(atmosLuma), ${desat.toFixed(4)} * atmosMix);
+diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`,
+        'water world-space color assignment'
     );
 
     return shader;

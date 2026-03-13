@@ -10,8 +10,10 @@ export const TERRAIN_HEIGHT_BANDS = {
 };
 
 export const WATER_DEPTH_BANDS = {
-    foam: 2,
-    blue: 25
+    foam: 1,
+    shallowStart: 2,
+    shallowEnd: 10,
+    deepEnd: 25
 };
 
 const TERRAIN_COLORS = {
@@ -61,11 +63,19 @@ export function getTerrainBaseSrgb(height) {
 
 export function getWaterDepthSrgb(depth) {
     if (depth < WATER_DEPTH_BANDS.foam) return WATER_COLORS.foam;
-    if (depth < WATER_DEPTH_BANDS.blue) {
+    if (depth < WATER_DEPTH_BANDS.shallowStart) {
         return lerpColor(
             WATER_COLORS.foam,
             WATER_COLORS.blue,
-            Math.pow((depth - WATER_DEPTH_BANDS.foam) / (WATER_DEPTH_BANDS.blue - WATER_DEPTH_BANDS.foam), 0.6)
+            Math.pow((depth - WATER_DEPTH_BANDS.foam) / (WATER_DEPTH_BANDS.shallowStart - WATER_DEPTH_BANDS.foam), 0.6)
+        );
+    }
+    if (depth < WATER_DEPTH_BANDS.shallowEnd) return WATER_COLORS.blue;
+    if (depth < WATER_DEPTH_BANDS.deepEnd) {
+        return lerpColor(
+            WATER_COLORS.blue,
+            WATER_COLORS.deep,
+            Math.pow((depth - WATER_DEPTH_BANDS.shallowEnd) / (WATER_DEPTH_BANDS.deepEnd - WATER_DEPTH_BANDS.shallowEnd), 0.7)
         );
     }
     return WATER_COLORS.deep;

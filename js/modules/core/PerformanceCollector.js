@@ -229,7 +229,16 @@ export function createPerformanceCollector({
                 lastProgramsChangeMsAgo: round(profiling.lastProgramsChangeMsAgo),
                 lastTexturesChangeMsAgo: round(profiling.lastTexturesChangeMsAgo),
                 lastGeometriesChangeMsAgo: round(profiling.lastGeometriesChangeMsAgo),
-                quietWindowMs: round(profiling.quietWindowMs)
+                quietWindowMs: round(profiling.quietWindowMs),
+                terrainSelection: profiling.terrainSelection ? {
+                    mode: profiling.terrainSelection.mode ?? null,
+                    selectedLeafCount: profiling.terrainSelection.selectedLeafCount ?? null,
+                    blockingLeafCount: profiling.terrainSelection.blockingLeafCount ?? null,
+                    pendingBlockingLeafCount: profiling.terrainSelection.pendingBlockingLeafCount ?? null,
+                    activeChunkCount: profiling.terrainSelection.activeChunkCount ?? null,
+                    blockingChunkCount: profiling.terrainSelection.blockingChunkCount ?? null,
+                    selectedNodeCount: profiling.terrainSelection.selectedNodeCount ?? null
+                } : null
             },
             renderPasses: {
                 scene: round(renderPassTimings.renderScene),
@@ -331,7 +340,18 @@ export function createPerformanceCollector({
                 lastTexturesChangeMsAgo: round(profiling.lastTexturesChangeMsAgo),
                 lastGeometriesChangeMsAgo: round(profiling.lastGeometriesChangeMsAgo),
                 quietWindowMs: round(profiling.quietWindowMs),
-                profilingReadyAtMs: round(profiling.profilingReadyAtMs)
+                profilingReadyAtMs: round(profiling.profilingReadyAtMs),
+                terrainSelection: profiling.terrainSelection ? {
+                    mode: profiling.terrainSelection.mode ?? null,
+                    selectedLeafCount: profiling.terrainSelection.selectedLeafCount ?? null,
+                    blockingLeafCount: profiling.terrainSelection.blockingLeafCount ?? null,
+                    pendingBlockingLeafCount: profiling.terrainSelection.pendingBlockingLeafCount ?? null,
+                    activeChunkCount: profiling.terrainSelection.activeChunkCount ?? null,
+                    blockingChunkCount: profiling.terrainSelection.blockingChunkCount ?? null,
+                    selectedNodeCount: profiling.terrainSelection.selectedNodeCount ?? null,
+                    blockingLeafStates: profiling.terrainSelection.blockingLeafStates ?? null,
+                    selectionRegion: profiling.terrainSelection.quadtreeSelectionRegion ?? null
+                } : null
             },
             memory: {
                 usedJsHeapMb: formatBytesToMb(

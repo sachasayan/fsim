@@ -176,6 +176,7 @@ export function setupWaterMaterial(
     atmosphereUniforms,
     timeUniform = null,
     isFarLOD = false,
+    waterSurfaceUniforms = null,
     { strength = 0.74, desat = 0.08 } = {}
 ) {
     if (!isFarLOD && !timeUniform) {
@@ -187,6 +188,7 @@ export function setupWaterMaterial(
         getWaterShaderDescriptor({ isFarLOD, strength, desat }),
         {
             atmosphereUniforms,
+            waterSurfaceUniforms,
             timeUniform
         }
     );

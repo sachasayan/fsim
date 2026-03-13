@@ -5,6 +5,8 @@ const NODE_BRANCH = 0;
 const NODE_LEAF = 1;
 const NODE_EMPTY = 2;
 const LEAF_RESOLUTION = 32;
+const MIN_ALTITUDE = -200;
+const ALTITUDE_RANGE = 2000;
 
 function decodeNodeType(type) {
     if (type === NODE_BRANCH) return 'branch';
@@ -353,6 +355,48 @@ export class QuadtreeMapSampler {
         }
 
         return keys;
+    }
+
+    getLeafHeightBlock(nodeIdx, depth = null) {
+        const node = this.getNode(nodeIdx, depth);
+        if (!node || node.type !== 'leaf' || !Number.isFinite(node.payloadOffset)) {
+            return null;
+        }
+
+        const stride = LEAF_RESOLUTION + 1;
+        return new Uint16Array(this.buffer, node.payloadOffset, stride * stride);
+    }
+
+    decodeLeafHeightSamples(nodeIdx, depth = null) {
+        const node = this.getNode(nodeIdx, depth);
+        if (!node) return null;
+
+        const stride = LEAF_RESOLUTION + 1;
+        if (node.type !== 'leaf') {
+            return {
+                resolution: 1,
+                stride: 2,
+                heights: new Float32Array([
+                    node.avgHeight ?? 0,
+                    node.avgHeight ?? 0,
+                    node.avgHeight ?? 0,
+                    node.avgHeight ?? 0
+                ])
+            };
+        }
+
+        const encoded = this.getLeafHeightBlock(nodeIdx, depth);
+        if (!encoded) return null;
+        const heights = new Float32Array(encoded.length);
+        for (let index = 0; index < encoded.length; index += 1) {
+            heights[index] = (encoded[index] / 65535) * ALTITUDE_RANGE + MIN_ALTITUDE;
+        }
+
+        return {
+            resolution: LEAF_RESOLUTION,
+            stride,
+            heights
+        };
     }
 
     _sampleRecursive(nodeIdx, wx, wz) {

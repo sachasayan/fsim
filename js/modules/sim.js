@@ -96,7 +96,8 @@ const perfCollector = createPerformanceCollector({
       lastTexturesChangeMsAgo: now - profilingState.lastTexturesChangeAtMs,
       lastGeometriesChangeMsAgo: now - profilingState.lastGeometriesChangeAtMs,
       quietWindowMs: profilingState.quietWindowMs,
-      profilingReadyAtMs: profilingState.profilingReadyAtMs
+      profilingReadyAtMs: profilingState.profilingReadyAtMs,
+      terrainSelection: getTerrainSelectionDiagnostics?.() || null
     };
   }
 });
@@ -131,6 +132,9 @@ const {
   getTerrainHeight,
   updateTerrain,
   updateTerrainAtmosphere,
+  getTerrainSelectionDiagnostics,
+  terrainDebugSettings,
+  applyTerrainDebugSettings,
   clouds,
   cloudMaterial,
   updateClouds,
@@ -194,6 +198,63 @@ if (debugGui) {
   terrainFolder.add(worldLodSettings.terrain.ringThresholds, '1', 1, 12, 1).name('LOD1 Ring').onFinishChange(refreshLodState);
   terrainFolder.add(worldLodSettings.terrain.ringThresholds, '2', 2, 16, 1).name('LOD2 Ring').onFinishChange(refreshLodState);
   terrainFolder.add(worldLodSettings.terrain, 'ringHysteresis', 0, 4, 1).name('Ring Hysteresis').onFinishChange(refreshLodState);
+
+  if (terrainDebugSettings && typeof applyTerrainDebugSettings === 'function') {
+    const nativeFolder = lodFolder.addFolder('Native Terrain');
+    nativeFolder.add(terrainDebugSettings, 'selectionInterestRadius', 2000, 60000, 250)
+      .name('Visible Radius')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    nativeFolder.add(terrainDebugSettings, 'selectionBlockingRadius', 250, 12000, 50)
+      .name('Priority Radius')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    nativeFolder.add(terrainDebugSettings, 'selectionMinCellSize', 64, 4000, 32)
+      .name('Min Cell Size')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
+    nativeFolder.add(terrainDebugSettings, 'selectionSplitDistanceFactor', 0.1, 2.0, 0.05)
+      .name('Distance Bias')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    nativeFolder.add(terrainDebugSettings, 'selectionMaxDepth', 1, 10, 1)
+      .name('Max Depth')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
+
+    const bootstrapFolder = nativeFolder.addFolder('Bootstrap');
+    bootstrapFolder.add(terrainDebugSettings, 'bootstrapInterestRadius', 500, 12000, 50)
+      .name('Visible Radius')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    bootstrapFolder.add(terrainDebugSettings, 'bootstrapBlockingRadius', 250, 8000, 50)
+      .name('Priority Radius')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    bootstrapFolder.add(terrainDebugSettings, 'bootstrapMaxSelectedLeaves', 1, 256, 1)
+      .name('Max Leaves')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    bootstrapFolder.add(terrainDebugSettings, 'bootstrapMaxBlockingLeaves', 1, 128, 1)
+      .name('Max Blocking Leaves')
+      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+
+    const densityFolder = nativeFolder.addFolder('Surface Density');
+    densityFolder.add(terrainDebugSettings, 'resolution32MaxNodeSize', 64, 8000, 32)
+      .name('32x Max Size')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
+    densityFolder.add(terrainDebugSettings, 'resolution16MaxNodeSize', 64, 12000, 32)
+      .name('16x Max Size')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
+    densityFolder.add(terrainDebugSettings, 'resolution8MaxNodeSize', 64, 20000, 32)
+      .name('8x Max Size')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
+    densityFolder.add(terrainDebugSettings, 'resolution4MaxNodeSize', 64, 30000, 32)
+      .name('4x Max Size')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
+    nativeFolder.add(terrainDebugSettings, 'showTerrainWireframe')
+      .name('Wireframe')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    const objectsFolder = nativeFolder.addFolder('Objects');
+    objectsFolder.add(terrainDebugSettings, 'showTrees')
+      .name('Trees')
+      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+    objectsFolder.add(terrainDebugSettings, 'showBuildings')
+      .name('Buildings')
+      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+  }
 }
 
 // ==========================================
@@ -271,6 +332,10 @@ window.fsimWorld = {
   worldReady: false,
   profilingReady: false,
   profilingReadinessReason: profilingState.profilingReadinessReason,
+  getTerrainSelectionDiagnostics,
+  terrainDebugSettings,
+  applyTerrainDebugSettings,
+  terrainSelection: getTerrainSelectionDiagnostics?.() || null,
   shaderValidation: getShaderValidationReport(),
   shaderValidationSummary: getShaderValidationSummary()
 };
@@ -461,6 +526,7 @@ function updateProfilingReadiness(now) {
 
   window.fsimWorld.profilingReady = profilingState.profilingReady;
   window.fsimWorld.profilingReadinessReason = reason;
+  window.fsimWorld.terrainSelection = getTerrainSelectionDiagnostics?.() || null;
 }
 
 function animate() {

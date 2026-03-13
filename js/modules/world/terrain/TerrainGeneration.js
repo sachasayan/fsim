@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { fetchDistrictIndex, loadDistrictChunk } from './CityChunkLoader.js';
-import { QuadtreeMapSampler, hash2Local } from './TerrainUtils.js';
+import { QuadtreeMapSampler, hash2Local, setStaticSampler } from './TerrainUtils.js';
 import { normalizeMapData } from '../MapDataUtils.js';
 import { spawnCityBuildingsForChunk, spawnDistrictPropsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
@@ -32,6 +32,7 @@ export async function loadStaticWorld() {
         const buffer = _staticWorldBuffer;
 
         const sampler = new QuadtreeMapSampler(buffer);
+        setStaticSampler(sampler);
         const meta = sampler.getMetadata();
 
         if (meta) {
@@ -211,7 +212,10 @@ export function buildTreeMeshesForLod(treeInstances, lodCfg, resources) {
     } = resources;
     const dummy = new THREE.Object3D();
     const meshes = [];
-    const renderMode = lodCfg?.treeRenderMode || (lodCfg?.enableTrees ? 'billboard' : 'disabled');
+    const treesEnabled = resources.terrainDebugSettings?.showTrees !== false;
+    const renderMode = treesEnabled
+        ? (lodCfg?.treeRenderMode || (lodCfg?.enableTrees ? 'billboard' : 'disabled'))
+        : 'disabled';
     if (renderMode === 'disabled') return meshes;
 
     for (const [treeType, instances] of Object.entries(treeInstances || {})) {
@@ -367,6 +371,8 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat,
         dummy
     } = ctx;
+    const treesEnabled = ctx.terrainDebugSettings?.showTrees !== false;
+    const buildingsEnabled = ctx.terrainDebugSettings?.showBuildings !== false;
 
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const boatShadowsEnabled = lod === 0;
@@ -392,14 +398,18 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     if (overlappingDistricts.length > 0) {
         const loadedDistricts = await Promise.all(overlappingDistricts.map(district => loadDistrictChunk(district.id)));
         if (chunkGroup.userData.chunkKey === `${cx},${cz}`) {
-            loadedDistricts.forEach(districtData => {
-                if (!districtData) return;
-                spawnCityBuildingsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
-                spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
-            });
+            if (buildingsEnabled) {
+                loadedDistricts.forEach(districtData => {
+                    if (!districtData) return;
+                    spawnCityBuildingsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
+                    spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
+                });
+            }
 
-            buildTreeMeshesForLod(treeInstances, lodCfg, { treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs })
-                .forEach((mesh) => chunkGroup.add(mesh));
+            if (treesEnabled) {
+                buildTreeMeshesForLod(treeInstances, lodCfg, { treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, terrainDebugSettings: ctx.terrainDebugSettings })
+                    .forEach((mesh) => chunkGroup.add(mesh));
+            }
 
             // Boats
             if (lodCfg.enableBoats && boatPositions && boatPositions.length > 0) {
@@ -426,10 +436,15 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         }
     }
 
-    buildTreeMeshesForLod(treeInstances, lodCfg, { treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs })
-        .forEach((mesh) => chunkGroup.add(mesh));
+    if (treesEnabled) {
+        buildTreeMeshesForLod(treeInstances, lodCfg, { treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, terrainDebugSettings: ctx.terrainDebugSettings })
+            .forEach((mesh) => chunkGroup.add(mesh));
+    }
 
     // Default buildings
+    if (!buildingsEnabled) {
+        return;
+    }
     for (const [buildingClass, entries] of Object.entries(buildingPositions)) {
         if (entries.length === 0) continue;
         const cfg = classConfigs[buildingClass];

@@ -136,6 +136,8 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...particles,
     ...aircraft,
     ...tokenSystem,
+    terrainDebugSettings: terrain.terrainDebugSettings,
+    applyTerrainDebugSettings: terrain.applyTerrainDebugSettings,
     validateShaders,
     getShaderValidationReport,
     getShaderValidationSummary,
@@ -144,6 +146,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     updateWorldObjects: (time) => {
       radar.update(time);
     },
+    getTerrainSelectionDiagnostics: terrain.getTerrainSelectionDiagnostics,
     invalidateWorldLod: lodManager.invalidate,
     updateWorldLOD: lodManager.updateWorldLOD
   };
