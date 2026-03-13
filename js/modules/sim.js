@@ -595,12 +595,16 @@ function animate() {
   const chunkZ = Math.floor(PHYSICS.position.z / 4000);
   const terrainDue = (now - lastTerrainUpdateMs) >= worldLodSettings.world.updateIntervalMs;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
-  if (terrainDue || chunkChanged) {
+  const terrainNeedsWork = !isReady();
+  const shouldUpdateTerrain = chunkChanged || (terrainNeedsWork && terrainDue);
+  if (shouldUpdateTerrain) {
     updateTerrain();
-    updateWorldLOD(camera.position);
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
+  }
+  if (terrainDue || chunkChanged) {
+    updateWorldLOD(camera.position);
   }
 
   cameraController.updateCamera(dt);
