@@ -24,18 +24,18 @@
 
 <body>
 
-    <div id="loader">
-        <div class="spinner"></div>
+    <div id="loader" role="status" aria-live="polite" aria-atomic="true">
+        <div class="spinner" aria-hidden="true"></div>
         <h2 id="loader-text">INITIALIZING FLIGHT DYNAMICS</h2>
         <p id="loader-subtext">Generating Procedural World...</p>
         <div id="terrain-bootstrap-debug"></div>
     </div>
 
     <div id="game-container"></div>
-    <div id="warning-overlay">STALL</div>
+    <div id="warning-overlay" role="alert" aria-live="assertive" aria-atomic="true">STALL</div>
 
     <!-- NEW CRASH SCREEN OVERLAY -->
-    <div id="crash-screen">
+    <div id="crash-screen" role="alert" aria-live="assertive" aria-atomic="true">
         <h1 class="crash-title">AIRCRAFT DESTROYED
         </h1>
         <p id="crash-reason" class="crash-reason"></p>
