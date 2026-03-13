@@ -64,6 +64,8 @@ const tmpWorldPos = new THREE.Vector3();
 const tmpWorldQuat = new THREE.Quaternion();
 const tmpImpulse = new THREE.Vector3();
 const tmpAngImpulse = new THREE.Vector3();
+const tmpInheritedLinear = new THREE.Vector3();
+const tmpOffsetVelocity = new THREE.Vector3();
 const tmpTerrainVelocity = new THREE.Vector3();
 const tmpTangentVelocity = new THREE.Vector3();
 export function createCrashSystem({
@@ -177,7 +179,11 @@ export function createCrashSystem({
     }
   }
 
-  function beginCrash({ reason = 'AIRFRAME FAILURE' } = {}) {
+  function beginCrash({
+    reason = 'AIRFRAME FAILURE',
+    baseVelocity = null,
+    baseAngularVelocity = null
+  } = {}) {
     ensurePool();
 
     PHYSICS.crashed = true;
@@ -194,8 +200,8 @@ export function createCrashSystem({
 
     if (!poolReady) return false;
 
-    const baseVelocity = PHYSICS.velocity;
-    const baseAngularVelocity = PHYSICS.angularVelocity;
+    const inheritedVelocity = baseVelocity || PHYSICS.velocity;
+    const inheritedAngularVelocity = baseAngularVelocity || PHYSICS.angularVelocity;
     const planePos = planeGroup.position;
     const planeQuat = planeGroup.quaternion;
     debrisActiveCount = 0;
@@ -217,12 +223,19 @@ export function createCrashSystem({
       piece.body.resetForces(true);
       piece.body.resetTorques(true);
 
-      tmpImpulse.fromArray(piece.localImpulse).applyQuaternion(planeQuat).add(baseVelocity);
-      tmpAngImpulse.fromArray(piece.angularImpulse).applyQuaternion(planeQuat).add(baseAngularVelocity);
+      tmpInheritedLinear.copy(inheritedVelocity);
+      tmpOffsetVelocity.copy(piece.localPosition).applyQuaternion(planeQuat);
+      tmpOffsetVelocity.cross(inheritedAngularVelocity);
+      tmpImpulse
+        .copy(tmpInheritedLinear)
+        .add(tmpOffsetVelocity)
+        .add(tmpAngImpulse.fromArray(piece.localImpulse).applyQuaternion(planeQuat));
       piece.body.setLinvel(tmpImpulse, true);
+
+      tmpAngImpulse.fromArray(piece.angularImpulse).applyQuaternion(planeQuat).add(inheritedAngularVelocity);
       piece.body.setAngvel(tmpAngImpulse, true);
 
-      emitImpactFx(tmpWorldPos, piece.fxProfile, baseVelocity.length());
+      emitImpactFx(tmpWorldPos, piece.fxProfile, inheritedVelocity.length());
     }
 
     return true;

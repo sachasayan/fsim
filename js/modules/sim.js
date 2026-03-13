@@ -323,7 +323,11 @@ function updateSlewMode(dt) {
 // --- CRASH LOGIC & RESET ---
 window.triggerCrash = function (reason) {
   if (PHYSICS.crashState !== 'active') return;
-  crashSystem.beginCrash({ reason });
+  crashSystem.beginCrash({
+    reason,
+    baseVelocity: tmpImpactVel.copy(PHYSICS.velocity),
+    baseAngularVelocity: tmpImpactAngVel.copy(PHYSICS.angularVelocity)
+  });
 };
 
 window.resetFlight = function () {
@@ -527,7 +531,11 @@ function animate() {
       PHYSICS.impactVerticalSpeed = impact.impactVerticalSpeed;
       PHYSICS.impactAngularSpeed = impact.impactAngularSpeed;
       if (impact.triggered) {
-        crashSystem.beginCrash({ reason: impact.reason });
+        crashSystem.beginCrash({
+          reason: impact.reason,
+          baseVelocity: tmpImpactVel,
+          baseAngularVelocity: tmpImpactAngVel
+        });
       }
     } else {
       crashSystem.update(PHYSICS_STEP);
