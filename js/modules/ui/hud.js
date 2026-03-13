@@ -20,11 +20,20 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         fpv: document.getElementById('fpv'),
         thrust: document.getElementById('hud-thrust'),
         aoa: document.getElementById('hud-aoa'),
-        gforce: document.getElementById('hud-gforce')
+        gforce: document.getElementById('hud-gforce'),
+        tokenCounter: document.getElementById('token-counter'),
+        tokenCount: document.getElementById('token-count'),
+        tokenBurst: document.querySelector('#token-counter .token-counter-burst')
     };
 
     const minimapCanvas = document.getElementById('minimap');
-    if (!minimapCanvas) return { updateHUD: () => { } };
+    if (!minimapCanvas) {
+        return {
+            updateHUD: () => { },
+            showTokenPickup: () => { },
+            resetTransientHud: () => { }
+        };
+    }
 
     const mmCtx = minimapCanvas.getContext('2d');
     const mapW = minimapCanvas.width;
@@ -35,6 +44,12 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const samplePx = 8;
     const mapState = {
         districts: []
+    };
+    const tokenState = {
+        count: 0,
+        visibleUntil: 0,
+        pulseUntil: 0,
+        flashUntil: 0
     };
 
     const tileManager = new MapTileManager({
@@ -94,7 +109,35 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     }
     initHUD();
 
+    function showTokenPickup(countOrOptions) {
+        const count = typeof countOrOptions === 'object' && countOrOptions !== null
+            ? countOrOptions.count
+            : countOrOptions;
+        tokenState.count = count;
+        tokenState.visibleUntil = performance.now() + 3600;
+        tokenState.pulseUntil = performance.now() + 550;
+        tokenState.flashUntil = performance.now() + 260;
+        if (UI.tokenCount) {
+            UI.tokenCount.innerText = String(count).padStart(2, '0');
+        }
+    }
+
+    function resetTransientHud() {
+        tokenState.count = 0;
+        tokenState.visibleUntil = 0;
+        tokenState.pulseUntil = 0;
+        tokenState.flashUntil = 0;
+        if (UI.tokenCounter) {
+            UI.tokenCounter.classList.remove('is-visible', 'is-pulsing', 'is-flashing');
+        }
+        if (UI.tokenCount) {
+            UI.tokenCount.innerText = '00';
+        }
+    }
+
     function updateHUD() {
+        const now = performance.now();
+
         // Conversions
         const kts = PHYSICS.airspeed * 1.94384;
         const altFt = PHYSICS.position.y * 3.28084;
@@ -186,6 +229,12 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             else { UI.brakes.innerText = 'OFF'; UI.brakes.style.color = '#fff'; }
         }
 
+        if (UI.tokenCounter) {
+            UI.tokenCounter.classList.toggle('is-visible', now < tokenState.visibleUntil);
+            UI.tokenCounter.classList.toggle('is-pulsing', now < tokenState.pulseUntil);
+            UI.tokenCounter.classList.toggle('is-flashing', now < tokenState.flashUntil);
+        }
+
 
         // Draw North-up full-color world map using Tile System
         tileManager.draw(mmCtx, PHYSICS.position.x, PHYSICS.position.z, pixelsPerWorld, mapW, mapH);
@@ -275,5 +324,5 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         }
     }
 
-    return { updateHUD };
+    return { updateHUD, showTokenPickup, resetTransientHud };
 }

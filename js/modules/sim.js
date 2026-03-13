@@ -116,7 +116,11 @@ const {
   getShaderValidationSummary,
   getShaderValidationVariants,
   completeBootstrap,
+  getCollectedTokenCount,
   lodSettings: worldLodSettings,
+  resetTokens,
+  setTokenCollectionHandler,
+  updateTokenSystem,
   updateWorldObjects,
   invalidateWorldLod,
   updateWorldLOD
@@ -187,6 +191,10 @@ const inputHandler = createInputHandler({ keys, PHYSICS, cameraController });
 inputHandler.init();
 
 const hud = createHUD({ PHYSICS, WEATHER, getTerrainHeight });
+setTokenCollectionHandler(({ count, worldPosition, collectedAtMs }) => {
+  ProceduralAudio.coinPickup();
+  hud.showTokenPickup({ count, worldPosition, collectedAtMs });
+});
 const shouldLogShaderValidation = urlParamsForInit.get('validateShaders') === '1';
 
 window.fsimWorld = {
@@ -206,6 +214,7 @@ window.fsimWorld = {
   refreshLodState,
   lodSettings: worldLodSettings,
   waterMaterial,
+  getCollectedTokenCount,
   debugGui,
   debugView,
   validateShaders,
@@ -332,6 +341,8 @@ window.resetFlight = function () {
   document.getElementById('crash-screen').style.display = 'none';
 
   for (let i = 0; i < MAX_PARTICLES; i++) particles[i].active = false;
+  resetTokens();
+  hud.resetTransientHud();
 
   prevPhysicsPos.copy(PHYSICS.position);
   prevPhysicsQuat.identity();
@@ -569,6 +580,12 @@ function animate() {
   }
 
   cameraController.updateCamera(dt);
+  updateTokenSystem({
+    timeMs: now,
+    aircraftPosition: PHYSICS.position,
+    cameraPosition: camera.position,
+    cameraQuaternion: camera.quaternion
+  });
   if (runtime.frameCount % 3 === 0) {
     hud.updateHUD();
   }
