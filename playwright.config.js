@@ -17,7 +17,20 @@ export default defineConfig({
         {
             name: 'chromium',
             use: {
-                browserName: 'chromium'
+                browserName: 'chromium',
+                launchOptions: {
+                    args: [
+                        '--use-gl=angle',
+                        '--use-angle=swiftshader',
+                        '--ignore-gpu-blocklist',
+                        '--enable-webgl',
+                        '--window-size=1920,1080'
+                    ]
+                },
+                viewport: {
+                    width: 1920,
+                    height: 1080
+                }
             }
         }
     ],

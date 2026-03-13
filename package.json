@@ -16,11 +16,14 @@
     "screenshot:cleanup": "node scripts/screenshot-cleanup.mjs",
     "test:unit": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:perf": "playwright test tests/e2e/perf/fsim.perf.spec.js",
     "test:e2e:headed": "playwright test --headed",
     "test:perf": "node scripts/perf.mjs",
     "test": "npm run test:unit && npm run smoke"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "lil-gui": "^0.21.0",
     "pngjs": "^7.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

@@ -79,6 +79,16 @@ export function createRendererManager({ container, scene, camera }) {
         adaptiveQualityEnabled = Boolean(enabled);
     }
 
+    function getAdaptiveQualitySnapshot() {
+        return {
+            enabled: adaptiveQualityEnabled,
+            frameTimeEmaMs,
+            pixelRatio: currentPixelRatio,
+            viewportWidth,
+            viewportHeight
+        };
+    }
+
     function handleResize() {
         viewportWidth = window.innerWidth;
         viewportHeight = window.innerHeight;
@@ -97,6 +107,7 @@ export function createRendererManager({ container, scene, camera }) {
         smaaPass,
         bloomPass,
         updateAdaptiveQuality,
+        getAdaptiveQualitySnapshot,
         setAdaptiveQualityEnabled,
         handleResize
     };

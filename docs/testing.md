@@ -5,6 +5,7 @@
 - `npm run test:unit` runs fast unit tests for deterministic simulation and cloud-noise logic.
 - `npm run smoke` validates syntax and basic server asset delivery.
 - `npm run test:perf` runs CPU microbenchmarks for graphics-heavy procedural noise paths.
+- `npm run test:e2e:perf` captures a browser-side render performance report for `fsim.html`.
 - `npm test` runs unit + smoke.
 
 ## Performance Test Philosophy
@@ -40,3 +41,13 @@ FSIM_PERF_BUDGET_NOISE_MS=95 FSIM_PERF_BUDGET_CLOUD_MS=120 npm run test:perf
 ## Recommendation For Full Graphics Performance
 
 Unit tests are not enough for real rendering performance.
+
+The browser perf E2E writes a JSON artifact with:
+
+- per-frame CPU timing
+- named render-loop phase summaries
+- `THREE.WebGLRenderer.info` counters
+- adaptive quality / pixel ratio snapshots
+- Chromium performance metrics gathered through Playwright CDP
+
+Use it as machine-local regression feedback and as structured input for LLM analysis.

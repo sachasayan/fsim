@@ -280,7 +280,7 @@
             ]
         },
         {
-            "kind": "road",
+            "kind": "taxiway",
             "surface": "asphalt",
             "width": 24,
             "feather": 27,

@@ -12,6 +12,7 @@ import { createHUD } from './ui/hud.js';
 
 // New extracted modules
 import { createRendererManager } from './core/RendererManager.js';
+import { createPerformanceCollector } from './core/PerformanceCollector.js';
 import { createWeatherManager } from './core/WeatherManager.js';
 import { createInputHandler } from './core/InputHandler.js';
 import { createAirportSystems } from './sim/AirportSystems.js';
@@ -59,8 +60,13 @@ const {
   smaaPass,
   bloomPass,
   updateAdaptiveQuality,
+  getAdaptiveQualitySnapshot,
   handleResize
 } = createRendererManager({ container, scene, camera });
+const perfCollector = createPerformanceCollector({
+  renderer,
+  getAdaptiveQualitySnapshot
+});
 
 const stats = new Stats();
 if (shouldShowDebugUi) {
@@ -226,6 +232,7 @@ window.fsimWorld = {
   shaderValidation: getShaderValidationReport(),
   shaderValidationSummary: getShaderValidationSummary()
 };
+window.fsimPerf = perfCollector;
 
 // Initialize LiveReload functionality
 initLiveReload(window.fsimWorld);
@@ -374,21 +381,31 @@ function animate() {
   runtime.lastTime = now;
 
   runtime.frameCount++;
+  perfCollector.beginFrame({ now, dt });
+  let phaseStart = performance.now();
   updateAdaptiveQuality(dt);
+  perfCollector.recordPhase('adaptive_quality', performance.now() - phaseStart);
 
   // 1. Update visuals (weather, lighting, clouds)
+  phaseStart = performance.now();
   weatherManager.update(dt, runtime.frameCount, camera);
+  perfCollector.recordPhase('weather', performance.now() - phaseStart);
 
   // 2. Water Animation
+  phaseStart = performance.now();
   if (waterMaterial.userData.timeUniform) {
     waterMaterial.userData.timeUniform.value += dt;
   }
+  perfCollector.recordPhase('water_animation', performance.now() - phaseStart);
 
 
   // 3. Aircraft Control Surfaces
+  phaseStart = performance.now();
   updateControlSurfaces(PHYSICS, dt);
+  perfCollector.recordPhase('control_surfaces', performance.now() - phaseStart);
 
   // 4. Strobe & Beacon Logic
+  phaseStart = performance.now();
   runtime.strobeTimer += dt;
   let strobeCycle = runtime.strobeTimer % 1.5;
   let isFlashing = (strobeCycle < 0.05) || (strobeCycle > 0.15 && strobeCycle < 0.2);
@@ -403,15 +420,21 @@ function animate() {
     b.intensity = beaconFlash ? 5 : 0;
     if (b.children[0]) b.children[0].visible = beaconFlash;
   });
+  perfCollector.recordPhase('lights', performance.now() - phaseStart);
 
   // 5. Airport Systems (ALS)
+  phaseStart = performance.now();
   airportSystems.updateALS(now);
   updateWorldObjects(now);
+  perfCollector.recordPhase('world_objects', performance.now() - phaseStart);
 
   // 5b. Aircraft LOD
+  phaseStart = performance.now();
   updateAircraftLOD(camera);
+  perfCollector.recordPhase('aircraft_lod', performance.now() - phaseStart);
 
   // 6. Audio Update
+  phaseStart = performance.now();
   ProceduralAudio.update(
     PHYSICS.throttle,
     PHYSICS.airspeed,
@@ -423,8 +446,10 @@ function animate() {
     PHYSICS.aoa,
     PHYSICS.slip
   );
+  perfCollector.recordPhase('audio', performance.now() - phaseStart);
 
   // 7. Particle System (Touchdown)
+  phaseStart = performance.now();
   if (!runtime.wasOnGround && PHYSICS.onGround && PHYSICS.airspeed > 30) {
     ProceduralAudio.touchdown();
     for (let i = 0; i < 40; i++) {
@@ -471,8 +496,10 @@ function animate() {
     particleMesh.instanceMatrix.needsUpdate = true;
     if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
   }
+  perfCollector.recordPhase('particles', performance.now() - phaseStart);
 
   // 8. Physics Steps
+  phaseStart = performance.now();
   runtime.physicsAccumulator = Math.min(runtime.physicsAccumulator + dt, PHYSICS_STEP * MAX_PHYSICS_STEPS_PER_FRAME);
   let physicsSteps = 0;
   if (debugView.slewMode) {
@@ -544,8 +571,10 @@ function animate() {
     physicsSteps++;
     runtime.physicsAccumulator -= PHYSICS_STEP;
   }
+  perfCollector.recordPhase('physics', performance.now() - phaseStart);
 
   const alpha = runtime.physicsAccumulator / PHYSICS_STEP;
+  phaseStart = performance.now();
   if (debugView.slewMode) {
     planeGroup.position.copy(PHYSICS.position);
     planeGroup.quaternion.copy(PHYSICS.quaternion);
@@ -553,8 +582,10 @@ function animate() {
     planeGroup.position.lerpVectors(prevPhysicsPos, PHYSICS.position, alpha);
     planeGroup.quaternion.slerpQuaternions(prevPhysicsQuat, PHYSICS.quaternion, alpha);
   }
+  perfCollector.recordPhase('aircraft_pose', performance.now() - phaseStart);
 
   // 9. Post-Physics Sync
+  phaseStart = performance.now();
   const cameraMode = cameraController.getMode();
   const highShadowQuality = PHYSICS.position.y < 1200 && cameraMode !== 2;
   const targetShadowMapSize = highShadowQuality ? SHADOW_MAP_NEAR : SHADOW_MAP_FAR;
@@ -589,37 +620,60 @@ function animate() {
     prevShadowCenter.copy(shadowCenter);
     prevShadowExtent = shadowExtent;
   }
+  perfCollector.recordPhase('shadow_setup', performance.now() - phaseStart);
 
   // Terrain and World LOD update
+  phaseStart = performance.now();
   const chunkX = Math.floor(PHYSICS.position.x / 4000);
   const chunkZ = Math.floor(PHYSICS.position.z / 4000);
   const terrainDue = (now - lastTerrainUpdateMs) >= worldLodSettings.world.updateIntervalMs;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
   const terrainNeedsWork = !isReady();
   const shouldUpdateTerrain = chunkChanged || (terrainNeedsWork && terrainDue);
+  let terrainUpdated = false;
+  let worldLodUpdated = false;
   if (shouldUpdateTerrain) {
     updateTerrain();
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
+    terrainUpdated = true;
   }
   if (terrainDue || chunkChanged) {
     updateWorldLOD(camera.position);
+    worldLodUpdated = true;
   }
+  perfCollector.recordPhase('terrain_lod', performance.now() - phaseStart);
 
+  phaseStart = performance.now();
   cameraController.updateCamera(dt);
+  perfCollector.recordPhase('camera', performance.now() - phaseStart);
+
+  phaseStart = performance.now();
   updateTokenSystem({
     timeMs: now,
     aircraftPosition: PHYSICS.position,
     cameraPosition: camera.position,
     cameraQuaternion: camera.quaternion
   });
+  let hudUpdated = false;
   if (runtime.frameCount % 3 === 0) {
     hud.updateHUD();
+    hudUpdated = true;
   }
+  perfCollector.recordPhase('tokens_hud', performance.now() - phaseStart);
 
   // 10. Final Render
+  phaseStart = performance.now();
   composer.render();
+  perfCollector.recordPhase('render', performance.now() - phaseStart);
+  perfCollector.endFrame({
+    now,
+    physicsSteps,
+    terrainUpdated,
+    worldLodUpdated,
+    hudUpdated
+  });
 }
 
 // Initialize Loader Tips
