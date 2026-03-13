@@ -403,9 +403,9 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
             // Boats
             if (lodCfg.enableBoats && boatPositions && boatPositions.length > 0) {
-                const hullMesh = new THREE.InstancedMesh(hullGeo, hullMat, boatPositions.length);
-                const cabinMesh = new THREE.InstancedMesh(cabinGeo, cabinMat, boatPositions.length);
-                const mastMesh = new THREE.InstancedMesh(mastGeo, mastMat, boatPositions.length);
+                const hullMesh = getPooledInstancedMesh(hullGeo, hullMat, boatPositions.length);
+                const cabinMesh = getPooledInstancedMesh(cabinGeo, cabinMat, boatPositions.length);
+                const mastMesh = getPooledInstancedMesh(mastGeo, mastMat, boatPositions.length);
                 hullMesh.castShadow = boatShadowsEnabled; cabinMesh.castShadow = boatShadowsEnabled; mastMesh.castShadow = boatShadowsEnabled;
                 for (let j = 0; j < boatPositions.length; j++) {
                     let bp = boatPositions[j];
@@ -417,6 +417,9 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                     cabinMesh.setMatrixAt(j, dummy.matrix);
                     mastMesh.setMatrixAt(j, dummy.matrix);
                 }
+                hullMesh.instanceMatrix.needsUpdate = true;
+                cabinMesh.instanceMatrix.needsUpdate = true;
+                mastMesh.instanceMatrix.needsUpdate = true;
                 chunkGroup.add(hullMesh, cabinMesh, mastMesh);
             }
             return;
@@ -431,10 +434,10 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         if (entries.length === 0) continue;
         const cfg = classConfigs[buildingClass];
         const buildingMat = lod === 0 ? detailedBuildingMats[cfg.style] : baseBuildingMat;
-        const bldgMesh = new THREE.InstancedMesh(baseBuildingGeo, buildingMat, entries.length);
-        const roofMesh = new THREE.InstancedMesh(roofCapGeo, roofCapMat, entries.length);
-        const podiumMesh = cfg.podium ? new THREE.InstancedMesh(podiumGeo, podiumMat, entries.length) : null;
-        const spireMesh = cfg.spire ? new THREE.InstancedMesh(spireGeo, spireMat, entries.length) : null;
+        const bldgMesh = getPooledInstancedMesh(baseBuildingGeo, buildingMat, entries.length, { colorable: true });
+        const roofMesh = getPooledInstancedMesh(roofCapGeo, roofCapMat, entries.length, { colorable: true });
+        const podiumMesh = cfg.podium ? getPooledInstancedMesh(podiumGeo, podiumMat, entries.length, { colorable: true }) : null;
+        const spireMesh = cfg.spire ? getPooledInstancedMesh(spireGeo, spireMat, entries.length, { colorable: true }) : null;
         const buildingShadowsEnabled = lod === 0;
 
         let hvacMesh = null, hvacIdx = 0;
@@ -504,6 +507,11 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 }
             }
         }
+        bldgMesh.instanceMatrix.needsUpdate = true;
+        roofMesh.instanceMatrix.needsUpdate = true;
+        if (podiumMesh) podiumMesh.instanceMatrix.needsUpdate = true;
+        if (spireMesh) spireMesh.instanceMatrix.needsUpdate = true;
+        if (hvacMesh) hvacMesh.instanceMatrix.needsUpdate = hvacIdx > 0;
         bldgMesh.instanceColor.needsUpdate = true;
         roofMesh.instanceColor.needsUpdate = true;
         chunkGroup.add(bldgMesh, roofMesh);
@@ -513,9 +521,9 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     }
 
     if (lodCfg.enableBoats && boatPositions.length > 0) {
-        const hullMesh = new THREE.InstancedMesh(hullGeo, hullMat, boatPositions.length);
-        const cabinMesh = new THREE.InstancedMesh(cabinGeo, cabinMat, boatPositions.length);
-        const mastMesh = new THREE.InstancedMesh(mastGeo, mastMat, boatPositions.length);
+        const hullMesh = getPooledInstancedMesh(hullGeo, hullMat, boatPositions.length);
+        const cabinMesh = getPooledInstancedMesh(cabinGeo, cabinMat, boatPositions.length);
+        const mastMesh = getPooledInstancedMesh(mastGeo, mastMat, boatPositions.length);
         hullMesh.castShadow = boatShadowsEnabled; cabinMesh.castShadow = boatShadowsEnabled; mastMesh.castShadow = boatShadowsEnabled;
         for (let j = 0; j < boatPositions.length; j++) {
             let bp = boatPositions[j];
@@ -527,6 +535,9 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
             cabinMesh.setMatrixAt(j, dummy.matrix);
             mastMesh.setMatrixAt(j, dummy.matrix);
         }
+        hullMesh.instanceMatrix.needsUpdate = true;
+        cabinMesh.instanceMatrix.needsUpdate = true;
+        mastMesh.instanceMatrix.needsUpdate = true;
         chunkGroup.add(hullMesh, cabinMesh, mastMesh);
     }
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 
 const TOKEN_COUNT = 72;
 const TOKEN_VISIBLE_DISTANCE = 12000;
@@ -153,7 +154,7 @@ function createEffectPool(scene) {
   return effects;
 }
 
-export function createTokenSystem({ scene, getTerrainHeight, spawnParticle }) {
+export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodSettings }) {
   const tokenGeometry = buildTokenGeometry();
   const tokenMaterial = new THREE.MeshStandardMaterial({
     color: 0xffda63,
@@ -180,9 +181,38 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle }) {
   let effectPoolIndex = 0;
   let collectedCount = 0;
   let collectionHandler = null;
+  let currentLOD = -1;
+  let tokensVisibleAtCurrentLod = true;
+  const tokenSystemPosition = new THREE.Vector3();
+
+  if (entries.length > 0) {
+    for (const entry of entries) {
+      tokenSystemPosition.x += entry.x;
+      tokenSystemPosition.z += entry.z;
+    }
+    tokenSystemPosition.multiplyScalar(1 / entries.length);
+  }
 
   for (let index = 0; index < TOKEN_COUNT; index += 1) {
     tokenMesh.setMatrixAt(index, hiddenMatrix);
+  }
+
+  function updateLOD(cameraPos, dist) {
+    const [lod0Threshold] = getAirportThresholds(lodSettings);
+    const newLOD = resolveDistanceLod(
+      dist,
+      currentLOD,
+      [lod0Threshold],
+      lodSettings?.airport?.distanceHysteresis
+    );
+
+    if (newLOD === currentLOD) {
+      return;
+    }
+
+    currentLOD = newLOD;
+    tokensVisibleAtCurrentLod = currentLOD === 0;
+    tokenMesh.visible = tokensVisibleAtCurrentLod;
   }
 
   function emitCollectionParticles(worldPosition) {
@@ -321,7 +351,9 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle }) {
       const camDx = (cameraPosition?.x ?? 0) - entry.x;
       const camDy = (cameraPosition?.y ?? 0) - worldY;
       const camDz = (cameraPosition?.z ?? 0) - entry.z;
-      const isVisible = entry.active && ((camDx * camDx) + (camDy * camDy) + (camDz * camDz) <= visibleDistanceSq);
+      const isVisible = tokensVisibleAtCurrentLod
+        && entry.active
+        && ((camDx * camDx) + (camDy * camDy) + (camDz * camDz) <= visibleDistanceSq);
 
       if (!isVisible) {
         tokenMesh.setMatrixAt(index, hiddenMatrix);
@@ -363,7 +395,9 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle }) {
   }
 
   return {
+    position: tokenSystemPosition,
     tokenMesh,
+    updateLOD,
     updateTokenSystem,
     resetTokens,
     setTokenCollectionHandler: setCollectionHandler,

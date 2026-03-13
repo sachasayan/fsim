@@ -215,7 +215,7 @@ export function createTerrainSystem({
 
   const dummy = new THREE.Object3D();
 
-  function getPooledInstancedMesh(geometry, material, count) {
+  function getPooledInstancedMesh(geometry, material, count, { colorable = false } = {}) {
     const key = geometry.uuid + '_' + material.uuid;
     let pool = instancedMeshPools.get(key);
     if (!pool) { pool = []; instancedMeshPools.set(key, pool); }
@@ -231,7 +231,7 @@ export function createTerrainSystem({
       return mesh;
     }
     const capacity = Math.max(count, 32);
-    const isColorable = (geometry === baseBuildingGeo || geometry === roofCapGeo || geometry === podiumGeo || geometry === spireGeo);
+    const isColorable = colorable || geometry === baseBuildingGeo || geometry === roofCapGeo || geometry === podiumGeo || geometry === spireGeo;
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     if (!mesh.instanceColor && isColorable) {
       const colorArray = new Float32Array(capacity * 3);
@@ -244,13 +244,25 @@ export function createTerrainSystem({
   function disposeChunkGroup(chunkGroup) {
     if (!chunkGroup) return;
     scene.remove(chunkGroup);
+    chunkGroup.userData.windmillBladeMeshes = null;
     const lod = chunkGroup.userData.lod;
     if (lod !== undefined && chunkPools[lod]) {
       while (chunkGroup.children.length > 2) {
-        const child = chunkGroup.children.pop();
+        const child = chunkGroup.children[chunkGroup.children.length - 1];
+        chunkGroup.remove(child);
         if (child.isInstancedMesh) {
+          child.count = 0;
           if (child.instanceMatrix) child.instanceMatrix.needsUpdate = false;
           if (child.instanceColor) child.instanceColor.needsUpdate = false;
+          if (child.userData?.windmillBladeInstances) child.userData.windmillBladeInstances = null;
+          child.userData = {};
+          const key = child.geometry.uuid + '_' + child.material.uuid;
+          let pool = instancedMeshPools.get(key);
+          if (!pool) {
+            pool = [];
+            instancedMeshPools.set(key, pool);
+          }
+          pool.push(child);
         }
       }
       chunkPools[lod].push(chunkGroup);
@@ -747,8 +759,10 @@ export function createTerrainSystem({
       const matching = overlapping.filter(district => !cityId || district.id === cityId);
       if (matching.length > 0) {
         // Clear spawned prop meshes (keep terrain/water at index 0,1)
+        state.group.userData.windmillBladeMeshes = null;
         while (state.group.children.length > 2) {
-          const child = state.group.children.pop();
+          const child = state.group.children[state.group.children.length - 1];
+          state.group.remove(child);
           if (child.isInstancedMesh) {
             // In a real production app we'd pool these, but for hot-reload simplicity 
             // we just let them be GC'd or handled by disposeChunkGroup if we were disposing the whole thing.

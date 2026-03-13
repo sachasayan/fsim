@@ -37,7 +37,8 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const tokenSystem = createTokenSystem({
     scene,
     getTerrainHeight: terrain.getTerrainHeight,
-    spawnParticle: particles.spawnParticle
+    spawnParticle: particles.spawnParticle,
+    lodSettings
   });
   const shaderVariantRegistry = createShaderVariantRegistry();
   registerShaderVariants(shaderVariantRegistry, [
@@ -116,6 +117,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   lodManager.register(apron);
   lodManager.register(hangar);
   lodManager.register(radar);
+  lodManager.register(tokenSystem);
 
   return {
     lodSettings,

@@ -93,10 +93,10 @@ export function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ct
         if (!cfg) continue;
         const buildingMat = lod === 0 ? detailedBuildingMats[cfg.style] : baseBuildingMat;
 
-        const bldgMesh = new THREE.InstancedMesh(baseBuildingGeo, buildingMat, entries.length);
-        const roofMesh = new THREE.InstancedMesh(roofCapGeo, roofCapMat, entries.length);
-        const podiumMesh = cfg.podium ? new THREE.InstancedMesh(podiumGeo, podiumMat, entries.length) : null;
-        const spireMesh = cfg.spire ? new THREE.InstancedMesh(spireGeo, spireMat, entries.length) : null;
+        const bldgMesh = getPooledInstancedMesh(baseBuildingGeo, buildingMat, entries.length, { colorable: true });
+        const roofMesh = getPooledInstancedMesh(roofCapGeo, roofCapMat, entries.length, { colorable: true });
+        const podiumMesh = cfg.podium ? getPooledInstancedMesh(podiumGeo, podiumMat, entries.length, { colorable: true }) : null;
+        const spireMesh = cfg.spire ? getPooledInstancedMesh(spireGeo, spireMat, entries.length, { colorable: true }) : null;
 
         let hvacMesh = null, hvacIdx = 0;
         if (lod === 0) {
@@ -168,6 +168,11 @@ export function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ct
             }
         }
 
+        bldgMesh.instanceMatrix.needsUpdate = true;
+        roofMesh.instanceMatrix.needsUpdate = true;
+        if (podiumMesh) podiumMesh.instanceMatrix.needsUpdate = true;
+        if (spireMesh) spireMesh.instanceMatrix.needsUpdate = true;
+        if (hvacMesh) hvacMesh.instanceMatrix.needsUpdate = hvacIdx > 0;
         bldgMesh.instanceColor.needsUpdate = true;
         roofMesh.instanceColor.needsUpdate = true;
         chunkGroup.add(bldgMesh, roofMesh);
@@ -183,19 +188,20 @@ export function spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod
         windmillNacelleGeo, windmillNacelleMat,
         windmillHubGeo, windmillHubMat,
         windmillBladeGeo, windmillBladeMat,
+        getPooledInstancedMesh,
         dummy
     } = ctx;
 
     const key = `${cx},${cz}`;
     const propsInChunk = districtData.props?.[key] || [];
     const windmills = propsInChunk.filter(prop => DISTRICT_PROP_NAMES[prop.typeId] === 'windmill');
-    if (windmills.length === 0) return;
+    if (windmills.length === 0 || lod > 1) return;
 
     const nearLod = lod <= 1;
-    const towerMesh = new THREE.InstancedMesh(windmillTowerGeo, windmillTowerMat, windmills.length);
-    const nacelleMesh = new THREE.InstancedMesh(windmillNacelleGeo, windmillNacelleMat, windmills.length);
-    const hubMesh = new THREE.InstancedMesh(windmillHubGeo, windmillHubMat, windmills.length);
-    const bladeMesh = new THREE.InstancedMesh(windmillBladeGeo, windmillBladeMat, windmills.length * 3);
+    const towerMesh = getPooledInstancedMesh(windmillTowerGeo, windmillTowerMat, windmills.length);
+    const nacelleMesh = getPooledInstancedMesh(windmillNacelleGeo, windmillNacelleMat, windmills.length);
+    const hubMesh = getPooledInstancedMesh(windmillHubGeo, windmillHubMat, windmills.length);
+    const bladeMesh = getPooledInstancedMesh(windmillBladeGeo, windmillBladeMat, windmills.length * 3);
 
     towerMesh.castShadow = nearLod;
     towerMesh.receiveShadow = nearLod;
@@ -260,6 +266,8 @@ export function spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod
     bladeMesh.userData.animationSpeed = 1.9;
     bladeMesh.userData.chunkKey = key;
     bladeMesh.userData.isWindmillBladeMesh = true;
+    const windmillBladeMeshes = chunkGroup.userData.windmillBladeMeshes || (chunkGroup.userData.windmillBladeMeshes = []);
+    windmillBladeMeshes.push(bladeMesh);
 
     animateWindmillBladeMesh(bladeMesh, 0, dummy);
 
@@ -292,9 +300,10 @@ export function animateWindmillBladeMesh(bladeMesh, timeSeconds, sharedDummy = n
 
 export function animateWindmillProps(root, timeSeconds, sharedDummy = null) {
     if (!root) return;
-    root.traverse(child => {
-        if (child.userData?.isWindmillBladeMesh) {
-            animateWindmillBladeMesh(child, timeSeconds, sharedDummy);
-        }
-    });
+    const windmillBladeMeshes = root.userData?.windmillBladeMeshes;
+    if (!windmillBladeMeshes || windmillBladeMeshes.length === 0) return;
+
+    for (let i = 0; i < windmillBladeMeshes.length; i++) {
+        animateWindmillBladeMesh(windmillBladeMeshes[i], timeSeconds, sharedDummy);
+    }
 }
