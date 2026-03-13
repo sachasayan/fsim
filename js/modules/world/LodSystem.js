@@ -32,11 +32,35 @@ export function createRuntimeLodSettings({ urlSearch = '' } = {}) {
       renderDistance,
       ringThresholds: [1, 3, 6],
       ringHysteresis: 1,
-      lodLevels: cloneLodLevels([
-        { terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true },
-        { terrainRes: 32, waterRes: 16, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false },
-        { terrainRes: 12, waterRes: 4, propDensity: 0.2, enableBuildings: true, enableTrees: true, enableBoats: false },
-        { terrainRes: 2, waterRes: 2, propDensity: 0.0, enableBuildings: false, enableTrees: false, enableBoats: false }
+        lodLevels: cloneLodLevels([
+        {
+          terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true,
+          treeRenderMode: 'hybrid',
+          enableTreeContactShadows: true,
+          treeShadowFadeNear: 0,
+          treeShadowFadeFar: 0
+        },
+        {
+          terrainRes: 32, waterRes: 16, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false,
+          treeRenderMode: 'billboard',
+          enableTreeContactShadows: true,
+          treeShadowFadeNear: 1400,
+          treeShadowFadeFar: 2100
+        },
+        {
+          terrainRes: 12, waterRes: 4, propDensity: 0.2, enableBuildings: true, enableTrees: false, enableBoats: false,
+          treeRenderMode: 'disabled',
+          enableTreeContactShadows: false,
+          treeShadowFadeNear: 0,
+          treeShadowFadeFar: 0
+        },
+        {
+          terrainRes: 2, waterRes: 2, propDensity: 0.0, enableBuildings: false, enableTrees: false, enableBoats: false,
+          treeRenderMode: 'disabled',
+          enableTreeContactShadows: false,
+          treeShadowFadeNear: 0,
+          treeShadowFadeFar: 0
+        }
       ])
     }
   };

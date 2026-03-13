@@ -9,10 +9,9 @@ const TREE_DENSITY_MULTIPLIER = 4.0;
 const CHUNK_SIZE = 4000;
 
 const treeSizes = {
-    conifer: { hRange: [14, 24], wScale: 0.45 },
-    broadleaf: { hRange: [11, 19], wScale: 0.6 },
-    poplar: { hRange: [13, 23], wScale: 0.42 },
-    dry: { hRange: [8, 15], wScale: 0.52 }
+    broadleaf: { hRange: [12, 21], wScale: 0.68 },
+    poplar: { hRange: [13, 24], wScale: 0.4 },
+    dry: { hRange: [9, 17], wScale: 0.58 }
 };
 
 const classConfigs = {
@@ -186,7 +185,7 @@ function buildChunkProps(job) {
         return false;
     }
 
-    const treePositions = { conifer: [], broadleaf: [], poplar: [], dry: [] };
+    const treePositions = { broadleaf: [], poplar: [], dry: [] };
     const buildingPositions = { supertall: [], highrise: [], office: [], apartment: [], townhouse: [], industrial: [] };
     const boatPositions = [];
 
@@ -246,11 +245,11 @@ function buildChunkProps(job) {
     }
 
     // Process trees
-    const treeMatrices = {};
+    const treeInstances = {};
     for (const [treeType, trees] of Object.entries(treePositions)) {
         const count = trees.length;
         if (count === 0) continue;
-        const matrices = new Float32Array(count * 16);
+        const instances = new Float32Array(count * 8);
         const cfg = treeSizes[treeType];
 
         for (let j = 0; j < count; j++) {
@@ -260,16 +259,20 @@ function buildChunkProps(job) {
             const treeHeight = cfg.hRange[0] + tp.seed * (cfg.hRange[1] - cfg.hRange[0]);
             const treeWidth = treeHeight * cfg.wScale * (0.92 + tp.seed2 * 0.3);
 
-            const offset = j * 16;
-            matrices[offset + 0] = treeWidth; matrices[offset + 1] = 0; matrices[offset + 2] = 0; matrices[offset + 3] = 0;
-            matrices[offset + 4] = 0; matrices[offset + 5] = treeHeight; matrices[offset + 6] = 0; matrices[offset + 7] = 0;
-            matrices[offset + 8] = 0; matrices[offset + 9] = 0; matrices[offset + 10] = 1; matrices[offset + 11] = 0;
-            matrices[offset + 12] = tp.x; matrices[offset + 13] = tp.y; matrices[offset + 14] = tp.z; matrices[offset + 15] = 1;
+            const offset = j * 8;
+            instances[offset + 0] = tp.x;
+            instances[offset + 1] = tp.y;
+            instances[offset + 2] = tp.z;
+            instances[offset + 3] = treeWidth;
+            instances[offset + 4] = treeHeight;
+            instances[offset + 5] = tp.seed * Math.PI * 2.0;
+            instances[offset + 6] = tp.seed2;
+            instances[offset + 7] = 0.78 + hash2(tp.x, tp.z, 31) * 0.58;
         }
-        treeMatrices[treeType] = matrices;
+        treeInstances[treeType] = instances;
     }
 
-    return { cx, cz, treeMatrices, buildingPositions, boatPositions };
+    return { cx, cz, treeInstances, buildingPositions, boatPositions };
 }
 
 self.postMessage({ type: 'workerReady' });
@@ -291,8 +294,8 @@ self.onmessage = function (e) {
         } else if (type === 'chunkProps') {
             const result = buildChunkProps(payload);
             const transferables = [];
-            for (const key of Object.keys(result.treeMatrices)) {
-                transferables.push(result.treeMatrices[key].buffer);
+            for (const key of Object.keys(result.treeInstances)) {
+                transferables.push(result.treeInstances[key].buffer);
             }
             self.postMessage({
                 jobId,

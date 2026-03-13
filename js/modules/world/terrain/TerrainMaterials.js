@@ -67,34 +67,41 @@ export function setupBuildingPopIn(material, cameraPosUniform, fadeNear = 6800, 
     }));
 }
 
-export function makeTreeBillboardMaterial(texture, tint) {
+export function makeTreeBillboardMaterial(texture, tint, { cameraFacing = true, lockYAxis = true } = {}) {
     const mat = new THREE.MeshStandardMaterial({
         map: texture,
         color: tint,
         transparent: true,
         alphaTest: 0.12,
-        side: THREE.FrontSide, // FrontSide only for billboard
-        roughness: 1.0,
+        side: THREE.DoubleSide,
+        roughness: 0.9,
         metalness: 0.0
     });
 
     configureMaterialShaderPipeline(mat, {
-        baseCacheKey: 'tree-billboard-owned-v1',
+        baseCacheKey: `tree-billboard-owned-v2-${cameraFacing ? 'camera-facing' : 'static'}-${lockYAxis ? 'y-locked' : 'full-facing'}`,
         patches: [
             createOwnedShaderSourcePatch({
                 id: 'tree-billboard-owned-source',
-                cacheKey: 'tree-billboard-owned-source-v1',
+                cacheKey: `tree-billboard-owned-source-v2-${cameraFacing ? 'camera-facing' : 'static'}-${lockYAxis ? 'y-locked' : 'full-facing'}`,
                 metadata: {
-                    shaderFamily: 'standard'
+                    shaderFamily: 'standard',
+                    cameraFacing,
+                    lockYAxis
                 },
-                source: getTreeBillboardOwnedShaderSource()
+                source: getTreeBillboardOwnedShaderSource({ cameraFacing, lockYAxis })
             })
         ]
     });
     return mat;
 }
 
-export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
+export function makeTreeDepthMaterial(texture, mainCameraPosUniform, {
+    cameraFacing = true,
+    lockYAxis = true,
+    shadowFadeNear = 1200,
+    shadowFadeFar = 1800
+} = {}) {
     const mat = new THREE.MeshDepthMaterial({
         depthPacking: THREE.RGBADepthPacking,
         alphaMap: texture,
@@ -103,17 +110,21 @@ export function makeTreeDepthMaterial(texture, mainCameraPosUniform) {
     });
 
     configureMaterialShaderPipeline(mat, {
-        baseCacheKey: 'tree-depth-owned-v1',
+        baseCacheKey: `tree-depth-owned-v2-${cameraFacing ? 'camera-facing' : 'static'}-${lockYAxis ? 'y-locked' : 'full-facing'}-${shadowFadeNear}-${shadowFadeFar}`,
         patches: [
             createOwnedShaderSourcePatch({
                 id: 'tree-depth-owned-source',
-                cacheKey: 'tree-depth-owned-source-v1',
+                cacheKey: `tree-depth-owned-source-v2-${cameraFacing ? 'camera-facing' : 'static'}-${lockYAxis ? 'y-locked' : 'full-facing'}-${shadowFadeNear}-${shadowFadeFar}`,
                 metadata: {
-                    shaderFamily: 'depth'
+                    shaderFamily: 'depth',
+                    cameraFacing,
+                    lockYAxis,
+                    shadowFadeNear,
+                    shadowFadeFar
                 },
-                source: getTreeDepthOwnedShaderSource(),
+                source: getTreeDepthOwnedShaderSource({ cameraFacing, lockYAxis, shadowFadeNear, shadowFadeFar }),
                 uniformBindings() {
-                    return getTreeDepthUniformBindings(mainCameraPosUniform);
+                    return getTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear, shadowFadeFar);
                 }
             })
         ]

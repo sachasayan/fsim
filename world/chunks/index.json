@@ -196,35 +196,77 @@
     }
   },
   {
-    "id": "district_yet03",
+    "id": "district_4rye3c",
     "cx": 700,
-    "cz": -4100,
+    "cz": -4000,
     "radius": 707.1067811865476,
     "district": {
-      "district_type": "commercial",
+      "district_type": "windmill_farm",
       "center": [
         700,
-        -4100
+        -4000
       ],
       "radius": 500,
       "points": [
         [
           200,
-          -4600
+          -4500
         ],
         [
           1200,
-          -4600
+          -4500
         ],
         [
           1200,
-          -3600
+          -3500
         ],
         [
           200,
-          -3600
+          -3500
         ]
-      ]
+      ],
+      "turbine_density": 0.5,
+      "rotor_radius": 22,
+      "setback": 90
+    }
+  },
+  {
+    "id": "district_s83lmn",
+    "cx": -6400,
+    "cz": 7350,
+    "radius": 2229.9103120977757,
+    "district": {
+      "district_type": "windmill_farm",
+      "center": [
+        -6400,
+        7200
+      ],
+      "radius": 500,
+      "points": [
+        [
+          -7600,
+          6000
+        ],
+        [
+          -5400,
+          5700
+        ],
+        [
+          -4900,
+          7900
+        ],
+        [
+          -6100,
+          9000
+        ],
+        [
+          -7900,
+          8600
+        ]
+      ],
+      "turbine_density": 0.6,
+      "rotor_radius": 24,
+      "setback": 110
     }
   }
 ]

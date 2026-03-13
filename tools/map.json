@@ -184,30 +184,66 @@
             "city_id": "city_b"
         },
         {
-            "district_type": "commercial",
+            "district_type": "windmill_farm",
             "center": [
                 700,
-                -4100
+                -4000
             ],
             "radius": 500,
             "points": [
                 [
                     200,
-                    -4600
+                    -4500
                 ],
                 [
                     1200,
-                    -4600
+                    -4500
                 ],
                 [
                     1200,
-                    -3600
+                    -3500
                 ],
                 [
                     200,
-                    -3600
+                    -3500
                 ]
-            ]
+            ],
+            "turbine_density": 0.5,
+            "rotor_radius": 22,
+            "setback": 90
+        },
+        {
+            "district_type": "windmill_farm",
+            "center": [
+                -6400,
+                7200
+            ],
+            "radius": 500,
+            "points": [
+                [
+                    -7600,
+                    6000
+                ],
+                [
+                    -5400,
+                    5700
+                ],
+                [
+                    -4900,
+                    7900
+                ],
+                [
+                    -6100,
+                    9000
+                ],
+                [
+                    -7900,
+                    8600
+                ]
+            ],
+            "turbine_density": 0.6,
+            "rotor_radius": 24,
+            "setback": 110
         }
     ],
     "roads": [

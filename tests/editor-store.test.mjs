@@ -69,3 +69,32 @@ test('nudgeEntityCommand nudges entities and active vertices', () => {
     const moveVertex = nudgeEntityCommand(document, roadId, { x: 20, z: 0 }, { entityId: roadId, index: 1 });
     assert.deepEqual(moveVertex.point, { x: 420, z: 0 });
 });
+
+test('changing a district to windmill_farm applies default props and persists custom values', () => {
+    const document = createFixture();
+    const districtId = document.worldData.districts[0].__editorId;
+
+    const typed = applyEditorCommand(document, {
+        type: 'change-property',
+        entityId: districtId,
+        key: 'district_type',
+        value: 'windmill_farm'
+    });
+
+    const district = typed.document.worldData.districts[0];
+    assert.equal(district.district_type, 'windmill_farm');
+    assert.equal(district.turbine_density, 0.5);
+    assert.equal(district.rotor_radius, 22);
+    assert.equal(district.setback, 90);
+
+    const tuned = applyEditorCommand(typed.document, {
+        type: 'change-property',
+        entityId: districtId,
+        key: 'turbine_density',
+        value: 0.8
+    });
+    const reloaded = createEditorDocument(tuned.document.worldData, tuned.document.vantageData, tuned.document);
+
+    assert.equal(reloaded.worldData.districts[0].turbine_density, 0.8);
+    assert.equal(reloaded.worldData.districts[0].district_type, 'windmill_farm');
+});

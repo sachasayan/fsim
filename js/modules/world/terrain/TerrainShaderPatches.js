@@ -66,9 +66,11 @@ export function createBuildingPopInUniformBindings(cameraPosUniform, fadeNear = 
     };
 }
 
-export function createTreeDepthUniformBindings(mainCameraPosUniform) {
+export function createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear = 1200, shadowFadeFar = 1800) {
     return {
-        uMainCameraPos: mainCameraPosUniform
+        uMainCameraPos: mainCameraPosUniform,
+        uTreeShadowFadeNear: { value: shadowFadeNear },
+        uTreeShadowFadeFar: { value: shadowFadeFar }
     };
 }
 
@@ -193,32 +195,50 @@ transformed *= bldgPopInScale;
     return shader;
 }
 
-export function applyTreeBillboardShaderPatch(shader) {
+export function applyTreeBillboardShaderPatch(shader, { cameraFacing = true, lockYAxis = true } = {}) {
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
-        'beginnormal_vertex',
-        `
+        'common',
+        '#include <common>\nvarying vec2 vTreeUv;'
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'begin_vertex',
+        '#include <begin_vertex>\nvTreeUv = uv;'
+    );
+
+    if (cameraFacing) {
+        shader.vertexShader = replaceShaderInclude(
+            shader.vertexShader,
+            'beginnormal_vertex',
+            `
 #include <beginnormal_vertex>
     #ifdef USE_INSTANCING
     vec3 cameraDirN = cameraPosition - (modelMatrix * vec4(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2], 1.0)).xyz;
-cameraDirN.y = 0.0;
+${lockYAxis ? 'cameraDirN.y = 0.0;' : ''}
 cameraDirN = normalize(cameraDirN);
 if (length(cameraDirN) > 0.0) {
-        vec3 rightN = normalize(cross(vec3(0.0, 1.0, 0.0), cameraDirN));
-        mat3 alignMatN = mat3(
+        vec3 upRefN = abs(cameraDirN.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        vec3 rightN = normalize(cross(upRefN, cameraDirN));
+        vec3 upN = normalize(cross(cameraDirN, rightN));
+        mat3 alignMatN = ${lockYAxis ? `mat3(
     rightN.x, 0.0, rightN.z,
     0.0, 1.0, 0.0,
     cameraDirN.x, 0.0, cameraDirN.z
-);
+)` : `mat3(
+    rightN.x, rightN.y, rightN.z,
+    upN.x, upN.y, upN.z,
+    cameraDirN.x, cameraDirN.y, cameraDirN.z
+)`};
     objectNormal = alignMatN * objectNormal;
 }
 #endif
     `
-    );
-    shader.vertexShader = replaceShaderInclude(
-        shader.vertexShader,
-        'project_vertex',
-        `
+        );
+        shader.vertexShader = replaceShaderInclude(
+            shader.vertexShader,
+            'project_vertex',
+            `
 vec4 mvPosition = vec4(transformed, 1.0);
 #ifdef USE_BATCHING
 mvPosition = batchingMatrix * mvPosition;
@@ -227,18 +247,24 @@ mvPosition = batchingMatrix * mvPosition;
     vec3 instancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
     vec2 instanceScale = vec2(length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
     length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])));
-                              
+
     vec3 cameraDir = cameraPosition - (modelMatrix * vec4(instancePos, 1.0)).xyz;
-cameraDir.y = 0.0;
+${lockYAxis ? 'cameraDir.y = 0.0;' : ''}
 cameraDir = normalize(cameraDir);
 
 if (length(cameraDir) > 0.0) {
-        vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), cameraDir));
-        mat3 alignMat = mat3(
+        vec3 upRef = abs(cameraDir.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        vec3 right = normalize(cross(upRef, cameraDir));
+        vec3 up = normalize(cross(cameraDir, right));
+        mat3 alignMat = ${lockYAxis ? `mat3(
     right.x, 0.0, right.z,
     0.0, 1.0, 0.0,
     cameraDir.x, 0.0, cameraDir.z
-);
+)` : `mat3(
+    right.x, right.y, right.z,
+    up.x, up.y, up.z,
+    cameraDir.x, cameraDir.y, cameraDir.z
+)`};
     mvPosition.xyz = alignMat * (mvPosition.xyz * vec3(instanceScale.x, instanceScale.y, 1.0)) + instancePos;
 } else {
     mvPosition = instanceMatrix * mvPosition;
@@ -247,21 +273,58 @@ if (length(cameraDir) > 0.0) {
 mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;
 `
+        );
+    }
+
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'common',
+        '#include <common>\nvarying vec2 vTreeUv;'
+    );
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'color_fragment',
+        `#include <color_fragment>
+float treeVerticalShade = mix(0.82, 1.08, smoothstep(0.06, 0.88, vTreeUv.y));
+float treeCenterShade = 1.0 - smoothstep(0.0, 0.46, distance(vTreeUv, vec2(0.5, 0.42))) * 0.18;
+float treeCanopyMask = smoothstep(0.1, 0.58, vTreeUv.y);
+float treeInteriorShade = mix(1.0, treeCenterShade, treeCanopyMask);
+diffuseColor.rgb *= treeVerticalShade * treeInteriorShade;
+diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.05, 1.07, 0.98), treeCanopyMask * 0.22);`
+    );
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'roughnessmap_fragment',
+        `#include <roughnessmap_fragment>
+float treeCanopyRoughness = smoothstep(0.08, 0.52, vTreeUv.y);
+roughnessFactor = mix(roughnessFactor * 0.82, min(1.0, roughnessFactor * 1.08), treeCanopyRoughness);`
     );
 
     return shader;
 }
 
-export function applyTreeDepthShaderPatch(shader, { mainCameraPosUniform }) {
+export function applyTreeDepthShaderPatch(shader, {
+    mainCameraPosUniform,
+    cameraFacing = true,
+    lockYAxis = true,
+    shadowFadeNear = 1200,
+    shadowFadeFar = 1800
+} = {}) {
     shader.defines = shader.defines || {};
     shader.defines.DEPTH_PACKING = 3201;
-    Object.assign(shader.uniforms, createTreeDepthUniformBindings(mainCameraPosUniform));
+    Object.assign(shader.uniforms, createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear, shadowFadeFar));
+
+    if (!cameraFacing) {
+        return shader;
+    }
 
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
         'common',
         `#include <common>
-    uniform vec3 uMainCameraPos; `
+    uniform vec3 uMainCameraPos;
+    uniform float uTreeShadowFadeNear;
+    uniform float uTreeShadowFadeFar; `
     );
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
@@ -280,19 +343,25 @@ mvPosition = batchingMatrix * mvPosition;
 
     // Distance-based shadow culling to prevent ALPHATEST discard overdraw
     float distToCamera = length(cameraDir);
-    float shadowScale = 1.0 - smoothstep(600.0, 800.0, distToCamera);
+    float shadowScale = 1.0 - smoothstep(uTreeShadowFadeNear, uTreeShadowFadeFar, distToCamera);
 
 // Don't pitch trees up/down towards the camera
-cameraDir.y = 0.0;
+${lockYAxis ? 'cameraDir.y = 0.0;' : ''}
 cameraDir = normalize(cameraDir);
 
 if (length(cameraDir) > 0.0) {
-        vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), cameraDir));
-        mat3 alignMat = mat3(
+        vec3 upRef = abs(cameraDir.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        vec3 right = normalize(cross(upRef, cameraDir));
+        vec3 up = normalize(cross(cameraDir, right));
+        mat3 alignMat = ${lockYAxis ? `mat3(
     right.x, 0.0, right.z,
     0.0, 1.0, 0.0,
     cameraDir.x, 0.0, cameraDir.z
-);
+)` : `mat3(
+    right.x, right.y, right.z,
+    up.x, up.y, up.z,
+    cameraDir.x, cameraDir.y, cameraDir.z
+)`};
     mvPosition.xyz = alignMat * (mvPosition.xyz * vec3(instanceScale.x * shadowScale, instanceScale.y * shadowScale, 1.0)) + instancePos;
 } else {
     mvPosition = instanceMatrix * mvPosition;

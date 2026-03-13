@@ -13,8 +13,10 @@ import {
 test('terrain prop owned shader sources are cached and expose expected variants', () => {
     const treeBillboardA = getTreeBillboardOwnedShaderSource();
     const treeBillboardB = getTreeBillboardOwnedShaderSource();
+    const treeBillboardFullFacing = getTreeBillboardOwnedShaderSource({ cameraFacing: true, lockYAxis: false });
     const treeDepthA = getTreeDepthOwnedShaderSource();
     const treeDepthB = getTreeDepthOwnedShaderSource();
+    const treeDepthFullFacing = getTreeDepthOwnedShaderSource({ cameraFacing: true, lockYAxis: false });
     const treeCrossed = getTreeBillboardOwnedShaderSource({ cameraFacing: false });
     const treeStaticDepth = getTreeDepthOwnedShaderSource({ cameraFacing: false });
     const buildingPopIn = getBuildingPopInOwnedShaderSource({ fadeNear: 100, fadeFar: 200 });
@@ -28,9 +30,12 @@ test('terrain prop owned shader sources are cached and expose expected variants'
     assert.equal(treeBillboardA, treeBillboardB);
     assert.equal(treeDepthA, treeDepthB);
     assert.match(treeBillboardA.vertexShader, /vec3 cameraDir = cameraPosition -/);
+    assert.match(treeBillboardA.vertexShader, /cameraDir\.y = 0\.0;/);
+    assert.doesNotMatch(treeBillboardFullFacing.vertexShader, /cameraDir\.y = 0\.0;/);
     assert.match(treeBillboardA.fragmentShader, /float treeVerticalShade = mix\(0\.82, 1\.08, smoothstep\(0\.06, 0\.88, vTreeUv\.y\)\);/);
     assert.doesNotMatch(treeCrossed.vertexShader, /vec3 cameraDir = cameraPosition -/);
     assert.match(treeDepthA.vertexShader, /float shadowScale = 1\.0 - smoothstep\(uTreeShadowFadeNear, uTreeShadowFadeFar, distToCamera\);/);
+    assert.doesNotMatch(treeDepthFullFacing.vertexShader, /cameraDir\.y = 0\.0;/);
     assert.doesNotMatch(treeStaticDepth.vertexShader, /float shadowScale = 1\.0 - smoothstep/);
     assert.equal(treeDepthA.defines.DEPTH_PACKING, 3201);
     assert.match(buildingPopIn.vertexShader, /float bldgPopInScale = 1\.0 - smoothstep\(uBldgFadeNear, uBldgFadeFar, bldgDist\);/);

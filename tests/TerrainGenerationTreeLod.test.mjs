@@ -12,12 +12,12 @@ function makeResources() {
             near: new THREE.MeshBasicMaterial(),
             mid: new THREE.MeshBasicMaterial()
         },
+        treeTrunkGeo: new THREE.CylinderGeometry(0.12, 0.18, 1, 6),
+        treeTrunkMat: new THREE.MeshStandardMaterial(),
         treeTypeConfigs: {
             broadleaf: {
-                mat: new THREE.MeshStandardMaterial(),
-                crossedMat: new THREE.MeshStandardMaterial(),
+                canopyMat: new THREE.MeshStandardMaterial(),
                 depthMat: new THREE.MeshDepthMaterial(),
-                crossedDepthMat: new THREE.MeshDepthMaterial(),
                 baseTint: new THREE.Color(0x88aa77)
             }
         }
@@ -33,19 +33,20 @@ function makeInstances() {
     };
 }
 
-test('buildTreeMeshesForLod builds crossed-card near trees with contact shadows', () => {
+test('buildTreeMeshesForLod builds hybrid near trees with canopy billboards and contact shadows', () => {
     const meshes = buildTreeMeshesForLod(makeInstances(), {
         enableTrees: true,
-        treeRenderMode: 'crossed',
+        treeRenderMode: 'hybrid',
         enableTreeContactShadows: true
     }, makeResources());
 
     assert.equal(meshes.length, 5);
-    assert.equal(meshes.filter((mesh) => mesh.userData.treeRenderTier === 'near-crossed').length, 3);
-    assert.equal(meshes.filter((mesh) => mesh.userData.treeRenderTier === 'near-top-cap').length, 1);
+    assert.equal(meshes.filter((mesh) => mesh.userData.treeRenderTier === 'near-trunk').length, 1);
+    assert.equal(meshes.filter((mesh) => /^near-canopy-/.test(mesh.userData.treeRenderTier)).length, 3);
     assert.equal(meshes.filter((mesh) => mesh.userData.treeRenderTier === 'near-contact').length, 1);
     assert.ok(meshes.every((mesh) => mesh.count === 2));
-    assert.equal(meshes.find((mesh) => mesh.userData.treeRenderTier === 'near-top-cap').castShadow, false);
+    assert.equal(meshes.find((mesh) => mesh.userData.treeRenderTier === 'near-canopy-0').castShadow, true);
+    assert.equal(meshes.find((mesh) => mesh.userData.treeRenderTier === 'near-canopy-1').castShadow, false);
 });
 
 test('buildTreeMeshesForLod builds billboard mid trees with contact shadows', () => {
@@ -55,9 +56,10 @@ test('buildTreeMeshesForLod builds billboard mid trees with contact shadows', ()
         enableTreeContactShadows: true
     }, makeResources());
 
-    assert.equal(meshes.length, 2);
-    assert.equal(meshes[0].userData.treeRenderTier, 'mid-billboard');
-    assert.equal(meshes[1].userData.treeRenderTier, 'mid-contact');
+    assert.equal(meshes.length, 3);
+    assert.equal(meshes[0].userData.treeRenderTier, 'mid-trunk-hint');
+    assert.equal(meshes[1].userData.treeRenderTier, 'mid-billboard');
+    assert.equal(meshes[2].userData.treeRenderTier, 'mid-contact');
 });
 
 test('buildTreeMeshesForLod omits trees when disabled', () => {

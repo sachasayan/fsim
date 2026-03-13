@@ -13,7 +13,7 @@ import { readFileSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Noise } from '../js/modules/noise.js';
-import { serializeChunk } from './lib/WorldBuilderSerial.mjs';
+import { DISTRICT_PROP_TYPES, serializeChunk } from './lib/WorldBuilderSerial.mjs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
@@ -809,6 +809,72 @@ function placeBuildingsInIndustrialQuads(city, roads, quads) {
     return buildings;
 }
 
+function isWindmillPlacementValid(x, z, district, setback) {
+    if (district.points?.length >= 3) {
+        if (!isPointInPolygon(x, z, district.points)) return false;
+        return distToPolygon(x, z, district.points) >= setback;
+    }
+    if (district.center && district.radius) {
+        const dist = Math.hypot(x - district.center[0], z - district.center[1]);
+        return dist <= Math.max(0, district.radius - setback);
+    }
+    return false;
+}
+
+function placeWindmillsInDistrict(city) {
+    const district = city.districts?.[0] || null;
+    if (!district) return [];
+
+    const bounds = getDistrictBounds(district);
+    const density = Number.isFinite(district.turbine_density) ? district.turbine_density : 0.5;
+    const rotorRadius = Number.isFinite(district.rotor_radius) ? district.rotor_radius : 22;
+    const setback = Number.isFinite(district.setback) ? district.setback : 90;
+    const minSpacing = Math.max(rotorRadius * 6.0, setback * 1.25);
+    const gridStep = minSpacing + (1.0 - density) * rotorRadius * 10.0;
+    const jitter = Math.max(6, rotorRadius * 1.4);
+    const rng = seededRand(getDistrictSeed(city) * 9187 + 41);
+    const props = [];
+
+    for (let x = bounds.minX + setback; x <= bounds.maxX - setback; x += gridStep) {
+        for (let z = bounds.minZ + setback; z <= bounds.maxZ - setback; z += gridStep) {
+            const px = x + (rng() - 0.5) * jitter;
+            const pz = z + (rng() - 0.5) * jitter;
+            if (!isWindmillPlacementValid(px, pz, district, setback)) continue;
+
+            let tooClose = false;
+            for (const existing of props) {
+                if (Math.hypot(existing.x - px, existing.z - pz) < minSpacing) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) continue;
+
+            const y = getTerrainHeight(px, pz);
+            if (y < 2.0 || y > 430) continue;
+
+            const slopeSample = 12;
+            const slopeX = Math.abs(getTerrainHeight(px + slopeSample, pz) - y) / slopeSample;
+            const slopeZ = Math.abs(getTerrainHeight(px, pz + slopeSample) - y) / slopeSample;
+            if (Math.max(slopeX, slopeZ) > 0.45) continue;
+
+            const height = rotorRadius * (4.6 + rng() * 0.8);
+            props.push({
+                typeId: DISTRICT_PROP_TYPES.windmill,
+                x: px,
+                y,
+                z: pz,
+                height,
+                rotorRadius,
+                angle: rng() * Math.PI * 2,
+                phase: rng() * Math.PI * 2
+            });
+        }
+    }
+
+    return props;
+}
+
 // ---------------------------------------------------------------------------
 // Road segment list for a city
 // ---------------------------------------------------------------------------
@@ -860,6 +926,7 @@ for (const city of districtRecords) {
 
     const districtType = getDistrictType(city.districts?.[0]);
     let buildings;
+    let districtProps = [];
 
     if (districtType === 'industrial') {
         console.log(`  [${city.id}] Generating industrial district blocks…`);
@@ -867,6 +934,11 @@ for (const city of districtRecords) {
         console.log(`  [${city.id}]   → ${industrialQuads.length} blocks`);
         console.log(`  [${city.id}] Filling industrial quads with buildings…`);
         buildings = placeBuildingsInIndustrialQuads(city, [], industrialQuads);
+    } else if (districtType === 'windmill_farm') {
+        console.log(`  [${city.id}] Generating windmill placements…`);
+        buildings = [];
+        districtProps = placeWindmillsInDistrict(city);
+        console.log(`  [${city.id}]   → ${districtProps.length} windmills`);
     } else {
         console.log(`  [${city.id}] Generating district blocks…`);
         const blocks = buildDistrictBlocks(city);
@@ -879,7 +951,7 @@ for (const city of districtRecords) {
 
     // Write single binary chunk for the whole district
     const binPath = path.join(outDir, 'district.bin');
-    const binData = serializeChunk(buildings);
+    const binData = serializeChunk(buildings, districtProps);
     writeFileSync(binPath, binData);
     console.log(`  [${city.id}]   → wrote ${(Buffer.byteLength(binData) / 1024).toFixed(1)} KB to ${path.relative(ROOT, binPath)}`);
 
@@ -890,6 +962,8 @@ for (const city of districtRecords) {
         center: city.center,
         radius: getCityRadius(city),
         numBuildings: buildings.length,
+        numProps: districtProps.length,
+        districtProps,
         buildings
     }, null, 2));
     console.log(`  [${city.id}]   → wrote debug JSON to ${path.relative(ROOT, jsonPath)}\n`);

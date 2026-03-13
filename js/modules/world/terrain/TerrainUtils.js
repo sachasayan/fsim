@@ -99,34 +99,34 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
         return {
             kind: 'parkland',
             density: 0.06,
-            typeWeights: { broadleaf: 0.55, poplar: 0.35, conifer: 0.1 }
+            typeWeights: { broadleaf: 0.68, poplar: 0.24, dry: 0.08 }
         };
     }
     if (height > 280 || heat < 0.28) {
         return {
             kind: 'alpine',
             density: 0.08 + forestNoise * 0.08,
-            typeWeights: { conifer: 0.72, dry: 0.2, poplar: 0.08 }
+            typeWeights: { poplar: 0.34, broadleaf: 0.24, dry: 0.42 }
         };
     }
     if (moisture > 0.66) {
         return {
             kind: 'dense_mixed',
             density: 0.16 + forestNoise * 0.1,
-            typeWeights: { conifer: 0.46, broadleaf: 0.34, poplar: 0.2 }
+            typeWeights: { broadleaf: 0.72, poplar: 0.2, dry: 0.08 }
         };
     }
     if (moisture < 0.35) {
         return {
             kind: 'dry_scrub',
             density: 0.05 + forestNoise * 0.05,
-            typeWeights: { dry: 0.52, poplar: 0.18, broadleaf: 0.16, conifer: 0.14 }
+            typeWeights: { dry: 0.58, broadleaf: 0.24, poplar: 0.18 }
         };
     }
     return {
         kind: 'temperate_mixed',
         density: 0.1 + forestNoise * 0.07,
-        typeWeights: { broadleaf: 0.42, conifer: 0.35, poplar: 0.2, dry: 0.03 }
+        typeWeights: { broadleaf: 0.62, poplar: 0.26, dry: 0.12 }
     };
 }
 

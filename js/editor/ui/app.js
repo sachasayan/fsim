@@ -159,7 +159,39 @@ function InspectorPanel({ store, controller }) {
                         onChange: event => updateProperty('district_type', event.target.value),
                         'data-testid': 'field-district-type'
                     }, DISTRICT_TYPES.map(option => h('option', { key: option, value: option }, option)))
-                })
+                }),
+                getDistrictType(selected) === 'windmill_farm' ? h('div', { key: 'windmill-controls' }, [
+                    h(RangeNumberField, {
+                        key: 'turbine-density',
+                        label: 'Turbine Density',
+                        value: selected.turbine_density,
+                        min: 0.05,
+                        max: 1,
+                        step: 0.05,
+                        disabled: locked,
+                        onChange: value => updateProperty('turbine_density', value)
+                    }),
+                    h(RangeNumberField, {
+                        key: 'rotor-radius',
+                        label: 'Rotor Radius',
+                        value: selected.rotor_radius,
+                        min: 8,
+                        max: 80,
+                        step: 1,
+                        disabled: locked,
+                        onChange: value => updateProperty('rotor_radius', value)
+                    }),
+                    h(RangeNumberField, {
+                        key: 'setback',
+                        label: 'Setback',
+                        value: selected.setback,
+                        min: 20,
+                        max: 240,
+                        step: 5,
+                        disabled: locked,
+                        onChange: value => updateProperty('setback', value)
+                    })
+                ]) : null
             ]) : null,
             isRoad(selected) ? h('div', { key: 'road' }, [
                 h(FieldRow, {

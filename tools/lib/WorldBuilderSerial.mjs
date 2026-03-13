@@ -4,21 +4,28 @@
  */
 
 const MAGIC = 0x46574C44;
-const VERSION = 3;
+const VERSION = 4;
 const BLDG_FLOATS = 10;
+const PROP_FLOATS = 8;
+
+export const DISTRICT_PROP_TYPES = Object.freeze({
+    windmill: 0
+});
 
 /**
  * Serializes district buildings into a binary buffer.
  * @param {Array} buildings - List of buildings.
+ * @param {Array} props - List of district props.
  * @returns {Buffer} Node.js Buffer containing the binary data.
  */
-export function serializeChunk(buildings) {
+export function serializeChunk(buildings, props = []) {
     const headerInts = 6;
     const bldgBytes = buildings.length * BLDG_FLOATS * 4;
+    const propBytes = props.length * PROP_FLOATS * 4;
 
     // Header layout retained for backward compatibility:
-    // [magic, version, numBuildings, numRoads, maskSize, maskOffset]
-    const maskOffset = headerInts * 4 + bldgBytes;
+    // [magic, version, numBuildings, numPropsOrLegacyRoads, maskSize, maskOffset]
+    const maskOffset = headerInts * 4 + bldgBytes + propBytes;
     const byteLen = maskOffset;
 
     const buf = new ArrayBuffer(byteLen);
@@ -31,7 +38,7 @@ export function serializeChunk(buildings) {
     wi32(MAGIC);
     wi32(VERSION);
     wi32(buildings.length);
-    wi32(0);
+    wi32(props.length);
     wi32(0);
     wi32(maskOffset);
 
@@ -42,6 +49,17 @@ export function serializeChunk(buildings) {
         wf32(b.classId);
         wf32(b.colorIdx);
         wf32(0);
+    }
+
+    for (const prop of props) {
+        wf32(prop.x);
+        wf32(prop.y);
+        wf32(prop.z);
+        wf32(prop.height);
+        wf32(prop.rotorRadius);
+        wf32(prop.angle);
+        wf32(prop.phase);
+        wf32(prop.typeId);
     }
 
     return Buffer.from(buf);

@@ -1,15 +1,35 @@
-export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban'];
+export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban', 'windmill_farm'];
 export const ROAD_KINDS = ['road', 'taxiway', 'service'];
 export const ROAD_SURFACES = ['asphalt', 'gravel', 'dirt'];
+export const WINDMILL_FARM_DEFAULTS = Object.freeze({
+    turbine_density: 0.5,
+    rotor_radius: 22,
+    setback: 90
+});
+
+function clampNumber(value, min, max, fallback) {
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(max, Math.max(min, value));
+}
 
 export function getDistrictType(district) {
     return district?.district_type || district?.type || 'residential';
+}
+
+export function normalizeWindmillFarmProps(district) {
+    district.turbine_density = clampNumber(district.turbine_density, 0.05, 1.0, WINDMILL_FARM_DEFAULTS.turbine_density);
+    district.rotor_radius = clampNumber(district.rotor_radius, 8, 80, WINDMILL_FARM_DEFAULTS.rotor_radius);
+    district.setback = clampNumber(district.setback, 20, 240, WINDMILL_FARM_DEFAULTS.setback);
+    return district;
 }
 
 export function normalizeDistrict(rawDistrict, cityId = null) {
     const district = rawDistrict;
     district.district_type = getDistrictType(district);
     delete district.type;
+    if (!DISTRICT_TYPES.includes(district.district_type)) {
+        district.district_type = 'residential';
+    }
     if (cityId && !district.city_id) district.city_id = cityId;
     if (!Array.isArray(district.points) && Array.isArray(district.footprint)) {
         district.points = district.footprint;
@@ -40,6 +60,9 @@ export function normalizeDistrict(rawDistrict, cityId = null) {
     }
     if (looksRelative) {
         district.points = district.points.map(([x, z]) => [district.center[0] + x, district.center[1] + z]);
+    }
+    if (district.district_type === 'windmill_farm') {
+        normalizeWindmillFarmProps(district);
     }
     return district;
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CLASS_NAMES } from './CityChunkLoader.js';
+import { CLASS_NAMES, DISTRICT_PROP_NAMES } from './CityChunkLoader.js';
 import { hash2Local } from './TerrainUtils.js';
 
 export const classConfigs = {
@@ -175,4 +175,126 @@ export function spawnCityBuildingsForChunk(chunkGroup, cx, cz, cityData, lod, ct
         if (spireMesh) chunkGroup.add(spireMesh);
         if (hvacMesh && hvacIdx > 0) { hvacMesh.count = hvacIdx; chunkGroup.add(hvacMesh); }
     }
+}
+
+export function spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE) {
+    const {
+        windmillTowerGeo, windmillTowerMat,
+        windmillNacelleGeo, windmillNacelleMat,
+        windmillHubGeo, windmillHubMat,
+        windmillBladeGeo, windmillBladeMat,
+        dummy
+    } = ctx;
+
+    const key = `${cx},${cz}`;
+    const propsInChunk = districtData.props?.[key] || [];
+    const windmills = propsInChunk.filter(prop => DISTRICT_PROP_NAMES[prop.typeId] === 'windmill');
+    if (windmills.length === 0) return;
+
+    const nearLod = lod <= 1;
+    const towerMesh = new THREE.InstancedMesh(windmillTowerGeo, windmillTowerMat, windmills.length);
+    const nacelleMesh = new THREE.InstancedMesh(windmillNacelleGeo, windmillNacelleMat, windmills.length);
+    const hubMesh = new THREE.InstancedMesh(windmillHubGeo, windmillHubMat, windmills.length);
+    const bladeMesh = new THREE.InstancedMesh(windmillBladeGeo, windmillBladeMat, windmills.length * 3);
+
+    towerMesh.castShadow = nearLod;
+    towerMesh.receiveShadow = nearLod;
+    nacelleMesh.castShadow = nearLod;
+    nacelleMesh.receiveShadow = nearLod;
+    hubMesh.castShadow = nearLod;
+    hubMesh.receiveShadow = nearLod;
+    bladeMesh.castShadow = nearLod;
+    bladeMesh.receiveShadow = nearLod;
+
+    const bladeInstances = [];
+    dummy.rotation.order = 'YXZ';
+
+    for (let i = 0; i < windmills.length; i++) {
+        const prop = windmills[i];
+        const lx = prop.x - cx * CHUNK_SIZE;
+        const lz = prop.z - cz * CHUNK_SIZE;
+        const towerRadius = Math.max(1.4, prop.rotorRadius * 0.075);
+        const hubY = prop.y + prop.height;
+        const nacelleLength = Math.max(2.8, prop.rotorRadius * 0.85);
+        const nacelleHeight = Math.max(1.2, prop.rotorRadius * 0.18);
+        const hubScale = Math.max(0.8, prop.rotorRadius * 0.14);
+        const bladeWidth = Math.max(0.22, prop.rotorRadius * 0.08) * 1.5;
+        const bladeDepth = Math.max(0.12, prop.rotorRadius * 0.035) * 1.4;
+        const bladeLength = prop.rotorRadius * 3.0;
+        const rotorCenterX = lx + Math.cos(prop.angle) * nacelleLength;
+        const rotorCenterZ = lz + Math.sin(prop.angle) * nacelleLength;
+
+        dummy.position.set(lx, prop.y, lz);
+        dummy.rotation.set(0, prop.angle, 0);
+        dummy.scale.set(towerRadius, prop.height, towerRadius);
+        dummy.updateMatrix();
+        towerMesh.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(lx, hubY, lz);
+        dummy.rotation.set(0, prop.angle, 0);
+        dummy.scale.set(nacelleLength, nacelleHeight, nacelleHeight);
+        dummy.updateMatrix();
+        nacelleMesh.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(rotorCenterX, hubY, rotorCenterZ);
+        dummy.rotation.set(0, prop.angle, 0);
+        dummy.scale.set(hubScale, hubScale, hubScale);
+        dummy.updateMatrix();
+        hubMesh.setMatrixAt(i, dummy.matrix);
+
+        for (let bladeIndex = 0; bladeIndex < 3; bladeIndex++) {
+            bladeInstances.push({
+                x: rotorCenterX,
+                y: hubY,
+                z: rotorCenterZ,
+                heading: prop.angle,
+                spinOffset: prop.phase + bladeIndex * (Math.PI * 2 / 3),
+                bladeWidth,
+                bladeDepth,
+                bladeLength
+            });
+        }
+    }
+
+    bladeMesh.userData.windmillBladeInstances = bladeInstances;
+    bladeMesh.userData.animationSpeed = 1.9;
+    bladeMesh.userData.chunkKey = key;
+    bladeMesh.userData.isWindmillBladeMesh = true;
+
+    animateWindmillBladeMesh(bladeMesh, 0, dummy);
+
+    towerMesh.instanceMatrix.needsUpdate = true;
+    nacelleMesh.instanceMatrix.needsUpdate = true;
+    hubMesh.instanceMatrix.needsUpdate = true;
+
+    chunkGroup.add(towerMesh, nacelleMesh, hubMesh, bladeMesh);
+}
+
+export function animateWindmillBladeMesh(bladeMesh, timeSeconds, sharedDummy = null) {
+    const bladeInstances = bladeMesh?.userData?.windmillBladeInstances;
+    if (!bladeInstances || bladeInstances.length === 0) return;
+
+    const dummy = sharedDummy || new THREE.Object3D();
+    dummy.rotation.order = 'YXZ';
+    const speed = bladeMesh.userData.animationSpeed || 1.9;
+
+    for (let i = 0; i < bladeInstances.length; i++) {
+        const blade = bladeInstances[i];
+        dummy.position.set(blade.x, blade.y, blade.z);
+        dummy.rotation.set(timeSeconds * speed + blade.spinOffset, blade.heading, 0);
+        dummy.scale.set(blade.bladeWidth, blade.bladeLength, blade.bladeDepth);
+        dummy.updateMatrix();
+        bladeMesh.setMatrixAt(i, dummy.matrix);
+    }
+
+    bladeMesh.instanceMatrix.needsUpdate = true;
+}
+
+export function animateWindmillProps(root, timeSeconds, sharedDummy = null) {
+    if (!root) return;
+    root.traverse(child => {
+        if (child.userData?.isWindmillBladeMesh) {
+            animateWindmillBladeMesh(child, timeSeconds, sharedDummy);
+        }
+    });
 }

@@ -82,13 +82,17 @@ test('building pop-in and tree depth helpers expose expected uniform bindings', 
 
 test('applyTreeBillboardShaderPatch injects leafy shading and supports static crossed cards', () => {
     const cameraFacingShader = makeShader();
+    const fullFacingShader = makeShader();
     const crossedShader = makeShader();
 
     applyTreeBillboardShaderPatch(cameraFacingShader);
+    applyTreeBillboardShaderPatch(fullFacingShader, { cameraFacing: true, lockYAxis: false });
     applyTreeBillboardShaderPatch(crossedShader, { cameraFacing: false });
 
     assert.match(cameraFacingShader.vertexShader, /vec3 cameraDir = cameraPosition -/);
+    assert.match(cameraFacingShader.vertexShader, /cameraDir\.y = 0\.0;/);
     assert.match(cameraFacingShader.fragmentShader, /float treeVerticalShade = mix\(0\.82, 1\.08, smoothstep\(0\.06, 0\.88, vTreeUv\.y\)\);/);
+    assert.doesNotMatch(fullFacingShader.vertexShader, /cameraDir\.y = 0\.0;/);
     assert.doesNotMatch(crossedShader.vertexShader, /vec3 cameraDir = cameraPosition -/);
     assert.match(crossedShader.fragmentShader, /roughnessFactor = mix\(roughnessFactor \* 0\.82, min\(1\.0, roughnessFactor \* 1\.08\), treeCanopyRoughness\);/);
 });

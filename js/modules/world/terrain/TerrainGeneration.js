@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { fetchDistrictIndex, loadDistrictChunk } from './CityChunkLoader.js';
 import { QuadtreeMapSampler, hash2Local } from './TerrainUtils.js';
 import { normalizeMapData } from '../MapDataUtils.js';
-import { spawnCityBuildingsForChunk, classConfigs } from './BuildingSpawner.js';
+import { spawnCityBuildingsForChunk, spawnDistrictPropsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
 import { debugLog } from '../../core/logging.js';
 
@@ -177,9 +177,184 @@ export async function getOverlappingDistricts(cx, cz) {
     return overlapping;
 }
 
+function applyTreeInstanceColors(mesh, instances, baseTint) {
+    const count = instances.length / 8;
+    const colors = new Float32Array(count * 3);
+    const color = new THREE.Color();
+    for (let i = 0; i < count; i++) {
+        const seed = instances[i * 8 + 6];
+        color.copy(baseTint);
+        color.offsetHSL((seed - 0.5) * 0.03, (seed - 0.5) * 0.08, (seed - 0.5) * 0.12);
+        const brightness = 0.94 + seed * 0.14;
+        color.multiplyScalar(brightness);
+        colors[i * 3 + 0] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+    }
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+    mesh.instanceColor.needsUpdate = true;
+}
+
+export function buildTreeMeshesForLod(treeInstances, lodCfg, resources) {
+    const {
+        treeBillboardGeo,
+        treeGroundGeo,
+        treeTrunkGeo,
+        treeTrunkMat,
+        treeTypeConfigs
+    } = resources;
+    const dummy = new THREE.Object3D();
+    const meshes = [];
+    const renderMode = lodCfg?.treeRenderMode || (lodCfg?.enableTrees ? 'billboard' : 'disabled');
+    if (renderMode === 'disabled') return meshes;
+
+    for (const [treeType, instances] of Object.entries(treeInstances || {})) {
+        if (!instances || instances.length === 0) continue;
+        const count = instances.length / 8;
+        const cfg = treeTypeConfigs[treeType];
+        if (!cfg || count === 0) continue;
+
+        if (renderMode === 'hybrid' || renderMode === 'crossed') {
+            const trunkMesh = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, count);
+            for (let i = 0; i < count; i++) {
+                const offset = i * 8;
+                const canopyWidth = instances[offset + 3];
+                const canopyHeight = instances[offset + 4];
+                const seed = instances[offset + 6];
+                dummy.position.set(instances[offset + 0], instances[offset + 1], instances[offset + 2]);
+                dummy.rotation.set(0, instances[offset + 5], 0);
+                dummy.scale.set(
+                    canopyWidth * (0.11 + seed * 0.04),
+                    canopyHeight * (0.3 + seed * 0.08),
+                    canopyWidth * (0.11 + seed * 0.04)
+                );
+                dummy.updateMatrix();
+                trunkMesh.setMatrixAt(i, dummy.matrix);
+            }
+            trunkMesh.instanceMatrix.needsUpdate = true;
+            trunkMesh.castShadow = true;
+            trunkMesh.receiveShadow = false;
+            trunkMesh.userData.treeRenderTier = 'near-trunk';
+            meshes.push(trunkMesh);
+
+            const crownLayouts = [
+                { dx: 0.0, dz: 0.0, y: 0.38, w: 0.82, h: 0.56, castShadow: true },
+                { dx: -0.16, dz: 0.10, y: 0.46, w: 0.66, h: 0.48, castShadow: false },
+                { dx: 0.17, dz: -0.08, y: 0.5, w: 0.62, h: 0.46, castShadow: false }
+            ];
+            crownLayouts.forEach((layout, crownIndex) => {
+                const mesh = new THREE.InstancedMesh(treeBillboardGeo, cfg.canopyMat, count);
+                for (let i = 0; i < count; i++) {
+                    const offset = i * 8;
+                    const canopyWidth = instances[offset + 3];
+                    const canopyHeight = instances[offset + 4];
+                    const yaw = instances[offset + 5];
+                    const seed = instances[offset + 6];
+                    const crownScaleY = canopyHeight * (layout.h + seed * 0.08);
+                    const cosYaw = Math.cos(yaw);
+                    const sinYaw = Math.sin(yaw);
+                    const localX = layout.dx * canopyWidth * (0.85 + seed * 0.25);
+                    const localZ = layout.dz * canopyWidth * (0.85 + seed * 0.25);
+                    dummy.position.set(
+                        instances[offset + 0] + localX * cosYaw - localZ * sinYaw,
+                        instances[offset + 1] + canopyHeight * (layout.y + seed * 0.05) - crownScaleY * 0.48,
+                        instances[offset + 2] + localX * sinYaw + localZ * cosYaw
+                    );
+                    dummy.rotation.set(0, 0, 0);
+                    dummy.scale.set(
+                        canopyWidth * (layout.w + seed * 0.1),
+                        crownScaleY,
+                        1
+                    );
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                }
+                mesh.instanceMatrix.needsUpdate = true;
+                applyTreeInstanceColors(mesh, instances, cfg.baseTint);
+                mesh.castShadow = layout.castShadow;
+                mesh.receiveShadow = false;
+                mesh.customDepthMaterial = layout.castShadow ? cfg.depthMat : null;
+                mesh.userData.treeRenderTier = `near-canopy-${crownIndex}`;
+                mesh.userData.treeType = treeType;
+                meshes.push(mesh);
+            });
+        } else if (renderMode === 'billboard') {
+            const trunkHintMesh = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, count);
+            for (let i = 0; i < count; i++) {
+                const offset = i * 8;
+                const canopyWidth = instances[offset + 3];
+                const canopyHeight = instances[offset + 4];
+                const seed = instances[offset + 6];
+                dummy.position.set(instances[offset + 0], instances[offset + 1], instances[offset + 2]);
+                dummy.rotation.set(0, instances[offset + 5], 0);
+                dummy.scale.set(
+                    canopyWidth * (0.1 + seed * 0.03),
+                    canopyHeight * (0.24 + seed * 0.05),
+                    canopyWidth * (0.1 + seed * 0.03)
+                );
+                dummy.updateMatrix();
+                trunkHintMesh.setMatrixAt(i, dummy.matrix);
+            }
+            trunkHintMesh.instanceMatrix.needsUpdate = true;
+            trunkHintMesh.castShadow = false;
+            trunkHintMesh.receiveShadow = false;
+            trunkHintMesh.userData.treeRenderTier = 'mid-trunk-hint';
+            meshes.push(trunkHintMesh);
+
+            const mesh = new THREE.InstancedMesh(treeBillboardGeo, cfg.canopyMat, count);
+            const matrices = mesh.instanceMatrix.array;
+            for (let i = 0; i < count; i++) {
+                const offset = i * 8;
+                const m = i * 16;
+                const scaleY = instances[offset + 4] * (0.62 + instances[offset + 6] * 0.08);
+                matrices[m + 0] = instances[offset + 3] * (0.92 + instances[offset + 6] * 0.08);
+                matrices[m + 1] = 0; matrices[m + 2] = 0; matrices[m + 3] = 0;
+                matrices[m + 4] = 0; matrices[m + 5] = scaleY; matrices[m + 6] = 0; matrices[m + 7] = 0;
+                matrices[m + 8] = 0; matrices[m + 9] = 0; matrices[m + 10] = 1; matrices[m + 11] = 0;
+                matrices[m + 12] = instances[offset + 0];
+                matrices[m + 13] = instances[offset + 1] + instances[offset + 4] * 0.42 - scaleY * 0.48;
+                matrices[m + 14] = instances[offset + 2];
+                matrices[m + 15] = 1;
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            applyTreeInstanceColors(mesh, instances, cfg.baseTint);
+            mesh.castShadow = true;
+            mesh.receiveShadow = false;
+            mesh.customDepthMaterial = cfg.depthMat;
+            mesh.userData.treeRenderTier = 'mid-billboard';
+            mesh.userData.treeType = treeType;
+            meshes.push(mesh);
+        }
+
+        if (lodCfg?.enableTreeContactShadows) {
+            const isNearHybrid = renderMode === 'hybrid' || renderMode === 'crossed';
+            const groundMat = isNearHybrid ? resources.treeGroundMats.near : resources.treeGroundMats.mid;
+            const groundMesh = new THREE.InstancedMesh(treeGroundGeo, groundMat, count);
+            for (let i = 0; i < count; i++) {
+                const offset = i * 8;
+                const groundScale = instances[offset + 7];
+                const canopyWidth = instances[offset + 3];
+                dummy.position.set(instances[offset + 0], instances[offset + 1] + 0.05, instances[offset + 2]);
+                dummy.rotation.set(0, instances[offset + 5], 0);
+                dummy.scale.set(canopyWidth * 1.35 * groundScale, 1, canopyWidth * 0.98 * groundScale);
+                dummy.updateMatrix();
+                groundMesh.setMatrixAt(i, dummy.matrix);
+            }
+            groundMesh.instanceMatrix.needsUpdate = true;
+            groundMesh.castShadow = false;
+            groundMesh.receiveShadow = false;
+            groundMesh.renderOrder = 1;
+            groundMesh.userData.treeRenderTier = isNearHybrid ? 'near-contact' : 'mid-contact';
+            meshes.push(groundMesh);
+        }
+    }
+
+    return meshes;
+}
+
 export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const {
-        LOD_LEVELS, treeBillboardGeo, treeTypeConfigs,
+        LOD_LEVELS, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs,
         detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
         roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat,
         hvacGeo, hvacMat, getPooledInstancedMesh,
@@ -188,7 +363,6 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     } = ctx;
 
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
-    const treeShadowsEnabled = lod === 0;
     const boatShadowsEnabled = lod === 0;
     const terrainMesh = chunkGroup.children[0];
     if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
@@ -207,7 +381,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) return;
 
-    const { treeMatrices, buildingPositions, boatPositions } = result;
+    const { treeInstances, buildingPositions, boatPositions } = result;
 
     if (overlappingDistricts.length > 0) {
         const loadedDistricts = await Promise.all(overlappingDistricts.map(district => loadDistrictChunk(district.id)));
@@ -215,22 +389,11 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
             loadedDistricts.forEach(districtData => {
                 if (!districtData) return;
                 spawnCityBuildingsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
+                spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod, ctx, CHUNK_SIZE);
             });
 
-            // Render trees
-            for (const [treeType, matrices] of Object.entries(treeMatrices)) {
-                if (!matrices) continue;
-                const count = matrices.length / 16;
-                if (count === 0) continue;
-                const cfg = treeTypeConfigs[treeType];
-                const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, count);
-                cardA.instanceMatrix.array.set(matrices);
-                cardA.instanceMatrix.needsUpdate = true;
-                cardA.castShadow = treeShadowsEnabled;
-                cardA.receiveShadow = false;
-                cardA.customDepthMaterial = cfg.depthMat;
-                chunkGroup.add(cardA);
-            }
+            buildTreeMeshesForLod(treeInstances, lodCfg, { treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs })
+                .forEach((mesh) => chunkGroup.add(mesh));
 
             // Boats
             if (lodCfg.enableBoats && boatPositions && boatPositions.length > 0) {
@@ -254,20 +417,8 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         }
     }
 
-    // Default trees
-    for (const [treeType, matrices] of Object.entries(treeMatrices)) {
-        if (!matrices) continue;
-        const count = matrices.length / 16;
-        if (count === 0) continue;
-        const cfg = treeTypeConfigs[treeType];
-        const cardA = new THREE.InstancedMesh(treeBillboardGeo, cfg.mat, count);
-        cardA.instanceMatrix.array.set(matrices);
-        cardA.instanceMatrix.needsUpdate = true;
-        cardA.castShadow = treeShadowsEnabled;
-        cardA.receiveShadow = false;
-        cardA.customDepthMaterial = cfg.depthMat;
-        chunkGroup.add(cardA);
-    }
+    buildTreeMeshesForLod(treeInstances, lodCfg, { treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs })
+        .forEach((mesh) => chunkGroup.add(mesh));
 
     // Default buildings
     for (const [buildingClass, entries] of Object.entries(buildingPositions)) {

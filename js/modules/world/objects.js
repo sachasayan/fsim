@@ -8,6 +8,7 @@ import { createRadarSystem } from './radar.js';
 import { createCloudSystem } from './clouds.js';
 import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
+import { createTokenSystem } from './tokens.js';
 
 import { createWorldLodManager } from './WorldLodManager.js';
 import { createRuntimeLodSettings, normalizeLodSettings } from './LodSystem.js';
@@ -33,6 +34,11 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
   const aircraft = createAircraftSystem({ scene, renderer });
+  const tokenSystem = createTokenSystem({
+    scene,
+    getTerrainHeight: terrain.getTerrainHeight,
+    spawnParticle: particles.spawnParticle
+  });
   const shaderVariantRegistry = createShaderVariantRegistry();
   registerShaderVariants(shaderVariantRegistry, [
     terrain.getShaderValidationVariants?.(),
@@ -122,6 +128,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...cloudSystem,
     ...particles,
     ...aircraft,
+    ...tokenSystem,
     validateShaders,
     getShaderValidationReport,
     getShaderValidationSummary,

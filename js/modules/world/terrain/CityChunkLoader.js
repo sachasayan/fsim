@@ -7,12 +7,13 @@
  *
  * Binary format (little-endian, mirrors build-world.mjs serialization):
  *   [4]  magic  = 0x46574C44
- *   [4]  version = 2
+ *   [4]  version = 4
  *   [4]  numBuildings
- *   [4]  numRoadSegments (legacy, ignored)
+ *   [4]  numProps (v4+) or numRoadSegments (legacy, ignored)
  *   [4]  maskSize (legacy, ignored)
  *   [4]  maskOffset (legacy, ignored)
  *   per building (10 × f32): x,y,z, w,h,d, angle, classId, colorIdx, _pad
+ *   per prop     ( 8 × f32): x,y,z, height, rotorRadius, angle, phase, typeId
  *   per road    ( 8 × f32): x1,y1,z1, x2,y2,z2, halfWidth, classId (legacy, ignored)
  *   mask data (maskSize*maskSize bytes): uint8 alpha channel (legacy, ignored)
  */
@@ -21,9 +22,11 @@ import { buildDistrictRecords } from '../MapDataUtils.js';
 
 const MAGIC = 0x46574C44;
 const BLDG_FLOATS = 10;
+const PROP_FLOATS = 8;
 
 // Mapping classId integer → building class string (must match build-world.mjs CLASS_IDS order)
 export const CLASS_NAMES = ['supertall', 'highrise', 'office', 'apartment', 'townhouse', 'industrial'];
+export const DISTRICT_PROP_NAMES = ['windmill'];
 
 // Cache so each district is only fetched once per session
 const cache = new Map();
@@ -141,12 +144,14 @@ export async function loadDistrictChunk(districtId) {
         }
 
         const version = ri32();
-        if (version < 1 || version > 2) {
+        if (version < 1 || version > 4) {
             console.warn(`[CityChunkLoader] Unknown version ${version} for district "${districtId}"`);
         }
 
         const numBuildings = ri32();
-        const numRoads = ri32();
+        const numPropsOrRoads = ri32();
+        const numProps = version >= 4 ? numPropsOrRoads : 0;
+        const numRoads = version >= 4 ? 0 : numPropsOrRoads;
 
         let maskSize = 0, maskOffset = 0;
         if (version >= 2) {
@@ -155,6 +160,7 @@ export async function loadDistrictChunk(districtId) {
         }
 
         const buildingsByChunk = {}; // Spatial index: { "cx,cz": [building, ...] }
+        const propsByChunk = {}; // Spatial index: { "cx,cz": [prop, ...] }
         const CHUNK_SIZE = 4000; // Must match TerrainGeneration.js
 
         for (let i = 0; i < numBuildings; i++) {
@@ -174,11 +180,27 @@ export async function loadDistrictChunk(districtId) {
             buildingsByChunk[key].push(b);
         }
 
+        for (let i = 0; i < numProps; i++) {
+            const x = rf32(), y = rf32(), z = rf32();
+            const height = rf32();
+            const rotorRadius = rf32();
+            const angle = rf32();
+            const phase = rf32();
+            const typeId = Math.round(rf32());
+            const prop = { x, y, z, height, rotorRadius, angle, phase, typeId };
+
+            const cx = Math.floor(x / CHUNK_SIZE);
+            const cz = Math.floor(z / CHUNK_SIZE);
+            const key = `${cx},${cz}`;
+            if (!propsByChunk[key]) propsByChunk[key] = [];
+            propsByChunk[key].push(prop);
+        }
+
         const roadFloatBytes = 8 * 4;
         for (let i = 0; i < numRoads; i++) {
             off += roadFloatBytes;
         }
-        const result = { buildings: buildingsByChunk };
+        const result = { buildings: buildingsByChunk, props: propsByChunk };
         cache.set(districtId, result);
         return result;
     })();

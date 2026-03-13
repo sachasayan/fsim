@@ -11,7 +11,7 @@ import {
 
 const SOURCE_CACHE = new Map();
 
-function buildTreeBillboardOwnedShaderSource() {
+function buildTreeBillboardOwnedShaderSource({ cameraFacing = true, lockYAxis = true } = {}) {
     const shader = {
         uniforms: {},
         defines: {},
@@ -19,7 +19,7 @@ function buildTreeBillboardOwnedShaderSource() {
         fragmentShader: THREE.ShaderLib.standard.fragmentShader
     };
 
-    applyTreeBillboardShaderPatch(shader);
+    applyTreeBillboardShaderPatch(shader, { cameraFacing, lockYAxis });
 
     return {
         vertexShader: shader.vertexShader,
@@ -28,7 +28,7 @@ function buildTreeBillboardOwnedShaderSource() {
     };
 }
 
-function buildTreeDepthOwnedShaderSource() {
+function buildTreeDepthOwnedShaderSource({ cameraFacing = true, lockYAxis = true, shadowFadeNear = 1200, shadowFadeFar = 1800 } = {}) {
     const shader = {
         uniforms: {},
         defines: {},
@@ -37,7 +37,11 @@ function buildTreeDepthOwnedShaderSource() {
     };
 
     applyTreeDepthShaderPatch(shader, {
-        mainCameraPosUniform: { value: null }
+        mainCameraPosUniform: { value: null },
+        cameraFacing,
+        lockYAxis,
+        shadowFadeNear,
+        shadowFadeFar
     });
 
     return {
@@ -90,18 +94,20 @@ function buildDetailedBuildingOwnedShaderSource({ style, cameraPopIn = false, fa
     };
 }
 
-export function getTreeBillboardOwnedShaderSource() {
-    if (!SOURCE_CACHE.has('tree-billboard')) {
-        SOURCE_CACHE.set('tree-billboard', buildTreeBillboardOwnedShaderSource());
+export function getTreeBillboardOwnedShaderSource({ cameraFacing = true, lockYAxis = true } = {}) {
+    const cacheKey = `tree-billboard:${cameraFacing ? 'camera-facing' : 'static'}:${lockYAxis ? 'y-locked' : 'full-facing'}`;
+    if (!SOURCE_CACHE.has(cacheKey)) {
+        SOURCE_CACHE.set(cacheKey, buildTreeBillboardOwnedShaderSource({ cameraFacing, lockYAxis }));
     }
-    return SOURCE_CACHE.get('tree-billboard');
+    return SOURCE_CACHE.get(cacheKey);
 }
 
-export function getTreeDepthOwnedShaderSource() {
-    if (!SOURCE_CACHE.has('tree-depth')) {
-        SOURCE_CACHE.set('tree-depth', buildTreeDepthOwnedShaderSource());
+export function getTreeDepthOwnedShaderSource({ cameraFacing = true, lockYAxis = true, shadowFadeNear = 1200, shadowFadeFar = 1800 } = {}) {
+    const cacheKey = `tree-depth:${cameraFacing ? 'camera-facing' : 'static'}:${lockYAxis ? 'y-locked' : 'full-facing'}:${shadowFadeNear}:${shadowFadeFar}`;
+    if (!SOURCE_CACHE.has(cacheKey)) {
+        SOURCE_CACHE.set(cacheKey, buildTreeDepthOwnedShaderSource({ cameraFacing, lockYAxis, shadowFadeNear, shadowFadeFar }));
     }
-    return SOURCE_CACHE.get('tree-depth');
+    return SOURCE_CACHE.get(cacheKey);
 }
 
 export function getBuildingPopInOwnedShaderSource({ fadeNear = 6800, fadeFar = 7800 } = {}) {
@@ -120,8 +126,8 @@ export function getDetailedBuildingOwnedShaderSource({ style, cameraPopIn = fals
     return SOURCE_CACHE.get(cacheKey);
 }
 
-export function getTreeDepthUniformBindings(mainCameraPosUniform) {
-    return createTreeDepthUniformBindings(mainCameraPosUniform);
+export function getTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear = 1200, shadowFadeFar = 1800) {
+    return createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear, shadowFadeFar);
 }
 
 export function getBuildingPopInUniformBindings(cameraPosUniform, fadeNear = 6800, fadeFar = 7800) {

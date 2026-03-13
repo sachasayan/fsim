@@ -49,6 +49,9 @@ function injectRuntimeFlags(filePath, content) {
 
 function safeResolve(urlPath) {
     const decoded = decodeURIComponent(urlPath.split('?')[0]);
+    if (decoded === '/favicon.ico') {
+        return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');
+    }
     const requestPath = decoded === '/' ? '/fsim.html' : decoded;
     const absolutePath = path.resolve(ROOT, `.${requestPath}`);
     if (!absolutePath.startsWith(ROOT)) return null;

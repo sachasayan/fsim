@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createWaterNormalMap, createTreeBillboardTexture, createPackedTerrainDetailTexture } from './terrain/TerrainTextures.js';
+import { createWaterNormalMap, createTreeBillboardTexture, createTreeContactTexture, createPackedTerrainDetailTexture } from './terrain/TerrainTextures.js';
 import {
   makeTreeBillboardMaterial,
   makeTreeDepthMaterial,
@@ -27,7 +27,7 @@ import {
   loadStaticWorld,
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
-import { spawnCityBuildingsForChunk } from './terrain/BuildingSpawner.js';
+import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsForChunk } from './terrain/BuildingSpawner.js';
 import { debugLog } from '../core/logging.js';
 import { createRuntimeLodSettings } from './LodSystem.js';
 
@@ -145,30 +145,38 @@ export function createTerrainSystem({
 
   const treeBillboardGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
   treeBillboardGeo.translate(0, 0.5, 0);
+  const treeGroundGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+  treeGroundGeo.rotateX(-Math.PI / 2);
+  const treeTrunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6);
+  treeTrunkGeo.translate(0, 0.5, 0);
   const treeTextures = {
-    conifer: createTreeBillboardTexture('conifer'),
-    broadleaf: createTreeBillboardTexture('broadleaf'),
-    poplar: createTreeBillboardTexture('poplar'),
-    dry: createTreeBillboardTexture('dry')
+    broadleaf: createTreeBillboardTexture('broadleaf', { crownOnly: true }),
+    poplar: createTreeBillboardTexture('poplar', { crownOnly: true }),
+    dry: createTreeBillboardTexture('dry', { crownOnly: true })
   };
-  const treeBillboardMats = {
-    conifer: makeTreeBillboardMaterial(treeTextures.conifer, 0x9eb38a),
-    broadleaf: makeTreeBillboardMaterial(treeTextures.broadleaf, 0xa3b88e),
-    poplar: makeTreeBillboardMaterial(treeTextures.poplar, 0xafc093),
-    dry: makeTreeBillboardMaterial(treeTextures.dry, 0xc6b696)
+  const treeContactTexture = createTreeContactTexture();
+  const treeCanopyMats = {
+    broadleaf: makeTreeBillboardMaterial(treeTextures.broadleaf, 0x9bb784, { cameraFacing: true, lockYAxis: false }),
+    poplar: makeTreeBillboardMaterial(treeTextures.poplar, 0xa7be88, { cameraFacing: true, lockYAxis: false }),
+    dry: makeTreeBillboardMaterial(treeTextures.dry, 0xb3af7e, { cameraFacing: true, lockYAxis: false })
   };
   const treeDepthMats = {
-    conifer: makeTreeDepthMaterial(treeTextures.conifer, tempMainCameraPosUniform),
-    broadleaf: makeTreeDepthMaterial(treeTextures.broadleaf, tempMainCameraPosUniform),
-    poplar: makeTreeDepthMaterial(treeTextures.poplar, tempMainCameraPosUniform),
-    dry: makeTreeDepthMaterial(treeTextures.dry, tempMainCameraPosUniform)
+    broadleaf: makeTreeDepthMaterial(treeTextures.broadleaf, tempMainCameraPosUniform, { cameraFacing: true, lockYAxis: false, shadowFadeNear: 1400, shadowFadeFar: 2100 }),
+    poplar: makeTreeDepthMaterial(treeTextures.poplar, tempMainCameraPosUniform, { cameraFacing: true, lockYAxis: false, shadowFadeNear: 1400, shadowFadeFar: 2100 }),
+    dry: makeTreeDepthMaterial(treeTextures.dry, tempMainCameraPosUniform, { cameraFacing: true, lockYAxis: false, shadowFadeNear: 1400, shadowFadeFar: 2100 })
   };
+  const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4d31, roughness: 0.94, metalness: 0.0 });
   const treeTypeConfigs = {
-    conifer: { mat: treeBillboardMats.conifer, depthMat: treeDepthMats.conifer, hRange: [14, 24], wScale: 0.45 },
-    broadleaf: { mat: treeBillboardMats.broadleaf, depthMat: treeDepthMats.broadleaf, hRange: [11, 19], wScale: 0.6 },
-    poplar: { mat: treeBillboardMats.poplar, depthMat: treeDepthMats.poplar, hRange: [13, 23], wScale: 0.42 },
-    dry: { mat: treeBillboardMats.dry, depthMat: treeDepthMats.dry, hRange: [8, 15], wScale: 0.52 }
+    broadleaf: { canopyMat: treeCanopyMats.broadleaf, depthMat: treeDepthMats.broadleaf, hRange: [12, 21], wScale: 0.68, baseTint: new THREE.Color(0x9bb784) },
+    poplar: { canopyMat: treeCanopyMats.poplar, depthMat: treeDepthMats.poplar, hRange: [13, 24], wScale: 0.4, baseTint: new THREE.Color(0xa7be88) },
+    dry: { canopyMat: treeCanopyMats.dry, depthMat: treeDepthMats.dry, hRange: [9, 17], wScale: 0.58, baseTint: new THREE.Color(0xb3af7e) }
   };
+  const treeGroundMats = {
+    near: new THREE.MeshBasicMaterial({ map: treeContactTexture, color: 0x000000, transparent: true, opacity: 0.26, depthWrite: false }),
+    mid: new THREE.MeshBasicMaterial({ map: treeContactTexture, color: 0x000000, transparent: true, opacity: 0.16, depthWrite: false })
+  };
+  treeGroundMats.near.toneMapped = false;
+  treeGroundMats.mid.toneMapped = false;
 
   const hullGeo = new THREE.BoxGeometry(2.5, 1.2, 8); hullGeo.translate(0, 0.6, 0);
   const cabinGeo = new THREE.BoxGeometry(2.0, 1.5, 3); cabinGeo.translate(0, 1.9, -1);
@@ -192,6 +200,14 @@ export function createTerrainSystem({
   const spireMat = new THREE.MeshStandardMaterial({ color: 0xc7c7c7, roughness: 0.3, metalness: 0.9 });
   const hvacGeo = new THREE.BoxGeometry(1, 1, 1); hvacGeo.translate(0, 0.5, 0);
   const hvacMat = new THREE.MeshStandardMaterial({ color: 0x909090, roughness: 0.7, metalness: 0.4 });
+  const windmillTowerGeo = new THREE.CylinderGeometry(0.5, 0.7, 1, 10); windmillTowerGeo.translate(0, 0.5, 0);
+  const windmillNacelleGeo = new THREE.BoxGeometry(1, 1, 1); windmillNacelleGeo.translate(0.5, 0, 0);
+  const windmillHubGeo = new THREE.SphereGeometry(0.5, 10, 10);
+  const windmillBladeGeo = new THREE.BoxGeometry(0.14, 1, 0.06); windmillBladeGeo.translate(0, 0.5, 0);
+  const windmillTowerMat = new THREE.MeshStandardMaterial({ color: 0xe7ebef, roughness: 0.82, metalness: 0.08 });
+  const windmillNacelleMat = new THREE.MeshStandardMaterial({ color: 0xdfe5ea, roughness: 0.78, metalness: 0.1 });
+  const windmillHubMat = new THREE.MeshStandardMaterial({ color: 0xc8d0d7, roughness: 0.68, metalness: 0.14 });
+  const windmillBladeMat = new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.7, metalness: 0.04 });
 
   // Apply distance-based pop-in to all plain building materials
   [baseBuildingMat, roofCapMat, podiumMat, spireMat, hvacMat].forEach(mat => setupBuildingPopIn(mat, tempMainCameraPosUniform));
@@ -249,8 +265,9 @@ export function createTerrainSystem({
 
   function generateChunkProps(chunkGroup, cx, cz, lod = 0) {
     return genProps(chunkGroup, cx, cz, lod, {
-      LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
+      LOD_LEVELS, Noise, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
+      windmillTowerGeo, windmillTowerMat, windmillNacelleGeo, windmillNacelleMat, windmillHubGeo, windmillHubMat, windmillBladeGeo, windmillBladeMat,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
       terrainMaterial, terrainFarMaterial, terrainDetailUniforms, timeUniform: waterTimeUniform
     });
@@ -449,6 +466,11 @@ export function createTerrainSystem({
         terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
       }
     }
+    const windmillTime = performance.now() * 0.001;
+    for (const state of terrainChunks.values()) {
+      if (state.group) animateWindmillProps(state.group, windmillTime, dummy);
+      if (state.pendingGroup) animateWindmillProps(state.pendingGroup, windmillTime, dummy);
+    }
     if (weatherColor) atmosphereColor.copy(weatherColor);
     else {
       tmpColorA.setRGB(0.62, 0.66, 0.72); tmpColorB.setRGB(0.78, 0.81, 0.86);
@@ -590,7 +612,7 @@ export function createTerrainSystem({
         metadata: { system: 'terrain', variant: 'tree-billboard' },
         build() {
           const treeGeo = createTreeWarmupGeometry();
-          const mesh = makeWarmupInstancedMesh(treeGeo, treeBillboardMats.conifer, new THREE.Vector3(960, 0, 0));
+          const mesh = makeWarmupInstancedMesh(treeGeo, treeCanopyMats.broadleaf, new THREE.Vector3(960, 0, 0));
           return {
             objects: [mesh],
             dispose() {
@@ -604,7 +626,7 @@ export function createTerrainSystem({
         metadata: { system: 'terrain', variant: 'tree-depth' },
         build() {
           const treeGeo = createTreeWarmupGeometry();
-          const mesh = makeWarmupInstancedMesh(treeGeo, treeDepthMats.conifer, new THREE.Vector3(1120, 0, 0));
+          const mesh = makeWarmupInstancedMesh(treeGeo, treeDepthMats.broadleaf, new THREE.Vector3(1120, 0, 0));
           return {
             objects: [mesh],
             dispose() {
@@ -710,8 +732,9 @@ export function createTerrainSystem({
     await fetchDistrictIndex();
 
     const ctx = {
-      LOD_LEVELS, Noise, treeBillboardGeo, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
+      LOD_LEVELS, Noise, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
+      windmillTowerGeo, windmillTowerMat, windmillNacelleGeo, windmillNacelleMat, windmillHubGeo, windmillHubMat, windmillBladeGeo, windmillBladeMat,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
       terrainMaterial, terrainFarMaterial, terrainDetailUniforms, timeUniform: waterTimeUniform
     };
@@ -738,6 +761,7 @@ export function createTerrainSystem({
         loadedDistricts.forEach(loadedData => {
           if (!loadedData) return;
           spawnCityBuildingsForChunk(state.group, cx, cz, loadedData, state.lod, ctx, CHUNK_SIZE);
+          spawnDistrictPropsForChunk(state.group, cx, cz, loadedData, state.lod, ctx, CHUNK_SIZE);
         });
       }
     }

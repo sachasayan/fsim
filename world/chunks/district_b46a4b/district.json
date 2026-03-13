@@ -6,6 +6,8 @@
   ],
   "radius": 600,
   "numBuildings": 15,
+  "numProps": 0,
+  "districtProps": [],
   "buildings": [
     {
       "x": -588.0975400817342,
