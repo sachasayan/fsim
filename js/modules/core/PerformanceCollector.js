@@ -48,7 +48,9 @@ function formatBytesToMb(bytes) {
 
 export function createPerformanceCollector({
     renderer,
-    getAdaptiveQualitySnapshot = () => ({})
+    getAdaptiveQualitySnapshot = () => ({}),
+    getProfilingSnapshot = () => ({}),
+    getRenderPassTimings = () => ({})
 }) {
     const phaseSamples = new Map();
     const metricSamples = new Map();
@@ -67,7 +69,11 @@ export function createPerformanceCollector({
         'renderer.programs',
         'memory.usedJsHeapMb',
         'adaptive.pixelRatio',
-        'adaptive.frameTimeEmaMs'
+        'adaptive.frameTimeEmaMs',
+        'render.sceneMs',
+        'render.smaaMs',
+        'render.bloomMs',
+        'render.totalMs'
     ];
 
     let collection = null;
@@ -163,6 +169,8 @@ export function createPerformanceCollector({
         const fps = frameMs > 0 ? 1000 / frameMs : 0;
         const info = renderer.info;
         const adaptive = getAdaptiveQualitySnapshot() || {};
+        const profiling = getProfilingSnapshot() || {};
+        const renderPassTimings = getRenderPassTimings() || {};
         const memory = typeof performance !== 'undefined' && performance.memory
             ? performance.memory
             : null;
@@ -179,6 +187,10 @@ export function createPerformanceCollector({
         recordMetric('renderer.programs', Array.isArray(info.programs) ? info.programs.length : 0);
         recordMetric('adaptive.pixelRatio', adaptive.pixelRatio);
         recordMetric('adaptive.frameTimeEmaMs', adaptive.frameTimeEmaMs);
+        recordMetric('render.sceneMs', renderPassTimings.renderScene);
+        recordMetric('render.smaaMs', renderPassTimings.smaa);
+        recordMetric('render.bloomMs', renderPassTimings.bloom);
+        recordMetric('render.totalMs', renderPassTimings.total);
 
         if (memory?.usedJSHeapSize) {
             recordMetric('memory.usedJsHeapMb', memory.usedJSHeapSize / (1024 * 1024));
@@ -207,6 +219,23 @@ export function createPerformanceCollector({
                 enabled: adaptive.enabled ?? null,
                 pixelRatio: round(adaptive.pixelRatio),
                 frameTimeEmaMs: round(adaptive.frameTimeEmaMs)
+            },
+            profiling: {
+                bootstrapComplete: profiling.bootstrapComplete ?? null,
+                loaderHidden: profiling.loaderHidden ?? null,
+                worldReady: profiling.worldReady ?? null,
+                profilingReady: profiling.profilingReady ?? null,
+                profilingReadinessReason: profiling.profilingReadinessReason ?? null,
+                lastProgramsChangeMsAgo: round(profiling.lastProgramsChangeMsAgo),
+                lastTexturesChangeMsAgo: round(profiling.lastTexturesChangeMsAgo),
+                lastGeometriesChangeMsAgo: round(profiling.lastGeometriesChangeMsAgo),
+                quietWindowMs: round(profiling.quietWindowMs)
+            },
+            renderPasses: {
+                scene: round(renderPassTimings.renderScene),
+                smaa: round(renderPassTimings.smaa),
+                bloom: round(renderPassTimings.bloom),
+                total: round(renderPassTimings.total)
             },
             phases: currentFrame.phases
         });
@@ -253,6 +282,13 @@ export function createPerformanceCollector({
         const slowFrames = frameRecords.filter((frame) => frame.frameMs >= 16.67).length;
         const verySlowFrames = frameRecords.filter((frame) => frame.frameMs >= 33.34).length;
         const lastFrame = frameRecords[frameRecords.length - 1] || null;
+        const worstRenderFrame = frameRecords.reduce((worst, frame) => {
+            const total = frame.renderPasses?.total ?? frame.phases?.render_total ?? frame.phases?.render ?? -Infinity;
+            if (!worst) return frame;
+            const worstTotal = worst.renderPasses?.total ?? worst.phases?.render_total ?? worst.phases?.render ?? -Infinity;
+            return total > worstTotal ? frame : worst;
+        }, null);
+        const profiling = getProfilingSnapshot() || {};
 
         return {
             ok: true,
@@ -277,8 +313,26 @@ export function createPerformanceCollector({
             metrics,
             phases,
             rankedPhases: sortedPhasesByP95,
+            renderPasses: {
+                scene: metrics['render.sceneMs'],
+                smaa: metrics['render.smaaMs'],
+                bloom: metrics['render.bloomMs'],
+                total: metrics['render.totalMs']
+            },
             renderer: lastFrame ? lastFrame.renderer : null,
             adaptiveQuality: lastFrame ? lastFrame.adaptive : null,
+            profiling: {
+                bootstrapComplete: profiling.bootstrapComplete ?? null,
+                loaderHidden: profiling.loaderHidden ?? null,
+                worldReady: profiling.worldReady ?? null,
+                profilingReady: profiling.profilingReady ?? null,
+                profilingReadinessReason: profiling.profilingReadinessReason ?? null,
+                lastProgramsChangeMsAgo: round(profiling.lastProgramsChangeMsAgo),
+                lastTexturesChangeMsAgo: round(profiling.lastTexturesChangeMsAgo),
+                lastGeometriesChangeMsAgo: round(profiling.lastGeometriesChangeMsAgo),
+                quietWindowMs: round(profiling.quietWindowMs),
+                profilingReadyAtMs: round(profiling.profilingReadyAtMs)
+            },
             memory: {
                 usedJsHeapMb: formatBytesToMb(
                     typeof performance !== 'undefined' && performance.memory
@@ -287,6 +341,7 @@ export function createPerformanceCollector({
                 )
             },
             metadata: collection.metadata,
+            worstRenderFrame,
             recentFrames: frameRecords.slice(-12)
         };
     }

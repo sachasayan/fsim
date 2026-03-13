@@ -5,6 +5,7 @@ const WAIT_AFTER_SETTLE_MS = Number(process.env.FSIM_PERF_SETTLE_MS || 10_000);
 const WARMUP_FRAMES = Number(process.env.FSIM_PERF_WARMUP_FRAMES || 4);
 const SAMPLE_FRAMES = Number(process.env.FSIM_PERF_SAMPLE_FRAMES || 8);
 const SAMPLE_MS = Number(process.env.FSIM_PERF_SAMPLE_MS || 4_000);
+const PROFILING_READY_TIMEOUT_MS = Number(process.env.FSIM_PERF_READY_TIMEOUT_MS || 45_000);
 
 async function waitForSettled(page) {
   await page.waitForFunction(() => (
@@ -13,23 +14,20 @@ async function waitForSettled(page) {
     window.fsimPerf != null
   ), null, { timeout: 60_000 });
 
-  await page.evaluate(async (waitMs) => {
+  return page.evaluate(async ({ waitMs, readyTimeoutMs }) => {
     const start = performance.now();
-    function loaderGone() {
-      const loader = document.getElementById('loader');
-      return loader ? getComputedStyle(loader).display === 'none' : true;
-    }
-    function settled() {
-      return Boolean(
-        window.fsimWorld?.bootstrapComplete === true ||
-        window.fsimWorld?.loaderHidden === true ||
-        loaderGone()
-      );
-    }
+    let captureStartMode = 'fallback_delay';
+    let profilingReadyAtMs = null;
 
     await new Promise(resolve => {
       function tick() {
-        if (settled() || (performance.now() - start) >= waitMs) {
+        if (window.fsimWorld?.profilingReady === true) {
+          captureStartMode = 'steady_state_gate';
+          profilingReadyAtMs = performance.now();
+          resolve();
+          return;
+        }
+        if ((performance.now() - start) >= readyTimeoutMs) {
           resolve();
           return;
         }
@@ -38,11 +36,25 @@ async function waitForSettled(page) {
       tick();
     });
 
-    const elapsed = performance.now() - start;
-    if (elapsed < waitMs) {
-      await new Promise(resolve => setTimeout(resolve, waitMs - elapsed));
+    if (captureStartMode === 'fallback_delay') {
+      await new Promise(resolve => setTimeout(resolve, waitMs));
     }
-  }, WAIT_AFTER_SETTLE_MS);
+
+    return {
+      captureStartMode,
+      profilingReadyAtMs,
+      readiness: {
+        bootstrapComplete: window.fsimWorld?.bootstrapComplete ?? null,
+        loaderHidden: window.fsimWorld?.loaderHidden ?? null,
+        worldReady: window.fsimWorld?.worldReady ?? null,
+        profilingReady: window.fsimWorld?.profilingReady ?? null,
+        profilingReadinessReason: window.fsimWorld?.profilingReadinessReason ?? null
+      }
+    };
+  }, {
+    waitMs: WAIT_AFTER_SETTLE_MS,
+    readyTimeoutMs: PROFILING_READY_TIMEOUT_MS
+  });
 }
 
 async function main() {
@@ -71,7 +83,7 @@ async function main() {
 
     const url = `http://127.0.0.1:${PORT}/fsim.html?lighting=noon&fog=0&clouds=0`;
     await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
-    await waitForSettled(page);
+    const captureStart = await waitForSettled(page);
 
     await page.evaluate(() => {
       window.fsimWorld.cameraController.setRotation(0.35, -0.25);
@@ -79,8 +91,17 @@ async function main() {
       window.fsimWorld.cameraController.snapToTarget();
     });
 
-    const report = await page.evaluate(async ({ warmupFrames, sampleFrames, sampleMs, settleDelayMs }) => {
+    const report = await page.evaluate(async ({
+      warmupFrames,
+      sampleFrames,
+      sampleMs,
+      settleDelayMs,
+      captureStartMetadata
+    }) => {
       const metadata = {
+        captureStartMode: captureStartMetadata.captureStartMode,
+        profilingReadyAtMs: captureStartMetadata.profilingReadyAtMs,
+        readinessAtCaptureStart: captureStartMetadata.readiness,
         settleDelayMs,
         sampleMs,
         warmupFrames,
@@ -112,7 +133,8 @@ async function main() {
       warmupFrames: WARMUP_FRAMES,
       sampleFrames: SAMPLE_FRAMES,
       sampleMs: SAMPLE_MS,
-      settleDelayMs: WAIT_AFTER_SETTLE_MS
+      settleDelayMs: WAIT_AFTER_SETTLE_MS,
+      captureStartMetadata: captureStart
     });
 
     console.log(JSON.stringify(report, null, 2));

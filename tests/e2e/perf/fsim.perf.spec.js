@@ -16,6 +16,57 @@ function diffMetricSet(before, after, names) {
     return delta;
 }
 
+async function waitForProfilingStart(page, {
+    profilingReadyTimeoutMs = 45_000,
+    fallbackDelayMs = 10_000
+} = {}) {
+    return page.evaluate(async ({ profilingReadyTimeoutMs: readyTimeout, fallbackDelayMs: fallbackDelay }) => {
+        const start = performance.now();
+        let captureStartMode = 'fallback_delay';
+        let profilingReadyAtMs = null;
+
+        function profilingReady() {
+            return window.fsimWorld?.profilingReady === true;
+        }
+
+        await new Promise(resolve => {
+            function tick() {
+                if (profilingReady()) {
+                    captureStartMode = 'steady_state_gate';
+                    profilingReadyAtMs = performance.now();
+                    resolve();
+                    return;
+                }
+                if ((performance.now() - start) >= readyTimeout) {
+                    resolve();
+                    return;
+                }
+                requestAnimationFrame(tick);
+            }
+            tick();
+        });
+
+        if (captureStartMode === 'fallback_delay') {
+            await new Promise(resolve => setTimeout(resolve, fallbackDelay));
+        }
+
+        return {
+            captureStartMode,
+            profilingReadyAtMs,
+            readiness: {
+                bootstrapComplete: window.fsimWorld?.bootstrapComplete ?? null,
+                loaderHidden: window.fsimWorld?.loaderHidden ?? null,
+                worldReady: window.fsimWorld?.worldReady ?? null,
+                profilingReady: window.fsimWorld?.profilingReady ?? null,
+                profilingReadinessReason: window.fsimWorld?.profilingReadinessReason ?? null
+            }
+        };
+    }, {
+        profilingReadyTimeoutMs,
+        fallbackDelayMs
+    });
+}
+
 test.describe('fsim perf e2e', () => {
     test('captures a text-first render performance report', async ({ page, browserName }, testInfo) => {
         test.setTimeout(90_000);
@@ -32,43 +83,7 @@ test.describe('fsim perf e2e', () => {
                 window.fsimPerf != null
             );
         }, null, { timeout: 45_000 });
-        await page.evaluate(async () => {
-            const start = performance.now();
-            const maxWaitMs = 10_000;
-
-            function isSettled() {
-                const loader = document.getElementById('loader');
-                const loaderGone = loader
-                    ? getComputedStyle(loader).display === 'none'
-                    : true;
-                return Boolean(
-                    window.fsimWorld?.bootstrapComplete === true ||
-                    window.fsimWorld?.loaderHidden === true ||
-                    loaderGone
-                );
-            }
-
-            if (isSettled()) {
-                await new Promise(resolve => setTimeout(resolve, maxWaitMs));
-                return;
-            }
-
-            await new Promise(resolve => {
-                function tick() {
-                    if (isSettled() || (performance.now() - start) >= maxWaitMs) {
-                        resolve();
-                        return;
-                    }
-                    requestAnimationFrame(tick);
-                }
-                tick();
-            });
-
-            const elapsed = performance.now() - start;
-            if (elapsed < maxWaitMs) {
-                await new Promise(resolve => setTimeout(resolve, maxWaitMs - elapsed));
-            }
-        });
+        const captureStart = await waitForProfilingStart(page);
 
         await page.evaluate(() => {
             window.fsimWorld.cameraController.setRotation(0.35, -0.25);
@@ -78,12 +93,15 @@ test.describe('fsim perf e2e', () => {
 
         const beforeMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
 
-        const report = await page.evaluate(() => window.fsimPerf.collectSample({
+        const report = await page.evaluate((captureStartMetadata) => window.fsimPerf.collectSample({
             scenario: 'steady_state_chase_camera',
             warmupFrames: 20,
             sampleFrames: 30,
             metadata: {
+                captureStartMode: captureStartMetadata.captureStartMode,
+                profilingReadyAtMs: captureStartMetadata.profilingReadyAtMs,
                 settleDelayMs: 10_000,
+                readinessAtCaptureStart: captureStartMetadata.readiness,
                 cameraMode: window.fsimWorld.cameraController.getMode(),
                 aircraftPosition: {
                     x: window.fsimWorld.PHYSICS.position.x,
@@ -91,7 +109,7 @@ test.describe('fsim perf e2e', () => {
                     z: window.fsimWorld.PHYSICS.position.z
                 }
             }
-        }));
+        }), captureStart);
 
         const afterMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
         await client.send('Performance.disable');
@@ -131,7 +149,14 @@ test.describe('fsim perf e2e', () => {
         expect(report.ok).toBe(true);
         expect(report.framesCaptured).toBeGreaterThanOrEqual(25);
         expect(report.metrics['frameMs']).not.toBeNull();
-        expect(report.phases.render).not.toBeNull();
+        expect(report.phases.render_total).not.toBeNull();
+        expect(report.phases.render_scene).not.toBeNull();
+        expect(report.phases.render_smaa).not.toBeNull();
+        expect(report.phases.render_bloom).not.toBeNull();
+        expect(report.metadata.captureStartMode).toMatch(/steady_state_gate|fallback_delay/);
+        expect(report.renderPasses.total).not.toBeNull();
+        expect(report.profiling).not.toBeNull();
+        expect(report.worstRenderFrame).not.toBeNull();
         expect(report.rankedPhases.length).toBeGreaterThan(0);
     });
 });

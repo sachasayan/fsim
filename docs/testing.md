@@ -46,13 +46,16 @@ The browser perf E2E writes a JSON artifact with:
 
 - per-frame CPU timing
 - named render-loop phase summaries
+- render sub-pass timing for scene, SMAA, bloom, and total render time
 - `THREE.WebGLRenderer.info` counters
 - adaptive quality / pixel ratio snapshots
+- profiling readiness state and resource stabilization timing
 - Chromium performance metrics gathered through Playwright CDP
 
 Use it as machine-local regression feedback and as structured input for LLM analysis.
 
 The perf capture intentionally waits for startup to settle before sampling:
 
-- prefer the in-app bootstrap / loader completion signal
-- always allow a 10 second in-game settle window before profiling starts
+- prefer the in-app `profilingReady` signal
+- `profilingReady` requires bootstrap complete, loader hidden, world ready, and no program/texture/geometry growth for 3 seconds
+- fall back to a 10 second in-game delay only if true steady state never arrives before the harness timeout

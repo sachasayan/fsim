@@ -106,6 +106,12 @@ export function createRendererManager({ container, scene, camera }) {
         composer,
         smaaPass,
         bloomPass,
+        renderFrame(dtSeconds) {
+            postStack.render(dtSeconds);
+        },
+        getRenderPassTimings() {
+            return postStack.getPassTimings();
+        },
         updateAdaptiveQuality,
         getAdaptiveQualitySnapshot,
         setAdaptiveQualityEnabled,

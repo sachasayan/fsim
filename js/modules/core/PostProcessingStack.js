@@ -56,9 +56,29 @@ export function createPostProcessingStack({
     const composer = composerFactory(renderer);
     const runtimeState = { renderer, scene, camera, width, height, pixelRatio };
     const passesById = new Map();
+    const passTimings = new Map();
+    let totalRenderMs = 0;
+
+    function roundTiming(value) {
+        if (!Number.isFinite(value)) return null;
+        return Math.round(value * 1000) / 1000;
+    }
+
+    function wrapPassRender(definition, pass) {
+        if (typeof pass?.render !== 'function') return;
+        const originalRender = pass.render.bind(pass);
+        pass.render = (...args) => {
+            const start = performance.now();
+            const result = originalRender(...args);
+            const durationMs = performance.now() - start;
+            passTimings.set(definition.id, durationMs);
+            return result;
+        };
+    }
 
     for (const definition of definitions) {
         const pass = definition.create(runtimeState);
+        wrapPassRender(definition, pass);
         composer.addPass(pass);
         passesById.set(definition.id, { definition, pass });
     }
@@ -82,6 +102,12 @@ export function createPostProcessingStack({
 
     return {
         composer,
+        render(deltaTime) {
+            passTimings.clear();
+            const start = performance.now();
+            composer.render(deltaTime);
+            totalRenderMs = performance.now() - start;
+        },
         resize(nextWidth, nextHeight, nextPixelRatio = runtimeState.pixelRatio) {
             applyDefinitions('resize', {
                 width: nextWidth,
@@ -94,6 +120,14 @@ export function createPostProcessingStack({
         },
         getPass(id) {
             return passesById.get(id)?.pass || null;
+        },
+        getPassTimings() {
+            return {
+                renderScene: roundTiming(passTimings.get('renderScene') ?? 0),
+                smaa: roundTiming(passTimings.get('smaa') ?? 0),
+                bloom: roundTiming(passTimings.get('bloom') ?? 0),
+                total: roundTiming(totalRenderMs)
+            };
         }
     };
 }

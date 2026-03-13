@@ -59,13 +59,44 @@ const {
   composer,
   smaaPass,
   bloomPass,
+  renderFrame,
+  getRenderPassTimings,
   updateAdaptiveQuality,
   getAdaptiveQualitySnapshot,
   handleResize
 } = createRendererManager({ container, scene, camera });
+const PROFILING_READY_QUIET_WINDOW_MS = 3000;
+const profilingState = {
+  profilingReady: false,
+  profilingReadinessReason: 'bootstrap_incomplete',
+  quietWindowMs: PROFILING_READY_QUIET_WINDOW_MS,
+  lastProgramsChangeAtMs: performance.now(),
+  lastTexturesChangeAtMs: performance.now(),
+  lastGeometriesChangeAtMs: performance.now(),
+  lastObservedPrograms: 0,
+  lastObservedTextures: 0,
+  lastObservedGeometries: 0,
+  profilingReadyAtMs: null
+};
 const perfCollector = createPerformanceCollector({
   renderer,
-  getAdaptiveQualitySnapshot
+  getAdaptiveQualitySnapshot,
+  getRenderPassTimings,
+  getProfilingSnapshot: () => {
+    const now = performance.now();
+    return {
+      bootstrapComplete: window.fsimWorld?.bootstrapComplete ?? false,
+      loaderHidden: window.fsimWorld?.loaderHidden ?? false,
+      worldReady: window.fsimWorld?.worldReady ?? false,
+      profilingReady: profilingState.profilingReady,
+      profilingReadinessReason: profilingState.profilingReadinessReason,
+      lastProgramsChangeMsAgo: now - profilingState.lastProgramsChangeAtMs,
+      lastTexturesChangeMsAgo: now - profilingState.lastTexturesChangeAtMs,
+      lastGeometriesChangeMsAgo: now - profilingState.lastGeometriesChangeAtMs,
+      quietWindowMs: profilingState.quietWindowMs,
+      profilingReadyAtMs: profilingState.profilingReadyAtMs
+    };
+  }
 });
 
 const stats = new Stats();
@@ -231,6 +262,9 @@ window.fsimWorld = {
   getShaderValidationVariants,
   bootstrapComplete: false,
   loaderHidden: false,
+  worldReady: false,
+  profilingReady: false,
+  profilingReadinessReason: profilingState.profilingReadinessReason,
   shaderValidation: getShaderValidationReport(),
   shaderValidationSummary: getShaderValidationSummary()
 };
@@ -373,6 +407,55 @@ window.resetFlight = function () {
 };
 
 window.addEventListener('resize', handleResize);
+
+function updateProfilingReadiness(now) {
+  const info = renderer.info;
+  const programCount = Array.isArray(info.programs) ? info.programs.length : 0;
+  const textureCount = info.memory.textures;
+  const geometryCount = info.memory.geometries;
+  const worldReady = isReady();
+
+  if (programCount !== profilingState.lastObservedPrograms) {
+    profilingState.lastObservedPrograms = programCount;
+    profilingState.lastProgramsChangeAtMs = now;
+  }
+  if (textureCount !== profilingState.lastObservedTextures) {
+    profilingState.lastObservedTextures = textureCount;
+    profilingState.lastTexturesChangeAtMs = now;
+  }
+  if (geometryCount !== profilingState.lastObservedGeometries) {
+    profilingState.lastObservedGeometries = geometryCount;
+    profilingState.lastGeometriesChangeAtMs = now;
+  }
+
+  window.fsimWorld.worldReady = worldReady;
+
+  let reason = 'stable';
+  if (!window.fsimWorld.bootstrapComplete) {
+    reason = 'bootstrap_incomplete';
+  } else if (!window.fsimWorld.loaderHidden) {
+    reason = 'loader_visible';
+  } else if (!worldReady) {
+    reason = 'world_not_ready';
+  } else if ((now - profilingState.lastProgramsChangeAtMs) < profilingState.quietWindowMs) {
+    reason = 'programs_growing';
+  } else if ((now - profilingState.lastTexturesChangeAtMs) < profilingState.quietWindowMs) {
+    reason = 'textures_growing';
+  } else if ((now - profilingState.lastGeometriesChangeAtMs) < profilingState.quietWindowMs) {
+    reason = 'geometries_growing';
+  }
+
+  profilingState.profilingReadinessReason = reason;
+  profilingState.profilingReady = reason === 'stable';
+  if (profilingState.profilingReady) {
+    profilingState.profilingReadyAtMs ??= now;
+  } else {
+    profilingState.profilingReadyAtMs = null;
+  }
+
+  window.fsimWorld.profilingReady = profilingState.profilingReady;
+  window.fsimWorld.profilingReadinessReason = reason;
+}
 
 function animate() {
   requestAnimationFrame(animate);
@@ -667,8 +750,15 @@ function animate() {
 
   // 10. Final Render
   phaseStart = performance.now();
-  composer.render();
-  perfCollector.recordPhase('render', performance.now() - phaseStart);
+  renderFrame(dt);
+  const renderTotalMs = performance.now() - phaseStart;
+  const renderPassTimings = getRenderPassTimings();
+  perfCollector.recordPhase('render', renderTotalMs);
+  perfCollector.recordPhase('render_total', renderTotalMs);
+  perfCollector.recordPhase('render_scene', renderPassTimings.renderScene ?? 0);
+  perfCollector.recordPhase('render_smaa', renderPassTimings.smaa ?? 0);
+  perfCollector.recordPhase('render_bloom', renderPassTimings.bloom ?? 0);
+  updateProfilingReadiness(now);
   perfCollector.endFrame({
     now,
     physicsSteps,
