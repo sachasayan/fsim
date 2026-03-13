@@ -15,9 +15,8 @@ export function initLiveReload(terrainSystem) {
 
     debugLog('[LiveReload] Initializing SSE connection...');
 
-    // If we're on port 5173 (Game), connect to the Dev Server on 5174 for rebuild events
-    const ssePort = window.location.port === '5173' ? '5174' : window.location.port;
-    const es = new EventSource(`//${window.location.hostname}:${ssePort}/events`);
+    const serverOrigin = window.location.origin;
+    const es = new EventSource(`${serverOrigin}/events`);
 
     es.addEventListener('reload-city', async (event) => {
         const data = JSON.parse(event.data);
@@ -32,7 +31,7 @@ export function initLiveReload(terrainSystem) {
             const success = await loadStaticWorld();
 
             if (success) {
-                const worldBinResp = await fetch(`//${window.location.hostname}:${ssePort}/world/world.bin`);
+                const worldBinResp = await fetch(`${serverOrigin}/world/world.bin`);
                 const buf = await worldBinResp.arrayBuffer();
                 setStaticSampler(new QuadtreeMapSampler(buf));
             }
