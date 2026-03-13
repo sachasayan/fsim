@@ -2,7 +2,13 @@ import * as THREE from 'three';
 import { createPostProcessingStack } from './PostProcessingStack.js';
 
 export function createRendererManager({ container, scene, camera }) {
-    const renderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true });
+    const urlParams = new URLSearchParams(window.location.search);
+    const logarithmicDepthBufferEnabled = urlParams.get('logdepth') !== '0';
+    const shadowsEnabled = urlParams.get('shadows') !== '0';
+    const renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        logarithmicDepthBuffer: logarithmicDepthBufferEnabled
+    });
     const BASELINE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
     const MIN_PIXEL_RATIO = 0.7;
     const MAX_PIXEL_RATIO = BASELINE_PIXEL_RATIO;
@@ -14,7 +20,7 @@ export function createRendererManager({ container, scene, camera }) {
 
     renderer.setPixelRatio(BASELINE_PIXEL_RATIO);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = shadowsEnabled;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.85;
@@ -85,7 +91,9 @@ export function createRendererManager({ container, scene, camera }) {
             frameTimeEmaMs,
             pixelRatio: currentPixelRatio,
             viewportWidth,
-            viewportHeight
+            viewportHeight,
+            shadowsEnabled,
+            logarithmicDepthBufferEnabled
         };
     }
 
@@ -112,6 +120,8 @@ export function createRendererManager({ container, scene, camera }) {
         getRenderPassTimings() {
             return postStack.getPassTimings();
         },
+        shadowsEnabled,
+        logarithmicDepthBufferEnabled,
         updateAdaptiveQuality,
         getAdaptiveQualitySnapshot,
         setAdaptiveQualityEnabled,

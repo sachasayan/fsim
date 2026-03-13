@@ -61,6 +61,8 @@ const {
   bloomPass,
   renderFrame,
   getRenderPassTimings,
+  shadowsEnabled,
+  logarithmicDepthBufferEnabled,
   updateAdaptiveQuality,
   getAdaptiveQualitySnapshot,
   handleResize
@@ -253,6 +255,10 @@ window.fsimWorld = {
   refreshLodState,
   lodSettings: worldLodSettings,
   waterMaterial,
+  rendererConfig: {
+    shadowsEnabled,
+    logarithmicDepthBufferEnabled
+  },
   getCollectedTokenCount,
   debugGui,
   debugView,
@@ -671,39 +677,41 @@ function animate() {
 
   // 9. Post-Physics Sync
   phaseStart = performance.now();
-  const cameraMode = cameraController.getMode();
-  const highShadowQuality = PHYSICS.position.y < 1200 && cameraMode !== 2;
-  const targetShadowMapSize = highShadowQuality ? SHADOW_MAP_NEAR : SHADOW_MAP_FAR;
-  if (targetShadowMapSize !== currentShadowMapSize) {
-    currentShadowMapSize = targetShadowMapSize;
-    dirLight.shadow.mapSize.set(currentShadowMapSize, currentShadowMapSize);
-    if (dirLight.shadow.map) {
-      dirLight.shadow.map.dispose();
-      dirLight.shadow.map = null;
+  if (shadowsEnabled) {
+    const cameraMode = cameraController.getMode();
+    const highShadowQuality = PHYSICS.position.y < 1200 && cameraMode !== 2;
+    const targetShadowMapSize = highShadowQuality ? SHADOW_MAP_NEAR : SHADOW_MAP_FAR;
+    if (targetShadowMapSize !== currentShadowMapSize) {
+      currentShadowMapSize = targetShadowMapSize;
+      dirLight.shadow.mapSize.set(currentShadowMapSize, currentShadowMapSize);
+      if (dirLight.shadow.map) {
+        dirLight.shadow.map.dispose();
+        dirLight.shadow.map = null;
+      }
     }
-  }
 
-  // Shadow centering
-  tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
-  const shadowCenter = crashSystem.getFocusPosition(tmpFocusPos);
-  dirLight.target.position.copy(shadowCenter);
-  dirLight.target.updateMatrixWorld();
-  dirLight.position.copy(shadowCenter).addScaledVector(tmpShadowSunDir, 2000);
+    // Shadow centering
+    tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
+    const shadowCenter = crashSystem.getFocusPosition(tmpFocusPos);
+    dirLight.target.position.copy(shadowCenter);
+    dirLight.target.updateMatrixWorld();
+    dirLight.position.copy(shadowCenter).addScaledVector(tmpShadowSunDir, 2000);
 
-  const shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
-  const shadowMoved = Math.abs(shadowCenter.x - prevShadowCenter.x) > 20 || Math.abs(shadowCenter.y - prevShadowCenter.y) > 20 || Math.abs(shadowCenter.z - prevShadowCenter.z) > 20;
-  const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 15;
-  if (shadowMoved || shadowExtentChanged) {
-    const shadowCam = dirLight.shadow.camera;
-    shadowCam.left = -shadowExtent;
-    shadowCam.right = shadowExtent;
-    shadowCam.top = shadowExtent;
-    shadowCam.bottom = -shadowExtent;
-    shadowCam.near = 40;
-    shadowCam.far = 5200;
-    shadowCam.updateProjectionMatrix();
-    prevShadowCenter.copy(shadowCenter);
-    prevShadowExtent = shadowExtent;
+    const shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
+    const shadowMoved = Math.abs(shadowCenter.x - prevShadowCenter.x) > 20 || Math.abs(shadowCenter.y - prevShadowCenter.y) > 20 || Math.abs(shadowCenter.z - prevShadowCenter.z) > 20;
+    const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 15;
+    if (shadowMoved || shadowExtentChanged) {
+      const shadowCam = dirLight.shadow.camera;
+      shadowCam.left = -shadowExtent;
+      shadowCam.right = shadowExtent;
+      shadowCam.top = shadowExtent;
+      shadowCam.bottom = -shadowExtent;
+      shadowCam.near = 40;
+      shadowCam.far = 5200;
+      shadowCam.updateProjectionMatrix();
+      prevShadowCenter.copy(shadowCenter);
+      prevShadowExtent = shadowExtent;
+    }
   }
   perfCollector.recordPhase('shadow_setup', performance.now() - phaseStart);
 

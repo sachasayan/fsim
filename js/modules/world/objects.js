@@ -24,7 +24,12 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   normalizeLodSettings(lodSettings);
   const lodManager = createWorldLodManager({ lodSettings });
 
-  const environment = createEnvironment({ scene, renderer, WEATHER });
+  const environment = createEnvironment({
+    scene,
+    renderer,
+    WEATHER,
+    shadowsEnabled: renderer?.shadowMap?.enabled !== false
+  });
   const terrain = createTerrainSystem({ scene, renderer, Noise, PHYSICS, lodSettings });
   const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const tower = createTowerSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });

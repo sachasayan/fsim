@@ -6,6 +6,7 @@ const WARMUP_FRAMES = Number(process.env.FSIM_PERF_WARMUP_FRAMES || 4);
 const SAMPLE_FRAMES = Number(process.env.FSIM_PERF_SAMPLE_FRAMES || 8);
 const SAMPLE_MS = Number(process.env.FSIM_PERF_SAMPLE_MS || 4_000);
 const PROFILING_READY_TIMEOUT_MS = Number(process.env.FSIM_PERF_READY_TIMEOUT_MS || 45_000);
+const QUERY_SUFFIX = process.env.FSIM_PERF_QUERY || '';
 
 async function waitForSettled(page) {
   await page.waitForFunction(() => (
@@ -81,7 +82,14 @@ async function main() {
       }
     });
 
-    const url = `http://127.0.0.1:${PORT}/fsim.html?lighting=noon&fog=0&clouds=0`;
+    const query = new URLSearchParams('lighting=noon&fog=0&clouds=0');
+    if (QUERY_SUFFIX) {
+      const extraParams = new URLSearchParams(QUERY_SUFFIX.startsWith('?') ? QUERY_SUFFIX.slice(1) : QUERY_SUFFIX);
+      for (const [key, value] of extraParams.entries()) {
+        query.set(key, value);
+      }
+    }
+    const url = `http://127.0.0.1:${PORT}/fsim.html?${query.toString()}`;
     await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
     const captureStart = await waitForSettled(page);
 
@@ -96,7 +104,8 @@ async function main() {
       sampleFrames,
       sampleMs,
       settleDelayMs,
-      captureStartMetadata
+      captureStartMetadata,
+      querySuffix
     }) => {
       const metadata = {
         captureStartMode: captureStartMetadata.captureStartMode,
@@ -106,7 +115,9 @@ async function main() {
         sampleMs,
         warmupFrames,
         sampleFrames,
+        query: querySuffix,
         cameraMode: window.fsimWorld.cameraController.getMode(),
+        rendererConfig: window.fsimWorld.rendererConfig,
         aircraftPosition: {
           x: window.fsimWorld.PHYSICS.position.x,
           y: window.fsimWorld.PHYSICS.position.y,
@@ -134,7 +145,8 @@ async function main() {
       sampleFrames: SAMPLE_FRAMES,
       sampleMs: SAMPLE_MS,
       settleDelayMs: WAIT_AFTER_SETTLE_MS,
-      captureStartMetadata: captureStart
+      captureStartMetadata: captureStart,
+      querySuffix: QUERY_SUFFIX
     });
 
     console.log(JSON.stringify(report, null, 2));

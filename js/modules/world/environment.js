@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 
-export function createEnvironment({ scene, renderer, WEATHER }) {
+export function createEnvironment({ scene, renderer, WEATHER, shadowsEnabled = true }) {
   const hemiBase = WEATHER?.lightAmbientBase ?? 0.25;
   const dirBase = WEATHER?.lightDirectBase ?? 1.0;
 
@@ -15,7 +15,7 @@ export function createEnvironment({ scene, renderer, WEATHER }) {
 
   const dirLight = new THREE.DirectionalLight(WEATHER?.dirColor ?? 0xff9a66, dirBase);
   dirLight.position.set(-1000, 2000, 1000);
-  dirLight.castShadow = true;
+  dirLight.castShadow = shadowsEnabled;
   dirLight.shadow.camera.top = 280;
   dirLight.shadow.camera.bottom = -280;
   dirLight.shadow.camera.left = -280;

@@ -182,7 +182,6 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
   let collectedCount = 0;
   let collectionHandler = null;
   let currentLOD = -1;
-  let tokensVisibleAtCurrentLod = true;
   const tokenSystemPosition = new THREE.Vector3();
 
   if (entries.length > 0) {
@@ -199,20 +198,13 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
 
   function updateLOD(cameraPos, dist) {
     const [lod0Threshold] = getAirportThresholds(lodSettings);
-    const newLOD = resolveDistanceLod(
+    currentLOD = resolveDistanceLod(
       dist,
       currentLOD,
       [lod0Threshold],
       lodSettings?.airport?.distanceHysteresis
     );
-
-    if (newLOD === currentLOD) {
-      return;
-    }
-
-    currentLOD = newLOD;
-    tokensVisibleAtCurrentLod = currentLOD === 0;
-    tokenMesh.visible = tokensVisibleAtCurrentLod;
+    tokenMesh.visible = currentLOD === 0;
   }
 
   function emitCollectionParticles(worldPosition) {
@@ -323,6 +315,8 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     const timeSeconds = timeMs * 0.001;
     const visibleDistanceSq = TOKEN_VISIBLE_DISTANCE * TOKEN_VISIBLE_DISTANCE;
     const pickupRadiusSq = TOKEN_PICKUP_RADIUS * TOKEN_PICKUP_RADIUS;
+    const lod0Active = currentLOD === 0;
+    let hasVisibleTokens = false;
 
     tokenMaterial.emissiveIntensity = 1.05 + Math.sin(timeSeconds * 4.5) * 0.12;
 
@@ -351,7 +345,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
       const camDx = (cameraPosition?.x ?? 0) - entry.x;
       const camDy = (cameraPosition?.y ?? 0) - worldY;
       const camDz = (cameraPosition?.z ?? 0) - entry.z;
-      const isVisible = tokensVisibleAtCurrentLod
+      const isVisible = lod0Active
         && entry.active
         && ((camDx * camDx) + (camDy * camDy) + (camDz * camDz) <= visibleDistanceSq);
 
@@ -360,6 +354,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
         continue;
       }
 
+      hasVisibleTokens = true;
       const wobble = Math.sin(timeSeconds * (entry.bobSpeed * 1.7) + entry.phase) * entry.wobbleAmount;
       const pulse = 1 + Math.sin(timeSeconds * 5.4 + entry.pulseOffset) * 0.06;
       dummy.position.set(entry.x, worldY, entry.z);
@@ -369,6 +364,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
       tokenMesh.setMatrixAt(index, dummy.matrix);
     }
 
+    tokenMesh.visible = hasVisibleTokens;
     tokenMesh.instanceMatrix.needsUpdate = true;
     if (cameraQuaternion) {
       updateCollectionEffects(timeSeconds, cameraQuaternion);
