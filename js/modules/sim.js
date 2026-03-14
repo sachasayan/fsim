@@ -182,24 +182,6 @@ function refreshLodState() {
 
 if (debugGui) {
   const lodFolder = debugGui.addFolder('LOD');
-  const worldFolder = lodFolder.addFolder('World');
-  worldFolder.add(worldLodSettings.world, 'updateIntervalMs', 16, 1000, 1).name('Update Interval');
-  worldFolder.add(worldLodSettings.world, 'cameraMoveThreshold', 0, 100, 1).name('Move Threshold');
-
-  const airportFolder = lodFolder.addFolder('Airport');
-  airportFolder.add(worldLodSettings.airport.thresholds, 'mid', 1000, 50000, 100).name('Mid Distance').onFinishChange(refreshLodState);
-  airportFolder.add(worldLodSettings.airport.thresholds, 'low', 1000, 80000, 100).name('Low Distance').onFinishChange(refreshLodState);
-  airportFolder.add(worldLodSettings.airport.thresholds, 'cull', 1000, 120000, 100).name('Cull Distance').onFinishChange(refreshLodState);
-  airportFolder.add(worldLodSettings.airport, 'distanceHysteresis', 0, 5000, 50).name('Hysteresis').onFinishChange(refreshLodState);
-  airportFolder.add(worldLodSettings.airport, 'shadowHighDetailDistance', 1000, 30000, 100).name('Shadow Distance').onFinishChange(refreshLodState);
-
-  const terrainFolder = lodFolder.addFolder('Terrain');
-  terrainFolder.add(worldLodSettings.terrain, 'renderDistance', 0, 16, 1).name('Render Distance').onFinishChange(refreshLodState);
-  terrainFolder.add(worldLodSettings.terrain.ringThresholds, '0', 0, 8, 1).name('LOD0 Ring').onFinishChange(refreshLodState);
-  terrainFolder.add(worldLodSettings.terrain.ringThresholds, '1', 1, 12, 1).name('LOD1 Ring').onFinishChange(refreshLodState);
-  terrainFolder.add(worldLodSettings.terrain.ringThresholds, '2', 2, 16, 1).name('LOD2 Ring').onFinishChange(refreshLodState);
-  terrainFolder.add(worldLodSettings.terrain, 'ringHysteresis', 0, 4, 1).name('Ring Hysteresis').onFinishChange(refreshLodState);
-
   if (terrainDebugSettings && typeof applyTerrainDebugSettings === 'function') {
     const nativeFolder = lodFolder.addFolder('Native Terrain');
     nativeFolder.add(terrainDebugSettings, 'selectionInterestRadius', 2000, 60000, 250)
@@ -218,24 +200,6 @@ if (debugGui) {
       .name('Max Depth')
       .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
 
-    const bootstrapFolder = nativeFolder.addFolder('Bootstrap');
-    bootstrapFolder.add(terrainDebugSettings, 'bootstrapRadius', 500, 12000, 50)
-      .name('Radius')
-      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
-
-    const densityFolder = nativeFolder.addFolder('Surface Density');
-    densityFolder.add(terrainDebugSettings, 'resolution32MaxNodeSize', 64, 8000, 32)
-      .name('32x Max Size')
-      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
-    densityFolder.add(terrainDebugSettings, 'resolution16MaxNodeSize', 64, 12000, 32)
-      .name('16x Max Size')
-      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
-    densityFolder.add(terrainDebugSettings, 'resolution8MaxNodeSize', 64, 20000, 32)
-      .name('8x Max Size')
-      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
-    densityFolder.add(terrainDebugSettings, 'resolution4MaxNodeSize', 64, 30000, 32)
-      .name('4x Max Size')
-      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
     nativeFolder.add(terrainDebugSettings, 'showTerrainWireframe')
       .name('Wireframe')
       .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
