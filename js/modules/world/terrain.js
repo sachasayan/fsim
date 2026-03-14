@@ -8,7 +8,7 @@ import {
   setupWaterMaterial,
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
-import { RoadMarkingOverlay } from './terrain/RoadMarkingOverlay.js';
+import { RoadMarkingOverlay, ROAD_MARKING_OVERLAY_DEFAULTS } from './terrain/RoadMarkingOverlay.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
@@ -345,6 +345,19 @@ export function createTerrainSystem({
     showTrees: true,
     showBuildings: true
   };
+  const roadMarkingDebugSettings = {
+    worldSize: ROAD_MARKING_OVERLAY_DEFAULTS.worldSize,
+    recenterDistance: ROAD_MARKING_OVERLAY_DEFAULTS.recenterDistance,
+    roadWidth: ROAD_MARKING_OVERLAY_DEFAULTS.roadWidth,
+    roadDashLength: ROAD_MARKING_OVERLAY_DEFAULTS.roadDashLength,
+    roadGapLength: ROAD_MARKING_OVERLAY_DEFAULTS.roadGapLength,
+    taxiwayWidth: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayWidth,
+    taxiwayDashLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayDashLength,
+    taxiwayGapLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayGapLength,
+    opacity: 1.0,
+    fadeStart: 800.0,
+    fadeEnd: 1400.0
+  };
   let lastTerrainSelection = {
     mode: 'grid_fallback',
     selectedLeafCount: 0,
@@ -357,7 +370,10 @@ export function createTerrainSystem({
     quadtreeSelectionRegion: null
   };
   const terrainDetailTex = createPackedTerrainDetailTexture();
-  const roadMarkingOverlay = new RoadMarkingOverlay();
+  const roadMarkingOverlay = new RoadMarkingOverlay({
+    worldSize: roadMarkingDebugSettings.worldSize,
+    recenterDistance: roadMarkingDebugSettings.recenterDistance
+  });
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
   const terrainFarMaterial = terrainMaterial.clone();
   terrainFarMaterial.roughness = 1.0;
@@ -368,9 +384,9 @@ export function createTerrainSystem({
     uRoadMarkingTex: { value: roadMarkingOverlay.texture },
     uRoadMarkingCenter: { value: new THREE.Vector2(0, 0) },
     uRoadMarkingWorldSize: { value: roadMarkingOverlay.worldSize },
-    uRoadMarkingOpacity: { value: 1.0 },
-    uRoadMarkingFadeStart: { value: 180.0 },
-    uRoadMarkingFadeEnd: { value: 460.0 },
+    uRoadMarkingOpacity: { value: roadMarkingDebugSettings.opacity },
+    uRoadMarkingFadeStart: { value: roadMarkingDebugSettings.fadeStart },
+    uRoadMarkingFadeEnd: { value: roadMarkingDebugSettings.fadeEnd },
     uRoadMarkingBodyStart: { value: 0.2 },
     uRoadMarkingBodyEnd: { value: 0.45 },
     uRoadMarkingCoreStart: { value: 0.55 },
@@ -398,6 +414,7 @@ export function createTerrainSystem({
   setColorFromLinearArray(waterSurfaceUniforms.uWaterShallowColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.shallowStart + 0.01));
   setColorFromLinearArray(waterSurfaceUniforms.uWaterDeepColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.deepEnd + 1));
   applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false });
+  applyRoadMarkingDebugSettings({ redraw: false });
 
   const pendingLeafBuilds = [];
   const pendingLeafBuildIds = new Set();
@@ -471,6 +488,20 @@ export function createTerrainSystem({
     ] = thresholds;
   }
 
+  function normalizeRoadMarkingDebugSettings() {
+    roadMarkingDebugSettings.worldSize = Math.max(128, roadMarkingDebugSettings.worldSize);
+    roadMarkingDebugSettings.recenterDistance = Math.max(0, roadMarkingDebugSettings.recenterDistance);
+    roadMarkingDebugSettings.roadWidth = Math.max(0, roadMarkingDebugSettings.roadWidth);
+    roadMarkingDebugSettings.roadDashLength = Math.max(0, roadMarkingDebugSettings.roadDashLength);
+    roadMarkingDebugSettings.roadGapLength = Math.max(0, roadMarkingDebugSettings.roadGapLength);
+    roadMarkingDebugSettings.taxiwayWidth = Math.max(0, roadMarkingDebugSettings.taxiwayWidth);
+    roadMarkingDebugSettings.taxiwayDashLength = Math.max(0, roadMarkingDebugSettings.taxiwayDashLength);
+    roadMarkingDebugSettings.taxiwayGapLength = Math.max(0, roadMarkingDebugSettings.taxiwayGapLength);
+    roadMarkingDebugSettings.opacity = Math.max(0, Math.min(1, roadMarkingDebugSettings.opacity));
+    roadMarkingDebugSettings.fadeStart = Math.max(0, roadMarkingDebugSettings.fadeStart);
+    roadMarkingDebugSettings.fadeEnd = Math.max(roadMarkingDebugSettings.fadeStart, roadMarkingDebugSettings.fadeEnd);
+  }
+
   function applyTerrainWireframeSetting() {
     terrainMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
     terrainFarMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
@@ -540,6 +571,22 @@ export function createTerrainSystem({
     }
     if (refreshSelection) {
       updateTerrain();
+    }
+  }
+
+  function applyRoadMarkingDebugSettings({ redraw = true } = {}) {
+    normalizeRoadMarkingDebugSettings();
+    roadMarkingOverlay.configure(roadMarkingDebugSettings);
+    terrainDetailUniforms.uRoadMarkingWorldSize.value = roadMarkingDebugSettings.worldSize;
+    terrainDetailUniforms.uRoadMarkingOpacity.value = roadMarkingDebugSettings.opacity;
+    terrainDetailUniforms.uRoadMarkingFadeStart.value = roadMarkingDebugSettings.fadeStart;
+    terrainDetailUniforms.uRoadMarkingFadeEnd.value = roadMarkingDebugSettings.fadeEnd;
+
+    if (redraw && windowRef?.fsimWorld) {
+      roadMarkingOverlay.refresh(windowRef.fsimWorld);
+      if (roadMarkingOverlay.center) {
+        terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
+      }
     }
   }
 
@@ -1811,7 +1858,9 @@ export function createTerrainSystem({
       activeChunkCount: chunkLeafOwners.size
     }),
     terrainDebugSettings,
+    roadMarkingDebugSettings,
     applyTerrainDebugSettings,
+    applyRoadMarkingDebugSettings,
     isReady,
     hasPendingTerrainWork,
     reloadCity,

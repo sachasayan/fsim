@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const DEFAULT_OVERLAY_WORLD_SIZE = 640;
+const DEFAULT_OVERLAY_WORLD_SIZE = 2048;
 const DEFAULT_TEXTURE_SIZE = 2048;
 const DEFAULT_RECENTER_DISTANCE = 96;
 
@@ -9,7 +9,26 @@ const DASH_SCALE = {
     taxiway: { width: 0.88, dashLength: 0, gapLength: 0, color: '#ffff00' }
 };
 
-export function getRoadMarkingStyle(road) {
+export const ROAD_MARKING_OVERLAY_DEFAULTS = Object.freeze({
+    worldSize: DEFAULT_OVERLAY_WORLD_SIZE,
+    textureSize: DEFAULT_TEXTURE_SIZE,
+    recenterDistance: DEFAULT_RECENTER_DISTANCE,
+    roadWidth: DASH_SCALE.road.width,
+    roadDashLength: DASH_SCALE.road.dashLength,
+    roadGapLength: DASH_SCALE.road.gapLength,
+    taxiwayWidth: DASH_SCALE.taxiway.width,
+    taxiwayDashLength: DASH_SCALE.taxiway.dashLength,
+    taxiwayGapLength: DASH_SCALE.taxiway.gapLength
+});
+
+function cloneDashScale() {
+    return {
+        road: { ...DASH_SCALE.road },
+        taxiway: { ...DASH_SCALE.taxiway }
+    };
+}
+
+export function getRoadMarkingStyle(road, dashScale = DASH_SCALE) {
     if (!road || road.surface !== 'asphalt') return null;
     if (!Array.isArray(road.points) || road.points.length < 2) return null;
 
@@ -20,19 +39,19 @@ export function getRoadMarkingStyle(road) {
 
     if (style === 'taxiway' || road.kind === 'taxiway') {
         return {
-            width: road.markings?.centerLineWidth ?? road.centerLineWidth ?? DASH_SCALE.taxiway.width,
-            dashLength: road.markings?.dashLength ?? road.dashLength ?? DASH_SCALE.taxiway.dashLength,
-            gapLength: road.markings?.gapLength ?? road.gapLength ?? DASH_SCALE.taxiway.gapLength,
-            color: road.markings?.centerLineColor ?? road.centerLineColor ?? DASH_SCALE.taxiway.color
+            width: road.markings?.centerLineWidth ?? road.centerLineWidth ?? dashScale.taxiway.width,
+            dashLength: road.markings?.dashLength ?? road.dashLength ?? dashScale.taxiway.dashLength,
+            gapLength: road.markings?.gapLength ?? road.gapLength ?? dashScale.taxiway.gapLength,
+            color: road.markings?.centerLineColor ?? road.centerLineColor ?? dashScale.taxiway.color
         };
     }
 
     if (road.kind === 'road' || style === 'road' || style === 'dashed') {
         return {
-            width: road.markings?.centerLineWidth ?? road.centerLineWidth ?? DASH_SCALE.road.width,
-            dashLength: road.markings?.dashLength ?? road.dashLength ?? DASH_SCALE.road.dashLength,
-            gapLength: road.markings?.gapLength ?? road.gapLength ?? DASH_SCALE.road.gapLength,
-            color: road.markings?.centerLineColor ?? road.centerLineColor ?? DASH_SCALE.road.color
+            width: road.markings?.centerLineWidth ?? road.centerLineWidth ?? dashScale.road.width,
+            dashLength: road.markings?.dashLength ?? road.dashLength ?? dashScale.road.dashLength,
+            gapLength: road.markings?.gapLength ?? road.gapLength ?? dashScale.road.gapLength,
+            color: road.markings?.centerLineColor ?? road.centerLineColor ?? dashScale.road.color
         };
     }
 
@@ -92,6 +111,7 @@ export class RoadMarkingOverlay {
         this.worldSize = worldSize;
         this.textureSize = textureSize;
         this.recenterDistance = recenterDistance;
+        this.styleDefaults = cloneDashScale();
         this.center = null;
         this.lastRoadsRef = null;
 
@@ -107,6 +127,26 @@ export class RoadMarkingOverlay {
         this.texture.generateMipmaps = false;
         this.texture.colorSpace = THREE.SRGBColorSpace;
         this.clear();
+    }
+
+    configure({
+        worldSize = this.worldSize,
+        recenterDistance = this.recenterDistance,
+        roadWidth = this.styleDefaults.road.width,
+        roadDashLength = this.styleDefaults.road.dashLength,
+        roadGapLength = this.styleDefaults.road.gapLength,
+        taxiwayWidth = this.styleDefaults.taxiway.width,
+        taxiwayDashLength = this.styleDefaults.taxiway.dashLength,
+        taxiwayGapLength = this.styleDefaults.taxiway.gapLength
+    } = {}) {
+        this.worldSize = worldSize;
+        this.recenterDistance = recenterDistance;
+        this.styleDefaults.road.width = roadWidth;
+        this.styleDefaults.road.dashLength = roadDashLength;
+        this.styleDefaults.road.gapLength = roadGapLength;
+        this.styleDefaults.taxiway.width = taxiwayWidth;
+        this.styleDefaults.taxiway.dashLength = taxiwayDashLength;
+        this.styleDefaults.taxiway.gapLength = taxiwayGapLength;
     }
 
     clear() {
@@ -129,6 +169,14 @@ export class RoadMarkingOverlay {
         return true;
     }
 
+    refresh(worldData = null) {
+        if (!this.center) return false;
+        const roads = worldData?.roads || this.lastRoadsRef || [];
+        this.lastRoadsRef = roads;
+        this.redraw(roads);
+        return true;
+    }
+
     redraw(roads) {
         this.clear();
         if (!Array.isArray(roads) || roads.length === 0) return;
@@ -137,12 +185,12 @@ export class RoadMarkingOverlay {
         this.ctx.lineJoin = 'round';
 
         for (const road of roads) {
-            const style = getRoadMarkingStyle(road);
+            const style = getRoadMarkingStyle(road, this.styleDefaults);
             if (!style) continue;
             if (!roadOverlapsOverlay(road.points, this.center.x, this.center.z, this.worldSize, road.width || 24)) continue;
 
             const pxPerMeter = this.textureSize / this.worldSize;
-            const lineWidth = Math.max(3.0, style.width * pxPerMeter);
+            const lineWidth = style.width * pxPerMeter;
             const dashLength = Math.max(0, style.dashLength * pxPerMeter);
             const gapLength = Math.max(0, style.gapLength * pxPerMeter);
 
