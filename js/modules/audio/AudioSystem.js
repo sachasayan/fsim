@@ -248,54 +248,80 @@ export const ProceduralAudio = {
         this.lastCoinPickupTime = t;
 
         const bus = this.fxBus || this.ctx.destination;
-        const sparkleGain = this.ctx.createGain();
-        sparkleGain.gain.value = 0;
-        sparkleGain.connect(bus);
+        const transientBus = this.ctx.createGain();
+        transientBus.gain.setValueAtTime(0.0001, t);
+        transientBus.gain.exponentialRampToValueAtTime(0.95, t + 0.006);
+        transientBus.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+        transientBus.connect(bus);
 
-        const baseFrequency = sinceLast < 0.14
-            ? 1420 + Math.random() * 120
-            : 1180 + Math.random() * 140;
-        const layerMultipliers = [1.0, 1.5, 2.02];
-        const layerVolumes = [0.24, 0.15, 0.08];
+        const bodyFilter = this.ctx.createBiquadFilter();
+        bodyFilter.type = 'bandpass';
+        bodyFilter.frequency.setValueAtTime(2100, t);
+        bodyFilter.Q.value = 3.2;
+        bodyFilter.connect(transientBus);
 
-        for (let index = 0; index < layerMultipliers.length; index++) {
+        const accentFilter = this.ctx.createBiquadFilter();
+        accentFilter.type = 'highpass';
+        accentFilter.frequency.setValueAtTime(2400, t);
+        accentFilter.Q.value = 0.7;
+        accentFilter.connect(transientBus);
+
+        const crowdedPickup = sinceLast < 0.14;
+        const baseFrequency = crowdedPickup
+            ? 1220 + Math.random() * 80
+            : 980 + Math.random() * 90;
+        const layerRatios = [1.0, 2.06, 3.72];
+        const layerGains = crowdedPickup ? [0.24, 0.1, 0.05] : [0.28, 0.12, 0.06];
+
+        for (let index = 0; index < layerRatios.length; index++) {
             const osc = this.ctx.createOscillator();
-            const toneGain = this.ctx.createGain();
+            const gain = this.ctx.createGain();
             osc.type = index === 0 ? 'triangle' : 'sine';
 
-            const freq = baseFrequency * layerMultipliers[index];
-            osc.frequency.setValueAtTime(freq * 0.88, t);
-            osc.frequency.exponentialRampToValueAtTime(freq * (1.02 + index * 0.025), t + 0.045);
-            osc.frequency.exponentialRampToValueAtTime(freq * 0.78, t + 0.19);
+            const targetFreq = baseFrequency * layerRatios[index];
+            osc.frequency.setValueAtTime(targetFreq * 0.82, t);
+            osc.frequency.exponentialRampToValueAtTime(targetFreq * 1.18, t + 0.018);
+            osc.frequency.exponentialRampToValueAtTime(targetFreq * 0.92, t + 0.075);
+            osc.frequency.exponentialRampToValueAtTime(targetFreq * 0.62, t + 0.24);
 
-            toneGain.gain.setValueAtTime(0.0001, t);
-            toneGain.gain.exponentialRampToValueAtTime(layerVolumes[index], t + 0.012);
-            toneGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(layerGains[index], t + 0.008);
+            gain.gain.exponentialRampToValueAtTime(layerGains[index] * 0.35, t + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
 
-            osc.connect(toneGain).connect(sparkleGain);
+            osc.connect(gain).connect(bodyFilter);
             osc.start(t);
-            osc.stop(t + 0.24);
+            osc.stop(t + 0.25);
         }
 
-        const shimmerFilter = this.ctx.createBiquadFilter();
-        shimmerFilter.type = 'bandpass';
-        shimmerFilter.frequency.setValueAtTime(3600 + Math.random() * 500, t);
-        shimmerFilter.Q.value = 1.1;
-        const shimmerGain = this.ctx.createGain();
-        shimmerGain.gain.setValueAtTime(0.0001, t);
-        shimmerGain.gain.exponentialRampToValueAtTime(0.028, t + 0.01);
-        shimmerGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+        const ping = this.ctx.createOscillator();
+        const pingGain = this.ctx.createGain();
+        ping.type = 'sine';
+        ping.frequency.setValueAtTime(3560 + Math.random() * 140, t);
+        ping.frequency.exponentialRampToValueAtTime(2850 + Math.random() * 90, t + 0.12);
+        pingGain.gain.setValueAtTime(0.0001, t);
+        pingGain.gain.exponentialRampToValueAtTime(0.045, t + 0.004);
+        pingGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        ping.connect(pingGain).connect(accentFilter);
+        ping.start(t);
+        ping.stop(t + 0.13);
 
-        const noiseBuffer = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * 0.12), this.ctx.sampleRate);
+        const noiseBuffer = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * 0.08), this.ctx.sampleRate);
         const output = noiseBuffer.getChannelData(0);
         for (let i = 0; i < output.length; i++) output[i] = Math.random() * 2 - 1;
-        const shimmer = this.ctx.createBufferSource();
-        shimmer.buffer = noiseBuffer;
-        shimmer.connect(shimmerFilter).connect(shimmerGain).connect(sparkleGain);
-        shimmer.start(t);
-        shimmer.stop(t + 0.1);
 
-        sparkleGain.gain.setValueAtTime(0.9, t);
-        sparkleGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+        const clink = this.ctx.createBufferSource();
+        clink.buffer = noiseBuffer;
+        const clinkFilter = this.ctx.createBiquadFilter();
+        clinkFilter.type = 'bandpass';
+        clinkFilter.frequency.setValueAtTime(4200 + Math.random() * 220, t);
+        clinkFilter.Q.value = 5.5;
+        const clinkGain = this.ctx.createGain();
+        clinkGain.gain.setValueAtTime(0.0001, t);
+        clinkGain.gain.exponentialRampToValueAtTime(0.04, t + 0.003);
+        clinkGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+        clink.connect(clinkFilter).connect(clinkGain).connect(accentFilter);
+        clink.start(t);
+        clink.stop(t + 0.05);
     }
 };

@@ -9,6 +9,7 @@ const TOKEN_HEIGHT_VARIATION = 42;
 const TOKEN_BOB_AMPLITUDE = 8;
 const TOKEN_EFFECT_POOL_SIZE = 16;
 const TOKEN_EFFECT_DURATION = 0.38;
+const TOKEN_SPIN_SPEED_MULTIPLIER = 2;
 const TOKEN_EFFECT_HIDE_SCALE = new THREE.Vector3(0.0001, 0.0001, 0.0001);
 
 function fract(value) {
@@ -85,13 +86,23 @@ function buildTokenGeometry() {
   return geometry;
 }
 
-function createEffectPool(scene) {
+function createEffectPool(scene, tokenGeometry) {
   const group = new THREE.Group();
   scene.add(group);
 
   const ringGeometry = new THREE.TorusGeometry(1.6, 0.16, 12, 32);
   const starGeometry = new THREE.OctahedronGeometry(0.65, 0);
   const flashGeometry = new THREE.PlaneGeometry(2.8, 2.8);
+  const coinMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffda63,
+    emissive: 0xffb733,
+    emissiveIntensity: 1.5,
+    roughness: 0.18,
+    metalness: 0.82,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false
+  });
   const ringMaterial = new THREE.MeshBasicMaterial({
     color: 0xffe8a3,
     transparent: true,
@@ -121,6 +132,9 @@ function createEffectPool(scene) {
     const root = new THREE.Group();
     root.visible = false;
 
+    const coin = new THREE.Mesh(tokenGeometry, coinMaterial.clone());
+    root.add(coin);
+
     const ring = new THREE.Mesh(ringGeometry, ringMaterial.clone());
     ring.rotation.x = Math.PI * 0.5;
     root.add(ring);
@@ -140,6 +154,7 @@ function createEffectPool(scene) {
     group.add(root);
     effects.push({
       root,
+      coin,
       ring,
       flash,
       starA,
@@ -147,7 +162,10 @@ function createEffectPool(scene) {
       origin: new THREE.Vector3(),
       active: false,
       startTime: 0,
-      duration: TOKEN_EFFECT_DURATION
+      duration: TOKEN_EFFECT_DURATION,
+      baseScale: 1,
+      spinAngle: 0,
+      spinVelocity: 0
     });
   }
 
@@ -177,7 +195,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
   );
   const dummy = new THREE.Object3D();
   const entries = buildTokenEntries(getTerrainHeight);
-  const effectPool = createEffectPool(scene);
+  const effectPool = createEffectPool(scene, tokenGeometry);
   let effectPoolIndex = 0;
   let collectedCount = 0;
   let collectionHandler = null;
@@ -252,7 +270,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     }
   }
 
-  function startCollectionEffect(worldPosition, timeSeconds) {
+  function startCollectionEffect(worldPosition, coinScale, timeSeconds) {
     const effect = effectPool[effectPoolIndex];
     effectPoolIndex = (effectPoolIndex + 1) % effectPool.length;
     effect.active = true;
@@ -263,15 +281,22 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     effect.origin.copy(worldPosition);
     effect.root.scale.setScalar(1);
     effect.root.rotation.set(0, 0, 0);
+    effect.coin.position.set(0, 0, 0);
+    effect.coin.rotation.set(0, 0, 0);
+    effect.baseScale = coinScale;
+    effect.coin.scale.setScalar(coinScale);
+    effect.coin.material.opacity = 1;
     effect.ring.material.opacity = 0.95;
     effect.flash.material.opacity = 0.7;
     effect.starA.material.opacity = 0.95;
     effect.starB.material.opacity = 0.75;
+    effect.spinAngle = 0;
+    effect.spinVelocity = 0;
   }
 
-  function emitCollectionEffect(worldPosition, timeSeconds) {
+  function emitCollectionEffect(worldPosition, coinScale, timeSeconds) {
     emitCollectionParticles(worldPosition);
-    startCollectionEffect(worldPosition, timeSeconds);
+    startCollectionEffect(worldPosition, coinScale, timeSeconds);
   }
 
   function updateCollectionEffects(timeSeconds, cameraQuaternion) {
@@ -283,9 +308,17 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
       const progress = Math.min(1, (timeSeconds - effect.startTime) / effect.duration);
       const fade = 1 - progress;
       const eased = 1 - Math.pow(1 - progress, 3);
+      const spinBoost = eased * eased;
 
       effect.root.position.copy(effect.origin);
       effect.root.position.y += eased * 5.2;
+      effect.spinVelocity = 0.26 + spinBoost * 0.85;
+      effect.spinAngle += effect.spinVelocity;
+      effect.coin.position.y = eased * 2.2;
+      effect.coin.rotation.y = effect.spinAngle;
+      effect.coin.rotation.z = spinBoost * 0.3;
+      effect.coin.scale.setScalar(effect.baseScale * (1 + eased * 0.38));
+      effect.coin.material.opacity = Math.max(0, 1 - progress * 1.35);
       effect.ring.scale.setScalar(1 + eased * 3.6);
       effect.ring.material.opacity = fade * 0.9;
 
@@ -307,6 +340,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
       if (progress >= 1) {
         effect.active = false;
         effect.root.visible = false;
+        effect.coin.material.opacity = 0;
       }
     }
   }
@@ -333,7 +367,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
           entry.active = false;
           collectedCount += 1;
           const worldPosition = new THREE.Vector3(entry.x, worldY, entry.z);
-          emitCollectionEffect(worldPosition, timeSeconds);
+          emitCollectionEffect(worldPosition, entry.scale, timeSeconds);
           collectionHandler?.({
             count: collectedCount,
             worldPosition,
@@ -358,7 +392,11 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
       const wobble = Math.sin(timeSeconds * (entry.bobSpeed * 1.7) + entry.phase) * entry.wobbleAmount;
       const pulse = 1 + Math.sin(timeSeconds * 5.4 + entry.pulseOffset) * 0.06;
       dummy.position.set(entry.x, worldY, entry.z);
-      dummy.rotation.set(wobble, timeSeconds * entry.spinSpeed + entry.phase, wobble * 0.55);
+      dummy.rotation.set(
+        wobble,
+        timeSeconds * entry.spinSpeed * TOKEN_SPIN_SPEED_MULTIPLIER + entry.phase,
+        wobble * 0.55
+      );
       dummy.scale.set(entry.scale * pulse, entry.scale * pulse * 1.06, entry.scale * pulse);
       dummy.updateMatrix();
       tokenMesh.setMatrixAt(index, dummy.matrix);
