@@ -28,6 +28,22 @@
         <div class="spinner"></div>
         <h2 id="loader-text">INITIALIZING FLIGHT DYNAMICS</h2>
         <p id="loader-subtext">Generating Procedural World...</p>
+        <div id="loader-progress" aria-live="polite">
+            <div class="loader-progress-row">
+                <div class="loader-progress-labels">
+                    <span>Terrain</span>
+                    <span id="loader-terrain-progress-text">Waiting...</span>
+                </div>
+                <div class="loader-progress-track"><div id="loader-terrain-progress-bar" class="loader-progress-fill"></div></div>
+            </div>
+            <div class="loader-progress-row">
+                <div class="loader-progress-labels">
+                    <span>Assets</span>
+                    <span id="loader-assets-progress-text">Waiting...</span>
+                </div>
+                <div class="loader-progress-track"><div id="loader-assets-progress-bar" class="loader-progress-fill"></div></div>
+            </div>
+        </div>
         <div id="terrain-bootstrap-debug"></div>
     </div>
 

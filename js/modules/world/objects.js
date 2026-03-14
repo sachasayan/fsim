@@ -81,12 +81,13 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     return snapshot;
   }
 
-  function validateShaders(camera, { force = false } = {}) {
+  function validateShaders(camera, { force = false, onProgress = null } = {}) {
     if (warmupPromise && !force) return warmupPromise;
     warmupPromise = warmupShaderPrograms({
       renderer,
       camera,
-      registry: shaderVariantRegistry
+      registry: shaderVariantRegistry,
+      onProgress
     }).then((report) => {
       shaderValidationReport = report;
       return report;
@@ -100,8 +101,8 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     return warmupPromise;
   }
 
-  function warmupShaders(camera) {
-    return validateShaders(camera);
+  function warmupShaders(camera, options = {}) {
+    return validateShaders(camera, options);
   }
 
   function getShaderValidationReport() {

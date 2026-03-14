@@ -219,17 +219,8 @@ if (debugGui) {
       .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: true, refreshSelection: true }));
 
     const bootstrapFolder = nativeFolder.addFolder('Bootstrap');
-    bootstrapFolder.add(terrainDebugSettings, 'bootstrapInterestRadius', 500, 12000, 50)
-      .name('Visible Radius')
-      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
-    bootstrapFolder.add(terrainDebugSettings, 'bootstrapBlockingRadius', 250, 8000, 50)
-      .name('Priority Radius')
-      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
-    bootstrapFolder.add(terrainDebugSettings, 'bootstrapMaxSelectedLeaves', 1, 256, 1)
-      .name('Max Leaves')
-      .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
-    bootstrapFolder.add(terrainDebugSettings, 'bootstrapMaxBlockingLeaves', 1, 128, 1)
-      .name('Max Blocking Leaves')
+    bootstrapFolder.add(terrainDebugSettings, 'bootstrapRadius', 500, 12000, 50)
+      .name('Radius')
       .onFinishChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
 
     const densityFolder = nativeFolder.addFolder('Surface Density');
@@ -337,10 +328,59 @@ window.fsimWorld = {
   terrainDebugSettings,
   applyTerrainDebugSettings,
   terrainSelection: getTerrainSelectionDiagnostics?.() || null,
+  loaderProgress: null,
   shaderValidation: getShaderValidationReport(),
   shaderValidationSummary: getShaderValidationSummary()
 };
 window.fsimPerf = perfCollector;
+
+const loaderElements = {
+  terrainBar: document.getElementById('loader-terrain-progress-bar'),
+  terrainText: document.getElementById('loader-terrain-progress-text'),
+  assetsBar: document.getElementById('loader-assets-progress-bar'),
+  assetsText: document.getElementById('loader-assets-progress-text')
+};
+const loaderProgressState = {
+  terrain: { ratio: 0, text: 'Waiting for terrain selection...' },
+  assets: { ratio: 0, text: 'Waiting for shader warmup...' }
+};
+
+function setLoaderProgressSection(barElement, textElement, ratio, text) {
+  if (barElement) barElement.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+  if (textElement && typeof text === 'string') textElement.textContent = text;
+}
+
+function updateLoaderProgress() {
+  const terrainSelection = getTerrainSelectionDiagnostics?.() || null;
+  const blockingLeafCount = terrainSelection?.blockingLeafCount ?? 0;
+  const pendingBlockingLeafCount = terrainSelection?.pendingBlockingLeafCount ?? 0;
+  const readyBlockingLeafCount = Math.max(0, blockingLeafCount - pendingBlockingLeafCount);
+  if (blockingLeafCount > 0) {
+    loaderProgressState.terrain.ratio = readyBlockingLeafCount / blockingLeafCount;
+    loaderProgressState.terrain.text = `${readyBlockingLeafCount}/${blockingLeafCount} leaves ready`;
+  } else {
+    loaderProgressState.terrain.ratio = isReady() ? 1 : 0;
+    loaderProgressState.terrain.text = isReady() ? 'Terrain ready' : 'Selecting bootstrap terrain...';
+  }
+
+  setLoaderProgressSection(
+    loaderElements.terrainBar,
+    loaderElements.terrainText,
+    loaderProgressState.terrain.ratio,
+    loaderProgressState.terrain.text
+  );
+  setLoaderProgressSection(
+    loaderElements.assetsBar,
+    loaderElements.assetsText,
+    loaderProgressState.assets.ratio,
+    loaderProgressState.assets.text
+  );
+
+  window.fsimWorld.loaderProgress = {
+    terrain: { ...loaderProgressState.terrain },
+    assets: { ...loaderProgressState.assets }
+  };
+}
 
 // Initialize LiveReload functionality
 initLiveReload(window.fsimWorld);
@@ -535,6 +575,7 @@ function animate() {
   stats.update();
 
   const now = performance.now();
+  updateLoaderProgress();
   let dt = Math.min((now - runtime.lastTime) / 1000, 0.05);
   runtime.lastTime = now;
 
@@ -863,16 +904,14 @@ function hideLoader() {
   }, 1000);
 }
 
-function waitForStartupReady({ warmupPromise, maxWaitMs = 12000 }) {
+updateLoaderProgress();
+
+function waitForStartupReady({ warmupPromise }) {
   return Promise.resolve(warmupPromise).then(() => new Promise((resolve) => {
-    const startTime = performance.now();
     function tick() {
       const terrainReady = isReady();
-      const timedOut = (performance.now() - startTime) >= maxWaitMs;
-      if (terrainReady || timedOut) {
-        if (timedOut && !terrainReady) {
-          debugLog('[startup] Terrain preload timed out; presenting coarse terrain and refining asynchronously.');
-        }
+      updateLoaderProgress();
+      if (terrainReady) {
         resolve();
         return;
       }
@@ -931,9 +970,29 @@ setTimeout(() => {
   physicsAdapter.syncFromState();
   animate();
 
-  const warmupPromise = warmupShaders(camera).then((report) => {
+  const warmupPromise = warmupShaders(camera, {
+    onProgress: (progress) => {
+      const ratio = Number.isFinite(progress?.ratio) ? progress.ratio : 0;
+      let text = 'Preparing asset warmup...';
+      if (progress?.stage === 'building') {
+        const completed = Number.isFinite(progress?.completed) ? progress.completed : 0;
+        const total = Number.isFinite(progress?.total) ? progress.total : 1;
+        text = `Preparing shaders ${completed}/${Math.max(1, total - 1)}`;
+      } else if (progress?.stage === 'compiling') {
+        text = 'Compiling shader pipelines...';
+      } else if (progress?.stage === 'complete' || progress?.stage === 'skipped') {
+        text = 'Asset warmup ready';
+      }
+      loaderProgressState.assets.ratio = progress?.stage === 'compiling' ? Math.max(ratio, 0.92) : ratio;
+      loaderProgressState.assets.text = text;
+      updateLoaderProgress();
+    }
+  }).then((report) => {
     window.fsimWorld.shaderValidation = report;
     window.fsimWorld.shaderValidationSummary = report.summary;
+    loaderProgressState.assets.ratio = 1;
+    loaderProgressState.assets.text = 'Asset warmup ready';
+    updateLoaderProgress();
     if (shouldLogShaderValidation) {
       console.info('[shader-validation]', report.summary);
     }

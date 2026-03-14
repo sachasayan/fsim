@@ -129,7 +129,7 @@ function finalizeShaderValidationReport(report, startedAt) {
     return report;
 }
 
-export async function validateShaderPrograms({ renderer, camera, registry = null, variants = [] }) {
+export async function validateShaderPrograms({ renderer, camera, registry = null, variants = [], onProgress = null }) {
     const startedAt = performance.now();
     const report = {
         compiled: false,
@@ -141,14 +141,29 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
         variants: []
     };
 
+    const emitProgress = (progress) => {
+        if (typeof onProgress === 'function') onProgress(progress);
+    };
+
     if (!renderer) {
         report.skipped = true;
+        emitProgress({ stage: 'skipped', completed: 1, total: 1, ratio: 1 });
         return finalizeShaderValidationReport(report, startedAt);
     }
 
     const warmupScene = new THREE.Scene();
     const disposers = [];
     const variantEntries = resolveVariantEntries({ registry, variants });
+    const totalSteps = Math.max(1, variantEntries.length + 1);
+    let completedSteps = 0;
+
+    emitProgress({
+        stage: 'building',
+        completed: completedSteps,
+        total: totalSteps,
+        ratio: completedSteps / totalSteps,
+        variantCount: variantEntries.length
+    });
 
     for (const [index, variant] of variantEntries.entries()) {
         if (!variant) continue;
@@ -181,22 +196,48 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
         if (typeof spec.dispose === 'function') {
             disposers.push(spec.dispose);
         }
+
+        completedSteps += 1;
+        emitProgress({
+            stage: 'building',
+            completed: completedSteps,
+            total: totalSteps,
+            ratio: completedSteps / totalSteps,
+            variantId: spec.id,
+            variantCount: variantEntries.length
+        });
     }
 
     if (warmupScene.children.length === 0) {
         report.skipped = true;
+        emitProgress({ stage: 'skipped', completed: totalSteps, total: totalSteps, ratio: 1 });
         return finalizeShaderValidationReport(report, startedAt);
     }
 
     const warmupCamera = buildWarmupCamera(camera);
 
     try {
+        emitProgress({
+            stage: 'compiling',
+            completed: completedSteps,
+            total: totalSteps,
+            ratio: completedSteps / totalSteps,
+            variantCount: variantEntries.length
+        });
         if (typeof renderer.compileAsync === 'function') {
             await renderer.compileAsync(warmupScene, warmupCamera);
         } else {
             renderer.compile(warmupScene, warmupCamera);
         }
         report.compiled = true;
+        completedSteps = totalSteps;
+        emitProgress({
+            stage: 'complete',
+            completed: completedSteps,
+            total: totalSteps,
+            ratio: 1,
+            variantCount: variantEntries.length
+        });
     } finally {
         for (const dispose of disposers.reverse()) {
             dispose();

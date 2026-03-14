@@ -336,10 +336,7 @@ export function createTerrainSystem({
     selectionMinCellSize: CHUNK_SIZE * 0.25,
     selectionSplitDistanceFactor: 0.6,
     selectionMaxDepth: 6,
-    bootstrapInterestRadius: CHUNK_SIZE * 1.25,
-    bootstrapBlockingRadius: CHUNK_SIZE * 0.75,
-    bootstrapMaxSelectedLeaves: 48,
-    bootstrapMaxBlockingLeaves: 24,
+    bootstrapRadius: 10000,
     resolution32MaxNodeSize: CHUNK_SIZE * 0.25,
     resolution16MaxNodeSize: CHUNK_SIZE * 0.5,
     resolution8MaxNodeSize: CHUNK_SIZE,
@@ -458,10 +455,7 @@ export function createTerrainSystem({
     terrainDebugSettings.selectionMinCellSize = Math.max(32, terrainDebugSettings.selectionMinCellSize);
     terrainDebugSettings.selectionSplitDistanceFactor = Math.max(0.05, terrainDebugSettings.selectionSplitDistanceFactor);
     terrainDebugSettings.selectionMaxDepth = Math.max(0, Math.min(12, Math.round(terrainDebugSettings.selectionMaxDepth)));
-    terrainDebugSettings.bootstrapInterestRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.bootstrapInterestRadius);
-    terrainDebugSettings.bootstrapBlockingRadius = Math.max(CHUNK_SIZE * 0.125, terrainDebugSettings.bootstrapBlockingRadius);
-    terrainDebugSettings.bootstrapMaxSelectedLeaves = Math.max(1, Math.round(terrainDebugSettings.bootstrapMaxSelectedLeaves));
-    terrainDebugSettings.bootstrapMaxBlockingLeaves = Math.max(1, Math.round(terrainDebugSettings.bootstrapMaxBlockingLeaves));
+    terrainDebugSettings.bootstrapRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.bootstrapRadius);
 
     const thresholds = [
       Math.max(32, terrainDebugSettings.resolution32MaxNodeSize),
@@ -956,11 +950,10 @@ export function createTerrainSystem({
       return String(a.leafId).localeCompare(String(b.leafId));
     });
 
-    const keptLeaves = prioritizedLeaves.slice(0, terrainDebugSettings.bootstrapMaxSelectedLeaves).map((leaf) => ({ ...leaf }));
+    const keptLeaves = prioritizedLeaves.map((leaf) => ({ ...leaf }));
     const blockingLeafIdSet = new Set(
       keptLeaves
         .filter((leaf) => leaf.blockingReady)
-        .slice(0, terrainDebugSettings.bootstrapMaxBlockingLeaves)
         .map((leaf) => leaf.leafId)
     );
 
@@ -1256,8 +1249,8 @@ export function createTerrainSystem({
     const selection = controller.select({
       cameraX: PHYSICS.position.x,
       cameraZ: PHYSICS.position.z,
-      blockingRadius: bootstrapMode ? terrainDebugSettings.bootstrapBlockingRadius : terrainDebugSettings.selectionBlockingRadius,
-      interestRadius: bootstrapMode ? terrainDebugSettings.bootstrapInterestRadius : terrainDebugSettings.selectionInterestRadius,
+      blockingRadius: bootstrapMode ? terrainDebugSettings.bootstrapRadius : terrainDebugSettings.selectionBlockingRadius,
+      interestRadius: bootstrapMode ? terrainDebugSettings.bootstrapRadius : terrainDebugSettings.selectionInterestRadius,
       minCellSize: terrainDebugSettings.selectionMinCellSize,
       splitDistanceFactor: terrainDebugSettings.selectionSplitDistanceFactor,
       maxSelectionDepth: terrainDebugSettings.selectionMaxDepth
