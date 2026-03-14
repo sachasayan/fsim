@@ -1,0 +1,3 @@
+## 2026-03-14 - WebGL Critical States Accessibility
+**Learning:** WebGL/Canvas simulators often trap critical visual state changes (like stalls or crashes) within the canvas, making them invisible to screen readers. Adding standard ARIA attributes (`role="alert"`, `aria-live="assertive"`) to DOM overlays positioned above the canvas effectively communicates these life-or-death simulator events to assistive technologies.
+**Action:** Always ensure any DOM overlays representing critical simulator states (warnings, crashes) include `role="alert"` and `aria-live="assertive"` to mirror the visual urgency for screen reader users.
