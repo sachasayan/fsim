@@ -133,6 +133,7 @@ const {
   updateTerrain,
   updateTerrainAtmosphere,
   getTerrainSelectionDiagnostics,
+  hasPendingTerrainWork,
   terrainDebugSettings,
   applyTerrainDebugSettings,
   clouds,
@@ -788,7 +789,8 @@ function animate() {
   const terrainDue = (now - lastTerrainUpdateMs) >= worldLodSettings.world.updateIntervalMs;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
   const terrainNeedsWork = !isReady();
-  const shouldUpdateTerrain = chunkChanged || (terrainNeedsWork && terrainDue);
+  const terrainHasPendingWork = hasPendingTerrainWork?.() === true;
+  const shouldUpdateTerrain = chunkChanged || ((terrainNeedsWork || terrainHasPendingWork) && terrainDue);
   let terrainUpdated = false;
   let worldLodUpdated = false;
   if (shouldUpdateTerrain) {

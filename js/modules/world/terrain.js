@@ -1743,6 +1743,26 @@ export function createTerrainSystem({
     return blocking.length === 0;
   };
 
+  function hasPendingTerrainWork() {
+    if (pendingLeafBuilds.length > 0 || pendingChunkBuilds.length > 0 || pendingPropBuilds.length > 0) {
+      return true;
+    }
+
+    for (const leaf of activeLeaves.values()) {
+      if (!leaf.retired && leaf.state !== 'surface_ready' && leaf.state !== 'error') {
+        return true;
+      }
+    }
+
+    for (const chunkState of terrainChunks.values()) {
+      if (chunkState.state === 'building_base' || chunkState.state === 'building_props' || !chunkState.propsBuilt) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   async function reloadCity(cityId = null) {
     debugLog(`[terrain] Hot-swapping district data: ${cityId || 'all'}`);
     clearDistrictCache(cityId);
@@ -1800,6 +1820,7 @@ export function createTerrainSystem({
     terrainDebugSettings,
     applyTerrainDebugSettings,
     isReady,
+    hasPendingTerrainWork,
     reloadCity,
     getShaderValidationVariants,
     completeBootstrap

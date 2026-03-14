@@ -147,6 +147,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
       radar.update(time);
     },
     getTerrainSelectionDiagnostics: terrain.getTerrainSelectionDiagnostics,
+    hasPendingTerrainWork: terrain.hasPendingTerrainWork,
     invalidateWorldLod: lodManager.invalidate,
     updateWorldLOD: lodManager.updateWorldLOD
   };
