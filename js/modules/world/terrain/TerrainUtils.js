@@ -1,5 +1,7 @@
 import { applyTerrainEdits } from './TerrainEdits.js';
 import { resolveTerrainRingLod } from '../LodSystem.js';
+import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from './TerrainSynthesis.js';
+import { Noise } from '../../noise.js';
 
 const NODE_BRANCH = 0;
 const NODE_LEAF = 1;
@@ -16,6 +18,10 @@ function decodeNodeType(type) {
 
 function intersectsAabbBounds(a, b) {
     return a.minX <= b.maxX && a.maxX >= b.minX && a.minZ <= b.maxZ && a.maxZ >= b.minZ;
+}
+
+function clamp01(value) {
+    return Math.max(0, Math.min(1, value));
 }
 
 export function hash2(x, z, seed = 0) {
@@ -108,9 +114,14 @@ export function getDistrictProfile(vx, vz, urbanScore, height) {
     };
 }
 
-export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise) {
+export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise, terrainMasks = null) {
     const moisture = (Noise.fractal(vx + 9000, vz - 7000, 3, 0.5, 0.0018) + 1) * 0.5;
     const heat = (Noise.fractal(vx - 12000, vz + 6000, 3, 0.5, 0.0012) + 1) * 0.5 - Math.max(0, height - 220) / 520;
+    const wetland = clamp01(terrainMasks?.wetland || 0);
+    const alpineMask = clamp01(terrainMasks?.alpine || 0);
+    const talus = clamp01(terrainMasks?.talus || 0);
+    const cliff = clamp01(terrainMasks?.cliff || 0);
+    const moistureBoost = Math.min(1, moisture + wetland * 0.35);
 
     if (urbanScore > 0.35) {
         return {
@@ -119,21 +130,30 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
             typeWeights: { broadleaf: 0.68, poplar: 0.24, dry: 0.08 }
         };
     }
-    if (height > 280 || heat < 0.28) {
+    if (height > 280 || heat < 0.28 || alpineMask > 0.38) {
         return {
             kind: 'alpine',
-            density: 0.08 + forestNoise * 0.08,
-            typeWeights: { poplar: 0.34, broadleaf: 0.24, dry: 0.42 }
+            density: (0.05 + forestNoise * 0.05) * (1.0 - cliff * 0.65) * (1.0 - talus * 0.35),
+            typeWeights: { poplar: 0.38, broadleaf: 0.2, dry: 0.42 }
         };
     }
-    if (moisture > 0.66) {
+    if (cliff > 0.55 || talus > 0.58) {
         return {
-            kind: 'dense_mixed',
-            density: 0.16 + forestNoise * 0.1,
-            typeWeights: { broadleaf: 0.72, poplar: 0.2, dry: 0.08 }
+            kind: 'dry_scrub',
+            density: (0.03 + forestNoise * 0.03) * (1.0 - cliff * 0.35),
+            typeWeights: { dry: 0.66, broadleaf: 0.18, poplar: 0.16 }
         };
     }
-    if (moisture < 0.35) {
+    if (moistureBoost > 0.72) {
+        return {
+            kind: wetland > 0.4 ? 'dense_mixed' : 'dense_mixed',
+            density: (0.16 + forestNoise * 0.1) * (1.0 + wetland * 0.25),
+            typeWeights: wetland > 0.35
+                ? { broadleaf: 0.8, poplar: 0.17, dry: 0.03 }
+                : { broadleaf: 0.72, poplar: 0.2, dry: 0.08 }
+        };
+    }
+    if (moistureBoost < 0.35) {
         return {
             kind: 'dry_scrub',
             density: 0.05 + forestNoise * 0.05,
@@ -142,8 +162,10 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
     }
     return {
         kind: 'temperate_mixed',
-        density: 0.1 + forestNoise * 0.07,
-        typeWeights: { broadleaf: 0.62, poplar: 0.26, dry: 0.12 }
+        density: (0.1 + forestNoise * 0.07) * (1.0 - cliff * 0.4),
+        typeWeights: wetland > 0.25
+            ? { broadleaf: 0.7, poplar: 0.24, dry: 0.06 }
+            : { broadleaf: 0.62, poplar: 0.26, dry: 0.12 }
     };
 }
 
@@ -456,9 +478,100 @@ export class QuadtreeMapSampler {
 
 let _staticSampler = null;
 let _staticWorldMetadata = null;
+let _terrainModelSampler = null;
+let _terrainModelSamplerKey = null;
+
+function createSeededNoise(seed = 12345) {
+    const localNoise = {
+        permutation: new Uint8Array(512),
+        init(initSeed = 12345) {
+            const p = new Uint8Array(256);
+            for (let i = 0; i < 256; i += 1) p[i] = i;
+            let s = initSeed;
+            for (let i = 255; i > 0; i -= 1) {
+                s = Math.imul(1664525, s) + 1013904223 | 0;
+                const rand = Math.floor((((s >>> 8) & 0xfffff) / 0x100000) * (i + 1));
+                const temp = p[i];
+                p[i] = p[rand];
+                p[rand] = temp;
+            }
+            for (let i = 0; i < 512; i += 1) this.permutation[i] = p[i & 255];
+        },
+        fade: Noise.fade,
+        lerp: Noise.lerp,
+        grad: Noise.grad,
+        noise(x, y, z) {
+            let X = Math.floor(x) & 255;
+            let Y = Math.floor(y) & 255;
+            let Z = Math.floor(z) & 255;
+            x -= Math.floor(x);
+            y -= Math.floor(y);
+            z -= Math.floor(z);
+            const u = this.fade(x);
+            const v = this.fade(y);
+            const w = this.fade(z);
+            const A = this.permutation[X] + Y;
+            const AA = this.permutation[A] + Z;
+            const AB = this.permutation[A + 1] + Z;
+            const B = this.permutation[X + 1] + Y;
+            const BA = this.permutation[B] + Z;
+            const BB = this.permutation[B + 1] + Z;
+
+            return this.lerp(
+                w,
+                this.lerp(
+                    v,
+                    this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
+                    this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
+                ),
+                this.lerp(
+                    v,
+                    this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
+                    this.lerp(u, this.grad(this.permutation[AB + 1], x, y - 1, z - 1), this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1))
+                )
+            );
+        },
+        fractal: Noise.fractal
+    };
+    localNoise.init(seed);
+    return localNoise;
+}
+
+function getRuntimeWorldMetadata() {
+    return _staticWorldMetadata || ((typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null);
+}
+
+function getTerrainModelSampler() {
+    const metadata = getRuntimeWorldMetadata();
+    if (!metadata?.terrainGenerator) return null;
+    const worldSize = _staticSampler?.worldSize || 50000;
+    const config = normalizeTerrainGeneratorConfig(metadata.terrainGenerator);
+    const key = JSON.stringify({
+        worldSize,
+        seed: config.seed,
+        preset: config.preset,
+        macro: config.macro,
+        landforms: config.landforms,
+        hydrology: config.hydrology
+    });
+    if (_terrainModelSampler && _terrainModelSamplerKey === key) {
+        return _terrainModelSampler;
+    }
+    const seededNoise = createSeededNoise(config.seed);
+    _terrainModelSampler = createTerrainSynthesizer({
+        Noise: seededNoise,
+        worldSize,
+        config
+    });
+    _terrainModelSamplerKey = key;
+    return _terrainModelSampler;
+}
+
 export function setStaticSampler(sampler) {
     _staticSampler = sampler;
     _staticWorldMetadata = sampler?.getMetadata?.() || null;
+    _terrainModelSampler = null;
+    _terrainModelSamplerKey = null;
 }
 
 export function getStaticSampler() {
@@ -467,6 +580,29 @@ export function getStaticSampler() {
 
 export function getStaticWorldMetadata() {
     return _staticWorldMetadata;
+}
+
+export function getTerrainMaskSet(x, z) {
+    const terrainModel = getTerrainModelSampler();
+    if (terrainModel?.sampleMasks) {
+        return terrainModel.sampleMasks(x, z);
+    }
+    const fallbackHeight = _staticSampler ? _staticSampler.getAltitudeAt(x, z) : 0;
+    const alpine = fallbackHeight > 420 ? 1 : fallbackHeight > 260 ? 0.45 : 0;
+    return {
+        river: 0,
+        lake: 0,
+        moisture: 0,
+        flow: 0,
+        erosion: 0,
+        gorge: 0,
+        floodplain: 0,
+        cliff: 0,
+        talus: 0,
+        alpine,
+        wetland: 0,
+        terrace: 0
+    };
 }
 
 export function getTerrainHeight(x, z, Noise, octaves = 6) {

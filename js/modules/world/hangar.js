@@ -106,5 +106,28 @@ export function createHangarSystem({ scene, getTerrainHeight, lodSettings }) {
         }
     }
 
-    return { hangarGroup, updateLOD, position: new THREE.Vector3(towerX - 80, 0, towerZ) };
+    function refreshTerrainAlignment() {
+        let hangarIndex = 0;
+        for (const child of highDetailGroup.children) {
+            const config = AIRPORT_CONFIG.HANGARS[hangarIndex];
+            if (!config) break;
+            child.position.set(config.x, getTerrainHeight(config.x, config.z), config.z);
+            hangarIndex += 1;
+        }
+
+        proxyGeos.length = 0;
+        for (const config of AIRPORT_CONFIG.HANGARS) {
+            const width = 45;
+            const height = 18;
+            const depth = 35;
+            const ty = getTerrainHeight(config.x, config.z);
+            const pGeo = new THREE.BoxGeometry(width, height, depth);
+            pGeo.translate(config.x, ty + height / 2, config.z);
+            proxyGeos.push(pGeo);
+        }
+        proxyMesh.geometry.dispose?.();
+        proxyMesh.geometry = BufferGeometryUtils.mergeGeometries(proxyGeos);
+    }
+
+    return { hangarGroup, updateLOD, refreshTerrainAlignment, position: new THREE.Vector3(towerX - 80, 0, towerZ) };
 }

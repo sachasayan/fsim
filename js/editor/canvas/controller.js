@@ -1,5 +1,6 @@
 import { QuadtreeMapSampler, setStaticSampler, getTerrainHeight } from '../../modules/world/terrain/TerrainUtils.js';
 import { applyTerrainEdits } from '../../modules/world/terrain/TerrainEdits.js';
+import { createTerrainSynthesizer } from '../../modules/world/terrain/TerrainSynthesis.js';
 import { MapTileManager } from '../../modules/ui/MapTileManager.js';
 import { getClosestTerrainSegmentIndex, getVertexHitIndex } from '../../modules/editor/geometry.js';
 import { TOOL_SHORTCUTS } from '../../modules/editor/constants.js';
@@ -7,8 +8,10 @@ import { isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
 import { debugLog } from '../../modules/core/logging.js';
 import { Noise } from '../../modules/noise.js';
 import { nudgeEntityCommand, snapWorldPoint } from '../core/commands.js';
-import { getEntityById } from '../core/document.js';
+import { getEntityById, getEntityBounds } from '../core/document.js';
 import { createCoordinateHelpers, findObjectsAtWorldPos, renderEditorScene } from './render.js';
+import { createTerrainPreviewWorkerManager } from './TerrainPreviewWorkerManager.js';
+import { createEditorMapTileWorkerManager } from './EditorMapTileWorkerManager.js';
 
 const VERTEX_HIT_RADIUS_PX = 12;
 const PAN_DRAG_THRESHOLD_PX = 4;
@@ -25,10 +28,106 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     let activeTerrainStrokeId = null;
     let previousDocumentRef = store.getState().document;
     let tileManager = null;
+    let synthCacheKey = null;
+    let synthCache = null;
+    let terrainLabPreviewKey = null;
+    let isUpdatingTerrainLabPreview = false;
+    let pendingTerrainLabPreview = false;
+    let terrainPreviewJobSerial = 0;
+    let hoverCoordsRafPending = false;
+    let pendingHoverSample = null;
+    let activeHoverSampleSerial = 0;
+    let latestHoverSampleSerial = 0;
+    let lastHoverId = null;
+    let lastHoverWorldPos = null;
+    let previousTerrainLabKey = JSON.stringify(store.getState().ui.terrainLab.draftConfig);
+    const terrainPreviewWorker = createTerrainPreviewWorkerManager();
+    const mapTileWorker = createEditorMapTileWorkerManager();
+
+    function getTerrainSynthesizer() {
+        const draftConfig = store.getState().ui.terrainLab.draftConfig;
+        const nextKey = JSON.stringify(draftConfig);
+        if (synthCache && synthCacheKey === nextKey) return synthCache;
+        synthCacheKey = nextKey;
+        synthCache = createTerrainSynthesizer({
+            Noise,
+            worldSize: 50000,
+            config: draftConfig
+        });
+        return synthCache;
+    }
+
+    function buildPreviewBounds() {
+        const state = store.getState();
+        return {
+            minX: state.viewport.x - canvas.width / 2 / state.viewport.zoom,
+            maxX: state.viewport.x + canvas.width / 2 / state.viewport.zoom,
+            minZ: state.viewport.z - canvas.height / 2 / state.viewport.zoom,
+            maxZ: state.viewport.z + canvas.height / 2 / state.viewport.zoom
+        };
+    }
+
+    async function updateTerrainLabPreview(force = false) {
+        if (isUpdatingTerrainLabPreview) {
+            pendingTerrainLabPreview = true;
+            return;
+        }
+        const state = store.getState();
+        const terrainLab = state.ui.terrainLab;
+        if (!terrainLab.draftConfig.preview.enabled) return;
+        const bounds = buildPreviewBounds();
+        const previewKey = JSON.stringify({
+            bounds: Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, Math.round(value)])),
+            overlay: terrainLab.selectedOverlay,
+            resolution: terrainLab.draftConfig.preview.resolution,
+            opacity: terrainLab.draftConfig.preview.opacity,
+            contours: terrainLab.draftConfig.preview.showContours,
+            config: terrainLab.draftConfig
+        });
+        if (!force && terrainLabPreviewKey === previewKey && terrainLab.previewDirty !== true) return;
+
+        isUpdatingTerrainLabPreview = true;
+        pendingTerrainLabPreview = false;
+        const jobSerial = ++terrainPreviewJobSerial;
+        try {
+            store.dispatch({ type: 'set-terrain-preview-status', status: 'generating' });
+            const { snapshot, metadata } = await terrainPreviewWorker.buildPreview({
+                bounds,
+                config: terrainLab.draftConfig,
+                overlayKind: terrainLab.selectedOverlay,
+                resolution: terrainLab.draftConfig.preview.resolution,
+                opacity: terrainLab.draftConfig.preview.opacity,
+                showContours: terrainLab.draftConfig.preview.showContours
+            });
+            if (jobSerial !== terrainPreviewJobSerial) return;
+            terrainLabPreviewKey = previewKey;
+            store.dispatch({
+                type: 'set-terrain-preview',
+                status: 'ready',
+                previewKey,
+                snapshot,
+                previewDirty: false,
+                metadata
+            });
+        } catch (error) {
+            console.error('Failed to generate terrain preview', error);
+            if (jobSerial === terrainPreviewJobSerial) {
+                store.dispatch({ type: 'set-terrain-preview-status', status: 'idle' });
+            }
+        } finally {
+            isUpdatingTerrainLabPreview = false;
+            if (pendingTerrainLabPreview || store.getState().ui.terrainLab.previewDirty === true) {
+                pendingTerrainLabPreview = false;
+                updateTerrainLabPreview(true);
+            }
+        }
+    }
 
     function sampleTerrainHeight(x, z) {
         const state = store.getState();
-        const baseHeight = getTerrainHeight(x, z, Noise);
+        const baseHeight = state.ui.terrainLab.draftConfig
+            ? getTerrainSynthesizer().sampleHeight(x, z)
+            : getTerrainHeight(x, z, Noise);
         return applyTerrainEdits(baseHeight, x, z, state.document.worldData.terrainEdits || []);
     }
 
@@ -36,16 +135,106 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         sampleTerrainHeight,
         tileSize: 256,
         useHillshading: true,
+        renderTileAsync: ({ tx, tz, lod, canvasW, canvasH, tileSize, pixelRatio, useHillshading }) => mapTileWorker.renderTile({
+            tx,
+            tz,
+            lod,
+            canvasW,
+            canvasH,
+            tileSize,
+            pixelRatio,
+            useHillshading,
+            config: store.getState().ui.terrainLab.draftConfig,
+            terrainEdits: store.getState().document.worldData.terrainEdits || []
+        }),
         onTileReady: scheduleRender
     });
 
     function scheduleRender() {
+        if (isUpdatingTerrainLabPreview) {
+            pendingTerrainLabPreview = true;
+        } else {
+            updateTerrainLabPreview();
+        }
         if (rafPending) return;
         rafPending = true;
         requestAnimationFrame(() => {
             rafPending = false;
             render();
         });
+    }
+
+    function updateHoverCoordsText(world, overlayValue, overlayLabel) {
+        if (!coordsElement) return;
+        if (Number.isFinite(overlayValue)) {
+            coordsElement.textContent = `X: ${Math.round(world.x)}, Z: ${Math.round(world.z)}, ${overlayLabel}: ${overlayValue.toFixed(2)}`;
+            return;
+        }
+        coordsElement.textContent = `X: ${Math.round(world.x)}, Z: ${Math.round(world.z)}`;
+    }
+
+    function flushHoverCoords() {
+        hoverCoordsRafPending = false;
+        const sample = pendingHoverSample;
+        pendingHoverSample = null;
+        if (!sample || !coordsElement) return;
+
+        const { world, overlayKind, config } = sample;
+        const sampleSerial = ++latestHoverSampleSerial;
+        updateHoverCoordsText(world, NaN, overlayKind);
+        terrainPreviewWorker.sampleOverlay({
+            x: world.x,
+            z: world.z,
+            overlayKind,
+            config
+        }).then(({ value }) => {
+            if (sampleSerial < activeHoverSampleSerial) return;
+            activeHoverSampleSerial = sampleSerial;
+            updateHoverCoordsText(world, value, overlayKind);
+        }).catch((error) => {
+            console.error('Failed to sample terrain overlay', error);
+        });
+    }
+
+    function scheduleHoverCoords(world) {
+        if (!coordsElement) return;
+        const terrainLab = store.getState().ui.terrainLab;
+        pendingHoverSample = {
+            world,
+            overlayKind: terrainLab.selectedOverlay,
+            config: terrainLab.draftConfig
+        };
+        if (hoverCoordsRafPending) return;
+        hoverCoordsRafPending = true;
+        requestAnimationFrame(() => {
+            flushHoverCoords();
+        });
+    }
+
+    function syncHoverState(point, world, state) {
+        const nextHoverId = point.inside ? findObjectsAtWorldPos(state, world)[0] || null : null;
+        const needsBrushPreview = state.tools.currentTool.startsWith('terrain-');
+        const nextHoverWorldPos = point.inside && needsBrushPreview ? world : null;
+        const sameHoverId = nextHoverId === lastHoverId;
+        const sameHoverWorldPos = (
+            nextHoverWorldPos === null && lastHoverWorldPos === null
+        ) || (
+            nextHoverWorldPos !== null
+            && lastHoverWorldPos !== null
+            && nextHoverWorldPos.x === lastHoverWorldPos.x
+            && nextHoverWorldPos.z === lastHoverWorldPos.z
+        );
+
+        if (sameHoverId && sameHoverWorldPos) return false;
+
+        lastHoverId = nextHoverId;
+        lastHoverWorldPos = nextHoverWorldPos ? { x: nextHoverWorldPos.x, z: nextHoverWorldPos.z } : null;
+        store.dispatch({
+            type: 'set-hover',
+            hoverId: nextHoverId,
+            hoverWorldPos: nextHoverWorldPos
+        });
+        return true;
     }
 
     function updateCanvasSize() {
@@ -96,6 +285,24 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
     function render() {
         renderEditorScene(ctx, canvas, tileManager, store.getState());
+    }
+
+    async function reloadStaticWorld() {
+        try {
+            const worldBinResponse = await fetch('/world/world.bin');
+            if (!worldBinResponse.ok) return false;
+            const buffer = await worldBinResponse.arrayBuffer();
+            setStaticSampler(new QuadtreeMapSampler(buffer));
+            tileManager.clearCache();
+            terrainLabPreviewKey = null;
+            store.dispatch({ type: 'mark-terrain-preview-dirty', status: 'idle' });
+            debugLog(`[Editor] Reloaded static world.bin (${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+            scheduleRender();
+            return true;
+        } catch (error) {
+            console.error('Failed to reload world.bin for editor', error);
+            return false;
+        }
     }
 
     function frameSelection() {
@@ -272,13 +479,11 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         window.addEventListener('pointermove', event => {
             const state = store.getState();
             const { point, world } = getWorldPoint(event);
-            store.dispatch({
-                type: 'set-hover',
-                hoverId: point.inside ? findObjectsAtWorldPos(state, world)[0] || null : null,
-                hoverWorldPos: point.inside ? world : null
-            });
+            const hoverChanged = syncHoverState(point, world, state);
             if (coordsElement && point.inside) {
-                coordsElement.textContent = `X: ${Math.round(world.x)}, Z: ${Math.round(world.z)}`;
+                scheduleHoverCoords(world);
+            } else if (coordsElement && !point.inside) {
+                coordsElement.textContent = '';
             }
 
             if (pendingCanvasPan && !isPanning) {
@@ -303,7 +508,9 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
 
             if (!isDragging) {
-                scheduleRender();
+                if (hoverChanged || point.inside && state.tools.currentTool.startsWith('terrain-')) {
+                    scheduleRender();
+                }
                 return;
             }
 
@@ -372,8 +579,12 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         window.addEventListener('pointercancel', releasePointer);
 
         canvas.addEventListener('mouseleave', () => {
-            store.dispatch({ type: 'set-hover', hoverId: null, hoverWorldPos: null });
-            scheduleRender();
+            if (lastHoverId !== null || lastHoverWorldPos !== null) {
+                lastHoverId = null;
+                lastHoverWorldPos = null;
+                store.dispatch({ type: 'set-hover', hoverId: null, hoverWorldPos: null });
+                scheduleRender();
+            }
         });
 
         canvas.addEventListener('wheel', event => {
@@ -475,8 +686,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
     const unsubscribe = store.subscribe(() => {
         const nextState = store.getState();
+        const terrainPreviewState = nextState.ui.terrainLab;
         if (nextState.document !== previousDocumentRef) {
             previousDocumentRef = nextState.document;
+            tileManager.clearCache();
+        }
+        const nextTerrainLabKey = JSON.stringify(terrainPreviewState.draftConfig);
+        if (nextTerrainLabKey !== previousTerrainLabKey) {
+            previousTerrainLabKey = nextTerrainLabKey;
             tileManager.clearCache();
         }
         scheduleRender();
@@ -485,23 +702,47 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     return {
         async init() {
             updateCanvasSize();
-            try {
-                const worldBinResponse = await fetch('/world/world.bin');
-                if (worldBinResponse.ok) {
-                    const buffer = await worldBinResponse.arrayBuffer();
-                    setStaticSampler(new QuadtreeMapSampler(buffer));
-                    debugLog(`[Editor] Loaded static world.bin (${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
-                }
-            } catch (error) {
-                console.error('Failed to load world.bin for editor', error);
-            }
+            await reloadStaticWorld();
             bindEvents();
             render();
         },
         destroy() {
             unsubscribe();
+            tileManager.destroy();
+            terrainPreviewWorker.destroy();
+            mapTileWorker.destroy();
         },
         frameSelection,
+        frameTerrainHydrology() {
+            const metadata = getTerrainSynthesizer().getMetadata();
+            const points = [
+                ...metadata.hydrology.rivers.flatMap(river => river.points),
+                ...metadata.hydrology.lakes.flatMap(lake => [[lake.x - lake.radius, lake.z - lake.radius], [lake.x + lake.radius, lake.z + lake.radius]])
+            ];
+            if (points.length === 0) return;
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minZ = Infinity;
+            let maxZ = -Infinity;
+            for (const [x, z] of points) {
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+            }
+            const width = Math.max(1000, maxX - minX);
+            const height = Math.max(1000, maxZ - minZ);
+            store.dispatch({
+                type: 'set-camera',
+                viewport: {
+                    x: (minX + maxX) * 0.5,
+                    z: (minZ + maxZ) * 0.5,
+                    zoom: Math.min(0.4, Math.max(0.01, Math.min(canvas.width / (width * 1.4), canvas.height / (height * 1.4))))
+                }
+            });
+            updateTerrainLabPreview(true);
+        },
+        reloadStaticWorld,
         resetView,
         scheduleRender
     };

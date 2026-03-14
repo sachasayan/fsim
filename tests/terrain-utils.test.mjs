@@ -43,8 +43,8 @@ test('getForestProfile returns alpine when height > 280', () => {
     const mockNoise = createMockNoise(0, 0);
     const profile = getForestProfile(0, 0, 300, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'alpine');
-    assert.equal(profile.density, 0.08 + 0.5 * 0.08); // forestNoise = 0.5
-    assert.deepEqual(profile.typeWeights, { poplar: 0.34, broadleaf: 0.24, dry: 0.42 });
+    assert.equal(profile.density, 0.05 + 0.5 * 0.05); // forestNoise = 0.5
+    assert.deepEqual(profile.typeWeights, { poplar: 0.38, broadleaf: 0.2, dry: 0.42 });
 });
 
 test('getForestProfile returns alpine when heat < 0.28', () => {
@@ -55,7 +55,7 @@ test('getForestProfile returns alpine when heat < 0.28', () => {
     const mockNoise = createMockNoise(0, -0.5);
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'alpine');
-    assert.equal(profile.density, 0.08 + 0.5 * 0.08);
+    assert.equal(profile.density, 0.05 + 0.5 * 0.05);
 });
 
 test('getForestProfile returns dense_mixed when moisture > 0.66', () => {
@@ -100,6 +100,23 @@ test('getForestProfile never emits conifer weights in leafy-only mode', () => {
 
     assert.ok(!('conifer' in profileA.typeWeights));
     assert.ok(!('conifer' in profileB.typeWeights));
+});
+
+test('getForestProfile suppresses dense trees on cliffs and talus', () => {
+    const profile = getForestProfile(0, 0, 220, 0.6, 0.1, createMockNoise(0.2, 0), {
+        cliff: 0.8,
+        talus: 0.75
+    });
+    assert.equal(profile.kind, 'dry_scrub');
+    assert.ok(profile.density < 0.08);
+});
+
+test('getForestProfile biases wetland areas toward lush broadleaf mixes', () => {
+    const profile = getForestProfile(0, 0, 120, 0.5, 0.1, createMockNoise(0.1, 0.1), {
+        wetland: 0.8
+    });
+    assert.equal(profile.kind, 'dense_mixed');
+    assert.ok(profile.typeWeights.broadleaf > 0.72);
 });
 
 // ─── hash2 ───────────────────────────────────────────────────────────────────

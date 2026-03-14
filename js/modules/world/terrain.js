@@ -14,6 +14,7 @@ const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
   getTerrainHeight,
   getLodForRingDistance,
+  getTerrainMaskSet,
   getStaticSampler,
   getStaticWorldMetadata
 } from './terrain/TerrainUtils.js';
@@ -57,6 +58,28 @@ export function createTerrainSystem({
     normalMap: createWaterNormalMap(Noise),
     normalScale: new THREE.Vector2(1.5, 1.5)
   });
+  const hydrologyGroup = new THREE.Group();
+  hydrologyGroup.name = 'terrain-hydrology';
+  scene.add(hydrologyGroup);
+  const hydrologyLakeMaterial = new THREE.MeshBasicMaterial({
+    color: 0x3a84dc,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false
+  });
+  hydrologyLakeMaterial.polygonOffset = true;
+  hydrologyLakeMaterial.polygonOffsetFactor = -1;
+  hydrologyLakeMaterial.polygonOffsetUnits = -1;
+  const hydrologyRiverMaterial = new THREE.MeshBasicMaterial({
+    color: 0x4cb1ff,
+    transparent: true,
+    opacity: 0.62,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  hydrologyRiverMaterial.polygonOffset = true;
+  hydrologyRiverMaterial.polygonOffsetFactor = -1;
+  hydrologyRiverMaterial.polygonOffsetUnits = -1;
 
   const atmosphereCameraPos = new THREE.Vector3();
   const atmosphereColor = new THREE.Color(0x90939f);
@@ -113,6 +136,73 @@ export function createTerrainSystem({
   function setColorFromLinearArray(target, rgb) {
     const color = srgbArrayToLinear(rgb);
     target.setRGB(color.r, color.g, color.b);
+  }
+
+  function clearHydrologyMeshes() {
+    while (hydrologyGroup.children.length > 0) {
+      const mesh = hydrologyGroup.children[hydrologyGroup.children.length - 1];
+      hydrologyGroup.remove(mesh);
+      mesh.geometry?.dispose?.();
+    }
+  }
+
+  function createRiverStripGeometry(points, width, sampler, widths = null) {
+    if (!Array.isArray(points) || points.length < 2) return null;
+    const positions = [];
+    const indices = [];
+
+    for (let index = 0; index < points.length; index += 1) {
+      const [x, z] = points[index];
+      const prev = points[Math.max(0, index - 1)];
+      const next = points[Math.min(points.length - 1, index + 1)];
+      const dx = next[0] - prev[0];
+      const dz = next[1] - prev[1];
+      const length = Math.hypot(dx, dz) || 1;
+      const nx = -dz / length;
+      const nz = dx / length;
+      const localWidth = Array.isArray(widths) && Number.isFinite(widths[index]) ? widths[index] : width;
+      const halfWidth = Math.max(4, localWidth * 0.5);
+      const y = sampler.getAltitudeAt(x, z) + 0.65;
+
+      positions.push(x + nx * halfWidth, y, z + nz * halfWidth);
+      positions.push(x - nx * halfWidth, y, z - nz * halfWidth);
+
+      if (index < points.length - 1) {
+        const base = index * 2;
+        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function rebuildHydrologyMeshes() {
+    clearHydrologyMeshes();
+    const sampler = getStaticSampler();
+    const metadata = getStaticWorldMetadata() || windowRef?.fsimWorld || null;
+    const hydrology = metadata?.hydrology || null;
+    if (!sampler || !hydrology) return;
+
+    for (const lake of hydrology.lakes || []) {
+      if (!Number.isFinite(lake?.radius) || lake.radius <= 0) continue;
+      const geometry = new THREE.CircleGeometry(lake.radius, 48);
+      geometry.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geometry, hydrologyLakeMaterial);
+      const y = Math.max(lake.level ?? SEA_LEVEL, sampler.getAltitudeAt(lake.x, lake.z) + 0.55);
+      mesh.position.set(lake.x, y, lake.z);
+      hydrologyGroup.add(mesh);
+    }
+
+    for (const river of hydrology.rivers || []) {
+      const geometry = createRiverStripGeometry(river.points, river.width || 16, sampler, river.widths || null);
+      if (!geometry) continue;
+      const mesh = new THREE.Mesh(geometry, hydrologyRiverMaterial);
+      hydrologyGroup.add(mesh);
+    }
   }
 
   function computeGridNormals(positions, segments) {
@@ -213,7 +303,7 @@ export function createTerrainSystem({
 
         if (materialKind === 'terrain') {
           const weightIndex = index * 4;
-          const weights = getTerrainSurfaceWeights(height, slope);
+          const weights = getTerrainSurfaceWeights(height, slope, getTerrainMaskSet(worldX, worldZ));
           const overrides = getTerrainSurfaceOverrides(worldX, worldZ, worldData);
           surfaceWeights[weightIndex] = weights[0];
           surfaceWeights[weightIndex + 1] = weights[1];
@@ -520,6 +610,12 @@ export function createTerrainSystem({
     }
   }
 
+  function refreshBakedTerrain() {
+    invalidateActiveLeafSurfaces();
+    rebuildHydrologyMeshes();
+    updateTerrain();
+  }
+
   function clearChunkPropMeshes(chunkGroup) {
     if (!chunkGroup) return;
     chunkGroup.userData.windmillBladeMeshes = null;
@@ -790,6 +886,7 @@ export function createTerrainSystem({
         splitDistanceFactor: terrainDebugSettings.selectionSplitDistanceFactor,
         maxDepth: terrainDebugSettings.selectionMaxDepth
       });
+      rebuildHydrologyMeshes();
       roadMarkingOverlay.update(PHYSICS.position.x, PHYSICS.position.z, windowRef.fsimWorld);
       terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
     }
@@ -1863,6 +1960,8 @@ export function createTerrainSystem({
     applyRoadMarkingDebugSettings,
     isReady,
     hasPendingTerrainWork,
+    refreshBakedTerrain,
+    reloadHydrology: rebuildHydrologyMeshes,
     reloadCity,
     getShaderValidationVariants,
     completeBootstrap

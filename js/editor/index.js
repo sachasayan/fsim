@@ -58,9 +58,31 @@ export async function initEditor() {
             }
             store.dispatch({ type: 'mark-saved' });
             store.dispatch({ type: 'set-toast', toast: { message: 'Saved editor changes', tone: 'success', timestamp: Date.now() } });
+            return true;
         } catch (error) {
             store.dispatch({ type: 'set-save-state', value: 'error', error: error.message });
             store.dispatch({ type: 'set-toast', toast: { message: `Save failed: ${error.message}`, tone: 'error', timestamp: Date.now() } });
+            return false;
+        }
+    }
+
+    async function rebuildWorld() {
+        if (store.getState().history.dirty) {
+            const saved = await save();
+            if (!saved) return;
+            return;
+        }
+        store.dispatch({ type: 'set-save-state', value: 'saving', error: '' });
+        try {
+            const response = await fetch('/rebuild-world', { method: 'POST' });
+            if (!response.ok) {
+                const message = await response.text();
+                throw new Error(message || 'Rebuild failed');
+            }
+            store.dispatch({ type: 'set-toast', toast: { message: 'World rebuild requested', tone: 'info', timestamp: Date.now() } });
+        } catch (error) {
+            store.dispatch({ type: 'set-save-state', value: 'error', error: error.message });
+            store.dispatch({ type: 'set-toast', toast: { message: `Rebuild failed: ${error.message}`, tone: 'error', timestamp: Date.now() } });
         }
     }
 
@@ -69,9 +91,13 @@ export async function initEditor() {
         canvasRef: value => { canvasRef.current = value; },
         coordsRef: value => { coordsRef.current = value; },
         onSave: save,
+        onRebuild: rebuildWorld,
         controller: {
             frameSelection() {
                 controller?.frameSelection();
+            },
+            frameTerrainHydrology() {
+                controller?.frameTerrainHydrology();
             },
             resetView() {
                 controller?.resetView();
@@ -101,11 +127,12 @@ export async function initEditor() {
     source.addEventListener('reload-city', async () => {
         try {
             const previousDocument = store.getState().document;
+            await controller?.reloadStaticWorld?.();
             const nextDocument = await loadInitialDocument();
             const reindexedDocument = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, previousDocument);
             const selectedId = resolveSelectionAfterReload(previousDocument, reindexedDocument, store.getState().selection.selectedId);
             store.dispatch({ type: 'replace-document', document: reindexedDocument, selectedId });
-            store.dispatch({ type: 'set-toast', toast: { message: 'Reloaded world data', tone: 'info', timestamp: Date.now() } });
+            store.dispatch({ type: 'set-toast', toast: { message: 'Reloaded baked world data', tone: 'info', timestamp: Date.now() } });
         } catch (error) {
             store.dispatch({ type: 'set-toast', toast: { message: `Reload failed: ${error.message}`, tone: 'error', timestamp: Date.now() } });
         }

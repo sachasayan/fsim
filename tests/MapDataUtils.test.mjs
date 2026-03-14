@@ -3,6 +3,37 @@ import assert from 'node:assert/strict';
 
 import { DISTRICT_TYPES, WINDMILL_FARM_DEFAULTS, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 
+test('normalizeMapData injects default terrain generator config', () => {
+    const data = {};
+
+    normalizeMapData(data);
+
+    assert.equal(data.terrainGenerator.version, 2);
+    assert.equal(data.terrainGenerator.preset, 'balanced');
+    assert.equal(data.terrainGenerator.preview.overlay, 'height');
+    assert.equal(data.terrainGenerator.landforms.canyonDepth, 0.44);
+});
+
+test('normalizeMapData clamps terrain generator values', () => {
+    const data = {
+        terrainGenerator: {
+            seed: -20,
+            macro: { ridgeAmplitude: 99999 },
+            landforms: { canyonWidth: 99 },
+            hydrology: { riverCount: -3 },
+            preview: { opacity: 4 }
+        }
+    };
+
+    normalizeMapData(data);
+
+    assert.equal(data.terrainGenerator.seed, 1);
+    assert.equal(data.terrainGenerator.macro.ridgeAmplitude, 1600);
+    assert.equal(data.terrainGenerator.landforms.canyonWidth, 1);
+    assert.equal(data.terrainGenerator.hydrology.riverCount, 0);
+    assert.equal(data.terrainGenerator.preview.opacity, 1);
+});
+
 test('normalizeMapData normalizes authored road polylines', () => {
     const data = {
         roads: [

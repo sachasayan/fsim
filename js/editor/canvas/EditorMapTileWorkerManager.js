@@ -1,0 +1,50 @@
+export function createEditorMapTileWorkerManager() {
+    const worker = new Worker(new URL('./EditorMapTileWorker.js', import.meta.url), { type: 'module' });
+    let nextJobId = 1;
+    const pendingJobs = new Map();
+
+    worker.onmessage = (event) => {
+        const { type, jobId, result, error } = event.data || {};
+        const pending = pendingJobs.get(jobId);
+        if (!pending) return;
+        pendingJobs.delete(jobId);
+        if (type === 'renderTile_error' || error) {
+            pending.reject(new Error(error || `Editor map tile worker failed for job ${jobId}`));
+            return;
+        }
+        pending.resolve(result);
+    };
+
+    worker.onerror = (event) => {
+        const message = event?.message || 'Editor map tile worker crashed';
+        for (const { reject } of pendingJobs.values()) {
+            reject(new Error(message));
+        }
+        pendingJobs.clear();
+    };
+
+    function renderTile(payload) {
+        return new Promise((resolve, reject) => {
+            const jobId = nextJobId++;
+            pendingJobs.set(jobId, { resolve, reject });
+            worker.postMessage({
+                type: 'renderTile',
+                jobId,
+                payload
+            });
+        });
+    }
+
+    function destroy() {
+        for (const { reject } of pendingJobs.values()) {
+            reject(new Error('Editor map tile worker terminated'));
+        }
+        pendingJobs.clear();
+        worker.terminate();
+    }
+
+    return {
+        renderTile,
+        destroy
+    };
+}

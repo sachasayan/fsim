@@ -1,4 +1,4 @@
-import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, QuadtreeMapSampler, setStaticSampler, getStaticWorldMetadata } from './TerrainUtils.js';
+import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, getTerrainMaskSet, QuadtreeMapSampler, setStaticSampler, getStaticWorldMetadata } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
 import { SEA_LEVEL, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
 import { getTerrainSurfaceWeights } from './TerrainSurfaceWeights.js';
@@ -149,9 +149,10 @@ function buildChunkBase(job) {
         const hx = getTerrainHeight(vx + sampleDist, vz, Noise);
         const hz = getTerrainHeight(vx, vz + sampleDist, Noise);
         const slope = Math.max(Math.abs(hx - height), Math.abs(hz - height)) / sampleDist;
+        const terrainMasks = getTerrainMaskSet(vx, vz);
 
         const col = srgbArrayToLinear(getTerrainBaseSrgb(height));
-        const weights = getTerrainSurfaceWeights(height, slope);
+        const weights = getTerrainSurfaceWeights(height, slope, terrainMasks);
         const overrides = getTerrainSurfaceOverrides(vx, vz, staticWorldMetadata);
 
         colors[i] = col.r;
@@ -259,7 +260,8 @@ function buildChunkProps(job) {
         const h2 = getTerrainHeight(vx + sampleDist, vz, Noise);
         const h3 = getTerrainHeight(vx, vz + sampleDist, Noise);
         const slope = Math.max(Math.abs(h2 - height), Math.abs(h3 - height)) / sampleDist;
-        if (slope > 0.8) continue;
+        const terrainMasks = getTerrainMaskSet(vx, vz);
+        if (slope > 0.8 || terrainMasks.cliff > 0.72) continue;
 
         const macroUrban = (Noise.fractal(vx, vz, 3, 0.5, 0.00035) + 1) * 0.5;
         const hubUrban = cityHubInfluence(vx, vz);
@@ -272,7 +274,7 @@ function buildChunkProps(job) {
         const forestNoise = (Noise.fractal(vx + 5000, vz + 5000, 3, 0.5, 0.002) + 1) * 0.5;
 
         if (lodCfg.enableTrees && forestNoise > 0.45 && !isPark) {
-            const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise);
+            const forest = getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise, terrainMasks);
             const treeChance = Math.min(0.95, forest.density * lodCfg.propDensity * TREE_DENSITY_MULTIPLIER);
             if (rng < treeChance) {
                 const treeType = pickWeighted(hash2(cellX, cellZ, 24), forest.typeWeights);

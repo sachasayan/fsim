@@ -140,5 +140,12 @@ export function createTowerSystem({ scene, getTerrainHeight, lodSettings }) {
     }
   }
 
-  return { towerGroup, updateLOD, position: new THREE.Vector3(towerX, 0, towerZ) };
+  function refreshTerrainAlignment() {
+    const nextTerrainY = getTerrainHeight(towerX, towerZ);
+    towerGroup.position.set(towerX, 0, towerZ);
+    highDetailGroup.position.y = nextTerrainY - terrainY;
+    proxyGroup.position.y = nextTerrainY - terrainY;
+  }
+
+  return { towerGroup, updateLOD, refreshTerrainAlignment, position: new THREE.Vector3(towerX, 0, towerZ) };
 }

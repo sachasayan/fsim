@@ -80,5 +80,10 @@ export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) 
         }
     }
 
-    return { apronMesh, updateLOD, position: new THREE.Vector3(apronX, 0, apronZ) };
+    function refreshTerrainAlignment() {
+        const ty = getTerrainHeight(apronX, apronZ);
+        apronMesh.position.set(apronX, ty + 0.15, apronZ);
+    }
+
+    return { apronMesh, updateLOD, refreshTerrainAlignment, position: new THREE.Vector3(apronX, 0, apronZ) };
 }

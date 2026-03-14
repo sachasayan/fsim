@@ -5,13 +5,14 @@ import { MAP_COLORS } from './MapColors.js';
  * Uses async tile rendering with placeholder fallback so zoom/pan never stutter.
  */
 export class MapTileManager {
-    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null }) {
+    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null, renderTileAsync = null }) {
         this.sampleTerrainHeight = this.resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise });
         this.tileSize = tileSize;
         this.pixelRatio = pixelRatio;
         this.useHillshading = useHillshading;
         this.Noise = Noise;
         this.onTileReady = onTileReady; // Callback to trigger re-render when tile is ready
+        this.renderTileAsync = typeof renderTileAsync === 'function' ? renderTileAsync : null;
 
         this.tiles = new Map();       // key -> { canvas, status: 'ready'|'pending' }
         this.renderQueue = [];        // tiles waiting to render
@@ -74,7 +75,7 @@ export class MapTileManager {
         this.isProcessingQueue = true;
 
         // Use setTimeout(0) to yield to the browser between tiles
-        const renderNext = () => {
+        const renderNext = async () => {
             if (this.renderQueue.length === 0) {
                 this.isProcessingQueue = false;
                 return;
@@ -83,10 +84,36 @@ export class MapTileManager {
             this.queuedKeys.delete(key);
             const entry = this.tiles.get(key);
             if (generation === this.cacheGeneration && entry && entry.status === 'pending') {
-                const ctx = entry.canvas.getContext('2d');
-                this.renderTile(ctx, tx, tz, lod, entry.canvas.width, entry.canvas.height);
-                entry.status = 'ready';
-                if (this.onTileReady) this.onTileReady();
+                try {
+                    if (this.renderTileAsync) {
+                        const tileImage = await this.renderTileAsync({
+                            tx,
+                            tz,
+                            lod,
+                            canvasW: entry.canvas.width,
+                            canvasH: entry.canvas.height,
+                            tileSize: this.tileSize,
+                            pixelRatio: this.pixelRatio,
+                            useHillshading: this.useHillshading
+                        });
+                        if (generation === this.cacheGeneration && this.tiles.get(key) === entry && entry.status === 'pending') {
+                            const ctx = entry.canvas.getContext('2d');
+                            this.paintTileImage(ctx, tileImage.pixels, tileImage.width, tileImage.height);
+                            entry.status = 'ready';
+                            if (this.onTileReady) this.onTileReady();
+                        }
+                    } else {
+                        const ctx = entry.canvas.getContext('2d');
+                        this.renderTile(ctx, tx, tz, lod, entry.canvas.width, entry.canvas.height);
+                        entry.status = 'ready';
+                        if (this.onTileReady) this.onTileReady();
+                    }
+                } catch (error) {
+                    console.error('Failed to render map tile', error);
+                    if (this.tiles.get(key) === entry && entry.status === 'pending') {
+                        this.tiles.delete(key);
+                    }
+                }
             }
             requestAnimationFrame(renderNext);
         };
@@ -130,6 +157,12 @@ export class MapTileManager {
         ctx.putImageData(imgData, 0, 0);
     }
 
+    paintTileImage(ctx, pixels, width, height) {
+        const imgData = ctx.createImageData(width, height);
+        imgData.data.set(pixels);
+        ctx.putImageData(imgData, 0, 0);
+    }
+
     /**
      * Find the best available placeholder for a tile that isn't ready yet.
      * Tries one LOD coarser first (scales up a 2x smaller tile), then uses nothing.
@@ -169,6 +202,10 @@ export class MapTileManager {
         this.cacheGeneration++;
         this.queuePriorityDirty = false;
         this.lastPriorityKey = null;
+    }
+
+    destroy() {
+        this.clearCache();
     }
 
     invalidateWorldRect(minX, minZ, maxX, maxZ) {

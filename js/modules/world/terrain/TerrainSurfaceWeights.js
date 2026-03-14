@@ -10,7 +10,12 @@ export function normalizeSurfaceWeights(weights) {
     return weights.map((value) => Math.max(0, value) / total);
 }
 
-export function getTerrainSurfaceWeights(height, slope) {
+export function getTerrainSurfaceWeights(height, slope, masks = null) {
+    const cliff = clamp01(masks?.cliff || 0);
+    const talus = clamp01(masks?.talus || 0);
+    const alpine = clamp01(masks?.alpine || 0);
+    const wetland = clamp01(masks?.wetland || 0);
+    const terrace = clamp01(masks?.terrace || 0);
     const shoreBlend = 1.0 - smoothBand(height, TERRAIN_HEIGHT_BANDS.shore - 14, TERRAIN_HEIGHT_BANDS.lowland + 10);
     const snowBlend = smoothBand(height, TERRAIN_HEIGHT_BANDS.snow - 35, TERRAIN_HEIGHT_BANDS.snowBlendEnd);
     const steepRock = smoothBand(slope, 0.22, 0.68);
@@ -21,6 +26,12 @@ export function getTerrainSurfaceWeights(height, slope) {
     let rock = Math.max(steepRock, highRock * 0.82) * (1.0 - snowBlend * 0.55);
     let snow = snowBlend;
 
+    rock = Math.max(rock, cliff * 0.95, talus * 0.55);
+    snow = Math.max(snow, alpine * 0.35 + cliff * alpine * 0.18);
+    grass *= 1.0 - cliff * 0.9;
+    grass *= 1.0 + wetland * 0.35;
+    grass *= 1.0 + terrace * 0.15;
+    sand *= 1.0 + wetland * 0.12;
     grass *= 1.0 - rock * 0.7;
     sand *= 1.0 - rock * 0.5;
     rock = Math.max(rock, snowBlend * 0.18);

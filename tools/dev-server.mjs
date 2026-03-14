@@ -202,6 +202,21 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        if ((url.pathname === '/rebuild-world' || url.pathname === '/rebuild-world/') && req.method === 'POST') {
+            if (IS_EDITOR_E2E) {
+                sendJson(res, { success: true, skipped: true });
+                return;
+            }
+            rebuildWorld('manual rebuild requested').then(() => {
+                sendJson(res, { success: true });
+            }).catch((err) => {
+                console.error(`❌ Manual rebuild failed:`, err.message);
+                res.writeHead(500);
+                res.end(err.message);
+            });
+            return;
+        }
+
         // Static Files
         const absolutePath = safeResolve(req.url || '/');
         if (!absolutePath || !existsSync(absolutePath)) {

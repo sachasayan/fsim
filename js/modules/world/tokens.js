@@ -4,8 +4,8 @@ import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 const TOKEN_COUNT = 72;
 const TOKEN_VISIBLE_DISTANCE = 12000;
 const TOKEN_PICKUP_RADIUS = 55;
-const TOKEN_BASE_HEIGHT = 38;
-const TOKEN_HEIGHT_VARIATION = 42;
+const TOKEN_BASE_HEIGHT = 18;
+const TOKEN_HEIGHT_VARIATION = 16;
 const TOKEN_BOB_AMPLITUDE = 8;
 const TOKEN_EFFECT_POOL_SIZE = 16;
 const TOKEN_EFFECT_DURATION = 0.38;
@@ -53,7 +53,6 @@ function buildTokenEntries(getTerrainHeight) {
       continue;
     }
 
-    const terrainY = getTerrainHeight(x, z);
     const hoverHeight = TOKEN_BASE_HEIGHT + seededValue(seed + 29) * TOKEN_HEIGHT_VARIATION;
     const scale = 10 + seededValue(seed + 31) * 6;
     const spinSpeed = 1.7 + seededValue(seed + 37) * 1.1;
@@ -65,7 +64,6 @@ function buildTokenEntries(getTerrainHeight) {
     entries.push({
       x,
       z,
-      terrainY,
       hoverHeight,
       scale,
       spinSpeed,
@@ -214,6 +212,10 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     tokenMesh.setMatrixAt(index, hiddenMatrix);
   }
 
+  function refreshTerrainAlignment() {
+    tokenMesh.instanceMatrix.needsUpdate = true;
+  }
+
   function updateLOD(cameraPos, dist) {
     const [lod0Threshold] = getAirportThresholds(lodSettings);
     currentLOD = resolveDistanceLod(
@@ -356,8 +358,9 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
 
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index];
+      const terrainY = getTerrainHeight(entry.x, entry.z);
       const bobOffset = Math.sin(timeSeconds * entry.bobSpeed + entry.phase) * TOKEN_BOB_AMPLITUDE;
-      const worldY = entry.terrainY + entry.hoverHeight + bobOffset;
+      const worldY = terrainY + entry.hoverHeight + bobOffset;
 
       if (entry.active && aircraftPosition) {
         const dx = aircraftPosition.x - entry.x;
@@ -433,6 +436,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     tokenMesh,
     updateLOD,
     updateTokenSystem,
+    refreshTerrainAlignment,
     resetTokens,
     setTokenCollectionHandler: setCollectionHandler,
     getCollectedTokenCount

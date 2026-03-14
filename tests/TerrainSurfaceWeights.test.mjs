@@ -26,3 +26,24 @@ test('steep alpine terrain biases toward rock and snow', () => {
     assert.ok(grass < 0.2);
     assert.ok(sand < 0.05);
 });
+
+test('cliff and talus masks strongly bias the blend toward rock', () => {
+    const [sand, grass, rock, snow] = getTerrainSurfaceWeights(220, 0.24, {
+        cliff: 0.9,
+        talus: 0.7
+    });
+    assert.ok(rock > 0.55);
+    assert.ok(grass < 0.35);
+    assert.ok(sand < 0.1);
+    assert.ok(snow < 0.3);
+});
+
+test('wetland and terrace masks preserve greener lowland terrain', () => {
+    const [sand, grass, rock, snow] = getTerrainSurfaceWeights(40, 0.06, {
+        wetland: 0.8,
+        terrace: 0.5
+    });
+    assert.ok(grass > 0.55);
+    assert.ok(rock < 0.2);
+    assert.ok(snow < 0.05);
+});

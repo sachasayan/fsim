@@ -48,8 +48,10 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
 
     ctx.clearRect(0, 0, width, height);
     tileManager.draw(ctx, camera.x, camera.z, zoom, width, height);
+    drawTerrainLabPreview(ctx, state, viewportRect);
 
     drawGrid(ctx, canvas, camera);
+    drawWorldBounds(ctx, state, worldToScreen);
     drawRunway(ctx, worldToScreen, zoom);
     drawDistricts(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawRoads(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
@@ -57,6 +59,48 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
     drawTerrain(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawVantagePoints(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawOverlays(ctx, state, worldToScreen, selection, tools);
+}
+
+function drawWorldBounds(ctx, state, worldToScreen) {
+    const halfWorldSize = 25000;
+    const min = worldToScreen(-halfWorldSize, -halfWorldSize);
+    const max = worldToScreen(halfWorldSize, halfWorldSize);
+    const width = max.x - min.x;
+    const height = max.y - min.y;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(110, 231, 255, 0.28)';
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([10, 8]);
+    ctx.strokeRect(min.x, min.y, width, height);
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+function drawTerrainLabPreview(ctx, state, viewportRect) {
+    const preview = state.ui?.terrainLab?.previewSnapshot;
+    if (!preview?.pixels || !preview?.bounds) return;
+
+    if (!preview.__canvas && typeof document !== 'undefined') {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = preview.width;
+        offscreen.height = preview.height;
+        const offscreenCtx = offscreen.getContext('2d');
+        const imageData = offscreenCtx.createImageData(preview.width, preview.height);
+        imageData.data.set(preview.pixels);
+        offscreenCtx.putImageData(imageData, 0, 0);
+        preview.__canvas = offscreen;
+    }
+
+    if (!preview.__canvas) return;
+
+    const screenMinX = viewportRect.width / 2 + (preview.bounds.minX - state.viewport.x) * state.viewport.zoom;
+    const screenMaxX = viewportRect.width / 2 + (preview.bounds.maxX - state.viewport.x) * state.viewport.zoom;
+    const screenMinY = viewportRect.height / 2 + (preview.bounds.minZ - state.viewport.z) * state.viewport.zoom;
+    const screenMaxY = viewportRect.height / 2 + (preview.bounds.maxZ - state.viewport.z) * state.viewport.zoom;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(preview.__canvas, screenMinX, screenMinY, screenMaxX - screenMinX, screenMaxY - screenMinY);
+    ctx.restore();
 }
 
 function drawGrid(ctx, canvas, camera) {

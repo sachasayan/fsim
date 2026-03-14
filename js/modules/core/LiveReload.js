@@ -8,8 +8,8 @@ import { debugLog } from './logging.js';
  */
 
 export function initLiveReload(terrainSystem) {
-    if (!terrainSystem || !terrainSystem.reloadCity) {
-        console.warn('[LiveReload] Terrain system not ready or missing reloadCity function.');
+    if (!terrainSystem || !terrainSystem.reloadCity || !terrainSystem.refreshBakedTerrain) {
+        console.warn('[LiveReload] Terrain system not ready or missing reload hooks.');
         return;
     }
 
@@ -36,7 +36,11 @@ export function initLiveReload(terrainSystem) {
                 setStaticSampler(new QuadtreeMapSampler(buf));
             }
 
-            // 2. Reload city building meshes
+            // 2. Refresh baked terrain surfaces + hydrology meshes
+            terrainSystem.refreshBakedTerrain();
+            terrainSystem.refreshTerrainAlignment?.();
+
+            // 3. Reload city building meshes
             await terrainSystem.reloadCity();
             debugLog('[LiveReload] Hot-swap complete.');
         } catch (err) {

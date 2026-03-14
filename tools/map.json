@@ -7,8 +7,8 @@
             "id": "city_a",
             "_comment": "A mid-sized city to the northeast of the airport",
             "center": [
-                8000,
-                10000
+                10300,
+                1700
             ],
             "districts": []
         },
@@ -25,26 +25,26 @@
     "districts": [
         {
             "center": [
-                8000,
-                10000
+                10300,
+                1700
             ],
             "radius": 900,
             "points": [
                 [
-                    7200,
-                    9200
+                    9500,
+                    900
                 ],
                 [
-                    8800,
-                    9200
+                    11100,
+                    900
                 ],
                 [
-                    9000,
-                    10800
+                    11300,
+                    2500
                 ],
                 [
-                    7000,
-                    11000
+                    9300,
+                    2700
                 ]
             ],
             "city_id": "city_a",
@@ -296,5 +296,57 @@
             ]
         }
     ],
-    "terrainEdits": []
+    "terrainEdits": [],
+    "terrainGenerator": {
+        "version": 2,
+        "preset": "coastal",
+        "seed": 361180,
+        "macro": {
+            "baseOffset": -92,
+            "continentalAmplitude": 40,
+            "ridgeAmplitude": 570,
+            "foothillAmplitude": 300,
+            "valleyAmplitude": 94,
+            "warpAmplitude": 5000,
+            "rangeCount": 7,
+            "rangeLength": 0.46,
+            "rangeWidth": 0.15,
+            "upliftStrength": 0.48,
+            "massifStrength": 0.28,
+            "escarpmentStrength": 0.62,
+            "plateauHeight": 160,
+            "shelfCount": 4,
+            "shelfSharpness": 0.48,
+            "summitFrequency": 0.28,
+            "summitSharpness": 0.34,
+            "ridgeSerration": 0.28,
+            "cirqueStrength": 0.16
+        },
+        "landforms": {
+            "glacialValleyStrength": 0.24,
+            "canyonDepth": 0.48,
+            "canyonWidth": 0.42,
+            "basinDepth": 0.45,
+            "basinBreadth": 0.7
+        },
+        "hydrology": {
+            "resolution": 129,
+            "riverCount": 16,
+            "riverStrength": 1.1,
+            "lakeCount": 8,
+            "lakeStrength": 0.85,
+            "erosionStrength": 2,
+            "gorgeStrength": 0.5,
+            "incisionBias": 0.46,
+            "floodplainWidth": 0.72,
+            "cliffThreshold": 0.48
+        },
+        "preview": {
+            "overlay": "height",
+            "opacity": 0.6,
+            "resolution": 96,
+            "showContours": true,
+            "enabled": true
+        }
+    }
 }

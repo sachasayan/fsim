@@ -63,5 +63,9 @@ export function createRadarSystem({ scene, getTerrainHeight, lodSettings }) {
         }
     }
 
-    return { radarGroup, update, updateLOD, position: new THREE.Vector3(radarX, 0, radarZ) };
+    function refreshTerrainAlignment() {
+        radarGroup.position.set(radarX, getTerrainHeight(radarX, radarZ), radarZ);
+    }
+
+    return { radarGroup, update, updateLOD, refreshTerrainAlignment, position: new THREE.Vector3(radarX, 0, radarZ) };
 }

@@ -94,3 +94,57 @@ test('MapTileManager only re-sorts queued tiles when the queue or camera tile ch
     manager.prioritizeQueue(800, 120, 2);
     assert.equal(sortCalls, 3);
 });
+
+test('MapTileManager can paint asynchronously rendered tile data', async () => {
+    globalThis.requestAnimationFrame = (callback) => {
+        setTimeout(callback, 0);
+        return 1;
+    };
+
+    try {
+        let paints = 0;
+        globalThis.document = {
+            createElement(tag) {
+                assert.equal(tag, 'canvas');
+                return {
+                    width: 0,
+                    height: 0,
+                    getContext() {
+                        return {
+                            createImageData(width, height) {
+                                return { data: new Uint8ClampedArray(width * height * 4) };
+                            },
+                            putImageData(imageData) {
+                                paints++;
+                                assert.deepEqual(Array.from(imageData.data), [1, 2, 3, 255]);
+                            }
+                        };
+                    }
+                };
+            }
+        };
+
+        const manager = new MapTileManager({
+            sampleTerrainHeight() {
+                return 0;
+            },
+            tileSize: 1,
+            pixelRatio: 1,
+            renderTileAsync: async () => ({
+                pixels: new Uint8ClampedArray([1, 2, 3, 255]),
+                width: 1,
+                height: 1
+            })
+        });
+
+        manager.getTile(0, 0, 1);
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        assert.equal(paints, 1);
+        const entry = manager.tiles.get('1_0_0');
+        assert.equal(entry.status, 'ready');
+    } finally {
+        delete globalThis.document;
+        delete globalThis.requestAnimationFrame;
+    }
+});

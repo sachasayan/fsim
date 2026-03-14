@@ -45,7 +45,18 @@ function createInitialState(document) {
             saveState: 'idle',
             saveError: '',
             toast: null,
-            showHelp: false
+            showHelp: false,
+            terrainLab: {
+                draftConfig: structuredClone(document.worldData.terrainGenerator),
+                previewStatus: 'idle',
+                previewDirty: true,
+                previewSnapshot: null,
+                previewKey: null,
+                activeSubtool: 'inspect',
+                selectedOverlay: document.worldData.terrainGenerator.preview.overlay,
+                pendingApply: false,
+                lastMetadata: null
+            }
         }
     };
 }
@@ -150,6 +161,19 @@ export function createEditorStore(initialDocument) {
                     case 'set-tool':
                         return { ...current, tools: { ...current.tools, currentTool: action.tool } };
                     case 'set-hover':
+                        if (current.selection.hoverId === action.hoverId) {
+                            const currentHoverWorldPos = current.viewport.hoverWorldPos;
+                            const nextHoverWorldPos = action.hoverWorldPos;
+                            const sameHoverWorldPos = (
+                                currentHoverWorldPos === null && nextHoverWorldPos === null
+                            ) || (
+                                currentHoverWorldPos !== null
+                                && nextHoverWorldPos !== null
+                                && currentHoverWorldPos.x === nextHoverWorldPos.x
+                                && currentHoverWorldPos.z === nextHoverWorldPos.z
+                            );
+                            if (sameHoverWorldPos) return current;
+                        }
                         return { ...current, selection: { ...current.selection, hoverId: action.hoverId }, viewport: { ...current.viewport, hoverWorldPos: action.hoverWorldPos } };
                     case 'set-selection':
                         return { ...current, selection: { ...current.selection, selectedId: action.selectedId, activeVertex: action.activeVertex ?? null } };
@@ -179,6 +203,119 @@ export function createEditorStore(initialDocument) {
                         return { ...current, ui: { ...current.ui, toast: action.toast } };
                     case 'toggle-help':
                         return { ...current, ui: { ...current.ui, showHelp: action.value ?? !current.ui.showHelp } };
+                    case 'set-terrain-generator-config': {
+                        const nextDraft = structuredClone(current.ui.terrainLab.draftConfig);
+                        let target = nextDraft;
+                        const path = Array.isArray(action.path) ? action.path : [];
+                        for (let index = 0; index < path.length - 1; index += 1) {
+                            const key = path[index];
+                            target = target[key];
+                        }
+                        target[path[path.length - 1]] = action.value;
+                        if (path[0] === 'preview' && path[1] === 'overlay') {
+                            return {
+                                ...current,
+                                ui: {
+                                    ...current.ui,
+                                    terrainLab: {
+                                        ...current.ui.terrainLab,
+                                        draftConfig: nextDraft,
+                                        selectedOverlay: action.value,
+                                        previewDirty: true
+                                    }
+                                }
+                            };
+                        }
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    draftConfig: nextDraft,
+                                    previewDirty: true
+                                }
+                            }
+                        };
+                    }
+                    case 'set-terrain-preview':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    previewSnapshot: action.snapshot,
+                                    previewKey: action.previewKey,
+                                    previewStatus: action.status || 'ready',
+                                    previewDirty: action.previewDirty ?? false,
+                                    lastMetadata: action.metadata ?? current.ui.terrainLab.lastMetadata
+                                }
+                            }
+                        };
+                    case 'set-terrain-preview-status':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    previewStatus: action.status
+                                }
+                            }
+                        };
+                    case 'mark-terrain-preview-dirty':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    previewDirty: true,
+                                    previewStatus: action.status || current.ui.terrainLab.previewStatus
+                                }
+                            }
+                        };
+                    case 'apply-terrain-generator': {
+                        const nextDocument = createEditorDocument({
+                            ...current.document.worldData,
+                            terrainGenerator: structuredClone(current.ui.terrainLab.draftConfig)
+                        }, current.document.vantageData, current.document);
+                        const snapshot = cloneSnapshot(current);
+                        return {
+                            ...current,
+                            document: nextDocument,
+                            history: {
+                                undoStack: [...current.history.undoStack, snapshot],
+                                redoStack: [],
+                                dirty: true,
+                                lastCoalesceKey: null
+                            },
+                            ui: {
+                                ...current.ui,
+                                saveState: current.ui.saveState === 'saving' ? 'saving' : 'dirty',
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    draftConfig: structuredClone(nextDocument.worldData.terrainGenerator),
+                                    pendingApply: false,
+                                    previewDirty: true
+                                }
+                            }
+                        };
+                    }
+                    case 'reset-terrain-generator':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    draftConfig: structuredClone(current.document.worldData.terrainGenerator),
+                                    selectedOverlay: current.document.worldData.terrainGenerator.preview.overlay,
+                                    previewDirty: true
+                                }
+                            }
+                        };
                     case 'mark-saved':
                         return { ...current, history: { ...current.history, dirty: false, lastCoalesceKey: null }, ui: { ...current.ui, saveState: 'saved', saveError: '' } };
                     case 'replace-document':
@@ -191,7 +328,18 @@ export function createEditorStore(initialDocument) {
                                 activeVertex: null
                             },
                             ui: {
-                                ...current.ui
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    draftConfig: structuredClone(action.document.worldData.terrainGenerator),
+                                    previewStatus: 'idle',
+                                    previewDirty: true,
+                                    previewSnapshot: null,
+                                    previewKey: null,
+                                    selectedOverlay: action.document.worldData.terrainGenerator.preview.overlay,
+                                    pendingApply: false,
+                                    lastMetadata: null
+                                }
                             }
                         };
                     default:

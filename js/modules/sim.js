@@ -168,6 +168,7 @@ const {
   setTokenCollectionHandler,
   updateTokenSystem,
   updateWorldObjects,
+  refreshTerrainAlignment,
   invalidateWorldLod,
   updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER, lodSettings });
@@ -269,6 +270,7 @@ window.fsimWorld = {
   cloudMaterial,
   updateTerrainAtmosphere,
   updateTerrain, // Export updateTerrain for explicit batcher control
+  refreshTerrainAlignment,
   refreshLodState,
   lodSettings: worldLodSettings,
   waterMaterial,

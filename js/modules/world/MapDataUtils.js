@@ -1,3 +1,5 @@
+import { normalizeTerrainGeneratorConfig } from './terrain/TerrainSynthesis.js';
+
 export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban', 'windmill_farm'];
 export const ROAD_KINDS = ['road', 'taxiway', 'service'];
 export const ROAD_SURFACES = ['asphalt', 'gravel', 'dirt'];
@@ -177,6 +179,7 @@ export function normalizeMapData(data) {
     if (!data.districts) data.districts = [];
     if (!data.roads) data.roads = [];
     if (!data.terrainEdits) data.terrainEdits = [];
+    data.terrainGenerator = normalizeTerrainGeneratorConfig(data.terrainGenerator);
 
     const flattenedDistricts = [...data.districts];
     data.cities.forEach(city => {

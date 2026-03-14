@@ -16,6 +16,7 @@ const MAP_JSON_PATH = path.join(ROOT, 'tools', 'map.json');
 
 import { readFileSync as readFileSyncSync } from 'node:fs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
+import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from '../js/modules/world/terrain/TerrainSynthesis.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
 let mapData = null;
@@ -86,6 +87,12 @@ const Noise = {
     }
 };
 Noise.init(12345);
+const terrainSynthConfig = normalizeTerrainGeneratorConfig(mapData?.terrainGenerator);
+const terrainSynthesizer = createTerrainSynthesizer({
+    Noise,
+    worldSize: 50000,
+    config: terrainSynthConfig
+});
 
 function getTerrainHeight(x, z) {
     if (existingTerrainSampler) {
@@ -93,21 +100,7 @@ function getTerrainHeight(x, z) {
         return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
     }
 
-    let distFromRunwayZ = Math.abs(z);
-    let distFromRunwayX = Math.abs(x);
-    let noiseVal = Noise.fractal(x, z, 6, 0.5, 0.0003) * 600 + 100;
-    let baseHeight;
-
-    if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        baseHeight = 0;
-    } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-        let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
-        let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-        let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-        baseHeight = noiseVal * runwayMask;
-    } else {
-        baseHeight = noiseVal;
-    }
+    const baseHeight = terrainSynthesizer.sampleHeight(x, z);
     return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
 }
 
@@ -231,11 +224,17 @@ function serializeQuadtree(root) {
     const metadataMap = mapData
         ? {
             ...mapData,
+            ...terrainSynthesizer.getMetadata(),
             terrainEdits: clearTerrainEdits ? [] : (mapData.terrainEdits || []),
             districts: mapData.districts,
             districtRecords: buildDistrictRecords(mapData)
         }
-        : { terrainEdits: [], districts: [], districtRecords: [] };
+        : {
+            ...terrainSynthesizer.getMetadata(),
+            terrainEdits: [],
+            districts: [],
+            districtRecords: []
+        };
     const metaStr = JSON.stringify(metadataMap);
     const metaBuffer = Buffer.from(metaStr, 'utf8');
 

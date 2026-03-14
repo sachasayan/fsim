@@ -125,6 +125,14 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   lodManager.register(radar);
   lodManager.register(tokenSystem);
 
+  function refreshTerrainAlignment() {
+    tower.refreshTerrainAlignment?.();
+    apron.refreshTerrainAlignment?.();
+    hangar.refreshTerrainAlignment?.();
+    radar.refreshTerrainAlignment?.();
+    tokenSystem.refreshTerrainAlignment?.();
+  }
+
   return {
     lodSettings,
     ...environment,
@@ -151,6 +159,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     },
     getTerrainSelectionDiagnostics: terrain.getTerrainSelectionDiagnostics,
     hasPendingTerrainWork: terrain.hasPendingTerrainWork,
+    refreshTerrainAlignment,
     invalidateWorldLod: lodManager.invalidate,
     updateWorldLOD: lodManager.updateWorldLOD
   };
