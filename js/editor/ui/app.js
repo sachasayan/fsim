@@ -396,16 +396,19 @@ function LayersPanel({ store }) {
                     const itemLocked = state.layers.itemLocked[item.id] === true;
                     return h('div', { className: `layer-item${state.selection.selectedId === item.id ? ' selected' : ''}`, key: item.id, 'data-testid': `layer-item-${item.id}` }, [
                         h('button', {
+                            key: 'visible',
                             className: 'layer-toggle',
                             type: 'button',
                             onClick: () => store.dispatch({ type: 'toggle-item-visible', itemId: item.id })
                         }, itemVisible ? 'Show' : 'Hide'),
                         h('button', {
+                            key: 'lock',
                             className: 'layer-toggle',
                             type: 'button',
                             onClick: () => store.dispatch({ type: 'toggle-item-lock', itemId: item.id })
                         }, itemLocked ? 'Unlock' : 'Lock'),
                         h('button', {
+                            key: 'select',
                             className: 'layer-item-select',
                             type: 'button',
                             onClick: () => store.dispatch({ type: 'set-selection', selectedId: item.id }),
