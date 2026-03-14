@@ -1,3 +1,8 @@
+// Pre-calculated gradient arrays
+const gradX = new Float64Array([1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, 0, -1, 0]);
+const gradY = new Float64Array([1, 1, -1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1]);
+const gradZ = new Float64Array([0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 0, 1, 0, -1]);
+
 export const Noise = {
   permutation: new Uint8Array(512),
   init(seed = 12345) {
@@ -29,9 +34,12 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
+
+    // Inline fade
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
     let A = this.permutation[X] + Y;
     let AA = this.permutation[A] + Z;
     let AB = this.permutation[A + 1] + Z;
@@ -39,23 +47,45 @@ export const Noise = {
     let BA = this.permutation[B] + Z;
     let BB = this.permutation[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    let h;
+    let gradAA, gradBA, gradAB, gradBB, gradAA1, gradBA1, gradAB1, gradBB1;
+    let cx = x - 1, cy = y - 1, cz = z - 1;
+
+    // Inline grad with pre-calculated tables
+    h = this.permutation[AA] & 15;
+    gradAA = gradX[h] * x + gradY[h] * y + gradZ[h] * z;
+
+    h = this.permutation[BA] & 15;
+    gradBA = gradX[h] * cx + gradY[h] * y + gradZ[h] * z;
+
+    h = this.permutation[AB] & 15;
+    gradAB = gradX[h] * x + gradY[h] * cy + gradZ[h] * z;
+
+    h = this.permutation[BB] & 15;
+    gradBB = gradX[h] * cx + gradY[h] * cy + gradZ[h] * z;
+
+    h = this.permutation[AA + 1] & 15;
+    gradAA1 = gradX[h] * x + gradY[h] * y + gradZ[h] * cz;
+
+    h = this.permutation[BA + 1] & 15;
+    gradBA1 = gradX[h] * cx + gradY[h] * y + gradZ[h] * cz;
+
+    h = this.permutation[AB + 1] & 15;
+    gradAB1 = gradX[h] * x + gradY[h] * cy + gradZ[h] * cz;
+
+    h = this.permutation[BB + 1] & 15;
+    gradBB1 = gradX[h] * cx + gradY[h] * cy + gradZ[h] * cz;
+
+    // Inline lerp
+    let lerpX1 = gradAA + u * (gradBA - gradAA);
+    let lerpX2 = gradAB + u * (gradBB - gradAB);
+    let lerpY1 = lerpX1 + v * (lerpX2 - lerpX1);
+
+    let lerpX3 = gradAA1 + u * (gradBA1 - gradAA1);
+    let lerpX4 = gradAB1 + u * (gradBB1 - gradAB1);
+    let lerpY2 = lerpX3 + v * (lerpX4 - lerpX3);
+
+    return lerpY1 + w * (lerpY2 - lerpY1);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {

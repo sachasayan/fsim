@@ -1,0 +1,3 @@
+## 2024-05-18 - Inline math and float64 lookup optimizations in Procedural Noise
+**Learning:** In hot procedural noise generation loops (like `Noise.noise`), calling functions like `lerp` or using bitwise logic with ternary branches to calculate gradients (`((h & 1) === 0 ? u : -u)`) creates huge execution overhead. V8 handles pre-calculated `Float64Array` gradient lookup tables and directly inlined math significantly better.
+**Action:** When optimizing extremely hot mathematical inner loops, prioritize replacing bitwise logic/branching with O(1) index lookups into Typed Arrays, and manually inline helper functions (`fade`, `lerp`). Ensure that while internal functions are inlined, standard public APIs are preserved for backward compatibility.
