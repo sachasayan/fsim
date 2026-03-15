@@ -401,6 +401,8 @@ const prevShadowCenter = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSI
 let prevShadowExtent = -1;
 let lastTerrainChunkX = Number.POSITIVE_INFINITY;
 let lastTerrainChunkZ = Number.POSITIVE_INFINITY;
+let lastTerrainUpdatePosX = Number.POSITIVE_INFINITY;
+let lastTerrainUpdatePosZ = Number.POSITIVE_INFINITY;
 let lastTerrainUpdateMs = 0;
 const SHADOW_MAP_NEAR = 2048;
 const SHADOW_MAP_FAR = 1024;
@@ -833,9 +835,13 @@ function animate() {
   const chunkZ = Math.floor(PHYSICS.position.z / 4000);
   const terrainDue = (now - lastTerrainUpdateMs) >= worldLodSettings.world.updateIntervalMs;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
+  
+  const distMovedSq = Math.pow(PHYSICS.position.x - lastTerrainUpdatePosX, 2) + Math.pow(PHYSICS.position.z - lastTerrainUpdatePosZ, 2);
+  const movedEnough = distMovedSq > 2500; // 50 units
+
   const terrainNeedsWork = !isReady();
   const terrainHasPendingWork = hasPendingTerrainWork?.() === true;
-  const shouldUpdateTerrain = chunkChanged || ((terrainNeedsWork || terrainHasPendingWork) && terrainDue);
+  const shouldUpdateTerrain = chunkChanged || (terrainDue && (movedEnough || terrainNeedsWork || terrainHasPendingWork));
   let terrainUpdated = false;
   let worldLodUpdated = false;
   if (shouldUpdateTerrain) {
@@ -843,6 +849,8 @@ function animate() {
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
+    lastTerrainUpdatePosX = PHYSICS.position.x;
+    lastTerrainUpdatePosZ = PHYSICS.position.z;
     terrainUpdated = true;
     if (terrainDiagnostics?.timings) {
       perfCollector.recordPhase('terrain_selection', terrainDiagnostics.timings.selectionBuildMs ?? 0);
