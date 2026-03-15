@@ -445,8 +445,15 @@ export function createTerrainSystem({
       normals[skirtPositionIndex + 2] = normals[sourcePositionIndex + 2];
 
       if (materialKind === 'terrain') {
-        surfaceWeights.set(surfaceWeights.slice(sourceWeightIndex, sourceWeightIndex + 4), skirtVertexIndex * 4);
-        surfaceOverrides.set(surfaceOverrides.slice(sourceWeightIndex, sourceWeightIndex + 4), skirtVertexIndex * 4);
+        const skirtWeightIndex = skirtVertexIndex * 4;
+        surfaceWeights[skirtWeightIndex] = surfaceWeights[sourceWeightIndex];
+        surfaceWeights[skirtWeightIndex + 1] = surfaceWeights[sourceWeightIndex + 1];
+        surfaceWeights[skirtWeightIndex + 2] = surfaceWeights[sourceWeightIndex + 2];
+        surfaceWeights[skirtWeightIndex + 3] = surfaceWeights[sourceWeightIndex + 3];
+        surfaceOverrides[skirtWeightIndex] = surfaceOverrides[sourceWeightIndex];
+        surfaceOverrides[skirtWeightIndex + 1] = surfaceOverrides[sourceWeightIndex + 1];
+        surfaceOverrides[skirtWeightIndex + 2] = surfaceOverrides[sourceWeightIndex + 2];
+        surfaceOverrides[skirtWeightIndex + 3] = surfaceOverrides[sourceWeightIndex + 3];
       }
     }
 
@@ -562,6 +569,10 @@ export function createTerrainSystem({
     blockingLeafStates: [],
     quadtreeSelectionRegion: null
   };
+  const leafResponsivenessState = {
+    recentCompletions: [],
+    maxRecentCompletions: 64
+  };
   const terrainPerfState = {
     lastUpdate: {
       selectionBuildMs: 0,
@@ -574,8 +585,80 @@ export function createTerrainSystem({
       leafBuilds: 0,
       chunkBuildsStarted: 0,
       propBuildsStarted: 0
+    },
+    leafBuildBreakdown: {
+      count: 0,
+      sampleHeightMs: 0,
+      terrainGeometryMs: 0,
+      waterGeometryMs: 0,
+      waterDepthTextureMs: 0,
+      materialSetupMs: 0,
+      sceneAttachMs: 0,
+      totalMs: 0,
+      maxTotalMs: 0
     }
   };
+
+  function resetLeafBuildBreakdown() {
+    terrainPerfState.leafBuildBreakdown = {
+      count: 0,
+      sampleHeightMs: 0,
+      terrainGeometryMs: 0,
+      waterGeometryMs: 0,
+      waterDepthTextureMs: 0,
+      materialSetupMs: 0,
+      sceneAttachMs: 0,
+      totalMs: 0,
+      maxTotalMs: 0
+    };
+  }
+
+  function recordLeafBuildBreakdown(sample) {
+    const bucket = terrainPerfState.leafBuildBreakdown;
+    if (!bucket || !sample) return;
+    bucket.count += 1;
+    bucket.sampleHeightMs += sample.sampleHeightMs || 0;
+    bucket.terrainGeometryMs += sample.terrainGeometryMs || 0;
+    bucket.waterGeometryMs += sample.waterGeometryMs || 0;
+    bucket.waterDepthTextureMs += sample.waterDepthTextureMs || 0;
+    bucket.materialSetupMs += sample.materialSetupMs || 0;
+    bucket.sceneAttachMs += sample.sceneAttachMs || 0;
+    bucket.totalMs += sample.totalMs || 0;
+    bucket.workerComputeMs = (bucket.workerComputeMs || 0) + (sample.workerComputeMs || 0);
+    bucket.maxTotalMs = Math.max(bucket.maxTotalMs, sample.totalMs || 0);
+  }
+
+  function getLeafBuildBreakdownSummary() {
+    const bucket = terrainPerfState.leafBuildBreakdown;
+    const count = bucket?.count || 0;
+    if (count <= 0) {
+      return {
+        count: 0,
+        sampleHeightAvgMs: null,
+        terrainGeometryAvgMs: null,
+        waterGeometryAvgMs: null,
+        waterDepthTextureAvgMs: null,
+        materialSetupAvgMs: null,
+        sceneAttachAvgMs: null,
+        workerComputeAvgMs: null,
+        totalAvgMs: null,
+        maxTotalMs: null
+      };
+    }
+    const avg = (value) => Math.round((value / count) * 1000) / 1000;
+    return {
+      count,
+      sampleHeightAvgMs: avg(bucket.sampleHeightMs),
+      terrainGeometryAvgMs: avg(bucket.terrainGeometryMs),
+      waterGeometryAvgMs: avg(bucket.waterGeometryMs),
+      waterDepthTextureAvgMs: avg(bucket.waterDepthTextureMs),
+      materialSetupAvgMs: avg(bucket.materialSetupMs),
+      sceneAttachAvgMs: avg(bucket.sceneAttachMs),
+      workerComputeAvgMs: avg(bucket.workerComputeMs || 0),
+      totalAvgMs: avg(bucket.totalMs),
+      maxTotalMs: Math.round(bucket.maxTotalMs * 1000) / 1000
+    };
+  }
   const terrainDetailTex = createPackedTerrainDetailTexture();
   const roadMarkingOverlay = new RoadMarkingOverlay({
     worldSize: roadMarkingDebugSettings.worldSize,
@@ -647,6 +730,7 @@ export function createTerrainSystem({
   }
 
   function createNativeLeafRuntime(leaf) {
+    const now = performance.now();
     return {
       leafId: leaf.leafId,
       nodeId: leaf.nodeId,
@@ -661,10 +745,50 @@ export function createTerrainSystem({
       waterMesh: null,
       waterDepthTexture: null,
       surfaceResolution: null,
-      surfaceProfile: 'full',
+      firstSelectedAtMs: now,
+      lastSelectedAtMs: now,
+      pendingSinceAtMs: now,
+      enqueuedAtMs: now,
+      lastBuildStartedAtMs: null,
+      lastSurfaceReadyAtMs: null,
+      lastWaitMs: null,
+      maxWaitMs: null,
       buildVersion: 0,
       retired: false
     };
+  }
+
+  function markLeafPendingSurface(leafState, { resetPendingStart = false } = {}) {
+    if (!leafState) return;
+    const now = performance.now();
+    leafState.state = 'pending_surface';
+    leafState.pendingSinceAtMs = resetPendingStart || !Number.isFinite(leafState.pendingSinceAtMs)
+      ? now
+      : leafState.pendingSinceAtMs;
+    leafState.enqueuedAtMs = now;
+  }
+
+  function recordLeafCompletion(leafState, now) {
+    if (!leafState) return;
+    const waitMs = Number.isFinite(leafState.pendingSinceAtMs) ? Math.max(0, now - leafState.pendingSinceAtMs) : null;
+    leafState.lastSurfaceReadyAtMs = now;
+    leafState.lastWaitMs = waitMs;
+    leafState.maxWaitMs = Math.max(leafState.maxWaitMs || 0, waitMs || 0);
+    leafState.pendingSinceAtMs = null;
+    leafResponsivenessState.recentCompletions.push({
+      leafId: leafState.leafId,
+      waitMs,
+      selectedToReadyMs: Math.max(0, now - (leafState.firstSelectedAtMs || now)),
+      blockingReady: leafState.blockingReady,
+      size: leafState.size ?? null,
+      completedAtMs: now
+    });
+    if (leafResponsivenessState.recentCompletions.length > leafResponsivenessState.maxRecentCompletions) {
+      leafResponsivenessState.recentCompletions.splice(
+        0,
+        leafResponsivenessState.recentCompletions.length - leafResponsivenessState.maxRecentCompletions
+      );
+    }
   }
 
   function getNativeSurfaceResolution(nodeSize, { bootstrapBlocking = false } = {}) {
@@ -896,17 +1020,74 @@ export function createTerrainSystem({
 
   function enqueueLeafBuild(leafState, priority = 0) {
     if (!leafState || pendingLeafBuildIds.has(leafState.leafId)) return;
+    leafState.enqueuedAtMs = performance.now();
+    if (!Number.isFinite(leafState.pendingSinceAtMs)) {
+      leafState.pendingSinceAtMs = leafState.enqueuedAtMs;
+    }
     pendingLeafBuildIds.add(leafState.leafId);
     pendingLeafBuilds.push({ leafId: leafState.leafId, priority });
     pendingLeafQueueDirty = true;
   }
 
+  function refreshLeafBuildQueuePriorities() {
+    if (pendingLeafBuilds.length === 0) return;
+    for (const job of pendingLeafBuilds) {
+      const leafState = activeLeaves.get(job.leafId);
+      if (!leafState || leafState.retired || leafState.state === 'surface_ready') continue;
+      job.priority = getLeafBuildPriority(leafState);
+    }
+    pendingLeafQueueDirty = true;
+  }
+
+  function getLeafCenter(leafState) {
+    const bounds = leafState?.bounds;
+    if (!bounds) return null;
+    return {
+      x: (bounds.minX + bounds.maxX) * 0.5,
+      z: (bounds.minZ + bounds.maxZ) * 0.5
+    };
+  }
+
   function getLeafBuildPriority(leafState) {
     if (!leafState) return Number.POSITIVE_INFINITY;
     const distanceSq = distanceToLeafBoundsSq(leafState, PHYSICS.position.x, PHYSICS.position.z);
+    const velocityX = Number.isFinite(PHYSICS?.velocity?.x) ? PHYSICS.velocity.x : 0;
+    const velocityZ = Number.isFinite(PHYSICS?.velocity?.z) ? PHYSICS.velocity.z : 0;
+    const speed = Math.hypot(velocityX, velocityZ);
+    let effectiveDistanceSq = distanceSq;
+    let forwardBoost = 0;
+
+    if (speed > 1) {
+      const lookaheadTimes = [0.4, 0.9, 1.6];
+      for (const lookaheadSeconds of lookaheadTimes) {
+        const predictedX = PHYSICS.position.x + velocityX * lookaheadSeconds;
+        const predictedZ = PHYSICS.position.z + velocityZ * lookaheadSeconds;
+        effectiveDistanceSq = Math.min(effectiveDistanceSq, distanceToLeafBoundsSq(leafState, predictedX, predictedZ));
+      }
+
+      const center = getLeafCenter(leafState);
+      if (center) {
+        const toLeafX = center.x - PHYSICS.position.x;
+        const toLeafZ = center.z - PHYSICS.position.z;
+        const toLeafLength = Math.hypot(toLeafX, toLeafZ);
+        if (toLeafLength > 1e-3) {
+          const alignment = ((toLeafX * velocityX) + (toLeafZ * velocityZ)) / (toLeafLength * speed);
+          if (alignment > 0) {
+            forwardBoost = alignment * Math.min(60000, speed * 220);
+          }
+        }
+      }
+    }
+
+    const pendingAgeMs = Number.isFinite(leafState.pendingSinceAtMs)
+      ? Math.max(0, performance.now() - leafState.pendingSinceAtMs)
+      : 0;
+    const pendingAgeBoost = Math.min(120000, pendingAgeMs * 150);
     const blockingBoost = leafState.blockingReady ? 1_000_000 : 0;
+    const nearBoost = effectiveDistanceSq < (800 * 800) ? 120000 : effectiveDistanceSq < (1600 * 1600) ? 40000 : 0;
+    const baseReadyBoost = leafState.propState === 'base_ready' ? 20000 : 0;
     const sizeBias = Number.isFinite(leafState.size) ? leafState.size * 0.01 : 0;
-    return distanceSq - blockingBoost - sizeBias;
+    return effectiveDistanceSq - blockingBoost - forwardBoost - pendingAgeBoost - nearBoost - baseReadyBoost - sizeBias;
   }
 
   function boundsOverlap(boundsA, boundsB) {
@@ -932,27 +1113,28 @@ export function createTerrainSystem({
   }
 
   function buildNativeLeafSurface(leafState) {
+    const buildStartedAtMs = performance.now();
     const sampler = getStaticSampler();
     if (!sampler || !Number.isInteger(leafState.nodeId)) {
       leafState.state = 'error';
       return;
     }
 
-    if (leafState.terrainMesh || leafState.waterMesh) {
-      disposeLeafRuntimeLeaf(leafState);
-    }
-
     const node = sampler.getNode(leafState.nodeId, leafState.depth);
     const surfaceResolution = getNativeSurfaceResolution(node?.size ?? CHUNK_SIZE, {
       bootstrapBlocking: leafState.blockingReady
     });
+    const sampleStartedAtMs = performance.now();
     const decoded = sampleNodeHeightGrid(sampler, node, surfaceResolution, leafState.depth);
     if (!node || !decoded) {
       leafState.state = 'error';
       return;
     }
+    const sampleHeightMs = performance.now() - sampleStartedAtMs;
 
     const worldData = getStaticWorldMetadata() || windowRef?.fsimWorld || null;
+    const materialSetupStartedAtMs = performance.now();
+    const terrainGeometryStartedAtMs = performance.now();
     const terrainGeometry = createLeafSurfaceGeometry({
       node,
       heights: decoded.heights,
@@ -961,6 +1143,8 @@ export function createTerrainSystem({
       sampler,
       materialKind: 'terrain'
     });
+    const terrainGeometryMs = performance.now() - terrainGeometryStartedAtMs;
+    const waterGeometryStartedAtMs = performance.now();
     const waterGeometry = createLeafSurfaceGeometry({
       node,
       heights: decoded.heights,
@@ -969,25 +1153,41 @@ export function createTerrainSystem({
       sampler,
       materialKind: 'water'
     });
-
+    const waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
     const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
     terrainMesh.receiveShadow = true;
     terrainMesh.position.set(node.minX, 0, node.minZ);
-
+    const waterDepthStartedAtMs = performance.now();
     const waterDepthTexture = createWaterDepthTexture(node, sampler, (bootstrapMode && leafState.blockingReady) ? 16 : (bootstrapMode ? 32 : 64));
+    const waterDepthTextureMs = performance.now() - waterDepthStartedAtMs;
     const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, node);
     const waterMesh = new THREE.Mesh(waterGeometry, leafWaterMaterial);
     waterMesh.receiveShadow = leafState.chunkLod === 0;
     waterMesh.position.set(node.minX, 0, node.minZ);
+    const materialSetupMs = performance.now() - materialSetupStartedAtMs;
 
+    const sceneAttachStartedAtMs = performance.now();
+    if (leafState.terrainMesh || leafState.waterMesh) {
+      disposeLeafRuntimeLeaf(leafState);
+    }
     leafState.terrainMesh = terrainMesh;
     leafState.waterMesh = waterMesh;
     leafState.waterDepthTexture = waterDepthTexture;
     leafState.surfaceResolution = surfaceResolution;
-    leafState.surfaceProfile = (bootstrapMode && leafState.blockingReady) ? 'bootstrap' : 'full';
     leafState.state = 'surface_ready';
+    recordLeafCompletion(leafState, performance.now());
     scene.add(terrainMesh);
     scene.add(waterMesh);
+    const sceneAttachMs = performance.now() - sceneAttachStartedAtMs;
+    recordLeafBuildBreakdown({
+      sampleHeightMs,
+      terrainGeometryMs,
+      waterGeometryMs,
+      waterDepthTextureMs,
+      materialSetupMs,
+      sceneAttachMs,
+      totalMs: performance.now() - buildStartedAtMs
+    });
   }
 
   function processLeafBuildQueue(maxBuildsPerFrame = 4) {
@@ -995,6 +1195,7 @@ export function createTerrainSystem({
     if (pendingLeafBuilds.length === 0) {
       return { durationMs: 0, builds: 0 };
     }
+    refreshLeafBuildQueuePriorities();
     if (pendingLeafQueueDirty) {
       pendingLeafBuilds.sort((a, b) => b.priority - a.priority);
       pendingLeafQueueDirty = false;
@@ -1007,6 +1208,7 @@ export function createTerrainSystem({
       const leafState = activeLeaves.get(job.leafId);
       if (!leafState || leafState.retired || leafState.state === 'surface_ready') continue;
       leafState.buildVersion += 1;
+      leafState.lastBuildStartedAtMs = performance.now();
       buildNativeLeafSurface(leafState);
       builds += 1;
     }
@@ -1279,6 +1481,101 @@ export function createTerrainSystem({
     };
   }
 
+  function refineBlockingSelection(selection, cameraX, cameraZ) {
+    if (bootstrapMode || !selection || !Array.isArray(selection.selectedLeaves) || selection.selectedLeaves.length === 0) {
+      return selection;
+    }
+
+    const currentlyBlockingLeaves = selection.selectedLeaves.filter((leaf) => leaf.blockingReady);
+    if (currentlyBlockingLeaves.length <= 24) {
+      return selection;
+    }
+
+    const velocityX = Number.isFinite(PHYSICS?.velocity?.x) ? PHYSICS.velocity.x : 0;
+    const velocityZ = Number.isFinite(PHYSICS?.velocity?.z) ? PHYSICS.velocity.z : 0;
+    const speed = Math.hypot(velocityX, velocityZ);
+    const nearDistanceSq = Math.pow(Math.max(CHUNK_SIZE * 0.6, terrainDebugSettings.selectionBlockingRadius * 0.45), 2);
+    const targetBlockingLeafCount = Math.max(
+      20,
+      Math.min(
+        currentlyBlockingLeaves.length,
+        24 + Math.min(12, Math.round(speed / 35))
+      )
+    );
+
+    function scoreLeaf(leaf) {
+      const baseDistanceSq = distanceToLeafBoundsSq(leaf, cameraX, cameraZ);
+      let effectiveDistanceSq = baseDistanceSq;
+      let forwardBoost = 0;
+
+      if (speed > 1) {
+        const centerX = (leaf.bounds.minX + leaf.bounds.maxX) * 0.5;
+        const centerZ = (leaf.bounds.minZ + leaf.bounds.maxZ) * 0.5;
+        const toLeafX = centerX - cameraX;
+        const toLeafZ = centerZ - cameraZ;
+        const toLeafLength = Math.hypot(toLeafX, toLeafZ);
+        if (toLeafLength > 1e-3) {
+          const alignment = ((toLeafX * velocityX) + (toLeafZ * velocityZ)) / (toLeafLength * speed);
+          if (alignment > 0) {
+            forwardBoost = alignment * Math.min(50000, speed * 180);
+          }
+        }
+        for (const lookaheadSeconds of [0.4, 0.9, 1.5]) {
+          const predictedX = cameraX + velocityX * lookaheadSeconds;
+          const predictedZ = cameraZ + velocityZ * lookaheadSeconds;
+          effectiveDistanceSq = Math.min(effectiveDistanceSq, distanceToLeafBoundsSq(leaf, predictedX, predictedZ));
+        }
+      }
+
+      const sizeBias = Number.isFinite(leaf.size) ? leaf.size * 0.01 : 0;
+      return effectiveDistanceSq - forwardBoost - sizeBias;
+    }
+
+    const alwaysKeep = [];
+    const candidates = [];
+    for (const leaf of currentlyBlockingLeaves) {
+      if (distanceToLeafBoundsSq(leaf, cameraX, cameraZ) <= nearDistanceSq) {
+        alwaysKeep.push(leaf);
+      } else {
+        candidates.push(leaf);
+      }
+    }
+
+    candidates.sort((a, b) => scoreLeaf(a) - scoreLeaf(b));
+    const refinedBlockingLeafIds = new Set(alwaysKeep.map((leaf) => leaf.leafId));
+    for (const leaf of candidates) {
+      if (refinedBlockingLeafIds.size >= targetBlockingLeafCount) break;
+      refinedBlockingLeafIds.add(leaf.leafId);
+    }
+
+    if (refinedBlockingLeafIds.size === currentlyBlockingLeaves.length) {
+      return selection;
+    }
+
+    const selectedLeaves = selection.selectedLeaves.map((leaf) => ({
+      ...leaf,
+      blockingReady: refinedBlockingLeafIds.has(leaf.leafId)
+    }));
+    const blockingChunkKeys = new Set();
+    const nonBlockingChunkKeys = new Set();
+    for (const leaf of selectedLeaves) {
+      for (const key of leaf.chunkKeys || []) {
+        if (leaf.blockingReady) blockingChunkKeys.add(key);
+      }
+    }
+    for (const key of selection.requiredChunkKeys || []) {
+      if (!blockingChunkKeys.has(key)) nonBlockingChunkKeys.add(key);
+    }
+
+    return {
+      ...selection,
+      selectedLeaves,
+      blockingLeafIds: refinedBlockingLeafIds,
+      blockingChunkKeys,
+      nonBlockingChunkKeys
+    };
+  }
+
   function ensureQuadtreeSelectionController() {
     if (quadtreeSelectionController) return quadtreeSelectionController;
     const sampler = getStaticSampler();
@@ -1453,20 +1750,21 @@ export function createTerrainSystem({
         leafState.blockingReady = nextBlockingLeafIds.has(leaf.leafId);
         leafState.chunkKeys = [...(leaf.chunkKeys || [])];
         leafState.retired = false;
+        leafState.lastSelectedAtMs = performance.now();
         const desiredResolution = getNativeSurfaceResolution(leaf.size ?? CHUNK_SIZE, {
           bootstrapBlocking: nextBlockingLeafIds.has(leaf.leafId)
         });
         if (changedNode && leafState.terrainMesh) {
-          leafState.state = 'pending_surface';
+          markLeafPendingSurface(leafState, { resetPendingStart: true });
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
         } else if (leafState.state === 'surface_ready' && leafState.surfaceResolution !== desiredResolution) {
-          leafState.state = 'pending_surface';
+          markLeafPendingSurface(leafState, { resetPendingStart: true });
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
         }
       }
 
       if (!leafState.terrainMesh || !leafState.waterMesh) {
-        leafState.state = 'pending_surface';
+        markLeafPendingSurface(leafState);
       } else if (leafState.state !== 'error') {
         leafState.state = 'surface_ready';
       }
@@ -1521,16 +1819,91 @@ export function createTerrainSystem({
 
   function refreshTerrainSelectionDiagnostics() {
     const pendingBlockingLeaves = [];
+    const pendingLeafAges = [];
+    const pendingBlockingLeafAges = [];
+    const stalledPendingLeaves = [];
+    const now = performance.now();
     for (const leafId of blockingLeafIds) {
       const leaf = activeLeaves.get(leafId);
       if (!leaf || leaf.state === 'surface_ready') continue;
       pendingBlockingLeaves.push(`${leafId}:${leaf.state}`);
     }
+    for (const leaf of activeLeaves.values()) {
+      if (!leaf || leaf.retired || leaf.state === 'surface_ready' || leaf.state === 'error') continue;
+      const ageMs = Number.isFinite(leaf.pendingSinceAtMs) ? Math.max(0, now - leaf.pendingSinceAtMs) : null;
+      if (Number.isFinite(ageMs)) {
+        pendingLeafAges.push(ageMs);
+        if (leaf.blockingReady) pendingBlockingLeafAges.push(ageMs);
+      }
+      stalledPendingLeaves.push({
+        leafId: leaf.leafId,
+        state: leaf.state,
+        ageMs,
+        blockingReady: leaf.blockingReady,
+        distanceSq: distanceToLeafBoundsSq(leaf, PHYSICS.position.x, PHYSICS.position.z)
+      });
+    }
+    stalledPendingLeaves.sort((a, b) => (b.ageMs || 0) - (a.ageMs || 0));
     lastTerrainSelection.pendingBlockingLeafCount = pendingBlockingLeaves.length;
     lastTerrainSelection.blockingLeafStates = pendingBlockingLeaves.slice(0, 10);
     lastTerrainSelection.selectedLeafCount = Array.from(activeLeaves.values()).filter((leaf) => !leaf.retired).length;
     lastTerrainSelection.blockingLeafCount = blockingLeafIds.size;
     lastTerrainSelection.activeChunkCount = chunkLeafOwners.size;
+    lastTerrainSelection.leafResponsiveness = summarizeLeafResponsiveness({
+      pendingLeafAges,
+      pendingBlockingLeafAges,
+      stalledPendingLeaves
+    });
+  }
+
+  function summarizeNumberSet(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+      return {
+        count: 0,
+        avgMs: null,
+        p50Ms: null,
+        p95Ms: null,
+        maxMs: null
+      };
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const total = sorted.reduce((sum, value) => sum + value, 0);
+    const pick = (ratio) => {
+      const index = Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio)));
+      return Math.round(sorted[index] * 1000) / 1000;
+    };
+    return {
+      count: sorted.length,
+      avgMs: Math.round((total / sorted.length) * 1000) / 1000,
+      p50Ms: pick(0.5),
+      p95Ms: pick(0.95),
+      maxMs: Math.round(sorted[sorted.length - 1] * 1000) / 1000
+    };
+  }
+
+  function summarizeLeafResponsiveness({ pendingLeafAges = [], pendingBlockingLeafAges = [], stalledPendingLeaves = [] } = {}) {
+    const recentCompletions = leafResponsivenessState.recentCompletions.slice(-32);
+    const readyWaits = recentCompletions
+      .map((entry) => entry.waitMs)
+      .filter((value) => Number.isFinite(value));
+    const blockingReadyWaits = recentCompletions
+      .filter((entry) => entry.blockingReady)
+      .map((entry) => entry.waitMs)
+      .filter((value) => Number.isFinite(value));
+
+    return {
+      readyWaitMs: summarizeNumberSet(readyWaits),
+      blockingReadyWaitMs: summarizeNumberSet(blockingReadyWaits),
+      pendingAgeMs: summarizeNumberSet(pendingLeafAges),
+      pendingBlockingAgeMs: summarizeNumberSet(pendingBlockingLeafAges),
+      worstPendingLeaves: stalledPendingLeaves.slice(0, 8).map((entry) => ({
+        leafId: entry.leafId,
+        state: entry.state,
+        ageMs: Number.isFinite(entry.ageMs) ? Math.round(entry.ageMs * 1000) / 1000 : null,
+        blockingReady: entry.blockingReady,
+        distanceSq: Number.isFinite(entry.distanceSq) ? Math.round(entry.distanceSq * 1000) / 1000 : null
+      }))
+    };
   }
 
   function buildQuadtreeActiveChunks(centerChunkX, centerChunkZ) {
@@ -1548,7 +1921,11 @@ export function createTerrainSystem({
       splitDistanceFactor: terrainDebugSettings.selectionSplitDistanceFactor,
       maxSelectionDepth: terrainDebugSettings.selectionMaxDepth
     });
-    const effectiveSelection = trimBootstrapSelection(selection, PHYSICS.position.x, PHYSICS.position.z);
+    const effectiveSelection = refineBlockingSelection(
+      trimBootstrapSelection(selection, PHYSICS.position.x, PHYSICS.position.z),
+      PHYSICS.position.x,
+      PHYSICS.position.z
+    );
     const activeChunks = new Map();
 
     for (const key of effectiveSelection.requiredChunkKeys) {
@@ -1706,6 +2083,7 @@ export function createTerrainSystem({
 
   function updateTerrain() {
     const updateStartedAtMs = performance.now();
+    resetLeafBuildBreakdown();
     const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
     const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
 
@@ -1758,12 +2136,23 @@ export function createTerrainSystem({
       }
     }
     const queuePruneMs = performance.now() - queuePruneStartedAtMs;
+    const generationDiagnostics = getTerrainGenerationDiagnostics();
+    const workerDiagnostics = generationDiagnostics.worker || {};
+    const activeWorkerCount = Math.max(1, workerDiagnostics.activeWorkerCount || 0);
+    const inFlightJobs = Math.max(0, workerDiagnostics.inFlightJobs || 0);
+    const idleWorkerCount = Math.max(0, activeWorkerCount - inFlightJobs);
     const buildBudgetBase = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
     const leafBuildBudgetBase = pendingLeafBuilds.length > 200 ? 4 : pendingLeafBuilds.length > 120 ? 3 : 2;
     const propBuildBudgetBase = pendingPropBuilds.length > 160 ? 3 : pendingPropBuilds.length > 80 ? 2 : 1;
-    const buildBudget = buildBudgetBase * (_isFastLoad ? 40 : bootstrapMode ? 2 : 1);
+    let buildBudget = buildBudgetBase * (_isFastLoad ? 40 : bootstrapMode ? 2 : 1);
     const leafBuildBudget = leafBuildBudgetBase * (_isFastLoad ? 24 : bootstrapMode ? 4 : 1);
-    const propBuildBudget = propBuildBudgetBase * (_isFastLoad ? 80 : bootstrapMode ? (pendingChunkBuilds.length === 0 ? 6 : 3) : 1);
+    let propBuildBudget = propBuildBudgetBase * (_isFastLoad ? 80 : bootstrapMode ? (pendingChunkBuilds.length === 0 ? 6 : 3) : 1);
+    if (bootstrapMode && idleWorkerCount > 0) {
+      const bootstrapChunkTarget = Math.min(pendingChunkBuilds.length, activeWorkerCount + idleWorkerCount * 2);
+      const bootstrapPropTarget = Math.min(pendingPropBuilds.length, activeWorkerCount + idleWorkerCount * 2);
+      buildBudget = Math.max(buildBudget, bootstrapChunkTarget);
+      propBuildBudget = Math.max(propBuildBudget, bootstrapPropTarget);
+    }
     const leafBuildStats = processLeafBuildQueue(leafBuildBudget);
     const chunkBuildStats = processChunkBuildQueue(buildBudget);
     const propBuildStats = processPropBuildQueue(propBuildBudget);
@@ -1824,6 +2213,8 @@ export function createTerrainSystem({
         pendingPropJobs: pendingPropBuilds.length,
         pendingLeafBuilds: pendingLeafBuilds.length
       },
+      leafResponsiveness: lastTerrainSelection.leafResponsiveness ?? null,
+      leafBuildBreakdown: getLeafBuildBreakdownSummary(),
       chunkStates: getChunkStateCounts(),
       worker: generationDiagnostics.worker,
       generation: generationDiagnostics.generation,

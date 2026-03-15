@@ -73,8 +73,13 @@ export function createPerformanceCollector({
         'terrain.pendingBaseChunkJobs',
         'terrain.pendingPropJobs',
         'terrain.pendingLeafBuilds',
+        'terrain.pendingBlockingLeafCount',
         'terrain.inFlightWorkerJobs',
         'terrain.activeChunkCount',
+        'terrain.leafReadyWaitP95Ms',
+        'terrain.blockingLeafReadyWaitP95Ms',
+        'terrain.pendingLeafAgeP95Ms',
+        'terrain.pendingBlockingLeafAgeP95Ms',
         'render.sceneMs',
         'render.smaaMs',
         'render.bloomMs',
@@ -195,8 +200,13 @@ export function createPerformanceCollector({
         recordMetric('terrain.pendingBaseChunkJobs', profiling.terrainSelection?.queueDepths?.pendingBaseChunkJobs);
         recordMetric('terrain.pendingPropJobs', profiling.terrainSelection?.queueDepths?.pendingPropJobs);
         recordMetric('terrain.pendingLeafBuilds', profiling.terrainSelection?.queueDepths?.pendingLeafBuilds);
+        recordMetric('terrain.pendingBlockingLeafCount', profiling.terrainSelection?.pendingBlockingLeafCount);
         recordMetric('terrain.inFlightWorkerJobs', profiling.terrainSelection?.worker?.inFlightJobs);
         recordMetric('terrain.activeChunkCount', profiling.terrainSelection?.activeChunkCount);
+        recordMetric('terrain.leafReadyWaitP95Ms', profiling.terrainSelection?.leafResponsiveness?.readyWaitMs?.p95Ms);
+        recordMetric('terrain.blockingLeafReadyWaitP95Ms', profiling.terrainSelection?.leafResponsiveness?.blockingReadyWaitMs?.p95Ms);
+        recordMetric('terrain.pendingLeafAgeP95Ms', profiling.terrainSelection?.leafResponsiveness?.pendingAgeMs?.p95Ms);
+        recordMetric('terrain.pendingBlockingLeafAgeP95Ms', profiling.terrainSelection?.leafResponsiveness?.pendingBlockingAgeMs?.p95Ms);
         recordMetric('render.sceneMs', renderPassTimings.renderScene);
         recordMetric('render.smaaMs', renderPassTimings.smaa);
         recordMetric('render.bloomMs', renderPassTimings.bloom);
@@ -253,6 +263,8 @@ export function createPerformanceCollector({
                     blockingChunkCount: profiling.terrainSelection.blockingChunkCount ?? null,
                     selectedNodeCount: profiling.terrainSelection.selectedNodeCount ?? null,
                     queueDepths: profiling.terrainSelection.queueDepths ?? null,
+                    leafResponsiveness: profiling.terrainSelection.leafResponsiveness ?? null,
+                    leafBuildBreakdown: profiling.terrainSelection.leafBuildBreakdown ?? null,
                     chunkStates: profiling.terrainSelection.chunkStates ?? null,
                     worker: profiling.terrainSelection.worker ?? null,
                     generation: profiling.terrainSelection.generation ?? null,
@@ -377,6 +389,8 @@ export function createPerformanceCollector({
                     blockingLeafStates: profiling.terrainSelection.blockingLeafStates ?? null,
                     selectionRegion: profiling.terrainSelection.quadtreeSelectionRegion ?? null,
                     queueDepths: profiling.terrainSelection.queueDepths ?? null,
+                    leafResponsiveness: profiling.terrainSelection.leafResponsiveness ?? null,
+                    leafBuildBreakdown: profiling.terrainSelection.leafBuildBreakdown ?? null,
                     chunkStates: profiling.terrainSelection.chunkStates ?? null,
                     worker: profiling.terrainSelection.worker ?? null,
                     generation: profiling.terrainSelection.generation ?? null,

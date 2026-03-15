@@ -192,6 +192,7 @@ test.describe('fsim perf e2e', () => {
         expect(report.metadata.captureStartMode).toMatch(/steady_state_gate|fallback_delay/);
         expect(report.profiling).not.toBeNull();
         expect(report.profiling.terrainSelection.queueDepths).not.toBeNull();
+        expect(report.profiling.terrainSelection.leafResponsiveness).not.toBeNull();
         expect(report.profiling.startupTimeline).not.toBeNull();
         if (report.framesCaptured > 0) {
             expect(report.metrics['frameMs']).not.toBeNull();

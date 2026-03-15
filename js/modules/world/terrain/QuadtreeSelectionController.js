@@ -14,7 +14,7 @@ function makeRegion(centerX, centerZ, radius) {
 function distanceToNodeBounds(node, x, z) {
     const dx = x < node.minX ? node.minX - x : (x > node.maxX ? x - node.maxX : 0);
     const dz = z < node.minZ ? node.minZ - z : (z > node.maxZ ? z - node.maxZ : 0);
-    return Math.hypot(dx, dz);
+    return Math.sqrt(dx * dx + dz * dz);
 }
 
 function getChunkLodForNodeSize(nodeSize, chunkSize) {
@@ -50,11 +50,10 @@ export function createQuadtreeSelectionController({
         return Math.max(minNodeSize, distance * distanceFactor);
     }
 
-    function shouldSplitNode(node, cameraX, cameraZ, targetDepth, minNodeSize, distanceFactor) {
+    function shouldSplitNode(node, distance, targetDepth, minNodeSize, distanceFactor) {
         if (node.type !== 'branch') return false;
         if (node.depth !== null && node.depth >= targetDepth) return false;
         if (node.size <= minNodeSize) return false;
-        const distance = distanceToNodeBounds(node, cameraX, cameraZ);
         const desiredNodeSize = getDesiredNodeSize(distance, minNodeSize, distanceFactor);
         return node.size > desiredNodeSize;
     }
@@ -75,13 +74,17 @@ export function createQuadtreeSelectionController({
         const selectedLeaves = [];
         const selectedLeafIds = new Set();
         const blockingLeafIds = new Set();
-        const stack = [{ nodeId: 0, depth: 0 }];
+        const rootNode = sampler.getNode(0, 0);
+        const rootDist = rootNode ? distanceToNodeBounds(rootNode, cameraX, cameraZ) : 0;
+        const stack = [0, 0, rootDist];
         const targetDepth = Number.isFinite(maxSelectionDepth) ? maxSelectionDepth : Infinity;
         const effectiveMinCellSize = clampPositive(minCellSize, resolvedMinCellSize);
         const effectiveSplitDistanceFactor = clampPositive(splitDistanceFactor, resolvedSplitDistanceFactor);
 
         while (stack.length > 0) {
-            const { nodeId, depth } = stack.pop();
+            const nodeDistance = stack.pop();
+            const depth = stack.pop();
+            const nodeId = stack.pop();
             const node = sampler.getNode(nodeId, depth);
             if (!node || !sampler.intersectsAabb(nodeId, region.minX, region.minZ, region.maxX, region.maxZ, depth)) {
                 continue;
@@ -89,19 +92,35 @@ export function createQuadtreeSelectionController({
 
             const split = node.type === 'branch'
                 && depth < targetDepth
-                && shouldSplitNode(node, cameraX, cameraZ, targetDepth, effectiveMinCellSize, effectiveSplitDistanceFactor);
+                && shouldSplitNode(node, nodeDistance, targetDepth, effectiveMinCellSize, effectiveSplitDistanceFactor);
 
             if (split) {
-                const children = sampler.getNodeChildren(nodeId, depth)
-                    .sort((a, b) => distanceToNodeBounds(a, cameraX, cameraZ) - distanceToNodeBounds(b, cameraX, cameraZ));
+                const children = sampler.getNodeChildren(nodeId, depth);
+                const childrenDists = new Float64Array(children.length);
+                for (let i = 0; i < children.length; i++) {
+                    childrenDists[i] = distanceToNodeBounds(children[i], cameraX, cameraZ);
+                }
+                
+                for (let i = 1; i < children.length; i++) {
+                    const keyChild = children[i];
+                    const keyDist = childrenDists[i];
+                    let j = i - 1;
+                    while (j >= 0 && childrenDists[j] > keyDist) {
+                        children[j + 1] = children[j];
+                        childrenDists[j + 1] = childrenDists[j];
+                        j -= 1;
+                    }
+                    children[j + 1] = keyChild;
+                    childrenDists[j + 1] = keyDist;
+                }
+
                 for (let index = children.length - 1; index >= 0; index -= 1) {
-                    stack.push({ nodeId: children[index].id, depth: depth + 1 });
+                    stack.push(children[index].id, depth + 1, childrenDists[index]);
                 }
                 continue;
             }
 
             const nodeChunkKeys = sampler.mapNodeToChunkKeys(nodeId, resolvedChunkSize, depth);
-            const nodeDistance = distanceToNodeBounds(node, cameraX, cameraZ);
             const blockingReady = nodeDistance <= blockingRadius;
             const chunkLod = getChunkLodForNodeSize(node.size, resolvedChunkSize);
 

@@ -64,7 +64,9 @@ export function cityHubInfluence(vx, vz) {
             const radius = 2600 + hash2(cx, cz, 4) * 5200;
             const intensity = 0.45 + hash2(cx, cz, 5) * 0.55;
 
-            const d = Math.hypot(vx - centerX, vz - centerZ);
+            const dx = vx - centerX;
+            const dz = vz - centerZ;
+            const d = Math.sqrt(dx * dx + dz * dz);
             const local = Math.max(0, 1 - d / radius) * intensity;
             influence = Math.max(influence, local);
         }
@@ -297,9 +299,10 @@ export class QuadtreeMapSampler {
             leavesOnly = false
         } = options;
 
-        const stack = [{ nodeId: startNodeId, depth: 0 }];
+        const stack = [startNodeId, 0];
         while (stack.length > 0) {
-            const { nodeId, depth } = stack.pop();
+            const depth = stack.pop();
+            const nodeId = stack.pop();
             const node = this.getNode(nodeId, depth);
             if (!node) continue;
 
@@ -323,7 +326,7 @@ export class QuadtreeMapSampler {
             }
 
             for (let index = node.childIds.length - 1; index >= 0; index -= 1) {
-                stack.push({ nodeId: node.childIds[index], depth: depth + 1 });
+                stack.push(node.childIds[index], depth + 1);
             }
         }
     }
@@ -336,10 +339,11 @@ export class QuadtreeMapSampler {
             minNodeSize = 0,
             startNodeId = 0
         } = options;
-        const stack = [{ nodeId: startNodeId, depth: 0 }];
+        const stack = [startNodeId, 0];
 
         while (stack.length > 0) {
-            const { nodeId, depth } = stack.pop();
+            const depth = stack.pop();
+            const nodeId = stack.pop();
             const node = this.getNode(nodeId, depth);
             if (!node || !this.intersectsAabb(nodeId, region.minX, region.minZ, region.maxX, region.maxZ, depth)) {
                 continue;
@@ -355,7 +359,7 @@ export class QuadtreeMapSampler {
             }
 
             for (let index = node.childIds.length - 1; index >= 0; index -= 1) {
-                stack.push({ nodeId: node.childIds[index], depth: depth + 1 });
+                stack.push(node.childIds[index], depth + 1);
             }
         }
     }
