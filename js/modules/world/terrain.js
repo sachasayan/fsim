@@ -374,6 +374,7 @@ export function createTerrainSystem({
     const surfaceWeights = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
     const surfaceOverrides = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
     const segmentSize = node.size / resolution;
+    const gridStride = stride;
 
     for (let z = 0; z < stride; z += 1) {
       for (let x = 0; x < stride; x += 1) {
@@ -382,16 +383,17 @@ export function createTerrainSystem({
         const worldX = node.minX + x * segmentSize;
         const worldZ = node.minZ + z * segmentSize;
         const height = materialKind === 'terrain' ? heights[index] : SEA_LEVEL;
-        const sampleDist = Math.max(12, node.size / Math.max(1, resolution));
+        const rightIndex = z * gridStride + Math.min(resolution, x + 1);
+        const downIndex = Math.min(resolution, z + 1) * gridStride + x;
         const slope = materialKind === 'terrain'
           ? Math.max(
-            Math.abs(sampler.getAltitudeAt(Math.min(node.maxX, worldX + sampleDist), worldZ) - height),
-            Math.abs(sampler.getAltitudeAt(worldX, Math.min(node.maxZ, worldZ + sampleDist)) - height)
-          ) / sampleDist
+            Math.abs(heights[rightIndex] - heights[index]),
+            Math.abs(heights[downIndex] - heights[index])
+          ) / Math.max(1e-3, segmentSize)
           : 0;
         const color = materialKind === 'terrain'
           ? srgbArrayToLinear(getTerrainBaseSrgb(height))
-          : srgbArrayToLinear(getWaterDepthSrgb(Math.max(0, SEA_LEVEL - sampler.getAltitudeAt(worldX, worldZ))));
+          : srgbArrayToLinear(getWaterDepthSrgb(Math.max(0, SEA_LEVEL - heights[index])));
 
         positions[positionIndex] = x * segmentSize;
         positions[positionIndex + 1] = height;
@@ -956,7 +958,7 @@ export function createTerrainSystem({
     terrainMesh.receiveShadow = true;
     terrainMesh.position.set(node.minX, 0, node.minZ);
 
-    const waterDepthTexture = createWaterDepthTexture(node, sampler, 64);
+    const waterDepthTexture = createWaterDepthTexture(node, sampler, bootstrapMode ? 32 : 64);
     const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, node);
     const waterMesh = new THREE.Mesh(waterGeometry, leafWaterMaterial);
     waterMesh.receiveShadow = leafState.chunkLod === 0;
@@ -1733,10 +1735,12 @@ export function createTerrainSystem({
     }
     const queuePruneMs = performance.now() - queuePruneStartedAtMs;
     const buildBudgetBase = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
-    const propBuildBudgetBase = pendingPropBuilds.length > 160 ? 2 : 1;
+    const leafBuildBudgetBase = pendingLeafBuilds.length > 200 ? 4 : pendingLeafBuilds.length > 120 ? 3 : 2;
+    const propBuildBudgetBase = pendingPropBuilds.length > 160 ? 3 : pendingPropBuilds.length > 80 ? 2 : 1;
     const buildBudget = buildBudgetBase * (_isFastLoad ? 40 : bootstrapMode ? 2 : 1);
-    const propBuildBudget = propBuildBudgetBase * (_isFastLoad ? 80 : bootstrapMode ? 2 : 1);
-    const leafBuildStats = processLeafBuildQueue(buildBudgetBase);
+    const leafBuildBudget = leafBuildBudgetBase * (_isFastLoad ? 24 : bootstrapMode ? 4 : 1);
+    const propBuildBudget = propBuildBudgetBase * (_isFastLoad ? 80 : bootstrapMode ? (pendingChunkBuilds.length === 0 ? 6 : 3) : 1);
+    const leafBuildStats = processLeafBuildQueue(leafBuildBudget);
     const chunkBuildStats = processChunkBuildQueue(buildBudget);
     const propBuildStats = processPropBuildQueue(propBuildBudget);
     refreshTerrainSelectionDiagnostics();
