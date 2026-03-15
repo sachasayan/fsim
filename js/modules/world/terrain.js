@@ -660,17 +660,27 @@ export function createTerrainSystem({
       terrainMesh: null,
       waterMesh: null,
       waterDepthTexture: null,
+      surfaceResolution: null,
+      surfaceProfile: 'full',
       buildVersion: 0,
       retired: false
     };
   }
 
-  function getNativeSurfaceResolution(nodeSize) {
-    if (nodeSize <= terrainDebugSettings.resolution32MaxNodeSize) return 32;
-    if (nodeSize <= terrainDebugSettings.resolution16MaxNodeSize) return 16;
-    if (nodeSize <= terrainDebugSettings.resolution8MaxNodeSize) return 8;
-    if (nodeSize <= terrainDebugSettings.resolution4MaxNodeSize) return 4;
-    return 2;
+  function getNativeSurfaceResolution(nodeSize, { bootstrapBlocking = false } = {}) {
+    let resolution = 2;
+    if (nodeSize <= terrainDebugSettings.resolution32MaxNodeSize) resolution = 32;
+    else if (nodeSize <= terrainDebugSettings.resolution16MaxNodeSize) resolution = 16;
+    else if (nodeSize <= terrainDebugSettings.resolution8MaxNodeSize) resolution = 8;
+    else if (nodeSize <= terrainDebugSettings.resolution4MaxNodeSize) resolution = 4;
+
+    if (bootstrapMode && bootstrapBlocking) {
+      if (resolution >= 32) return 16;
+      if (resolution >= 16) return 8;
+      if (resolution >= 8) return 4;
+    }
+
+    return resolution;
   }
 
   function normalizeTerrainDebugSettings() {
@@ -928,8 +938,14 @@ export function createTerrainSystem({
       return;
     }
 
+    if (leafState.terrainMesh || leafState.waterMesh) {
+      disposeLeafRuntimeLeaf(leafState);
+    }
+
     const node = sampler.getNode(leafState.nodeId, leafState.depth);
-    const surfaceResolution = getNativeSurfaceResolution(node?.size ?? CHUNK_SIZE);
+    const surfaceResolution = getNativeSurfaceResolution(node?.size ?? CHUNK_SIZE, {
+      bootstrapBlocking: leafState.blockingReady
+    });
     const decoded = sampleNodeHeightGrid(sampler, node, surfaceResolution, leafState.depth);
     if (!node || !decoded) {
       leafState.state = 'error';
@@ -958,7 +974,7 @@ export function createTerrainSystem({
     terrainMesh.receiveShadow = true;
     terrainMesh.position.set(node.minX, 0, node.minZ);
 
-    const waterDepthTexture = createWaterDepthTexture(node, sampler, bootstrapMode ? 32 : 64);
+    const waterDepthTexture = createWaterDepthTexture(node, sampler, (bootstrapMode && leafState.blockingReady) ? 16 : (bootstrapMode ? 32 : 64));
     const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, node);
     const waterMesh = new THREE.Mesh(waterGeometry, leafWaterMaterial);
     waterMesh.receiveShadow = leafState.chunkLod === 0;
@@ -967,6 +983,8 @@ export function createTerrainSystem({
     leafState.terrainMesh = terrainMesh;
     leafState.waterMesh = waterMesh;
     leafState.waterDepthTexture = waterDepthTexture;
+    leafState.surfaceResolution = surfaceResolution;
+    leafState.surfaceProfile = (bootstrapMode && leafState.blockingReady) ? 'bootstrap' : 'full';
     leafState.state = 'surface_ready';
     scene.add(terrainMesh);
     scene.add(waterMesh);
@@ -1435,7 +1453,13 @@ export function createTerrainSystem({
         leafState.blockingReady = nextBlockingLeafIds.has(leaf.leafId);
         leafState.chunkKeys = [...(leaf.chunkKeys || [])];
         leafState.retired = false;
+        const desiredResolution = getNativeSurfaceResolution(leaf.size ?? CHUNK_SIZE, {
+          bootstrapBlocking: nextBlockingLeafIds.has(leaf.leafId)
+        });
         if (changedNode && leafState.terrainMesh) {
+          leafState.state = 'pending_surface';
+          enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+        } else if (leafState.state === 'surface_ready' && leafState.surfaceResolution !== desiredResolution) {
           leafState.state = 'pending_surface';
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
         }
