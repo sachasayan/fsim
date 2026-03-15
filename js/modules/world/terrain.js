@@ -29,6 +29,7 @@ import {
 import {
   generateChunkBase as genBase,
   generateChunkProps as genProps,
+  getTerrainGenerationDiagnostics,
   getOverlappingDistricts,
   loadStaticWorld,
   CHUNK_SIZE
@@ -37,6 +38,143 @@ import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsFor
 import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionController.js';
 import { debugLog } from '../core/logging.js';
 import { createRuntimeLodSettings } from './LodSystem.js';
+
+export function createRiverStripGeometry(points, width, sampler, widths = null) {
+  if (!Array.isArray(points) || points.length < 2 || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
+  const cleanedPoints = [];
+  const cleanedWidths = [];
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    if (!Array.isArray(point) || point.length < 2) continue;
+    const x = Number(point[0]);
+    const z = Number(point[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+    const localWidth = Array.isArray(widths) && Number.isFinite(widths[index]) ? Number(widths[index]) : Number(width);
+    if (!Number.isFinite(localWidth)) continue;
+    const lastPoint = cleanedPoints[cleanedPoints.length - 1];
+    if (lastPoint && lastPoint[0] === x && lastPoint[1] === z) {
+      cleanedWidths[cleanedWidths.length - 1] = Math.max(cleanedWidths[cleanedWidths.length - 1], localWidth);
+      continue;
+    }
+    cleanedPoints.push([x, z]);
+    cleanedWidths.push(localWidth);
+  }
+
+  if (cleanedPoints.length < 2) return null;
+
+  const positions = [];
+  const indices = [];
+  let vertexBase = 0;
+
+  function findDistinctPoint(startIndex, direction) {
+    const origin = cleanedPoints[startIndex];
+    let cursor = startIndex + direction;
+    while (cursor >= 0 && cursor < cleanedPoints.length) {
+      const point = cleanedPoints[cursor];
+      if (point[0] !== origin[0] || point[1] !== origin[1]) return point;
+      cursor += direction;
+    }
+    return origin;
+  }
+
+  for (let index = 0; index < cleanedPoints.length; index += 1) {
+    const [x, z] = cleanedPoints[index];
+    const prev = index === 0 ? cleanedPoints[index] : findDistinctPoint(index, -1);
+    const next = index === cleanedPoints.length - 1 ? cleanedPoints[index] : findDistinctPoint(index, 1);
+    const dx = next[0] - prev[0];
+    const dz = next[1] - prev[1];
+    const length = Math.hypot(dx, dz);
+    if (!Number.isFinite(length) || length <= 1e-3) continue;
+
+    const nx = -dz / length;
+    const nz = dx / length;
+    const halfWidth = Math.max(4, cleanedWidths[index] * 0.5);
+    const y = sampler.getAltitudeAt(x, z) + 0.65;
+
+    positions.push(x + nx * halfWidth, y, z + nz * halfWidth);
+    positions.push(x - nx * halfWidth, y, z - nz * halfWidth);
+
+    if (vertexBase >= 2) {
+      const base = vertexBase - 2;
+      indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    }
+    vertexBase += 2;
+  }
+
+  if (positions.length < 12 || indices.length < 6) return null;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function createLakeSurfaceGeometry(lake, sampler, options = {}) {
+  if (!lake || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
+  const centerX = Number(lake.x);
+  const centerZ = Number(lake.z);
+  const maxRadius = Number(lake.radius);
+  if (!Number.isFinite(centerX) || !Number.isFinite(centerZ) || !Number.isFinite(maxRadius) || maxRadius <= 0) return null;
+
+  const baseLevel = Number.isFinite(lake.level) ? Number(lake.level) : sampler.getAltitudeAt(centerX, centerZ) + 0.2;
+  if (!Number.isFinite(baseLevel)) return null;
+
+  const segments = Math.max(18, Math.round(options.segments ?? 40));
+  const radialSteps = Math.max(6, Math.round(options.radialSteps ?? 12));
+  const shorelinePadding = Number.isFinite(options.shorelinePadding) ? options.shorelinePadding : 0.35;
+  const minRenderableRadius = Number.isFinite(options.minRenderableRadius) ? options.minRenderableRadius : 18;
+
+  const centerGround = sampler.getAltitudeAt(centerX, centerZ);
+  const waterLevel = Math.max(baseLevel, centerGround + 0.08);
+  const positions = [centerX, waterLevel, centerZ];
+  const indices = [];
+  const shoreline = [];
+
+  for (let segment = 0; segment < segments; segment += 1) {
+    const angle = (segment / segments) * Math.PI * 2;
+    let shorelineRadius = 0;
+
+    for (let stepIndex = 1; stepIndex <= radialSteps; stepIndex += 1) {
+      const t = stepIndex / radialSteps;
+      const radius = maxRadius * t;
+      const x = centerX + Math.cos(angle) * radius;
+      const z = centerZ + Math.sin(angle) * radius;
+      const terrainY = sampler.getAltitudeAt(x, z);
+      if (terrainY <= waterLevel + shorelinePadding) {
+        shorelineRadius = radius;
+      } else {
+        break;
+      }
+    }
+
+    shoreline.push(shorelineRadius);
+  }
+
+  const maxShorelineRadius = shoreline.reduce((best, radius) => Math.max(best, radius), 0);
+  if (maxShorelineRadius < minRenderableRadius) return null;
+
+  for (let segment = 0; segment < segments; segment += 1) {
+    const radius = shoreline[segment];
+    const angle = (segment / segments) * Math.PI * 2;
+    const x = centerX + Math.cos(angle) * radius;
+    const z = centerZ + Math.sin(angle) * radius;
+    positions.push(x, waterLevel, z);
+  }
+
+  for (let segment = 0; segment < segments; segment += 1) {
+    const current = segment + 1;
+    const next = ((segment + 1) % segments) + 1;
+    indices.push(0, current, next);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 export function createTerrainSystem({
   scene,
@@ -146,40 +284,6 @@ export function createTerrainSystem({
     }
   }
 
-  function createRiverStripGeometry(points, width, sampler, widths = null) {
-    if (!Array.isArray(points) || points.length < 2) return null;
-    const positions = [];
-    const indices = [];
-
-    for (let index = 0; index < points.length; index += 1) {
-      const [x, z] = points[index];
-      const prev = points[Math.max(0, index - 1)];
-      const next = points[Math.min(points.length - 1, index + 1)];
-      const dx = next[0] - prev[0];
-      const dz = next[1] - prev[1];
-      const length = Math.hypot(dx, dz) || 1;
-      const nx = -dz / length;
-      const nz = dx / length;
-      const localWidth = Array.isArray(widths) && Number.isFinite(widths[index]) ? widths[index] : width;
-      const halfWidth = Math.max(4, localWidth * 0.5);
-      const y = sampler.getAltitudeAt(x, z) + 0.65;
-
-      positions.push(x + nx * halfWidth, y, z + nz * halfWidth);
-      positions.push(x - nx * halfWidth, y, z - nz * halfWidth);
-
-      if (index < points.length - 1) {
-        const base = index * 2;
-        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
-      }
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    return geometry;
-  }
-
   function rebuildHydrologyMeshes() {
     clearHydrologyMeshes();
     const sampler = getStaticSampler();
@@ -188,12 +292,9 @@ export function createTerrainSystem({
     if (!sampler || !hydrology) return;
 
     for (const lake of hydrology.lakes || []) {
-      if (!Number.isFinite(lake?.radius) || lake.radius <= 0) continue;
-      const geometry = new THREE.CircleGeometry(lake.radius, 48);
-      geometry.rotateX(-Math.PI / 2);
+      const geometry = createLakeSurfaceGeometry(lake, sampler);
+      if (!geometry) continue;
       const mesh = new THREE.Mesh(geometry, hydrologyLakeMaterial);
-      const y = Math.max(lake.level ?? SEA_LEVEL, sampler.getAltitudeAt(lake.x, lake.z) + 0.55);
-      mesh.position.set(lake.x, y, lake.z);
       hydrologyGroup.add(mesh);
     }
 
@@ -458,6 +559,20 @@ export function createTerrainSystem({
     selectedNodeCount: 0,
     blockingLeafStates: [],
     quadtreeSelectionRegion: null
+  };
+  const terrainPerfState = {
+    lastUpdate: {
+      selectionBuildMs: 0,
+      queueSchedulingMs: 0,
+      queuePruneMs: 0,
+      leafBuildMs: 0,
+      chunkBuildQueueMs: 0,
+      propBuildQueueMs: 0,
+      totalMs: 0,
+      leafBuilds: 0,
+      chunkBuildsStarted: 0,
+      propBuildsStarted: 0
+    }
   };
   const terrainDetailTex = createPackedTerrainDetailTexture();
   const roadMarkingOverlay = new RoadMarkingOverlay({
@@ -856,7 +971,10 @@ export function createTerrainSystem({
   }
 
   function processLeafBuildQueue(maxBuildsPerFrame = 4) {
-    if (pendingLeafBuilds.length === 0) return;
+    const startedAtMs = performance.now();
+    if (pendingLeafBuilds.length === 0) {
+      return { durationMs: 0, builds: 0 };
+    }
     if (pendingLeafQueueDirty) {
       pendingLeafBuilds.sort((a, b) => b.priority - a.priority);
       pendingLeafQueueDirty = false;
@@ -872,6 +990,11 @@ export function createTerrainSystem({
       buildNativeLeafSurface(leafState);
       builds += 1;
     }
+
+    return {
+      durationMs: performance.now() - startedAtMs,
+      builds
+    };
   }
 
   // Load static world data after uniforms exist so the moving road-marking atlas can populate immediately.
@@ -1442,7 +1565,10 @@ export function createTerrainSystem({
   }
 
   function processChunkBuildQueue(maxBuildsPerFrame = 2) {
-    if (pendingChunkBuilds.length === 0) return;
+    const startedAtMs = performance.now();
+    if (pendingChunkBuilds.length === 0) {
+      return { durationMs: 0, builds: 0 };
+    }
     if (pendingQueueDirty) { pendingChunkBuilds.sort((a, b) => b.priority - a.priority); pendingQueueDirty = false; }
     let builds = 0;
     while (builds < maxBuildsPerFrame && pendingChunkBuilds.length > 0) {
@@ -1486,10 +1612,18 @@ export function createTerrainSystem({
         if (current && current.state === 'building_base') current.state = 'error';
       });
     }
+
+    return {
+      durationMs: performance.now() - startedAtMs,
+      builds
+    };
   }
 
   function processPropBuildQueue(maxBuildsPerFrame = 1) {
-    if (pendingPropBuilds.length === 0) return;
+    const startedAtMs = performance.now();
+    if (pendingPropBuilds.length === 0) {
+      return { durationMs: 0, builds: 0 };
+    }
     if (pendingPropQueueDirty) { pendingPropBuilds.sort((a, b) => b.priority - a.priority); pendingPropQueueDirty = false; }
     let builds = 0;
     while (builds < maxBuildsPerFrame && pendingPropBuilds.length > 0) {
@@ -1533,6 +1667,11 @@ export function createTerrainSystem({
         }
       });
     }
+
+    return {
+      durationMs: performance.now() - startedAtMs,
+      builds
+    };
   }
 
   let lastProcessedChunkX = -999999;
@@ -1540,12 +1679,14 @@ export function createTerrainSystem({
   let lastReady = false;
 
   function updateTerrain() {
+    const updateStartedAtMs = performance.now();
     const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
     const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
 
     lastProcessedChunkX = px;
     lastProcessedChunkZ = pz;
 
+    const selectionStartedAtMs = performance.now();
     const selectionState = buildQuadtreeActiveChunks(px, pz);
     const activeChunks = smoothActiveChunkLods(selectionState.activeChunks);
     updateLeafChunkLods(selectionState.selectedLeaves, activeChunks);
@@ -1556,7 +1697,9 @@ export function createTerrainSystem({
       selectionState.selectionRegion || null,
       selectionState.mode || (bootstrapMode ? 'grid_bootstrap' : 'grid_fallback')
     );
+    const selectionBuildMs = performance.now() - selectionStartedAtMs;
 
+    const queueSchedulingStartedAtMs = performance.now();
     for (const [key, lod] of activeChunks.entries()) {
       const [cxRaw, czRaw] = key.split(',');
       const cx = Number(cxRaw.trim());
@@ -1569,7 +1712,9 @@ export function createTerrainSystem({
         if (chunkState.lod !== lod) enqueueChunkBuild(cx, cz, lod, priority + 0.25);
       }
     }
+    const queueSchedulingMs = performance.now() - queueSchedulingStartedAtMs;
 
+    const queuePruneStartedAtMs = performance.now();
     for (let i = pendingChunkBuilds.length - 1; i >= 0; i--) {
       const job = pendingChunkBuilds[i];
       if (!chunkLeafOwners.has(job.key)) { pendingChunkKeys.delete(job.key); pendingChunkBuilds.splice(i, 1); pendingQueueDirty = true; }
@@ -1586,14 +1731,27 @@ export function createTerrainSystem({
         terrainChunks.delete(key);
       }
     }
+    const queuePruneMs = performance.now() - queuePruneStartedAtMs;
     const buildBudgetBase = pendingChunkBuilds.length > 160 ? 4 : pendingChunkBuilds.length > 80 ? 3 : 2;
     const propBuildBudgetBase = pendingPropBuilds.length > 160 ? 2 : 1;
     const buildBudget = buildBudgetBase * (_isFastLoad ? 40 : bootstrapMode ? 2 : 1);
     const propBuildBudget = propBuildBudgetBase * (_isFastLoad ? 80 : bootstrapMode ? 2 : 1);
-    processLeafBuildQueue(buildBudgetBase);
-    processChunkBuildQueue(buildBudget);
-    processPropBuildQueue(propBuildBudget);
+    const leafBuildStats = processLeafBuildQueue(buildBudgetBase);
+    const chunkBuildStats = processChunkBuildQueue(buildBudget);
+    const propBuildStats = processPropBuildQueue(propBuildBudget);
     refreshTerrainSelectionDiagnostics();
+    terrainPerfState.lastUpdate = {
+      selectionBuildMs,
+      queueSchedulingMs,
+      queuePruneMs,
+      leafBuildMs: leafBuildStats.durationMs,
+      chunkBuildQueueMs: chunkBuildStats.durationMs,
+      propBuildQueueMs: propBuildStats.durationMs,
+      totalMs: performance.now() - updateStartedAtMs,
+      leafBuilds: leafBuildStats.builds,
+      chunkBuildsStarted: chunkBuildStats.builds,
+      propBuildsStarted: propBuildStats.builds
+    };
 
     if (pendingChunkKeys.size > 0 || pendingPropKeys.size > 0) {
       debugLog(`[terrain] Pending chunks: ${pendingChunkKeys.size}, Pending props: ${pendingPropKeys.size}`);
@@ -1604,6 +1762,45 @@ export function createTerrainSystem({
       }
       lastReady = ready;
     }
+
+    return getTerrainSelectionDiagnostics();
+  }
+
+  function getChunkStateCounts() {
+    const counts = {
+      building_base: 0,
+      base_done: 0,
+      building_props: 0,
+      done: 0,
+      error: 0,
+      other: 0
+    };
+
+    for (const chunkState of terrainChunks.values()) {
+      const key = chunkState?.state;
+      if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
+      else counts.other += 1;
+    }
+
+    return counts;
+  }
+
+  function getTerrainSelectionDiagnostics() {
+    const generationDiagnostics = getTerrainGenerationDiagnostics();
+    return {
+      ...lastTerrainSelection,
+      blockingChunkCount: lastTerrainSelection.blockingChunkCount,
+      activeChunkCount: chunkLeafOwners.size,
+      queueDepths: {
+        pendingBaseChunkJobs: pendingChunkBuilds.length,
+        pendingPropJobs: pendingPropBuilds.length,
+        pendingLeafBuilds: pendingLeafBuilds.length
+      },
+      chunkStates: getChunkStateCounts(),
+      worker: generationDiagnostics.worker,
+      generation: generationDiagnostics.generation,
+      timings: { ...terrainPerfState.lastUpdate }
+    };
   }
 
   function updateTerrainAtmosphere(camera, weatherColor = null) {
@@ -1949,11 +2146,7 @@ export function createTerrainSystem({
     getTerrainHeight: getTerrainHeightWithNoise,
     updateTerrain,
     updateTerrainAtmosphere,
-    getTerrainSelectionDiagnostics: () => ({
-      ...lastTerrainSelection,
-      blockingChunkCount: lastTerrainSelection.blockingChunkCount,
-      activeChunkCount: chunkLeafOwners.size
-    }),
+    getTerrainSelectionDiagnostics,
     terrainDebugSettings,
     roadMarkingDebugSettings,
     applyTerrainDebugSettings,

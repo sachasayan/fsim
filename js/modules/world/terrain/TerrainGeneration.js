@@ -13,6 +13,47 @@ export const TREE_DENSITY_MULTIPLIER = 8.0;
 let _districtIndex = null;
 let _staticWorldBuffer = null;
 let _workerManager = null;
+const _generationPerf = {
+    chunkBase: {
+        count: 0,
+        workerMs: null,
+        applyMs: null,
+        avgWorkerMs: 0,
+        avgApplyMs: 0,
+        maxWorkerMs: 0,
+        maxApplyMs: 0
+    },
+    chunkProps: {
+        count: 0,
+        workerMs: null,
+        applyMs: null,
+        avgWorkerMs: 0,
+        avgApplyMs: 0,
+        maxWorkerMs: 0,
+        maxApplyMs: 0
+    }
+};
+
+function roundPerf(value) {
+    return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+}
+
+function recordGenerationPerf(kind, { workerMs = null, applyMs = null } = {}) {
+    const bucket = _generationPerf[kind];
+    if (!bucket) return;
+
+    bucket.count += 1;
+    if (Number.isFinite(workerMs)) {
+        bucket.workerMs = workerMs;
+        bucket.avgWorkerMs = ((bucket.avgWorkerMs * (bucket.count - 1)) + workerMs) / bucket.count;
+        bucket.maxWorkerMs = Math.max(bucket.maxWorkerMs, workerMs);
+    }
+    if (Number.isFinite(applyMs)) {
+        bucket.applyMs = applyMs;
+        bucket.avgApplyMs = ((bucket.avgApplyMs * (bucket.count - 1)) + applyMs) / bucket.count;
+        bucket.maxApplyMs = Math.max(bucket.maxApplyMs, applyMs);
+    }
+}
 
 export function clearStaticWorldCache() {
     _staticWorldBuffer = null;
@@ -71,6 +112,26 @@ function dispatchWorker(type, payload, transferables = []) {
         _workerManager = initWorkerManager(_staticWorldBuffer);
     }
     return _workerManager.dispatchWorker(type, payload, transferables);
+}
+
+export function getTerrainGenerationDiagnostics() {
+    return {
+        worker: _workerManager?.getDiagnostics?.() || {
+            activeWorkerCount: 0,
+            inFlightJobs: 0,
+            inFlightByType: {},
+            jobs: {}
+        },
+        generation: Object.fromEntries(Object.entries(_generationPerf).map(([key, value]) => [key, {
+            count: value.count,
+            workerMs: roundPerf(value.workerMs),
+            applyMs: roundPerf(value.applyMs),
+            avgWorkerMs: roundPerf(value.avgWorkerMs),
+            avgApplyMs: roundPerf(value.avgApplyMs),
+            maxWorkerMs: roundPerf(value.maxWorkerMs),
+            maxApplyMs: roundPerf(value.maxApplyMs)
+        }]))
+    };
 }
 
 export async function generateChunkBase(cx, cz, lod, ctx) {
@@ -137,12 +198,16 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         payload.wCols.buffer
     ];
 
+    const workerStartMs = performance.now();
     const result = await dispatchWorker('chunkBase', payload, transferables);
+    const workerMs = performance.now() - workerStartMs;
 
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) {
+        recordGenerationPerf('chunkBase', { workerMs });
         return chunkGroup;
     }
 
+    const applyStartMs = performance.now();
     tGeo.attributes.position.array.set(result.positions);
     tGeo.attributes.position.needsUpdate = true;
     tGeo.attributes.normal.array.set(result.normals);
@@ -160,6 +225,11 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     wGeo.attributes.normal.needsUpdate = true;
     wGeo.attributes.color.array.set(result.wCols);
     wGeo.attributes.color.needsUpdate = true;
+
+    recordGenerationPerf('chunkBase', {
+        workerMs,
+        applyMs: performance.now() - applyStartMs
+    });
 
     return chunkGroup;
 }
@@ -389,11 +459,17 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const transferables = [payload.positions.buffer];
 
     const overlappingDistricts = await getOverlappingDistricts(cx, cz);
+    const workerStartMs = performance.now();
     const result = await dispatchWorker('chunkProps', payload, transferables);
+    const workerMs = performance.now() - workerStartMs;
 
-    if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) return;
+    if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) {
+        recordGenerationPerf('chunkProps', { workerMs });
+        return;
+    }
 
     const { treeInstances, buildingPositions, boatPositions } = result;
+    const applyStartMs = performance.now();
 
     if (overlappingDistricts.length > 0) {
         const loadedDistricts = await Promise.all(overlappingDistricts.map(district => loadDistrictChunk(district.id)));
@@ -432,6 +508,10 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                 mastMesh.instanceMatrix.needsUpdate = true;
                 chunkGroup.add(hullMesh, cabinMesh, mastMesh);
             }
+            recordGenerationPerf('chunkProps', {
+                workerMs,
+                applyMs: performance.now() - applyStartMs
+            });
             return;
         }
     }
@@ -519,9 +599,13 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
                     dummy.rotation.set(0, rot, 0);
                     dummy.updateMatrix();
                     hvacMesh.setMatrixAt(hvacIdx++, dummy.matrix);
-                }
-            }
         }
+    }
+    recordGenerationPerf('chunkProps', {
+        workerMs,
+        applyMs: performance.now() - applyStartMs
+    });
+}
         bldgMesh.instanceMatrix.needsUpdate = true;
         roofMesh.instanceMatrix.needsUpdate = true;
         if (podiumMesh) podiumMesh.instanceMatrix.needsUpdate = true;

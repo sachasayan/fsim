@@ -254,22 +254,6 @@
             "feather": 8,
             "points": [
                 [
-                    -514,
-                    727
-                ],
-                [
-                    -659,
-                    860
-                ]
-            ]
-        },
-        {
-            "kind": "taxiway",
-            "surface": "asphalt",
-            "width": 24,
-            "feather": 8,
-            "points": [
-                [
                     -201,
                     -1806
                 ],

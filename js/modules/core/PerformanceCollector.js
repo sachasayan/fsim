@@ -70,6 +70,11 @@ export function createPerformanceCollector({
         'memory.usedJsHeapMb',
         'adaptive.pixelRatio',
         'adaptive.frameTimeEmaMs',
+        'terrain.pendingBaseChunkJobs',
+        'terrain.pendingPropJobs',
+        'terrain.pendingLeafBuilds',
+        'terrain.inFlightWorkerJobs',
+        'terrain.activeChunkCount',
         'render.sceneMs',
         'render.smaaMs',
         'render.bloomMs',
@@ -187,6 +192,11 @@ export function createPerformanceCollector({
         recordMetric('renderer.programs', Array.isArray(info.programs) ? info.programs.length : 0);
         recordMetric('adaptive.pixelRatio', adaptive.pixelRatio);
         recordMetric('adaptive.frameTimeEmaMs', adaptive.frameTimeEmaMs);
+        recordMetric('terrain.pendingBaseChunkJobs', profiling.terrainSelection?.queueDepths?.pendingBaseChunkJobs);
+        recordMetric('terrain.pendingPropJobs', profiling.terrainSelection?.queueDepths?.pendingPropJobs);
+        recordMetric('terrain.pendingLeafBuilds', profiling.terrainSelection?.queueDepths?.pendingLeafBuilds);
+        recordMetric('terrain.inFlightWorkerJobs', profiling.terrainSelection?.worker?.inFlightJobs);
+        recordMetric('terrain.activeChunkCount', profiling.terrainSelection?.activeChunkCount);
         recordMetric('render.sceneMs', renderPassTimings.renderScene);
         recordMetric('render.smaaMs', renderPassTimings.smaa);
         recordMetric('render.bloomMs', renderPassTimings.bloom);
@@ -230,6 +240,10 @@ export function createPerformanceCollector({
                 lastTexturesChangeMsAgo: round(profiling.lastTexturesChangeMsAgo),
                 lastGeometriesChangeMsAgo: round(profiling.lastGeometriesChangeMsAgo),
                 quietWindowMs: round(profiling.quietWindowMs),
+                firstStableAtMs: round(profiling.firstStableAtMs),
+                timeBlockedByProgramsMs: round(profiling.timeBlockedByProgramsMs),
+                timeBlockedByTexturesMs: round(profiling.timeBlockedByTexturesMs),
+                timeBlockedByGeometriesMs: round(profiling.timeBlockedByGeometriesMs),
                 terrainSelection: profiling.terrainSelection ? {
                     mode: profiling.terrainSelection.mode ?? null,
                     selectedLeafCount: profiling.terrainSelection.selectedLeafCount ?? null,
@@ -237,7 +251,12 @@ export function createPerformanceCollector({
                     pendingBlockingLeafCount: profiling.terrainSelection.pendingBlockingLeafCount ?? null,
                     activeChunkCount: profiling.terrainSelection.activeChunkCount ?? null,
                     blockingChunkCount: profiling.terrainSelection.blockingChunkCount ?? null,
-                    selectedNodeCount: profiling.terrainSelection.selectedNodeCount ?? null
+                    selectedNodeCount: profiling.terrainSelection.selectedNodeCount ?? null,
+                    queueDepths: profiling.terrainSelection.queueDepths ?? null,
+                    chunkStates: profiling.terrainSelection.chunkStates ?? null,
+                    worker: profiling.terrainSelection.worker ?? null,
+                    generation: profiling.terrainSelection.generation ?? null,
+                    timings: profiling.terrainSelection.timings ?? null
                 } : null
             },
             renderPasses: {
@@ -302,6 +321,7 @@ export function createPerformanceCollector({
         return {
             ok: true,
             scenario: collection.scenario,
+            scenarioId: collection.metadata?.scenarioId ?? collection.scenario,
             sessionId: collection.sessionId,
             startedAtIso: collection.startedAtIso,
             durationMs: round(performance.now() - collection.startedAtMs),
@@ -341,6 +361,11 @@ export function createPerformanceCollector({
                 lastGeometriesChangeMsAgo: round(profiling.lastGeometriesChangeMsAgo),
                 quietWindowMs: round(profiling.quietWindowMs),
                 profilingReadyAtMs: round(profiling.profilingReadyAtMs),
+                firstStableAtMs: round(profiling.firstStableAtMs),
+                timeBlockedByProgramsMs: round(profiling.timeBlockedByProgramsMs),
+                timeBlockedByTexturesMs: round(profiling.timeBlockedByTexturesMs),
+                timeBlockedByGeometriesMs: round(profiling.timeBlockedByGeometriesMs),
+                startupTimeline: profiling.startupTimeline ? Object.fromEntries(Object.entries(profiling.startupTimeline).map(([key, value]) => [key, round(value)])) : null,
                 terrainSelection: profiling.terrainSelection ? {
                     mode: profiling.terrainSelection.mode ?? null,
                     selectedLeafCount: profiling.terrainSelection.selectedLeafCount ?? null,
@@ -350,7 +375,12 @@ export function createPerformanceCollector({
                     blockingChunkCount: profiling.terrainSelection.blockingChunkCount ?? null,
                     selectedNodeCount: profiling.terrainSelection.selectedNodeCount ?? null,
                     blockingLeafStates: profiling.terrainSelection.blockingLeafStates ?? null,
-                    selectionRegion: profiling.terrainSelection.quadtreeSelectionRegion ?? null
+                    selectionRegion: profiling.terrainSelection.quadtreeSelectionRegion ?? null,
+                    queueDepths: profiling.terrainSelection.queueDepths ?? null,
+                    chunkStates: profiling.terrainSelection.chunkStates ?? null,
+                    worker: profiling.terrainSelection.worker ?? null,
+                    generation: profiling.terrainSelection.generation ?? null,
+                    timings: profiling.terrainSelection.timings ?? null
                 } : null
             },
             memory: {

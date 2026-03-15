@@ -731,6 +731,47 @@ function computeSlopeAndRelief(heights, resolution, step) {
     return { slope, relief };
 }
 
+function isBoundaryCell(index, resolution) {
+    const x = index % resolution;
+    const z = Math.floor(index / resolution);
+    return x === 0 || z === 0 || x === resolution - 1 || z === resolution - 1;
+}
+
+function cleanupRiverPath(points, widths, step) {
+    if (!Array.isArray(points) || !Array.isArray(widths) || points.length !== widths.length) {
+        return { points: [], widths: [] };
+    }
+
+    const cleanedPoints = [];
+    const cleanedWidths = [];
+    const minSpacing = Math.max(1, step * 0.2);
+    const minSpacingSq = minSpacing * minSpacing;
+
+    for (let index = 0; index < points.length; index += 1) {
+        const point = points[index];
+        const width = widths[index];
+        if (!Array.isArray(point) || point.length < 2 || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+        if (!Number.isFinite(width)) continue;
+
+        const roundedPoint = [Math.round(point[0]), Math.round(point[1])];
+        const lastPoint = cleanedPoints[cleanedPoints.length - 1];
+        if (lastPoint) {
+            const dx = roundedPoint[0] - lastPoint[0];
+            const dz = roundedPoint[1] - lastPoint[1];
+            const distSq = dx * dx + dz * dz;
+            if (distSq <= minSpacingSq) {
+                cleanedWidths[cleanedWidths.length - 1] = Math.max(cleanedWidths[cleanedWidths.length - 1], Math.round(width));
+                continue;
+            }
+        }
+
+        cleanedPoints.push(roundedPoint);
+        cleanedWidths.push(Math.round(width));
+    }
+
+    return { points: cleanedPoints, widths: cleanedWidths };
+}
+
 function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
     const resolution = config.hydrology.resolution;
     const cellCount = resolution * resolution;
@@ -811,54 +852,149 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
     }
 
     const peakAccumulation = order.reduce((best, index) => Math.max(best, accumulation[index]), 1);
+    const peakHeight = order.reduce((best, index) => Math.max(best, heights[index]), -Infinity);
+    const peakRelief = relief.reduce((best, value) => Math.max(best, value), 1);
     const rivers = [];
     const lakes = [];
-    const taken = new Uint8Array(cellCount);
     const maxRiverCount = config.hydrology.riverCount;
     const maxLakeCount = config.hydrology.lakeCount;
     const minRiverSourceHeight = 120;
     const minRiverAccumulation = 12;
     const minLakeAccumulation = 30;
-    const maxRiverSteps = 54;
+    const maxRiverSteps = cellCount;
     const minRiverPoints = 4;
+    const acceptedRiverByCell = new Int32Array(cellCount).fill(-1);
+    const acceptedRiverPointIndexByCell = new Int32Array(cellCount).fill(-1);
+    const riverSourceCandidates = order
+        .filter(index => heights[index] >= minRiverSourceHeight && accumulation[index] >= minRiverAccumulation)
+        .map(index => {
+            const heightScore = clamp01(inverseLerp(minRiverSourceHeight, peakHeight, heights[index]));
+            const flowScore = clamp01(accumulation[index] / peakAccumulation);
+            const reliefScore = clamp01(relief[index] / Math.max(1, peakRelief));
+            return {
+                index,
+                score: heightScore * 0.28 + flowScore * 0.5 + reliefScore * 0.22
+            };
+        })
+        .sort((a, b) => b.score - a.score);
 
-    for (const index of order) {
+    for (const candidate of riverSourceCandidates) {
         if (rivers.length >= maxRiverCount) break;
-        if (taken[index]) continue;
-        if (heights[index] < minRiverSourceHeight) continue;
-        if (accumulation[index] < minRiverAccumulation) continue;
+        const index = candidate.index;
+        if (acceptedRiverByCell[index] >= 0) continue;
 
         const points = [];
         const widths = [];
+        const pathCells = [];
+        const visited = new Set();
         let current = index;
         let steps = 0;
+        let mergeRiverIndex = -1;
+        let mergePointIndex = -1;
+        let outlet = 'edge';
 
         while (current >= 0 && steps < maxRiverSteps) {
+            if (visited.has(current)) {
+                outlet = 'loop';
+                break;
+            }
+            visited.add(current);
+
             const { gx, gz, wx, wz } = createRasterCoordinates(current, resolution, worldSize);
             const flow = clamp01(accumulation[current] / peakAccumulation);
-            const localSlope = slope[current];
-            const gorgeBias = clamp01(flow * smoothstep(0.08, 0.42, localSlope) * config.hydrology.gorgeStrength);
             const width = Math.round(10 + Math.sqrt(accumulation[current]) * 2.6 * config.hydrology.riverStrength + flow * 20);
-            points.push([Math.round(wx), Math.round(wz)]);
+            points.push([wx, wz]);
             widths.push(width);
-            paintDisc(riverMask, resolution, gx, gz, 1.15 + flow * 2.8, (0.3 + flow * 0.7) * config.hydrology.riverStrength);
-            paintDisc(gorgeMask, resolution, gx, gz, 0.9 + flow * 1.6, gorgeBias);
-            taken[current] = 1;
+            pathCells.push(current);
+
+            if (sinkMask[current] > 0) {
+                outlet = 'lake';
+                break;
+            }
+
+            if (acceptedRiverByCell[current] >= 0 && current !== index) {
+                mergeRiverIndex = acceptedRiverByCell[current];
+                mergePointIndex = acceptedRiverPointIndexByCell[current];
+                outlet = 'merge';
+                break;
+            }
+
+            if (heights[current] <= SEA_LEVEL + 6) {
+                outlet = 'coast';
+                break;
+            }
+
+            if (isBoundaryCell(current, resolution)) {
+                outlet = 'edge';
+                break;
+            }
 
             const next = recipients[current];
-            if (next < 0) break;
+            if (next < 0) {
+                outlet = 'edge';
+                break;
+            }
+
+            if (acceptedRiverByCell[next] >= 0) {
+                const { wx: nx, wz: nz } = createRasterCoordinates(next, resolution, worldSize);
+                const nextFlow = clamp01(accumulation[next] / peakAccumulation);
+                const nextWidth = Math.round(10 + Math.sqrt(accumulation[next]) * 2.6 * config.hydrology.riverStrength + nextFlow * 20);
+                points.push([nx, nz]);
+                widths.push(nextWidth);
+                mergeRiverIndex = acceptedRiverByCell[next];
+                mergePointIndex = acceptedRiverPointIndexByCell[next];
+                outlet = 'merge';
+                break;
+            }
+
             current = next;
             steps += 1;
         }
 
-        if (points.length >= minRiverPoints) {
+        if (steps >= maxRiverSteps && outlet === 'edge') {
+            outlet = 'limit';
+        }
+
+        if (mergeRiverIndex >= 0 && mergePointIndex >= 0) {
+            const mergedRiver = rivers[mergeRiverIndex];
+            for (let tailIndex = mergePointIndex; tailIndex < mergedRiver.points.length; tailIndex += 1) {
+                points.push(mergedRiver.points[tailIndex]);
+                widths.push(mergedRiver.widths[tailIndex] ?? mergedRiver.width);
+            }
+        }
+
+        const cleaned = cleanupRiverPath(points, widths, step);
+        if (cleaned.points.length >= minRiverPoints) {
+            const riverIndex = rivers.length;
+            for (const cell of pathCells) {
+                const { gx, gz } = createRasterCoordinates(cell, resolution, worldSize);
+                const flow = clamp01(accumulation[cell] / peakAccumulation);
+                const localSlope = slope[cell];
+                const gorgeBias = clamp01(flow * smoothstep(0.08, 0.42, localSlope) * config.hydrology.gorgeStrength);
+                paintDisc(riverMask, resolution, gx, gz, 1.15 + flow * 2.8, (0.3 + flow * 0.7) * config.hydrology.riverStrength);
+                paintDisc(gorgeMask, resolution, gx, gz, 0.9 + flow * 1.6, gorgeBias);
+                acceptedRiverByCell[cell] = riverIndex;
+            }
+
             rivers.push({
-                points,
-                widths,
-                width: Math.max(...widths),
+                points: cleaned.points,
+                widths: cleaned.widths,
+                width: Math.max(...cleaned.widths),
                 sourceHeight: Math.round(heights[index]),
-                accumulation: Math.round(accumulation[index])
+                accumulation: Math.round(accumulation[index]),
+                outlet
             });
+
+            const river = rivers[riverIndex];
+            for (let pointIndex = 0; pointIndex < river.points.length; pointIndex += 1) {
+                const point = river.points[pointIndex];
+                const gridX = Math.round((point[0] + worldSize * 0.5) / step);
+                const gridZ = Math.round((point[1] + worldSize * 0.5) / step);
+                if (gridX < 0 || gridX >= resolution || gridZ < 0 || gridZ >= resolution) continue;
+                const cellIndex = gridZ * resolution + gridX;
+                acceptedRiverByCell[cellIndex] = riverIndex;
+                acceptedRiverPointIndexByCell[cellIndex] = pointIndex;
+            }
         }
     }
 
@@ -869,12 +1005,13 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
         const { gx, gz, wx, wz, step: cellStep } = createRasterCoordinates(index, resolution, worldSize);
         const radiusMeters = Math.round(cellStep * (1.3 + Math.sqrt(accumulation[index] / minLakeAccumulation)) * Math.max(0.35, config.hydrology.lakeStrength));
         const intensity = clamp01(accumulation[index] / peakAccumulation) * config.hydrology.lakeStrength;
+        const filledLevel = Math.max(heights[index] + 1.5, effective[index] + 0.75 + intensity * 2.5);
         paintDisc(lakeMask, resolution, gx, gz, Math.max(1.6, radiusMeters / cellStep), intensity);
         lakes.push({
             x: Math.round(wx),
             z: Math.round(wz),
             radius: radiusMeters,
-            level: Math.round(Math.max(SEA_LEVEL + 6, heights[index] + 3 + intensity * 9)),
+            level: Math.round(Math.max(SEA_LEVEL + 2, filledLevel)),
             accumulation: Math.round(accumulation[index])
         });
     }

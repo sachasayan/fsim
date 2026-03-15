@@ -68,6 +68,15 @@ const {
   handleResize
 } = createRendererManager({ container, scene, camera });
 const PROFILING_READY_QUIET_WINDOW_MS = 3000;
+const startupTimeline = {
+  simInitAtMs: performance.now(),
+  animationStartedAtMs: null,
+  shaderWarmupStartedAtMs: null,
+  shaderWarmupCompletedAtMs: null,
+  startupReadyAtMs: null,
+  bootstrapCompletedAtMs: null,
+  loaderHiddenAtMs: null
+};
 const profilingState = {
   profilingReady: false,
   profilingReadinessReason: 'bootstrap_incomplete',
@@ -78,7 +87,12 @@ const profilingState = {
   lastObservedPrograms: 0,
   lastObservedTextures: 0,
   lastObservedGeometries: 0,
-  profilingReadyAtMs: null
+  profilingReadyAtMs: null,
+  firstStableAtMs: null,
+  lastReasonChangedAtMs: performance.now(),
+  timeBlockedByProgramsMs: 0,
+  timeBlockedByTexturesMs: 0,
+  timeBlockedByGeometriesMs: 0
 };
 const perfCollector = createPerformanceCollector({
   renderer,
@@ -97,6 +111,11 @@ const perfCollector = createPerformanceCollector({
       lastGeometriesChangeMsAgo: now - profilingState.lastGeometriesChangeAtMs,
       quietWindowMs: profilingState.quietWindowMs,
       profilingReadyAtMs: profilingState.profilingReadyAtMs,
+      firstStableAtMs: profilingState.firstStableAtMs,
+      timeBlockedByProgramsMs: profilingState.timeBlockedByProgramsMs,
+      timeBlockedByTexturesMs: profilingState.timeBlockedByTexturesMs,
+      timeBlockedByGeometriesMs: profilingState.timeBlockedByGeometriesMs,
+      startupTimeline: { ...startupTimeline },
       terrainSelection: getTerrainSelectionDiagnostics?.() || null
     };
   }
@@ -296,7 +315,8 @@ window.fsimWorld = {
   terrainSelection: getTerrainSelectionDiagnostics?.() || null,
   loaderProgress: null,
   shaderValidation: getShaderValidationReport(),
-  shaderValidationSummary: getShaderValidationSummary()
+  shaderValidationSummary: getShaderValidationSummary(),
+  startupTimeline
 };
 window.fsimPerf = perfCollector;
 
@@ -523,10 +543,23 @@ function updateProfilingReadiness(now) {
     reason = 'geometries_growing';
   }
 
+  if (reason !== profilingState.profilingReadinessReason) {
+    const blockedForMs = Math.max(0, now - profilingState.lastReasonChangedAtMs);
+    if (profilingState.profilingReadinessReason === 'programs_growing') {
+      profilingState.timeBlockedByProgramsMs += blockedForMs;
+    } else if (profilingState.profilingReadinessReason === 'textures_growing') {
+      profilingState.timeBlockedByTexturesMs += blockedForMs;
+    } else if (profilingState.profilingReadinessReason === 'geometries_growing') {
+      profilingState.timeBlockedByGeometriesMs += blockedForMs;
+    }
+    profilingState.lastReasonChangedAtMs = now;
+  }
+
   profilingState.profilingReadinessReason = reason;
   profilingState.profilingReady = reason === 'stable';
   if (profilingState.profilingReady) {
     profilingState.profilingReadyAtMs ??= now;
+    profilingState.firstStableAtMs ??= now;
   } else {
     profilingState.profilingReadyAtMs = null;
   }
@@ -539,6 +572,8 @@ function updateProfilingReadiness(now) {
 function animate() {
   requestAnimationFrame(animate);
   stats.update();
+
+  startupTimeline.animationStartedAtMs ??= performance.now();
 
   const now = performance.now();
   updateLoaderProgress();
@@ -590,6 +625,9 @@ function animate() {
   // 5. Airport Systems (ALS)
   phaseStart = performance.now();
   airportSystems.updateALS(now);
+  perfCollector.recordPhase('airport_als', performance.now() - phaseStart);
+
+  phaseStart = performance.now();
   updateWorldObjects(now);
   perfCollector.recordPhase('world_objects', performance.now() - phaseStart);
 
@@ -801,11 +839,19 @@ function animate() {
   let terrainUpdated = false;
   let worldLodUpdated = false;
   if (shouldUpdateTerrain) {
-    updateTerrain();
+    const terrainDiagnostics = updateTerrain();
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
     terrainUpdated = true;
+    if (terrainDiagnostics?.timings) {
+      perfCollector.recordPhase('terrain_selection', terrainDiagnostics.timings.selectionBuildMs ?? 0);
+      perfCollector.recordPhase('terrain_queue_schedule', terrainDiagnostics.timings.queueSchedulingMs ?? 0);
+      perfCollector.recordPhase('terrain_queue_prune', terrainDiagnostics.timings.queuePruneMs ?? 0);
+      perfCollector.recordPhase('terrain_leaf_build', terrainDiagnostics.timings.leafBuildMs ?? 0);
+      perfCollector.recordPhase('terrain_chunk_queue', terrainDiagnostics.timings.chunkBuildQueueMs ?? 0);
+      perfCollector.recordPhase('terrain_prop_queue', terrainDiagnostics.timings.propBuildQueueMs ?? 0);
+    }
   }
   if (terrainDue || chunkChanged) {
     updateWorldLOD(camera.position);
@@ -858,6 +904,7 @@ let loaderHidden = false;
 function hideLoader() {
   if (loaderHidden) return;
   loaderHidden = true;
+  startupTimeline.loaderHiddenAtMs ??= performance.now();
   window.fsimWorld.loaderHidden = true;
   const loader = document.getElementById('loader');
   if (!loader) return;
@@ -936,6 +983,7 @@ setTimeout(() => {
   physicsAdapter.syncFromState();
   animate();
 
+  startupTimeline.shaderWarmupStartedAtMs ??= performance.now();
   const warmupPromise = warmupShaders(camera, {
     onProgress: (progress) => {
       const ratio = Number.isFinite(progress?.ratio) ? progress.ratio : 0;
@@ -954,6 +1002,7 @@ setTimeout(() => {
       updateLoaderProgress();
     }
   }).then((report) => {
+    startupTimeline.shaderWarmupCompletedAtMs ??= performance.now();
     window.fsimWorld.shaderValidation = report;
     window.fsimWorld.shaderValidationSummary = report.summary;
     loaderProgressState.assets.ratio = 1;
@@ -965,7 +1014,9 @@ setTimeout(() => {
     return report;
   });
   waitForStartupReady({ warmupPromise }).then(() => {
+    startupTimeline.startupReadyAtMs ??= performance.now();
     completeBootstrap();
+    startupTimeline.bootstrapCompletedAtMs ??= performance.now();
     window.fsimWorld.bootstrapComplete = true;
     updateTerrain();
     hideLoader();

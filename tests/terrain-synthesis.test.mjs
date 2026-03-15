@@ -49,8 +49,39 @@ test('terrain synthesizer emits v2 hydrology metadata with summary coverage', ()
     assert.ok(meta.hydrology.riverCount > 0, 'expected at least one river candidate');
     assert.ok(Array.isArray(meta.hydrology.rivers));
     assert.ok(Array.isArray(meta.hydrology.lakes));
+    assert.ok(meta.hydrology.riverCount <= synth.config.hydrology.riverCount);
     assert.ok(meta.hydrology.summary.cliffCoverage > 0);
     assert.ok(meta.hydrology.summary.gorgeCoverage > 0);
+});
+
+test('terrain synthesizer exports cleaned river paths with merge-aware continuity', () => {
+    Noise.init(12345);
+    const synth = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const { rivers } = synth.getMetadata().hydrology;
+
+    assert.ok(rivers.some(river => river.outlet === 'merge'));
+    assert.ok(Math.max(...rivers.map(river => river.points.length)) >= 10);
+
+    for (const river of rivers) {
+        assert.equal(river.points.length, river.widths.length);
+        for (let index = 1; index < river.points.length; index += 1) {
+            assert.notDeepEqual(river.points[index], river.points[index - 1]);
+        }
+    }
+});
+
+test('terrain synthesizer records lake, coast, edge, and merge river outlets deterministically', () => {
+    Noise.init(12345);
+    const cinematic = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const cinematicOutlets = new Set(cinematic.getMetadata().hydrology.rivers.map(river => river.outlet));
+    assert.ok(cinematicOutlets.has('lake'));
+    assert.ok(cinematicOutlets.has('merge'));
+
+    Noise.init(12345);
+    const coastal = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'coastal' } });
+    const coastalOutlets = new Set(coastal.getMetadata().hydrology.rivers.map(river => river.outlet));
+    assert.ok(coastalOutlets.has('coast'));
+    assert.ok(coastalOutlets.has('edge'));
 });
 
 test('terrain synthesizer normalizes missing config fields', () => {

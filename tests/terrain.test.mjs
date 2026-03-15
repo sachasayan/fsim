@@ -59,7 +59,7 @@ global.document = {
 };
 
 test('terrain tests', async (t) => {
-    const { createTerrainSystem } = await import('../js/modules/world/terrain.js');
+    const { createTerrainSystem, createRiverStripGeometry, createLakeSurfaceGeometry } = await import('../js/modules/world/terrain.js');
     const { createRuntimeLodSettings } = await import('../js/modules/world/LodSystem.js');
     const loadStaticWorldFn = async () => false;
 
@@ -116,5 +116,51 @@ test('terrain tests', async (t) => {
         // Because pendingChunkBuilds is private, the best we can do is ensure
         // updateTerrain doesn't throw and executes successfully.
         assert.ok(typeof system.updateTerrain === 'function');
+    });
+
+    await t.test('createRiverStripGeometry ignores duplicate points and builds valid geometry', () => {
+        const sampler = {
+            getAltitudeAt(x, z) {
+                return (x + z) * 0.001;
+            }
+        };
+
+        const geometry = createRiverStripGeometry(
+            [[0, 0], [0, 0], [80, 20], [140, 70], [140, 70], [220, 140]],
+            18,
+            sampler,
+            [12, 14, 16, 18, 18, 20]
+        );
+
+        assert.ok(geometry instanceof THREE.BufferGeometry);
+        assert.ok(geometry.attributes.position.count >= 4);
+        assert.ok(geometry.index.count >= 6);
+    });
+
+    await t.test('createLakeSurfaceGeometry trims shoreline to the local basin', () => {
+        const sampler = {
+            getAltitudeAt(x, z) {
+                const radius = Math.hypot(x, z);
+                if (radius < 60) return 10;
+                if (radius < 100) return 10.2;
+                return 13.5;
+            }
+        };
+
+        const geometry = createLakeSurfaceGeometry({
+            x: 0,
+            z: 0,
+            radius: 140,
+            level: 10.4
+        }, sampler, { segments: 24, radialSteps: 10 });
+
+        assert.ok(geometry instanceof THREE.BufferGeometry);
+        const positions = geometry.attributes.position.array;
+        let maxRadius = 0;
+        for (let index = 3; index < positions.length; index += 3) {
+            maxRadius = Math.max(maxRadius, Math.hypot(positions[index], positions[index + 2]));
+        }
+        assert.ok(maxRadius < 140);
+        assert.ok(maxRadius >= 84);
     });
 });

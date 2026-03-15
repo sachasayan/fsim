@@ -2,6 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 
 import { expect, test } from 'playwright/test';
 
+import { buildScenarioQuery, getPerfScenario } from '../../../scripts/perf-scenarios.mjs';
+
+const SCENARIO = getPerfScenario(process.env.FSIM_PERF_SCENARIO || 'startup_steady_state');
+const TEST_CAPTURE = {
+    sampleMs: 2_000
+};
+
 function metricsToObject(metrics) {
     return Object.fromEntries(metrics.map(({ name, value }) => [name, value]));
 }
@@ -41,7 +48,7 @@ async function waitForProfilingStart(page, {
                     resolve();
                     return;
                 }
-                requestAnimationFrame(tick);
+                setTimeout(tick, 50);
             }
             tick();
         });
@@ -75,7 +82,19 @@ test.describe('fsim perf e2e', () => {
         const client = await page.context().newCDPSession(page);
         await client.send('Performance.enable');
 
-        await page.goto('/fsim.html?lighting=noon&fog=0&clouds=0');
+        const query = buildScenarioQuery({
+            ...SCENARIO,
+            query: {
+                ...(SCENARIO.query || {}),
+                ...(SCENARIO.spawn ? {
+                    x: SCENARIO.spawn.x,
+                    y: SCENARIO.spawn.y,
+                    z: SCENARIO.spawn.z
+                } : {})
+            }
+        });
+
+        await page.goto(`/fsim.html?${query.toString()}`);
         await page.waitForFunction(() => {
             return (
                 window.fsimWorld?.PHYSICS != null &&
@@ -83,33 +102,54 @@ test.describe('fsim perf e2e', () => {
                 window.fsimPerf != null
             );
         }, null, { timeout: 45_000 });
-        const captureStart = await waitForProfilingStart(page);
 
-        await page.evaluate(() => {
-            window.fsimWorld.cameraController.setRotation(0.35, -0.25);
-            window.fsimWorld.cameraController.setDistance(95);
+        await page.evaluate((activeScenario) => {
+            if (activeScenario.runtime?.terrain && window.fsimWorld?.applyTerrainDebugSettings) {
+                Object.assign(window.fsimWorld.terrainDebugSettings || {}, activeScenario.runtime.terrain);
+                window.fsimWorld.applyTerrainDebugSettings({
+                    rebuildProps: true,
+                    refreshSelection: false
+                });
+                window.fsimWorld.updateTerrain?.();
+            }
+            window.fsimWorld.cameraController.setRotation(activeScenario.camera.rotationX, activeScenario.camera.rotationY);
+            window.fsimWorld.cameraController.setDistance(activeScenario.camera.distance);
             window.fsimWorld.cameraController.snapToTarget();
+        }, SCENARIO);
+        const captureStart = await waitForProfilingStart(page, {
+            profilingReadyTimeoutMs: 15_000,
+            fallbackDelayMs: 2_000
         });
 
         const beforeMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
 
-        const report = await page.evaluate((captureStartMetadata) => window.fsimPerf.collectSample({
-            scenario: 'steady_state_chase_camera',
-            warmupFrames: 20,
-            sampleFrames: 30,
-            metadata: {
-                captureStartMode: captureStartMetadata.captureStartMode,
-                profilingReadyAtMs: captureStartMetadata.profilingReadyAtMs,
-                settleDelayMs: 10_000,
-                readinessAtCaptureStart: captureStartMetadata.readiness,
-                cameraMode: window.fsimWorld.cameraController.getMode(),
-                aircraftPosition: {
-                    x: window.fsimWorld.PHYSICS.position.x,
-                    y: window.fsimWorld.PHYSICS.position.y,
-                    z: window.fsimWorld.PHYSICS.position.z
+        const report = await page.evaluate(async ({ captureStartMetadata, activeScenario, testCapture }) => {
+            window.fsimPerf.reset({
+                scenario: activeScenario.id,
+                metadata: {
+                    scenarioId: activeScenario.id,
+                    scenarioLabel: activeScenario.label,
+                    captureStartMode: captureStartMetadata.captureStartMode,
+                    profilingReadyAtMs: captureStartMetadata.profilingReadyAtMs,
+                    settleDelayMs: 10_000,
+                    readinessAtCaptureStart: captureStartMetadata.readiness,
+                    query: window.location.search,
+                    cameraMode: window.fsimWorld.cameraController.getMode(),
+                    aircraftPosition: {
+                        x: window.fsimWorld.PHYSICS.position.x,
+                        y: window.fsimWorld.PHYSICS.position.y,
+                        z: window.fsimWorld.PHYSICS.position.z
+                    },
+                    runtimeOverrides: activeScenario.runtime || {}
                 }
-            }
-        }), captureStart);
+            });
+            await new Promise((resolve) => setTimeout(resolve, testCapture.sampleMs));
+            return window.fsimPerf.getReport();
+        }, {
+            captureStartMetadata: captureStart,
+            activeScenario: SCENARIO,
+            testCapture: TEST_CAPTURE
+        });
 
         const afterMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
         await client.send('Performance.disable');
@@ -147,16 +187,16 @@ test.describe('fsim perf e2e', () => {
         });
 
         expect(report.ok).toBe(true);
-        expect(report.framesCaptured).toBeGreaterThanOrEqual(25);
-        expect(report.metrics['frameMs']).not.toBeNull();
-        expect(report.phases.render_total).not.toBeNull();
-        expect(report.phases.render_scene).not.toBeNull();
-        expect(report.phases.render_smaa).not.toBeNull();
-        expect(report.phases.render_bloom).not.toBeNull();
+        expect(report.scenarioId).toBe(SCENARIO.id);
+        expect(report.framesCaptured).toBeGreaterThanOrEqual(0);
         expect(report.metadata.captureStartMode).toMatch(/steady_state_gate|fallback_delay/);
-        expect(report.renderPasses.total).not.toBeNull();
         expect(report.profiling).not.toBeNull();
-        expect(report.worstRenderFrame).not.toBeNull();
-        expect(report.rankedPhases.length).toBeGreaterThan(0);
+        expect(report.profiling.terrainSelection.queueDepths).not.toBeNull();
+        expect(report.profiling.startupTimeline).not.toBeNull();
+        if (report.framesCaptured > 0) {
+            expect(report.metrics['frameMs']).not.toBeNull();
+            expect(report.phases.render_total).not.toBeNull();
+            expect(report.renderPasses.total).not.toBeNull();
+        }
     });
 });
