@@ -1,0 +1,3 @@
+## 2026-03-15 - ARIA Semantics for Simulator HUD Overlays
+**Learning:** When dealing with WebGL/Canvas interfaces, critical states (like stalls or crashes) that are shown as HTML overlays must be explicitly announced to assistive technologies using `role="alert"`, `aria-live="assertive"`, and `aria-atomic="true"`. Additionally, complex dashboards containing multiple distinct readouts (like a Navigation Display or Telemetry) benefit from being grouped semantically with `role="group"` and descriptive `aria-label`s to provide screen reader users with necessary context.
+**Action:** Apply this pattern to any future HUD/dashboard elements or critical overlays that sit on top of the 3D canvas context.
