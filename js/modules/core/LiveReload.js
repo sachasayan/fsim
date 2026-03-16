@@ -26,15 +26,12 @@ export function initLiveReload(terrainSystem) {
             // 1. Clear caches and reload static world (world.bin + metadata)
             const { loadStaticWorld, clearStaticWorldCache } = await import('../world/terrain/TerrainGeneration.js');
             const { setStaticSampler, QuadtreeMapSampler } = await import('../world/terrain/TerrainUtils.js');
+            const { clearCityCache, clearDistrictIndex } = await import('../world/terrain/CityChunkLoader.js');
 
+            clearCityCache();
+            clearDistrictIndex();
             clearStaticWorldCache();
-            const success = await loadStaticWorld();
-
-            if (success) {
-                const worldBinResp = await fetch(`${serverOrigin}/world/world.bin`);
-                const buf = await worldBinResp.arrayBuffer();
-                setStaticSampler(new QuadtreeMapSampler(buf));
-            }
+            await loadStaticWorld();
 
             // 2. Refresh baked terrain surfaces + hydrology meshes
             terrainSystem.refreshBakedTerrain();

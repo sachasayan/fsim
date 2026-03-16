@@ -7,8 +7,8 @@
             "id": "city_a",
             "_comment": "A mid-sized city to the northeast of the airport",
             "center": [
-                10300,
-                1700
+                -8100,
+                200
             ],
             "districts": []
         },
@@ -16,8 +16,8 @@
             "id": "city_b",
             "_comment": "A smaller industrial/waterfront city to the southwest",
             "center": [
-                -9500,
-                -7000
+                -11100,
+                -6200
             ],
             "districts": []
         }
@@ -25,26 +25,26 @@
     "districts": [
         {
             "center": [
-                10300,
-                1700
+                -7500,
+                1300
             ],
             "radius": 900,
             "points": [
                 [
-                    9500,
-                    900
+                    -8300,
+                    500
                 ],
                 [
-                    11100,
-                    900
+                    -6700,
+                    500
                 ],
                 [
-                    11300,
-                    2500
+                    -6500,
+                    2100
                 ],
                 [
-                    9300,
-                    2700
+                    -8500,
+                    2300
                 ]
             ],
             "city_id": "city_a",
@@ -53,26 +53,26 @@
         {
             "district_type": "residential",
             "center": [
-                -1800,
-                -3500
+                -4600,
+                200
             ],
             "radius": 500,
             "points": [
                 [
-                    -1181,
-                    -3133
+                    -3981,
+                    567
                 ],
                 [
-                    -509,
-                    -3463
+                    -3309,
+                    237
                 ],
                 [
-                    -565,
-                    -3218
+                    -3365,
+                    482
                 ],
                 [
-                    -669,
-                    -2578
+                    -3469,
+                    1122
                 ]
             ],
             "city_id": "city_b"
@@ -80,26 +80,26 @@
         {
             "district_type": "industrial",
             "center": [
-                -100,
-                -2100
+                -1700,
+                -1300
             ],
             "radius": 500,
             "points": [
                 [
-                    -508,
-                    -1626
+                    -2108,
+                    -826
                 ],
                 [
-                    -460,
-                    -1308
+                    -2060,
+                    -508
                 ],
                 [
-                    -466,
-                    -572
+                    -2066,
+                    228
                 ],
                 [
-                    -866,
-                    -1035
+                    -2466,
+                    -235
                 ]
             ],
             "city_id": "city_b"
@@ -107,78 +107,78 @@
         {
             "district_type": "industrial",
             "center": [
-                5400,
-                6600
+                -9300,
+                -11500
             ],
             "radius": 500,
             "points": [
                 [
-                    5980,
-                    8360
+                    -8720,
+                    -9740
                 ],
                 [
-                    7106,
-                    9185
+                    -7594,
+                    -8915
                 ],
                 [
-                    6959,
-                    11051
+                    -7741,
+                    -7049
                 ],
                 [
-                    5343,
-                    10328
+                    -9357,
+                    -7772
                 ]
             ]
         },
         {
             "district_type": "residential",
             "center": [
-                1200,
-                600
+                -1800,
+                -3300
             ],
             "radius": 500,
             "points": [
                 [
-                    700,
-                    100
+                    -2300,
+                    -3700
                 ],
                 [
-                    1217,
-                    63
+                    -1700,
+                    -3300
                 ],
                 [
-                    1089,
-                    2438
+                    -1500,
+                    -2100
                 ],
                 [
-                    887,
-                    2589
+                    -2100,
+                    -1500
                 ]
             ]
         },
         {
             "district_type": "industrial",
             "center": [
-                1800,
-                -1800
+                7100,
+                -500
             ],
             "radius": 500,
             "points": [
                 [
-                    925,
-                    -2333
+                    6225,
+                    -1033
                 ],
                 [
-                    3722,
-                    -2754
+                    9022,
+                    -1454
                 ],
                 [
-                    3834,
-                    -445
+                    9134,
+                    855
                 ],
                 [
-                    956,
-                    -579
+                    6256,
+                    721
                 ]
             ],
             "city_id": "city_b"
@@ -186,26 +186,26 @@
         {
             "district_type": "windmill_farm",
             "center": [
-                700,
-                -4000
+                4400,
+                0
             ],
             "radius": 500,
             "points": [
                 [
-                    200,
-                    -4500
+                    3900,
+                    -500
                 ],
                 [
-                    1200,
-                    -4500
+                    4900,
+                    -500
                 ],
                 [
-                    1200,
-                    -3500
+                    4900,
+                    500
                 ],
                 [
-                    200,
-                    -3500
+                    3900,
+                    500
                 ]
             ],
             "turbine_density": 0.5,
@@ -255,11 +255,11 @@
             "points": [
                 [
                     -201,
-                    -1806
+                    -1906
                 ],
                 [
                     -200,
-                    1806
+                    1706
                 ]
             ]
         },
@@ -286,17 +286,17 @@
         "preset": "coastal",
         "seed": 361180,
         "macro": {
-            "baseOffset": -92,
+            "baseOffset": -200,
             "continentalAmplitude": 40,
-            "ridgeAmplitude": 570,
+            "ridgeAmplitude": 650,
             "foothillAmplitude": 300,
             "valleyAmplitude": 94,
             "warpAmplitude": 5000,
-            "rangeCount": 7,
+            "rangeCount": 1,
             "rangeLength": 0.46,
             "rangeWidth": 0.15,
             "upliftStrength": 0.48,
-            "massifStrength": 0.28,
+            "massifStrength": 0,
             "escarpmentStrength": 0.62,
             "plateauHeight": 160,
             "shelfCount": 4,

@@ -98,11 +98,16 @@ export async function fetchDistrictIndex() {
         return buildDistrictRecords(window.fsimWorld).map(normalizeDistrictIndexEntry);
     }
     if (!districtIndexPromise) {
-        districtIndexPromise = fetch('/world/chunks/index.json')
+        const url = `/world/chunks/index.json?t=${Date.now()}`;
+        districtIndexPromise = fetch(url)
             .then(r => r.json())
             .then(records => records.map(normalizeDistrictIndexEntry));
     }
     return districtIndexPromise;
+}
+
+export function clearDistrictIndex() {
+    districtIndexPromise = null;
 }
 
 /**
@@ -122,7 +127,8 @@ export async function loadDistrictChunk(districtId) {
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 15000);
-            const resp = await fetch(`/world/chunks/${districtId}/district.bin`, { signal: controller.signal });
+            const url = `/world/chunks/${districtId}/district.bin?t=${Date.now()}`;
+            const resp = await fetch(url, { signal: controller.signal });
             clearTimeout(timeout);
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             buf = await resp.arrayBuffer();

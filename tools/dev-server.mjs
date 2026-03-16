@@ -84,26 +84,31 @@ let rebuildQueued = false;
 let rebuildDebounce = null;
 let suppressWatcherUntil = 0;
 
-async function rebuildWorld(reason) {
+async function rebuildWorld(reason, forceClean = false) {
     if (buildLock) {
-        rebuildQueued = true;
+        rebuildQueued = rebuildQueued || forceClean;
         return;
     }
 
     buildLock = true;
-    console.log(`\n🔄 ${reason}, rebuilding world...`);
+    console.log(`\n🔄 ${reason}, rebuilding world (${forceClean ? 'CLEAN' : 'AUTO'})...`);
     try {
-        const { stdout } = await execAsync(`${process.execPath} tools/commit-map-save.mjs`);
-        console.log(stdout);
+        const env = { ...process.env };
+        if (forceClean) env.FSIM_CLEAN_REBUILD = '1';
+
+        const { stdout, stderr } = await execAsync(`${process.execPath} tools/commit-map-save.mjs`, { env });
+        if (stdout) console.log(stdout);
+        if (stderr) console.error(stderr);
         broadcast('reload-city', { timestamp: Date.now() });
     } catch (err) {
         console.error(`❌ Build failed:`, err.message);
     } finally {
         setTimeout(() => {
+            const wasQueued = rebuildQueued;
             buildLock = false;
-            if (rebuildQueued) {
-                rebuildQueued = false;
-                rebuildWorld('Queued map change');
+            rebuildQueued = false;
+            if (wasQueued) {
+                rebuildWorld('Queued map change', wasQueued);
             }
         }, 1000);
     }
@@ -207,7 +212,8 @@ const server = http.createServer(async (req, res) => {
                 sendJson(res, { success: true, skipped: true });
                 return;
             }
-            rebuildWorld('manual rebuild requested').then(() => {
+            const forceClean = url.searchParams.get('clean') === '1';
+            rebuildWorld('manual rebuild requested', forceClean).then(() => {
                 sendJson(res, { success: true });
             }).catch((err) => {
                 console.error(`❌ Manual rebuild failed:`, err.message);

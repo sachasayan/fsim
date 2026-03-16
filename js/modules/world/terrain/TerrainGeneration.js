@@ -67,7 +67,7 @@ async function getDistrictIndex() {
 
 export async function loadStaticWorld() {
     try {
-        const resp = await fetch('/world/world.bin');
+        const resp = await fetch(`/world/world.bin?t=${Date.now()}`);
         if (!resp.ok) return false;
         _staticWorldBuffer = await resp.arrayBuffer();
         const buffer = _staticWorldBuffer;
