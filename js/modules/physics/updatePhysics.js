@@ -11,6 +11,7 @@ const _RUNWAY_THRESHOLDS = [
     { x: 0, z: 2000 },   // runway end B — approach from north
 ];
 const _APPROACH_RADIUS = 12000;  // m — horizontal distance to check
+const _APPROACH_RADIUS_SQ = _APPROACH_RADIUS * _APPROACH_RADIUS;
 const _APPROACH_ALT_MAX = 1200;   // m AGL — arm gear only below this
 const _APPROACH_CONE_COS = Math.cos(15 * Math.PI / 180); // cos(15°)
 
@@ -37,17 +38,22 @@ export function calculateAerodynamics(ctx) {
         const fwd = t2.forward.set(0, 0, -1).applyQuaternion(p.quaternion);
         const hx = fwd.x;
         const hz = fwd.z;
-        const hLen = Math.sqrt(hx * hx + hz * hz);
+        // ⚡ Bolt: Defer Math.sqrt by checking squared length first
+        const hLenSq = hx * hx + hz * hz;
 
         let onApproach = false;
-        if (hLen > 1e-4) {
+        if (hLenSq > 1e-8) {
+            const hLen = Math.sqrt(hLenSq);
             const nhx = hx / hLen;
             const nhz = hz / hLen;
             for (const thr of _RUNWAY_THRESHOLDS) {
                 const dx = p.position.x - thr.x;
                 const dz = p.position.z - thr.z;
-                const dist2D = Math.sqrt(dx * dx + dz * dz);
-                if (dist2D > _APPROACH_RADIUS) continue;
+                // ⚡ Bolt: Use squared distance to avoid Math.sqrt on every threshold check
+                const distSq = dx * dx + dz * dz;
+                if (distSq > _APPROACH_RADIUS_SQ) continue;
+
+                const dist2D = Math.sqrt(distSq);
 
                 // Vector FROM aircraft TOWARD the threshold (approach direction)
                 const ax = -dx / dist2D;
