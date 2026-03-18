@@ -135,6 +135,96 @@ function buildChunkBase(job) {
     const { cx, cz, lodCfg, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols } = job;
     const staticWorldMetadata = getStaticWorldMetadata();
 
+    const chunkMinX = cx * CHUNK_SIZE;
+    const chunkMinZ = cz * CHUNK_SIZE;
+    const chunkMaxX = chunkMinX + CHUNK_SIZE;
+    const chunkMaxZ = chunkMinZ + CHUNK_SIZE;
+    const margin = 200;
+
+    const localRoadSegments = [];
+    if (staticWorldMetadata?.roads) {
+        for (const road of staticWorldMetadata.roads) {
+            if (!road.points || road.points.length < 2) continue;
+            let roadWidth = road.width;
+            if (!Number.isFinite(roadWidth)) {
+                roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0; 
+            }
+            
+            // The terrain grid can be ~62.5m spacing. 
+            // We need the flat area to be big enough to reliably contain terrain vertices 
+            const halfWidth = roadWidth * 0.5 + 32.0; 
+            const embankment = 48.0; 
+            const totalRadius = halfWidth + embankment;
+
+            for (let i = 0; i < road.points.length - 1; i++) {
+                const p1 = road.points[i];
+                const p2 = road.points[i+1];
+                
+                const minX = Math.min(p1[0], p2[0]) - totalRadius;
+                const maxX = Math.max(p1[0], p2[0]) + totalRadius;
+                const minZ = Math.min(p1[1], p2[1]) - totalRadius;
+                const maxZ = Math.max(p1[1], p2[1]) + totalRadius;
+
+                if (maxX < chunkMinX - margin || minX > chunkMaxX + margin ||
+                    maxZ < chunkMinZ - margin || minZ > chunkMaxZ + margin) {
+                    continue;
+                }
+                
+                localRoadSegments.push({ p1, p2, halfWidth, embankment, totalRadius });
+            }
+        }
+    }
+
+    function distToSegment(px, pz, ax, az, bx, bz, out) {
+        const l2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az);
+        if (l2 === 0) {
+            out.dist = Math.hypot(px - ax, pz - az);
+            out.projX = ax;
+            out.projZ = az;
+            return;
+        }
+        let t = ((px - ax) * (bx - ax) + (pz - az) * (bz - az)) / l2;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const projX = ax + t * (bx - ax);
+        const projZ = az + t * (bz - az);
+        out.dist = Math.hypot(px - projX, pz - projZ);
+        out.projX = projX;
+        out.projZ = projZ;
+    }
+
+    const tmpSegOut = { dist: 0, projX: 0, projZ: 0 };
+    
+    // A helper to get the potentially carved height so slope calculations match the physics surface
+    function getCarvedHeight(vx, vz) {
+        let height = getTerrainHeight(vx, vz, Noise);
+        if (localRoadSegments.length > 0) {
+            let maxBlend = 0;
+            let targetHeight = height;
+
+            for (let i = 0; i < localRoadSegments.length; i++) {
+                const seg = localRoadSegments[i];
+                distToSegment(vx, vz, seg.p1[0], seg.p1[1], seg.p2[0], seg.p2[1], tmpSegOut);
+                if (tmpSegOut.dist < seg.totalRadius) {
+                    let blend = 0;
+                    if (tmpSegOut.dist <= seg.halfWidth) {
+                        blend = 1.0;
+                    } else {
+                        const t = 1.0 - (tmpSegOut.dist - seg.halfWidth) / seg.embankment;
+                        blend = t * t * (3 - 2 * t);
+                    }
+                    if (blend > maxBlend) {
+                        maxBlend = blend;
+                        targetHeight = getTerrainHeight(tmpSegOut.projX, tmpSegOut.projZ, Noise);
+                    }
+                }
+            }
+            if (maxBlend > 0) {
+                height = height * (1 - maxBlend) + targetHeight * maxBlend;
+            }
+        }
+        return height;
+    }
+
     // Process terrain
     for (let i = 0; i < positions.length; i += 3) {
         let lx = positions[i];
@@ -142,12 +232,12 @@ function buildChunkBase(job) {
         let vx = lx + cx * CHUNK_SIZE;
         let vz = lz + cz * CHUNK_SIZE;
 
-        let height = getTerrainHeight(vx, vz, Noise);
+        let height = getCarvedHeight(vx, vz);
         positions[i + 1] = height;
 
         const sampleDist = Math.max(12, 90 / Math.max(1, lodCfg.terrainRes));
-        const hx = getTerrainHeight(vx + sampleDist, vz, Noise);
-        const hz = getTerrainHeight(vx, vz + sampleDist, Noise);
+        const hx = getCarvedHeight(vx + sampleDist, vz);
+        const hz = getCarvedHeight(vx, vz + sampleDist);
         const slope = Math.max(Math.abs(hx - height), Math.abs(hz - height)) / sampleDist;
         const terrainMasks = getTerrainMaskSet(vx, vz);
 

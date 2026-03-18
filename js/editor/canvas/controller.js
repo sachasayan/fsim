@@ -361,7 +361,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 world,
                 Math.max(isRoad(selected) ? selected.width + selected.feather : 80, 30 / state.viewport.zoom)
             );
-            const point = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(selected));
+            const point = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(selected), state.document, state.selection.selectedId);
             store.runCommand({
                 type: 'insert-vertex',
                 entityId: state.selection.selectedId,
@@ -422,7 +422,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
 
             if (state.tools.currentTool === 'add-city') {
-                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true);
+                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
                 store.runCommand({
                     type: 'create-city',
                     center: pointSnapped,
@@ -434,7 +434,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
 
             if (state.tools.currentTool === 'add-district') {
-                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true);
+                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
                 const selectedEntity = getEntityById(state.document, state.selection.selectedId);
                 const cityId = selectedEntity?.id && selectedEntity.center && !selectedEntity.points ? selectedEntity.id : selectedEntity?.city_id || null;
                 store.runCommand({
@@ -447,7 +447,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
 
             if (state.tools.currentTool === 'add-road') {
-                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true);
+                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
                 store.runCommand({
                     type: 'create-road',
                     center: pointSnapped
@@ -531,7 +531,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 const activeVertex = store.getState().selection.activeVertex;
                 if (!activeVertex) return;
                 const selected = getEntityById(store.getState().document, activeVertex.entityId);
-                const snapped = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(selected));
+                const snapped = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(selected), store.getState().document, activeVertex.entityId);
                 store.runCommand({
                     type: 'move-vertex',
                     entityId: activeVertex.entityId,
@@ -545,14 +545,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 const entity = getEntityById(store.getState().document, store.getState().selection.selectedId);
                 if (!entity) return;
                 if (entity.center) {
-                    const snapped = snapWorldPoint(world, state.tools.snappingEnabled, true);
+                    const snapped = snapWorldPoint(world, state.tools.snappingEnabled, true, store.getState().document, store.getState().selection.selectedId);
                     store.runCommand({
                         type: 'move-entity',
                         entityId: store.getState().selection.selectedId,
                         nextCenter: [snapped.x, snapped.z]
                     }, { coalesceKey: `move:${store.getState().selection.selectedId}` });
                 } else {
-                    const snapped = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(entity));
+                    const snapped = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(entity), store.getState().document, store.getState().selection.selectedId);
                     store.runCommand({
                         type: 'move-entity',
                         entityId: store.getState().selection.selectedId,

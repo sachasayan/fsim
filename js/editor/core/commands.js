@@ -16,8 +16,32 @@ function snapValue(value, gridSize = 100) {
     return Math.round(value / gridSize) * gridSize;
 }
 
-export function snapWorldPoint(worldPos, enabled, allowSnap = true) {
+export function snapWorldPoint(worldPos, enabled, allowSnap = true, document = null, ignoreEntityId = null) {
     if (!enabled || !allowSnap) return { x: Math.round(worldPos.x), z: Math.round(worldPos.z) };
+    
+    // Road snapping strategy: snap to existing road endpoints or vertices if disabled, but grid snap takes precedence if enabled?
+    // Wait, typically we always want to snap to roads if close enough, even if grid snap is off, or only if grid snap is on?
+    // Let's snap to roads regardless if we are dragging a road vertex, but `allowSnap` handles that.
+    if (document && document.worldData && document.worldData.roads) {
+        let bestDist = Infinity;
+        let bestPoint = null;
+        const snapRadius = 40; // 40 meters
+        
+        for (const road of document.worldData.roads) {
+            if (road.__editorId === ignoreEntityId) continue;
+            if (!road.points) continue;
+            
+            for (const pt of road.points) {
+                const dist = Math.hypot(pt[0] - worldPos.x, pt[1] - worldPos.z);
+                if (dist < snapRadius && dist < bestDist) {
+                    bestDist = dist;
+                    bestPoint = { x: pt[0], z: pt[1] };
+                }
+            }
+        }
+        if (bestPoint) return bestPoint;
+    }
+
     return { x: snapValue(worldPos.x), z: snapValue(worldPos.z) };
 }
 

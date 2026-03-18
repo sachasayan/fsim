@@ -9,6 +9,7 @@ import {
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
 import { RoadMarkingOverlay, ROAD_MARKING_OVERLAY_DEFAULTS, getRoadMarkingStyle, DASH_SCALE } from './terrain/RoadMarkingOverlay.js';
+import { buildRoadNetworkGraph, generateRoadNetworkGeometries } from './terrain/RoadNetworkGeometry.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
@@ -437,21 +438,16 @@ export function createTerrainSystem({
     const hydrology = metadata?.hydrology || null;
     
     if (sampler && metadata?.roads) {
-      for (const road of metadata.roads) {
-        // 1. the asphalt surface itself
-        let roadWidth = road.width;
-        if (!Number.isFinite(roadWidth)) {
-           // Provide a graceful fallback width based on type
-           roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0; 
-        }
-        
-        const surfaceGeo = createRoadGeometry(road.points, roadWidth, null, sampler, 0.20);
-        if (surfaceGeo) {
-           const surfaceMesh = new THREE.Mesh(surfaceGeo, splineSurfaceMaterial);
-           roadSurfaceSplineGroup.add(surfaceMesh);
-        }
+      const graph = buildRoadNetworkGraph(metadata.roads);
+      const networkGeom = generateRoadNetworkGeometries(graph, sampler, 0.20);
+      
+      if (networkGeom && networkGeom.surfaceGeometry) {
+        const surfaceMesh = new THREE.Mesh(networkGeom.surfaceGeometry, splineSurfaceMaterial);
+        roadSurfaceSplineGroup.add(surfaceMesh);
+      }
 
-        // 2. the centerline markings
+      for (const road of metadata.roads) {
+        // 2. the centerline markings - keeping individual splines for now, but drawing over the intersections
         const style = getRoadMarkingStyle(road, DASH_SCALE);
         if (style) {
           const markingGeo = createRoadGeometry(road.points, style.width, style.color, sampler, 0.35);

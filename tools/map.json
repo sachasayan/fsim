@@ -270,12 +270,44 @@
             "feather": 27,
             "points": [
                 [
-                    -195,
-                    1605
+                    -1528,
+                    -97
                 ],
                 [
-                    -5,
-                    1794
+                    -1273,
+                    97
+                ]
+            ]
+        },
+        {
+            "kind": "road",
+            "surface": "asphalt",
+            "width": 24,
+            "feather": 8,
+            "points": [
+                [
+                    -1840,
+                    250
+                ],
+                [
+                    -1273,
+                    97
+                ]
+            ]
+        },
+        {
+            "kind": "road",
+            "surface": "asphalt",
+            "width": 24,
+            "feather": 8,
+            "points": [
+                [
+                    -1273,
+                    97
+                ],
+                [
+                    -860,
+                    400
                 ]
             ]
         }
