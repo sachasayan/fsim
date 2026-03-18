@@ -8,7 +8,7 @@ import {
   setupWaterMaterial,
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
-import { RoadMarkingOverlay, ROAD_MARKING_OVERLAY_DEFAULTS } from './terrain/RoadMarkingOverlay.js';
+import { RoadMarkingOverlay, ROAD_MARKING_OVERLAY_DEFAULTS, getRoadMarkingStyle, DASH_SCALE } from './terrain/RoadMarkingOverlay.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
 import {
@@ -111,6 +111,106 @@ export function createRiverStripGeometry(points, width, sampler, widths = null) 
   return geometry;
 }
 
+export function createRoadGeometry(points, width, colorHex, sampler, yOffset = 0.35) {
+  if (!Array.isArray(points) || points.length < 2 || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
+  const cleanedPoints = [];
+  const MAX_SEG_LEN = 2.0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    if (!Array.isArray(point) || point.length < 2) continue;
+    const x = Number(point[0]);
+    const z = Number(point[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+    
+    if (cleanedPoints.length > 0) {
+      const lastPoint = cleanedPoints[cleanedPoints.length - 1];
+      if (lastPoint[0] === x && lastPoint[1] === z) continue;
+      
+      const dx = x - lastPoint[0];
+      const dz = z - lastPoint[1];
+      const dist = Math.hypot(dx, dz);
+      
+      if (dist > MAX_SEG_LEN) {
+        const segments = Math.ceil(dist / MAX_SEG_LEN);
+        for (let i = 1; i <= segments; i++) {
+          const t = i / segments;
+          cleanedPoints.push([
+            lastPoint[0] + dx * t,
+            lastPoint[1] + dz * t
+          ]);
+        }
+        continue;
+      }
+    }
+    
+    cleanedPoints.push([x, z]);
+  }
+
+  if (cleanedPoints.length < 2) return null;
+
+  const positions = [];
+  const indices = [];
+  const colors = [];
+  let colorObj = null;
+  if (colorHex != null) {
+      colorObj = new THREE.Color(colorHex);
+  }
+
+  let vertexBase = 0;
+
+  function findDistinctPoint(startIndex, direction) {
+    const origin = cleanedPoints[startIndex];
+    let cursor = startIndex + direction;
+    while (cursor >= 0 && cursor < cleanedPoints.length) {
+      const point = cleanedPoints[cursor];
+      if (point[0] !== origin[0] || point[1] !== origin[1]) return point;
+      cursor += direction;
+    }
+    return origin;
+  }
+
+  for (let index = 0; index < cleanedPoints.length; index += 1) {
+    const [x, z] = cleanedPoints[index];
+    const prev = index === 0 ? cleanedPoints[index] : findDistinctPoint(index, -1);
+    const next = index === cleanedPoints.length - 1 ? cleanedPoints[index] : findDistinctPoint(index, 1);
+    const dx = next[0] - prev[0];
+    const dz = next[1] - prev[1];
+    const length = Math.hypot(dx, dz);
+    if (!Number.isFinite(length) || length <= 1e-3) continue;
+
+    const nx = -dz / length;
+    const nz = dx / length;
+    const halfWidth = Math.max(0.1, width * 0.5);
+    const y = sampler.getAltitudeAt(x, z) + yOffset;
+
+    positions.push(x + nx * halfWidth, y, z + nz * halfWidth);
+    positions.push(x - nx * halfWidth, y, z - nz * halfWidth);
+    
+    if (colorObj != null) {
+      colors.push(colorObj.r, colorObj.g, colorObj.b);
+      colors.push(colorObj.r, colorObj.g, colorObj.b);
+    }
+
+    if (vertexBase >= 2) {
+      const base = vertexBase - 2;
+      indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    }
+    vertexBase += 2;
+  }
+
+  if (positions.length < 12 || indices.length < 6) return null;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (colorObj != null) {
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  }
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function createLakeSurfaceGeometry(lake, sampler, options = {}) {
   if (!lake || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
   const centerX = Number(lake.x);
@@ -199,6 +299,38 @@ export function createTerrainSystem({
   const hydrologyGroup = new THREE.Group();
   hydrologyGroup.name = 'terrain-hydrology';
   scene.add(hydrologyGroup);
+
+  const roadMarkingSplineGroup = new THREE.Group();
+  roadMarkingSplineGroup.name = 'terrain-spline-markings';
+  roadMarkingSplineGroup.visible = false; // A/B testing: can be toggled via console / UI
+  scene.add(roadMarkingSplineGroup);
+  const splineMarkingMaterial = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  splineMarkingMaterial.polygonOffset = true;
+  splineMarkingMaterial.polygonOffsetFactor = -4;
+  splineMarkingMaterial.polygonOffsetUnits = -4;
+
+  const roadSurfaceSplineGroup = new THREE.Group();
+  roadSurfaceSplineGroup.name = 'terrain-spline-surfaces';
+  roadSurfaceSplineGroup.visible = false; // A/B testing
+  scene.add(roadSurfaceSplineGroup);
+  const splineSurfaceMaterial = new THREE.MeshBasicMaterial({
+    color: 0x1d1e21, // asphalt base color
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  splineSurfaceMaterial.polygonOffset = true;
+  // Use a slightly weaker push than the centerlines so the lines render ON TOP of the asphalt
+  splineSurfaceMaterial.polygonOffsetFactor = -3;
+  splineSurfaceMaterial.polygonOffsetUnits = -3;
+
   const hydrologyLakeMaterial = new THREE.MeshBasicMaterial({
     color: 0x3a84dc,
     transparent: true,
@@ -284,11 +416,53 @@ export function createTerrainSystem({
     }
   }
 
+  function clearRoadMarkingMeshes() {
+    while (roadMarkingSplineGroup.children.length > 0) {
+      const mesh = roadMarkingSplineGroup.children[roadMarkingSplineGroup.children.length - 1];
+      roadMarkingSplineGroup.remove(mesh);
+      mesh.geometry?.dispose?.();
+    }
+    while (roadSurfaceSplineGroup.children.length > 0) {
+      const mesh = roadSurfaceSplineGroup.children[roadSurfaceSplineGroup.children.length - 1];
+      roadSurfaceSplineGroup.remove(mesh);
+      mesh.geometry?.dispose?.();
+    }
+  }
+
   function rebuildHydrologyMeshes() {
     clearHydrologyMeshes();
+    clearRoadMarkingMeshes();
     const sampler = getStaticSampler();
     const metadata = getStaticWorldMetadata() || windowRef?.fsimWorld || null;
     const hydrology = metadata?.hydrology || null;
+    
+    if (sampler && metadata?.roads) {
+      for (const road of metadata.roads) {
+        // 1. the asphalt surface itself
+        let roadWidth = road.width;
+        if (!Number.isFinite(roadWidth)) {
+           // Provide a graceful fallback width based on type
+           roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0; 
+        }
+        
+        const surfaceGeo = createRoadGeometry(road.points, roadWidth, null, sampler, 0.20);
+        if (surfaceGeo) {
+           const surfaceMesh = new THREE.Mesh(surfaceGeo, splineSurfaceMaterial);
+           roadSurfaceSplineGroup.add(surfaceMesh);
+        }
+
+        // 2. the centerline markings
+        const style = getRoadMarkingStyle(road, DASH_SCALE);
+        if (style) {
+          const markingGeo = createRoadGeometry(road.points, style.width, style.color, sampler, 0.35);
+          if (markingGeo) {
+            const markingMesh = new THREE.Mesh(markingGeo, splineMarkingMaterial);
+            roadMarkingSplineGroup.add(markingMesh);
+          }
+        }
+      }
+    }
+
     if (!sampler || !hydrology) return;
 
     for (const lake of hydrology.lakes || []) {
@@ -556,7 +730,9 @@ export function createTerrainSystem({
     taxiwayGapLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayGapLength,
     opacity: 1.0,
     fadeStart: 800.0,
-    fadeEnd: 1400.0
+    fadeEnd: 1400.0,
+    splineMode: false,
+    splineSurfaceMode: false
   };
   let lastTerrainSelection = {
     mode: 'grid_fallback',
@@ -841,6 +1017,8 @@ export function createTerrainSystem({
     roadMarkingDebugSettings.opacity = Math.max(0, Math.min(1, roadMarkingDebugSettings.opacity));
     roadMarkingDebugSettings.fadeStart = Math.max(0, roadMarkingDebugSettings.fadeStart);
     roadMarkingDebugSettings.fadeEnd = Math.max(roadMarkingDebugSettings.fadeStart, roadMarkingDebugSettings.fadeEnd);
+    roadMarkingDebugSettings.splineMode = Boolean(roadMarkingDebugSettings.splineMode);
+    roadMarkingDebugSettings.splineSurfaceMode = Boolean(roadMarkingDebugSettings.splineSurfaceMode);
   }
 
   function applyTerrainWireframeSetting() {
@@ -928,6 +1106,13 @@ export function createTerrainSystem({
     terrainDetailUniforms.uRoadMarkingOpacity.value = roadMarkingDebugSettings.opacity;
     terrainDetailUniforms.uRoadMarkingFadeStart.value = roadMarkingDebugSettings.fadeStart;
     terrainDetailUniforms.uRoadMarkingFadeEnd.value = roadMarkingDebugSettings.fadeEnd;
+
+    roadMarkingSplineGroup.visible = roadMarkingDebugSettings.splineMode;
+    roadSurfaceSplineGroup.visible = roadMarkingDebugSettings.splineSurfaceMode;
+    
+    // We only disable the canvas lines if splineMode is on. 
+    // We don't disable them if ONLY the surface Spline mode is toggled, so they stay independent.
+    terrainDetailUniforms.uRoadMarkingOpacity.value = roadMarkingDebugSettings.splineMode ? 0 : roadMarkingDebugSettings.opacity;
 
     if (redraw && windowRef?.fsimWorld) {
       roadMarkingOverlay.refresh(windowRef.fsimWorld);

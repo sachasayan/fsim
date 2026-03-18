@@ -155,6 +155,8 @@ const {
   hasPendingTerrainWork,
   terrainDebugSettings,
   applyTerrainDebugSettings,
+  roadMarkingDebugSettings,
+  applyRoadMarkingDebugSettings,
   clouds,
   cloudMaterial,
   updateClouds,
@@ -230,6 +232,14 @@ if (debugGui) {
     objectsFolder.add(terrainDebugSettings, 'showBuildings')
       .name('Buildings')
       .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+      
+    const roadsFolder = nativeFolder.addFolder('Roads');
+    roadsFolder.add(roadMarkingDebugSettings, 'splineMode')
+      .name('Spline Markings')
+      .onChange(() => applyRoadMarkingDebugSettings({ redraw: false }));
+    roadsFolder.add(roadMarkingDebugSettings, 'splineSurfaceMode')
+      .name('Spline Surfaces')
+      .onChange(() => applyRoadMarkingDebugSettings({ redraw: false }));
   }
 }
 

@@ -4,7 +4,7 @@ const DEFAULT_OVERLAY_WORLD_SIZE = 2048;
 const DEFAULT_TEXTURE_SIZE = 2048;
 const DEFAULT_RECENTER_DISTANCE = 96;
 
-const DASH_SCALE = {
+export const DASH_SCALE = {
     road: { width: 0.36, dashLength: 5.5, gapLength: 5.5, color: '#f4d35e' },
     taxiway: { width: 0.88, dashLength: 0, gapLength: 0, color: '#ffff00' }
 };
