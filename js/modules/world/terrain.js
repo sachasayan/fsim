@@ -297,6 +297,10 @@ export function createTerrainSystem({
     normalMap: createWaterNormalMap(Noise),
     normalScale: new THREE.Vector2(1.5, 1.5)
   });
+  waterMaterial.polygonOffset = true;
+  waterMaterial.polygonOffsetFactor = 1; // Pull water slightly back to let terrain shorelines/river-splines win if near
+  waterMaterial.polygonOffsetUnits = 1;
+
   const hydrologyGroup = new THREE.Group();
   hydrologyGroup.name = 'terrain-hydrology';
   scene.add(hydrologyGroup);
@@ -339,8 +343,8 @@ export function createTerrainSystem({
     depthWrite: false
   });
   hydrologyLakeMaterial.polygonOffset = true;
-  hydrologyLakeMaterial.polygonOffsetFactor = -1;
-  hydrologyLakeMaterial.polygonOffsetUnits = -1;
+  hydrologyLakeMaterial.polygonOffsetFactor = -2; // Ensure lakes/rivers win over ocean if overlapping
+  hydrologyLakeMaterial.polygonOffsetUnits = -2;
   const hydrologyRiverMaterial = new THREE.MeshBasicMaterial({
     color: 0x4cb1ff,
     transparent: true,
@@ -349,8 +353,8 @@ export function createTerrainSystem({
     side: THREE.DoubleSide
   });
   hydrologyRiverMaterial.polygonOffset = true;
-  hydrologyRiverMaterial.polygonOffsetFactor = -1;
-  hydrologyRiverMaterial.polygonOffsetUnits = -1;
+  hydrologyRiverMaterial.polygonOffsetFactor = -2;
+  hydrologyRiverMaterial.polygonOffsetUnits = -2;
 
   const atmosphereCameraPos = new THREE.Vector3();
   const atmosphereColor = new THREE.Color(0x90939f);
@@ -836,6 +840,11 @@ export function createTerrainSystem({
     worldSize: roadMarkingDebugSettings.worldSize,
     recenterDistance: roadMarkingDebugSettings.recenterDistance
   });
+
+  const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+  terrainDetailTex.anisotropy = maxAnisotropy;
+  roadMarkingOverlay.texture.anisotropy = maxAnisotropy;
+  if (waterMaterial.normalMap) waterMaterial.normalMap.anisotropy = maxAnisotropy;
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
   const terrainFarMaterial = terrainMaterial.clone();
   terrainFarMaterial.roughness = 1.0;
@@ -1494,24 +1503,30 @@ export function createTerrainSystem({
     const key = geometry.uuid + '_' + material.uuid;
     let pool = instancedMeshPools.get(key);
     if (!pool) { pool = []; instancedMeshPools.set(key, pool); }
+    const isColorable = colorable || geometry === baseBuildingGeo || geometry === roofCapGeo || geometry === podiumGeo || geometry === spireGeo;
+    
     let bestIdx = -1;
     for (let i = 0; i < pool.length; i++) {
-      if (pool[i].instanceMatrix.count >= count) {
-        if (bestIdx === -1 || pool[i].instanceMatrix.count < pool[bestIdx].instanceMatrix.count) bestIdx = i;
-      }
+        const mesh = pool[i];
+        if (mesh.instanceMatrix.count >= count) {
+            // If we need color but the pooled mesh doesn't have it, we'll need to add it later
+            if (bestIdx === -1 || mesh.instanceMatrix.count < pool[bestIdx].instanceMatrix.count) bestIdx = i;
+        }
     }
+    
+    let mesh;
     if (bestIdx !== -1) {
-      const mesh = pool.splice(bestIdx, 1)[0];
-      mesh.count = count;
-      return mesh;
+      mesh = pool.splice(bestIdx, 1)[0];
+    } else {
+      const capacity = Math.max(count, 32);
+      mesh = new THREE.InstancedMesh(geometry, material, capacity);
     }
-    const capacity = Math.max(count, 32);
-    const isColorable = colorable || geometry === baseBuildingGeo || geometry === roofCapGeo || geometry === podiumGeo || geometry === spireGeo;
-    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
-    if (!mesh.instanceColor && isColorable) {
-      const colorArray = new Float32Array(capacity * 3);
+
+    if (isColorable && (!mesh.instanceColor || mesh.instanceColor.count < mesh.instanceMatrix.count)) {
+      const colorArray = new Float32Array(mesh.instanceMatrix.count * 3);
       mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
     }
+    
     mesh.count = count;
     return mesh;
   }

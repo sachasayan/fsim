@@ -34,6 +34,9 @@ export function createWaterNormalMap(Noise) {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(256, 256); // Minimal repetition to remove the grid effect
+    tex.minFilter = THREE.LinearMipMapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
     return tex;
 }
 

@@ -782,17 +782,21 @@ diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrai
     float isCity = smoothstep(0.01, 0.1, cityAlpha);
     
     float nearMid = 1.0 - smoothstep(140.0, 1700.0, vTerrainDist);
-    float macro = 0.5 + 0.5 * sin(vTerrainWorldPos.x * 0.0018 + pNoise.b * 4.0) * sin(vTerrainWorldPos.z * 0.0022 - pNoise.a * 3.0);
-diffuseColor.rgb *= mix(1.0, mix(0.85, 1.15, macro), nearMid * naturalSurface * (1.0 - rockMask * 0.4) * (1.0 - isCity));
+    float macroA = sin(vTerrainWorldPos.x * 0.0012 + pNoise.b * 3.0) * sin(vTerrainWorldPos.z * 0.0015 - pNoise.a * 2.0);
+    float macroB = sin(vTerrainWorldPos.x * 0.0028 - pNoise.r * 2.0) * sin(vTerrainWorldPos.z * 0.0024 + pNoise.g * 3.0);
+    float macro = 0.5 + 0.3 * macroA + 0.2 * macroB;
+diffuseColor.rgb *= mix(1.0, mix(0.82, 1.18, macro), nearMid * naturalSurface * (1.0 - rockMask * 0.4) * (1.0 - isCity));
     
     float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, vTerrainDist);
     float foliage = terrainWeights.y * naturalSurface * (1.0 - rockMask * 0.65) * (1.0 - isCity) * foliageFade * smoothstep(0.48, 0.86, grassDetail);
     
     float phase = vTerrainWorldPos.x * 24.0 + vTerrainWorldPos.z * 21.0 + pNoise.r * 6.0;
+    float delta = fwidth(phase);
     float micro = abs(fract(phase * 0.15915 - 0.5) * 4.0 - 2.0) - 1.0; 
-    float blade = smoothstep(0.01, 0.99, abs(micro));
-diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, foliage);
-diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), foliage * 0.82);
+    float blade = smoothstep(0.01 + delta * 0.5, 0.99, abs(micro));
+    float bladeWeight = foliage * (1.0 - smoothstep(0.6, 2.0, delta));
+diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, bladeWeight);
+diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), bladeWeight * 0.82);
     float asphaltMacro = mix(detailA.g, detailB.g, 0.55);
     float asphaltMicro = mix(detailA.a, detailB.a, 0.5);
     float asphaltTone = clamp((asphaltMacro - 0.5) * 1.6 + (asphaltMicro - 0.5) * 0.7 + 0.5, 0.0, 1.0);

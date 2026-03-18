@@ -122,9 +122,9 @@ export class RoadMarkingOverlay {
         this.texture = new THREE.CanvasTexture(this.canvas);
         this.texture.wrapS = THREE.ClampToEdgeWrapping;
         this.texture.wrapT = THREE.ClampToEdgeWrapping;
-        this.texture.minFilter = THREE.LinearFilter;
+        this.texture.minFilter = THREE.LinearMipMapLinearFilter;
         this.texture.magFilter = THREE.LinearFilter;
-        this.texture.generateMipmaps = false;
+        this.texture.generateMipmaps = true;
         this.texture.colorSpace = THREE.SRGBColorSpace;
         this.clear();
     }

@@ -24,7 +24,7 @@ export function createEnvironment({ scene, renderer, WEATHER, shadowsEnabled = t
   dirLight.shadow.camera.far = 5000;
   dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
-  dirLight.shadow.bias = -0.0005;
+  dirLight.shadow.bias = 0.0001;
   scene.add(dirLight);
 
   // Physical Sky Model

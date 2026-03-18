@@ -579,8 +579,10 @@ function sampleStructuralFields(x, z, Noise, config, offsets, continentalShelf, 
     const plateauNoise = (Noise.fractal(x - offsets.basinX, z - offsets.basinZ, 3, 0.5, 0.00008) + 1) * 0.5;
     const plateauMask = smoothstep(0.56, 0.82, plateauNoise) * smoothstep(0.18, 0.72, continentalShelf) * (0.35 + rangeMask * 0.65);
     const shelfWave = (Noise.fractal(x + offsets.exposureX, z + offsets.exposureZ, 3, 0.5, 0.00022) + 1) * 0.5;
-    const shelfBands = fract(shelfWave * Math.max(1, config.macro.shelfCount));
-    const shelfMask = clamp01(1.0 - smoothstep(0.26, 0.78 - config.macro.shelfSharpness * 0.32, Math.abs(shelfBands - 0.5) * 2.0));
+    const shelfJitter = Noise.noise(x * 0.002, 0, z * 0.002) * 0.15;
+    const shelfBands = fract(shelfWave * Math.max(1, config.macro.shelfCount) + shelfJitter);
+    const shelfWidth = 0.38 - config.macro.shelfSharpness * 0.12;
+    const shelfMask = clamp01(1.0 - smoothstep(shelfWidth, 1.0 - shelfWidth, Math.abs(shelfBands - 0.5) * 2.0));
 
     return {
         escarpmentMask: escarpmentMask * config.macro.escarpmentStrength,
