@@ -68,12 +68,18 @@ test('terrain tests', async (t) => {
         fractal: (x, y, octaves) => 0
     };
 
+    const renderer = {
+        capabilities: {
+            getMaxAnisotropy: () => 1
+        }
+    };
+
     await t.test('createTerrainSystem returns expected interface', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
         const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         assert.ok(system.waterMaterial instanceof THREE.Material);
         assert.equal(typeof system.getTerrainHeight, 'function');
@@ -86,7 +92,7 @@ test('terrain tests', async (t) => {
         const PHYSICS = { position: new THREE.Vector3() };
         const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         const camera = new THREE.PerspectiveCamera();
         camera.position.set(100, 200, 300);
@@ -108,7 +114,7 @@ test('terrain tests', async (t) => {
         const PHYSICS = { position: new THREE.Vector3() };
         const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         // Ensure no pending builds before updateTerrain
         system.updateTerrain();
