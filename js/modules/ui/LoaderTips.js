@@ -3,21 +3,16 @@
  */
 
 const TIPS = [
-    "Reticulating splines...",
-    "Generating terrain meshes...",
-    "Simulating atmospheric drag...",
-    "Warming up turbines...",
-    "Calibrating inertial reference systems...",
-    "Loading high-fidelity textures...",
-    "Calculating flight envelopes...",
-    "Synchronizing world clock...",
-    "Deploying procedural flora...",
-    "Optimizing shader pipelines...",
-    "Inflating digital tires...",
-    "Polishing cockpit glass...",
-    "Testing emergency exits...",
-    "Consulting flight manuals...",
-    "Pre-heating hydraulic fluid..."
+    "Aligning inertial reference systems...",
+    "Projecting terrain mesh priorities...",
+    "Scanning nearby surface elevation...",
+    "Precharging shader pipelines...",
+    "Validating atmospheric lighting model...",
+    "Synchronizing world state telemetry...",
+    "Bringing avionics subsystems online...",
+    "Preparing runway and airfield assets...",
+    "Stabilizing rendering instrumentation...",
+    "Finalizing departure-ready boot sequence..."
 ];
 
 /**
@@ -26,7 +21,7 @@ const TIPS = [
  * @param {number} intervalMs - Interval between tips in milliseconds.
  * @returns {number} The interval ID.
  */
-export function startLoaderTips(elementId, intervalMs = 250) {
+export function startLoaderTips(elementId, intervalMs = 2200) {
     const element = document.getElementById(elementId);
     if (!element) return null;
 

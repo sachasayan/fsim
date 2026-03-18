@@ -331,6 +331,8 @@ window.fsimWorld = {
 window.fsimPerf = perfCollector;
 
 const loaderElements = {
+  phaseText: document.getElementById('loader-phase'),
+  phaseDetailText: document.getElementById('loader-phase-detail'),
   terrainBar: document.getElementById('loader-terrain-progress-bar'),
   terrainText: document.getElementById('loader-terrain-progress-text'),
   assetsBar: document.getElementById('loader-assets-progress-bar'),
@@ -346,17 +348,27 @@ function setLoaderProgressSection(barElement, textElement, ratio, text) {
   if (textElement && typeof text === 'string') textElement.textContent = text;
 }
 
+function setLoaderPhaseText(phaseText, detailText) {
+  if (loaderElements.phaseText && typeof phaseText === 'string') {
+    loaderElements.phaseText.textContent = phaseText;
+  }
+  if (loaderElements.phaseDetailText && typeof detailText === 'string') {
+    loaderElements.phaseDetailText.textContent = detailText;
+  }
+}
+
 function updateLoaderProgress() {
   const terrainSelection = getTerrainSelectionDiagnostics?.() || null;
   const blockingLeafCount = terrainSelection?.blockingLeafCount ?? 0;
   const pendingBlockingLeafCount = terrainSelection?.pendingBlockingLeafCount ?? 0;
   const readyBlockingLeafCount = Math.max(0, blockingLeafCount - pendingBlockingLeafCount);
+  const terrainReady = isReady();
   if (blockingLeafCount > 0) {
     loaderProgressState.terrain.ratio = readyBlockingLeafCount / blockingLeafCount;
     loaderProgressState.terrain.text = `${readyBlockingLeafCount}/${blockingLeafCount} leaves ready`;
   } else {
-    loaderProgressState.terrain.ratio = isReady() ? 1 : 0;
-    loaderProgressState.terrain.text = isReady() ? 'Terrain ready' : 'Selecting bootstrap terrain...';
+    loaderProgressState.terrain.ratio = terrainReady ? 1 : 0;
+    loaderProgressState.terrain.text = terrainReady ? 'Terrain ready' : 'Selecting bootstrap terrain...';
   }
 
   setLoaderProgressSection(
@@ -371,6 +383,20 @@ function updateLoaderProgress() {
     loaderProgressState.assets.ratio,
     loaderProgressState.assets.text
   );
+
+  const terrainRatio = loaderProgressState.terrain.ratio;
+  const assetsRatio = loaderProgressState.assets.ratio;
+  if (terrainReady && assetsRatio >= 1) {
+    setLoaderPhaseText('Bootstrap complete. Preparing visual handoff', 'World data and shader warmup are ready');
+  } else if (terrainRatio >= 1) {
+    setLoaderPhaseText('Terrain envelope locked. Finalizing systems warmup', 'Terrain ready, completing shader and asset preparation');
+  } else if (assetsRatio >= 1) {
+    setLoaderPhaseText('Systems warm. Finalizing terrain envelope', 'Shader warmup finished, waiting on bootstrap terrain');
+  } else if (blockingLeafCount > 0) {
+    setLoaderPhaseText('Mapping the immediate flight corridor', `Bootstrap terrain ${readyBlockingLeafCount}/${blockingLeafCount} sectors ready`);
+  } else {
+    setLoaderPhaseText('Bringing the flight deck online', 'Awaiting terrain selection and shader warmup');
+  }
 
   window.fsimWorld.loaderProgress = {
     terrain: { ...loaderProgressState.terrain },
@@ -916,7 +942,7 @@ function animate() {
 }
 
 // Initialize Loader Tips
-const loaderTipsInterval = startLoaderTips('loader-subtext', 150);
+const loaderTipsInterval = startLoaderTips('loader-subtext', 2200);
 let loaderHidden = false;
 
 function hideLoader() {

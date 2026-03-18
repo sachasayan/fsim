@@ -25,26 +25,69 @@
 <body>
 
     <div id="loader">
-        <div class="spinner"></div>
-        <h2 id="loader-text">INITIALIZING FLIGHT DYNAMICS</h2>
-        <p id="loader-subtext">Generating Procedural World...</p>
-        <div id="loader-progress" aria-live="polite">
-            <div class="loader-progress-row">
-                <div class="loader-progress-labels">
-                    <span>Terrain</span>
-                    <span id="loader-terrain-progress-text">Waiting...</span>
-                </div>
-                <div class="loader-progress-track"><div id="loader-terrain-progress-bar" class="loader-progress-fill"></div></div>
-            </div>
-            <div class="loader-progress-row">
-                <div class="loader-progress-labels">
-                    <span>Assets</span>
-                    <span id="loader-assets-progress-text">Waiting...</span>
-                </div>
-                <div class="loader-progress-track"><div id="loader-assets-progress-bar" class="loader-progress-fill"></div></div>
-            </div>
+        <div class="loader-ambient" aria-hidden="true">
+            <div class="loader-vignette"></div>
+            <div class="loader-grid"></div>
+            <div class="loader-glow loader-glow-primary"></div>
+            <div class="loader-glow loader-glow-secondary"></div>
+            <div class="loader-clouds"></div>
         </div>
-        <div id="terrain-bootstrap-debug"></div>
+        <div class="loader-panel">
+            <div class="loader-panel-chrome" aria-hidden="true">
+                <span class="loader-panel-notch"></span>
+                <span class="loader-panel-notch"></span>
+                <span class="loader-panel-notch"></span>
+            </div>
+            <div class="loader-topline">
+                <span class="loader-eyebrow">Avionics bootstrap</span>
+                <div class="loader-status-pills" aria-hidden="true">
+                    <span class="loader-pill loader-pill-live">Live</span>
+                    <span class="loader-pill">Flight deck</span>
+                </div>
+            </div>
+            <div class="loader-hero">
+                <div class="loader-radar" aria-hidden="true">
+                    <div class="loader-radar-ring loader-radar-ring-outer"></div>
+                    <div class="loader-radar-ring loader-radar-ring-mid"></div>
+                    <div class="loader-radar-ring loader-radar-ring-inner"></div>
+                    <div class="loader-radar-sweep"></div>
+                    <div class="loader-radar-core"></div>
+                    <div class="loader-radar-horizon"></div>
+                </div>
+                <div class="loader-copy">
+                    <h2 id="loader-text">Initializing Flight Dynamics</h2>
+                    <p id="loader-phase">Bringing the flight deck online</p>
+                    <p id="loader-subtext">Aligning inertial reference systems...</p>
+                </div>
+            </div>
+            <div id="loader-progress" aria-live="polite">
+                <div class="loader-progress-row loader-progress-row-terrain">
+                    <div class="loader-progress-labels">
+                        <span>Terrain mesh</span>
+                        <span id="loader-terrain-progress-text">Waiting...</span>
+                    </div>
+                    <div class="loader-progress-track"><div id="loader-terrain-progress-bar" class="loader-progress-fill"></div></div>
+                </div>
+                <div class="loader-progress-row loader-progress-row-assets">
+                    <div class="loader-progress-labels">
+                        <span>Systems warmup</span>
+                        <span id="loader-assets-progress-text">Waiting...</span>
+                    </div>
+                    <div class="loader-progress-track"><div id="loader-assets-progress-bar" class="loader-progress-fill"></div></div>
+                </div>
+            </div>
+            <div class="loader-footer">
+                <div class="loader-footer-copy">
+                    <span class="loader-footer-label">Status</span>
+                    <span class="loader-footer-value">Awaiting world readiness and shader compilation</span>
+                </div>
+                <div class="loader-footer-copy">
+                    <span class="loader-footer-label">Telemetry</span>
+                    <span id="loader-phase-detail" class="loader-footer-value">Bootstrap sequence queued</span>
+                </div>
+            </div>
+            <div id="terrain-bootstrap-debug"></div>
+        </div>
     </div>
 
     <div id="game-container"></div>
