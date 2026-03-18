@@ -139,38 +139,42 @@ function buildChunkBase(job) {
     const chunkMinZ = cz * CHUNK_SIZE;
     const chunkMaxX = chunkMinX + CHUNK_SIZE;
     const chunkMaxZ = chunkMinZ + CHUNK_SIZE;
-    const margin = 200;
+    const margin = 300; // Buffer for feathering/overrides
 
     const localRoadSegments = [];
+    const localRoadsForOverrides = [];
+
     if (staticWorldMetadata?.roads) {
         for (const road of staticWorldMetadata.roads) {
             if (!road.points || road.points.length < 2) continue;
+            
+            // Check if road is within chunk boundary + margin
+            let roadMinX = Infinity, roadMaxX = -Infinity, roadMinZ = Infinity, roadMaxZ = -Infinity;
+            for (const p of road.points) {
+                if (p[0] < roadMinX) roadMinX = p[0];
+                if (p[0] > roadMaxX) roadMaxX = p[0];
+                if (p[1] < roadMinZ) roadMinZ = p[1];
+                if (p[1] > roadMaxZ) roadMaxZ = p[1];
+            }
+
+            if (roadMaxX < chunkMinX - margin || roadMinX > chunkMaxX + margin ||
+                roadMaxZ < chunkMinZ - margin || roadMinZ > chunkMaxZ + margin) {
+                continue;
+            }
+
+            localRoadsForOverrides.push(road);
+            
             let roadWidth = road.width;
             if (!Number.isFinite(roadWidth)) {
                 roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0; 
             }
             
-            // The terrain grid can be ~62.5m spacing. 
-            // We need the flat area to be big enough to reliably contain terrain vertices 
             const halfWidth = roadWidth * 0.5 + 32.0; 
             const embankment = 48.0; 
             const totalRadius = halfWidth + embankment;
 
             for (let i = 0; i < road.points.length - 1; i++) {
-                const p1 = road.points[i];
-                const p2 = road.points[i+1];
-                
-                const minX = Math.min(p1[0], p2[0]) - totalRadius;
-                const maxX = Math.max(p1[0], p2[0]) + totalRadius;
-                const minZ = Math.min(p1[1], p2[1]) - totalRadius;
-                const maxZ = Math.max(p1[1], p2[1]) + totalRadius;
-
-                if (maxX < chunkMinX - margin || minX > chunkMaxX + margin ||
-                    maxZ < chunkMinZ - margin || minZ > chunkMaxZ + margin) {
-                    continue;
-                }
-                
-                localRoadSegments.push({ p1, p2, halfWidth, embankment, totalRadius });
+                localRoadSegments.push({ p1: road.points[i], p2: road.points[i+1], halfWidth, embankment, totalRadius });
             }
         }
     }
@@ -243,7 +247,7 @@ function buildChunkBase(job) {
 
         const col = srgbArrayToLinear(getTerrainBaseSrgb(height));
         const weights = getTerrainSurfaceWeights(height, slope, terrainMasks);
-        const overrides = getTerrainSurfaceOverrides(vx, vz, staticWorldMetadata);
+        const overrides = getTerrainSurfaceOverrides(vx, vz, staticWorldMetadata, localRoadsForOverrides);
 
         colors[i] = col.r;
         colors[i + 1] = col.g;

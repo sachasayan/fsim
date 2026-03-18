@@ -82,9 +82,10 @@ function getRoadSurfaceWeight(x, z, roads, surface = 'asphalt') {
     return best;
 }
 
-export function getTerrainSurfaceOverrides(x, z, worldData = null) {
+export function getTerrainSurfaceOverrides(x, z, worldData = null, localRoads = null) {
     const runtimeWorld = worldData || (typeof window !== 'undefined' ? window?.fsimWorld || null : null);
-    const hasAuthoredRoads = Array.isArray(runtimeWorld?.roads) && runtimeWorld.roads.length > 0;
+    const roads = localRoads || (Array.isArray(runtimeWorld?.roads) ? runtimeWorld.roads : []);
+    const hasAuthoredRoads = roads.length > 0;
     const apron = rectWeight(
         x,
         z,
@@ -95,7 +96,7 @@ export function getTerrainSurfaceOverrides(x, z, worldData = null) {
         20
     );
     const taxiway = hasAuthoredRoads
-        ? getRoadSurfaceWeight(x, z, runtimeWorld.roads, 'asphalt')
+        ? getRoadSurfaceWeight(x, z, roads, 'asphalt')
         : AIRPORT_TAXIWAYS.reduce((best, points) => (
             Math.max(best, polylineWeight(x, z, points, AIRPORT_CONFIG.TAXIWAY.width + 10, 10))
         ), 0);
