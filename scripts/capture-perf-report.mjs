@@ -26,6 +26,7 @@ const RUN_SWEEP = process.env.FSIM_PERF_SWEEP === '1';
 const DEEP_PROFILE_MODE = process.env.FSIM_PERF_DEEP_PROFILE || '';
 const ARTIFACT_DIR = process.env.FSIM_PERF_ARTIFACT_DIR || path.join(process.cwd(), 'artifacts', 'perf');
 const RENDERER_MODE = process.env.FSIM_PERF_RENDERER_MODE || 'hardware';
+const HEADLESS = process.env.FSIM_PERF_HEADLESS === '0' ? false : true;
 
 function envNumber(name, fallback) {
   const value = process.env[name];
@@ -36,6 +37,13 @@ function envNumber(name, fallback) {
 
 function round(value) {
   return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+}
+
+function persistReportArtifact(fileName, payload) {
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  const outputPath = path.join(ARTIFACT_DIR, fileName);
+  writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  return outputPath;
 }
 
 function applyCaptureEnvOverrides(scenario) {
@@ -141,7 +149,8 @@ async function collectScenarioReport(page, scenarioRun) {
       captureStartMetadata: captureStart,
       metadata: {
         rendererBackend,
-        rendererMode: RENDERER_MODE
+        rendererMode: RENDERER_MODE,
+        headless: HEADLESS
       }
     })
   );
@@ -149,7 +158,8 @@ async function collectScenarioReport(page, scenarioRun) {
   report.deepProfile = deepProfile;
   report.environment = {
     ...(report.environment || {}),
-    rendererMode: RENDERER_MODE
+    rendererMode: RENDERER_MODE,
+    headless: HEADLESS
   };
   return addCaptureDiagnostics(report, captureStart, rendererBackend);
 }
@@ -163,10 +173,12 @@ async function main() {
   if (RENDERER_MODE === 'software') {
     browserArgs.unshift('--use-angle=swiftshader');
     browserArgs.unshift('--use-gl=angle');
+  } else {
+    browserArgs.unshift('--enable-gpu');
   }
 
   const browser = await chromium.launch({
-    headless: true,
+    headless: HEADLESS,
     args: browserArgs
   });
 
@@ -197,6 +209,13 @@ async function main() {
     }
 
     if (!RUN_SWEEP) {
+      const latestPath = persistReportArtifact('latest.json', reports[0]);
+      const scenarioPath = persistReportArtifact(`${baseScenario.id}-latest.json`, reports[0]);
+      reports[0].artifacts = {
+        ...(reports[0].artifacts || {}),
+        latestReportPath: latestPath,
+        scenarioReportPath: scenarioPath
+      };
       console.log(JSON.stringify(reports[0], null, 2));
       return;
     }
@@ -215,6 +234,12 @@ async function main() {
       }))
     };
 
+    const latestPath = persistReportArtifact('latest-sweep.json', sweepReport);
+    const scenarioPath = persistReportArtifact(`${baseScenario.id}-sweep-latest.json`, sweepReport);
+    sweepReport.artifacts = {
+      latestReportPath: latestPath,
+      scenarioReportPath: scenarioPath
+    };
     console.log(JSON.stringify(sweepReport, null, 2));
   } finally {
     await browser.close();

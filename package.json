@@ -19,6 +19,8 @@
     "test:e2e:perf": "playwright test tests/e2e/perf/fsim.perf.spec.js",
     "test:e2e:headed": "playwright test --headed",
     "test:perf": "node scripts/perf.mjs",
+    "perf:capture": "node scripts/capture-perf-report.mjs",
+    "perf:analyze": "node scripts/analyze-perf-report.mjs",
     "test": "npm run test:unit && npm run smoke"
   },
   "dependencies": {

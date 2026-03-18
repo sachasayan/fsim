@@ -6,6 +6,8 @@
 - `npm run smoke` validates syntax and basic server asset delivery.
 - `npm run test:perf` runs CPU microbenchmarks for graphics-heavy procedural noise paths.
 - `npm run test:e2e:perf` captures a browser-side render performance report for `fsim.html`.
+- `npm run perf:capture` runs the standalone perf harness and saves `artifacts/perf/latest.json`.
+- `npm run perf:analyze` analyzes the latest saved perf report and compares it to a scenario/backend baseline if one exists.
 - `npm test` runs unit + smoke.
 
 ## Performance Test Philosophy
@@ -68,3 +70,42 @@ The standalone perf harness uses hardware-backed Chromium by default. To run the
 ```bash
 FSIM_PERF_RENDERER_MODE=software node scripts/capture-perf-report.mjs
 ```
+
+The standalone capture defaults to headless mode, but you can make the exact same capture visible with:
+
+```bash
+FSIM_PERF_HEADLESS=0 npm run perf:capture
+```
+
+## Suggested Perf Workflow
+
+1. Capture a run:
+
+```bash
+npm run perf:capture
+```
+
+2. Analyze the latest report:
+
+```bash
+npm run perf:analyze
+```
+
+3. If the run is representative, save it as the baseline for that scenario/backend:
+
+```bash
+npm run perf:analyze -- --save-baseline
+```
+
+4. Optional: write analysis artifacts for sharing or agent review:
+
+```bash
+npm run perf:analyze -- --write-md artifacts/perf/latest-summary.md --write-json artifacts/perf/latest-analysis.json
+```
+
+The analyzer summarizes:
+
+- capture stability and whether the sample was trustworthy
+- top-ranked expensive phases
+- regressions and improvements against the baseline
+- suggested next actions based on the dominant subsystem signals
