@@ -9,6 +9,15 @@ import {
   listPerfSweeps,
   mergeScenarioVariant
 } from './perf-scenarios.mjs';
+import {
+  addCaptureDiagnostics,
+  applyScenarioRuntime,
+  assertCaptureStability,
+  collectPerfReportInPage,
+  getRendererBackendMetadata,
+  waitForPageReady,
+  waitForProfilingReadiness
+} from './perf-harness.mjs';
 
 const PORT = Number(process.env.PORT || 4173);
 const QUERY_SUFFIX = process.env.FSIM_PERF_QUERY || '';
@@ -16,6 +25,7 @@ const SCENARIO_ID = process.env.FSIM_PERF_SCENARIO || 'startup_steady_state';
 const RUN_SWEEP = process.env.FSIM_PERF_SWEEP === '1';
 const DEEP_PROFILE_MODE = process.env.FSIM_PERF_DEEP_PROFILE || '';
 const ARTIFACT_DIR = process.env.FSIM_PERF_ARTIFACT_DIR || path.join(process.cwd(), 'artifacts', 'perf');
+const RENDERER_MODE = process.env.FSIM_PERF_RENDERER_MODE || 'hardware';
 
 function envNumber(name, fallback) {
   const value = process.env[name];
@@ -36,90 +46,12 @@ function applyCaptureEnvOverrides(scenario) {
     warmupFrames: envNumber('FSIM_PERF_WARMUP_FRAMES', next.capture?.warmupFrames ?? 20),
     sampleFrames: envNumber('FSIM_PERF_SAMPLE_FRAMES', next.capture?.sampleFrames ?? 30),
     sampleMs: envNumber('FSIM_PERF_SAMPLE_MS', next.capture?.sampleMs ?? 4_000),
-    profilingReadyTimeoutMs: envNumber('FSIM_PERF_READY_TIMEOUT_MS', next.capture?.profilingReadyTimeoutMs ?? 45_000)
+    profilingReadyTimeoutMs: envNumber('FSIM_PERF_READY_TIMEOUT_MS', next.capture?.profilingReadyTimeoutMs ?? 45_000),
+    requireSteadyState: process.env.FSIM_PERF_ALLOW_UNSTABLE === '1'
+      ? false
+      : (next.capture?.requireSteadyState ?? true)
   };
   return next;
-}
-
-async function waitForPageReady(page) {
-  await page.waitForFunction(() => (
-    window.fsimWorld?.PHYSICS != null &&
-    window.fsimWorld?.cameraController != null &&
-    window.fsimPerf != null
-  ), null, { timeout: 60_000 });
-}
-
-async function applyScenarioRuntime(page, scenario) {
-  await page.evaluate((activeScenario) => {
-    const runtime = activeScenario.runtime || {};
-    const terrain = runtime.terrain || {};
-
-    if (window.fsimWorld?.applyTerrainDebugSettings && Object.keys(terrain).length > 0) {
-      Object.assign(window.fsimWorld.terrainDebugSettings || {}, terrain);
-      window.fsimWorld.applyTerrainDebugSettings({
-        rebuildProps: true,
-        refreshSelection: false
-      });
-      window.fsimWorld.updateTerrain?.();
-    }
-
-    if (runtime.hidePlane === true && window.fsimWorld?.planeGroup) {
-      window.fsimWorld.planeGroup.visible = false;
-    }
-    if (runtime.hidePlane === false && window.fsimWorld?.planeGroup) {
-      window.fsimWorld.planeGroup.visible = true;
-    }
-
-    if (activeScenario.camera && window.fsimWorld?.cameraController) {
-      window.fsimWorld.cameraController.setRotation(activeScenario.camera.rotationX, activeScenario.camera.rotationY);
-      window.fsimWorld.cameraController.setDistance(activeScenario.camera.distance);
-      window.fsimWorld.cameraController.snapToTarget();
-    }
-  }, scenario);
-}
-
-async function waitForSettled(page, captureConfig) {
-  return page.evaluate(async ({ waitMs, readyTimeoutMs }) => {
-    const start = performance.now();
-    let captureStartMode = 'fallback_delay';
-    let profilingReadyAtMs = null;
-
-    await new Promise((resolve) => {
-      function tick() {
-        if (window.fsimWorld?.profilingReady === true) {
-          captureStartMode = 'steady_state_gate';
-          profilingReadyAtMs = performance.now();
-          resolve();
-          return;
-        }
-        if ((performance.now() - start) >= readyTimeoutMs) {
-          resolve();
-          return;
-        }
-        setTimeout(tick, 50);
-      }
-      tick();
-    });
-
-    if (captureStartMode === 'fallback_delay') {
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-    }
-
-    return {
-      captureStartMode,
-      profilingReadyAtMs,
-      readiness: {
-        bootstrapComplete: window.fsimWorld?.bootstrapComplete ?? null,
-        loaderHidden: window.fsimWorld?.loaderHidden ?? null,
-        worldReady: window.fsimWorld?.worldReady ?? null,
-        profilingReady: window.fsimWorld?.profilingReady ?? null,
-        profilingReadinessReason: window.fsimWorld?.profilingReadinessReason ?? null
-      }
-    };
-  }, {
-    waitMs: captureConfig.settleDelayMs,
-    readyTimeoutMs: captureConfig.profilingReadyTimeoutMs
-  });
 }
 
 function buildReportDeltas(baseline, candidate) {
@@ -197,133 +129,45 @@ async function collectScenarioReport(page, scenarioRun) {
   await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
   await waitForPageReady(page);
   await applyScenarioRuntime(page, scenarioRun);
-  const captureStart = await waitForSettled(page, captureConfig);
+  const captureStart = await waitForProfilingReadiness(page, captureConfig);
+  const rendererBackend = await getRendererBackendMetadata(page);
+  assertCaptureStability(captureStart, scenarioRun);
 
-  const { report, deepProfile } = await maybeCaptureDeepProfile(page, scenarioRun, async () => page.evaluate(async ({
-    activeScenario,
-    captureStartMetadata
-  }) => {
-    function startScenarioDriver(scenario) {
-      const movement = scenario.movement || { type: 'none' };
-      if (movement.type === 'none') return () => {};
-
-      const { PHYSICS, planeGroup, physicsAdapter, cameraController } = window.fsimWorld;
-      if (!PHYSICS || !planeGroup || !physicsAdapter) return () => {};
-
-      const origin = scenario.spawn || {
-        x: PHYSICS.position.x,
-        y: PHYSICS.position.y,
-        z: PHYSICS.position.z
-      };
-      const initialTimeMs = performance.now();
-      let active = true;
-
-      function tick(now) {
-        if (!active) return;
-        const elapsed = (now - initialTimeMs) / 1000;
-
-        if (movement.type === 'path') {
-          const dx = Math.cos(movement.yawRad || 0) * movement.speedMps * elapsed;
-          const dz = Math.sin(movement.yawRad || 0) * movement.speedMps * elapsed;
-          PHYSICS.position.set(origin.x + dx, origin.y, origin.z + dz);
-          PHYSICS.velocity.set(Math.cos(movement.yawRad || 0) * movement.speedMps, 0, Math.sin(movement.yawRad || 0) * movement.speedMps);
-          planeGroup.rotation.set(0, -(movement.yawRad || 0), 0);
-        } else if (movement.type === 'orbit') {
-          const angle = elapsed * (movement.angularSpeedRadPerSec || 0.2);
-          const radius = movement.radius || 250;
-          const altitude = movement.altitude || origin.y;
-          PHYSICS.position.set(
-            origin.x + Math.cos(angle) * radius,
-            altitude,
-            origin.z + Math.sin(angle) * radius
-          );
-          PHYSICS.velocity.set(
-            -Math.sin(angle) * radius * (movement.angularSpeedRadPerSec || 0.2),
-            0,
-            Math.cos(angle) * radius * (movement.angularSpeedRadPerSec || 0.2)
-          );
-          planeGroup.rotation.set(0, -angle + Math.PI * 0.5, 0);
-        }
-
-        planeGroup.position.copy(PHYSICS.position);
-        PHYSICS.angularVelocity.set(0, 0, 0);
-        PHYSICS.externalForce.set(0, 0, 0);
-        PHYSICS.externalTorque.set(0, 0, 0);
-        physicsAdapter.syncFromState();
-        cameraController?.snapToTarget?.();
-        requestAnimationFrame(tick);
+  const { report, deepProfile } = await maybeCaptureDeepProfile(
+    page,
+    scenarioRun,
+    async () => collectPerfReportInPage(page, {
+      scenario: scenarioRun,
+      captureStartMetadata: captureStart,
+      metadata: {
+        rendererBackend,
+        rendererMode: RENDERER_MODE
       }
-
-      requestAnimationFrame(tick);
-      return () => {
-        active = false;
-      };
-    }
-
-    const stopDriver = startScenarioDriver(activeScenario);
-    const metadata = {
-      scenarioId: activeScenario.id,
-      scenarioLabel: activeScenario.label,
-      sweepId: activeScenario.sweepId ?? null,
-      sweepLabel: activeScenario.sweepLabel ?? null,
-      captureStartMode: captureStartMetadata.captureStartMode,
-      profilingReadyAtMs: captureStartMetadata.profilingReadyAtMs,
-      readinessAtCaptureStart: captureStartMetadata.readiness,
-      settleDelayMs: activeScenario.capture?.settleDelayMs ?? null,
-      sampleMs: activeScenario.capture?.sampleMs ?? null,
-      warmupFrames: activeScenario.capture?.warmupFrames ?? null,
-      sampleFrames: activeScenario.capture?.sampleFrames ?? null,
-      query: window.location.search,
-      cameraMode: window.fsimWorld.cameraController.getMode(),
-      camera: activeScenario.camera,
-      rendererConfig: window.fsimWorld.rendererConfig,
-      runtimeOverrides: activeScenario.runtime ?? {},
-      movement: activeScenario.movement ?? { type: 'none' },
-      aircraftPosition: {
-        x: window.fsimWorld.PHYSICS.position.x,
-        y: window.fsimWorld.PHYSICS.position.y,
-        z: window.fsimWorld.PHYSICS.position.z
-      }
-    };
-
-    try {
-      if ((activeScenario.capture?.sampleFrames ?? 0) > 0) {
-        return await window.fsimPerf.collectSample({
-          scenario: activeScenario.id,
-          warmupFrames: activeScenario.capture.warmupFrames,
-          sampleFrames: activeScenario.capture.sampleFrames,
-          metadata
-        });
-      }
-
-      window.fsimPerf.reset({
-        scenario: activeScenario.id,
-        metadata
-      });
-      await new Promise((resolve) => setTimeout(resolve, activeScenario.capture.sampleMs));
-      return window.fsimPerf.getReport();
-    } finally {
-      stopDriver();
-    }
-  }, {
-    activeScenario: scenarioRun,
-    captureStartMetadata: captureStart
-  }));
+    })
+  );
 
   report.deepProfile = deepProfile;
-  return report;
+  report.environment = {
+    ...(report.environment || {}),
+    rendererMode: RENDERER_MODE
+  };
+  return addCaptureDiagnostics(report, captureStart, rendererBackend);
 }
 
 async function main() {
+  const browserArgs = [
+    '--ignore-gpu-blocklist',
+    '--enable-webgl',
+    '--window-size=1920,1080'
+  ];
+  if (RENDERER_MODE === 'software') {
+    browserArgs.unshift('--use-angle=swiftshader');
+    browserArgs.unshift('--use-gl=angle');
+  }
+
   const browser = await chromium.launch({
     headless: true,
-    args: [
-      '--use-gl=angle',
-      '--use-angle=swiftshader',
-      '--ignore-gpu-blocklist',
-      '--enable-webgl',
-      '--window-size=1920,1080'
-    ]
+    args: browserArgs
   });
 
   try {

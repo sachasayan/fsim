@@ -13,7 +13,8 @@ const DEFAULT_CAPTURE = {
   sampleFrames: 30,
   sampleMs: 4000,
   settleDelayMs: 10000,
-  profilingReadyTimeoutMs: 45000
+  profilingReadyTimeoutMs: 45000,
+  requireSteadyState: true
 };
 
 const DEFAULT_RUNTIME = {

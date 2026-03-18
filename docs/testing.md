@@ -50,6 +50,8 @@ The browser perf E2E writes a JSON artifact with:
 - `THREE.WebGLRenderer.info` counters
 - adaptive quality / pixel ratio snapshots
 - profiling readiness state and resource stabilization timing
+- explicit capture stability metadata (`stable`, `requiredSteadyState`, `unstableReason`)
+- renderer backend metadata so reports show which WebGL backend produced them
 - Chromium performance metrics gathered through Playwright CDP
 
 Use it as machine-local regression feedback and as structured input for LLM analysis.
@@ -58,4 +60,11 @@ The perf capture intentionally waits for startup to settle before sampling:
 
 - prefer the in-app `profilingReady` signal
 - `profilingReady` requires bootstrap complete, loader hidden, world ready, and no program/texture/geometry growth for 3 seconds
-- fall back to a 10 second in-game delay only if true steady state never arrives before the harness timeout
+- steady-state scenarios fail if true steady state never arrives before the harness timeout
+- set `FSIM_PERF_ALLOW_UNSTABLE=1` only when you intentionally want an exploratory unstable capture
+
+The standalone perf harness uses hardware-backed Chromium by default. To run the old deterministic software path explicitly:
+
+```bash
+FSIM_PERF_RENDERER_MODE=software node scripts/capture-perf-report.mjs
+```

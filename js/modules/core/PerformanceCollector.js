@@ -52,10 +52,13 @@ export function createPerformanceCollector({
     getProfilingSnapshot = () => ({}),
     getRenderPassTimings = () => ({})
 }) {
+    const MAX_RECENT_FRAMES = 24;
+    const MAX_WORST_FRAMES = 8;
     const phaseSamples = new Map();
     const metricSamples = new Map();
     const longTaskDurations = [];
-    const frameRecords = [];
+    const recentFrames = [];
+    const worstFrames = [];
     const metricNames = [
         'frameMs',
         'fps',
@@ -90,6 +93,10 @@ export function createPerformanceCollector({
     let observer = null;
     let currentFrame = null;
     let sessionCounter = 0;
+    let framesCaptured = 0;
+    let slowFrames = 0;
+    let verySlowFrames = 0;
+    let lastFrame = null;
 
     renderer.info.autoReset = false;
 
@@ -116,8 +123,13 @@ export function createPerformanceCollector({
         phaseSamples.clear();
         metricSamples.clear();
         longTaskDurations.length = 0;
-        frameRecords.length = 0;
+        recentFrames.length = 0;
+        worstFrames.length = 0;
         currentFrame = null;
+        framesCaptured = 0;
+        slowFrames = 0;
+        verySlowFrames = 0;
+        lastFrame = null;
         sessionCounter += 1;
         collection = {
             active: true,
@@ -216,8 +228,8 @@ export function createPerformanceCollector({
             recordMetric('memory.usedJsHeapMb', memory.usedJSHeapSize / (1024 * 1024));
         }
 
-        frameRecords.push({
-            frameIndex: frameRecords.length,
+        const frameRecord = {
+            frameIndex: framesCaptured,
             now: round(now ?? currentFrame.now),
             dt: round(currentFrame.dt * 1000),
             frameMs: round(frameMs),
@@ -278,7 +290,26 @@ export function createPerformanceCollector({
                 total: round(renderPassTimings.total)
             },
             phases: currentFrame.phases
+        };
+
+        framesCaptured += 1;
+        if (frameMs >= 16.67) slowFrames += 1;
+        if (frameMs >= 33.34) verySlowFrames += 1;
+        lastFrame = frameRecord;
+        recentFrames.push(frameRecord);
+        if (recentFrames.length > MAX_RECENT_FRAMES) {
+            recentFrames.shift();
+        }
+
+        worstFrames.push(frameRecord);
+        worstFrames.sort((a, b) => {
+            const aTotal = a.renderPasses?.total ?? a.phases?.render_total ?? a.phases?.render ?? -Infinity;
+            const bTotal = b.renderPasses?.total ?? b.phases?.render_total ?? b.phases?.render ?? -Infinity;
+            return bTotal - aTotal;
         });
+        if (worstFrames.length > MAX_WORST_FRAMES) {
+            worstFrames.length = MAX_WORST_FRAMES;
+        }
 
         currentFrame = null;
     }
@@ -287,7 +318,7 @@ export function createPerformanceCollector({
         return {
             active: Boolean(collection?.active),
             scenario: collection?.scenario ?? null,
-            framesCaptured: frameRecords.length
+            framesCaptured
         };
     }
 
@@ -319,15 +350,7 @@ export function createPerformanceCollector({
             }));
 
         const longTaskSummary = roundSummary(summarizeValues(longTaskDurations));
-        const slowFrames = frameRecords.filter((frame) => frame.frameMs >= 16.67).length;
-        const verySlowFrames = frameRecords.filter((frame) => frame.frameMs >= 33.34).length;
-        const lastFrame = frameRecords[frameRecords.length - 1] || null;
-        const worstRenderFrame = frameRecords.reduce((worst, frame) => {
-            const total = frame.renderPasses?.total ?? frame.phases?.render_total ?? frame.phases?.render ?? -Infinity;
-            if (!worst) return frame;
-            const worstTotal = worst.renderPasses?.total ?? worst.phases?.render_total ?? worst.phases?.render ?? -Infinity;
-            return total > worstTotal ? frame : worst;
-        }, null);
+        const worstRenderFrame = worstFrames[0] || null;
         const profiling = getProfilingSnapshot() || {};
 
         return {
@@ -344,7 +367,7 @@ export function createPerformanceCollector({
                 height: window.innerHeight,
                 devicePixelRatio: round(window.devicePixelRatio || 1)
             },
-            framesCaptured: frameRecords.length,
+            framesCaptured,
             slowFrames,
             verySlowFrames,
             longTasks: {
@@ -406,7 +429,8 @@ export function createPerformanceCollector({
             },
             metadata: collection.metadata,
             worstRenderFrame,
-            recentFrames: frameRecords.slice(-12)
+            worstFrames: [...worstFrames],
+            recentFrames: recentFrames.slice(-12)
         };
     }
 
