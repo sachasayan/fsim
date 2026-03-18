@@ -23,39 +23,86 @@ export const Noise = {
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   },
   noise(x, y, z) {
-    let X = Math.floor(x) & 255;
-    let Y = Math.floor(y) & 255;
-    let Z = Math.floor(z) & 255;
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+    let floorX = Math.floor(x);
+    let floorY = Math.floor(y);
+    let floorZ = Math.floor(z);
+    let X = floorX & 255;
+    let Y = floorY & 255;
+    let Z = floorZ & 255;
+    x -= floorX;
+    y -= floorY;
+    z -= floorZ;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    // Inline fade
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let p = this.permutation;
+    let A = p[X] + Y;
+    let AA = p[A] + Z;
+    let AB = p[A + 1] + Z;
+    let B = p[X + 1] + Y;
+    let BA = p[B] + Z;
+    let BB = p[B + 1] + Z;
+
+    let h, u_grad, v_grad;
+    let gradAA, gradBA, gradAB, gradBB, gradAA1, gradBA1, gradAB1, gradBB1;
+
+    // Inline grad
+    h = p[AA] & 15;
+    u_grad = h < 8 ? x : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x : z;
+    gradAA = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[BA] & 15;
+    let x1 = x - 1;
+    u_grad = h < 8 ? x1 : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x1 : z;
+    gradBA = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[AB] & 15;
+    let y1 = y - 1;
+    u_grad = h < 8 ? x : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x : z;
+    gradAB = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[BB] & 15;
+    u_grad = h < 8 ? x1 : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x1 : z;
+    gradBB = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[AA + 1] & 15;
+    let z1 = z - 1;
+    u_grad = h < 8 ? x : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x : z1;
+    gradAA1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[BA + 1] & 15;
+    u_grad = h < 8 ? x1 : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x1 : z1;
+    gradBA1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[AB + 1] & 15;
+    u_grad = h < 8 ? x : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x : z1;
+    gradAB1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = p[BB + 1] & 15;
+    u_grad = h < 8 ? x1 : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x1 : z1;
+    gradBB1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // Inline lerp
+    let lerpX1 = gradAA + u * (gradBA - gradAA);
+    let lerpX2 = gradAB + u * (gradBB - gradAB);
+    let lerpY1 = lerpX1 + v * (lerpX2 - lerpX1);
+
+    let lerpX3 = gradAA1 + u * (gradBA1 - gradAA1);
+    let lerpX4 = gradAB1 + u * (gradBB1 - gradAB1);
+    let lerpY2 = lerpX3 + v * (lerpX4 - lerpX3);
+
+    return lerpY1 + w * (lerpY2 - lerpY1);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {
