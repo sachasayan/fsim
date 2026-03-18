@@ -85,6 +85,18 @@ FSIM_PERF_HEADLESS=0 npm run perf:capture
 npm run perf:capture
 ```
 
+Example flight scenarios:
+
+```bash
+FSIM_PERF_SCENARIO=level_flight_low_alt npm run perf:capture
+FSIM_PERF_SCENARIO=level_flight_cruise npm run perf:capture
+```
+
+These two standardized flight captures use deterministic straight-line level flight and 10 second sample windows:
+
+- `level_flight_low_alt`: 1000 m altitude
+- `level_flight_cruise`: 8000 m altitude
+
 2. Analyze the latest report:
 
 ```bash

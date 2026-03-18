@@ -15,6 +15,8 @@ import {
   assertCaptureStability,
   collectPerfReportInPage,
   getRendererBackendMetadata,
+  startScenarioDriverInPage,
+  stopScenarioDriverInPage,
   waitForPageReady,
   waitForProfilingReadiness
 } from './perf-harness.mjs';
@@ -137,31 +139,36 @@ async function collectScenarioReport(page, scenarioRun) {
   await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
   await waitForPageReady(page);
   await applyScenarioRuntime(page, scenarioRun);
-  const captureStart = await waitForProfilingReadiness(page, captureConfig);
-  const rendererBackend = await getRendererBackendMetadata(page);
-  assertCaptureStability(captureStart, scenarioRun);
+  await startScenarioDriverInPage(page, scenarioRun);
+  try {
+    const captureStart = await waitForProfilingReadiness(page, captureConfig);
+    const rendererBackend = await getRendererBackendMetadata(page);
+    assertCaptureStability(captureStart, scenarioRun);
 
-  const { report, deepProfile } = await maybeCaptureDeepProfile(
-    page,
-    scenarioRun,
-    async () => collectPerfReportInPage(page, {
-      scenario: scenarioRun,
-      captureStartMetadata: captureStart,
-      metadata: {
-        rendererBackend,
-        rendererMode: RENDERER_MODE,
-        headless: HEADLESS
-      }
-    })
-  );
+    const { report, deepProfile } = await maybeCaptureDeepProfile(
+      page,
+      scenarioRun,
+      async () => collectPerfReportInPage(page, {
+        scenario: scenarioRun,
+        captureStartMetadata: captureStart,
+        metadata: {
+          rendererBackend,
+          rendererMode: RENDERER_MODE,
+          headless: HEADLESS
+        }
+      })
+    );
 
-  report.deepProfile = deepProfile;
-  report.environment = {
-    ...(report.environment || {}),
-    rendererMode: RENDERER_MODE,
-    headless: HEADLESS
-  };
-  return addCaptureDiagnostics(report, captureStart, rendererBackend);
+    report.deepProfile = deepProfile;
+    report.environment = {
+      ...(report.environment || {}),
+      rendererMode: RENDERER_MODE,
+      headless: HEADLESS
+    };
+    return addCaptureDiagnostics(report, captureStart, rendererBackend);
+  } finally {
+    await stopScenarioDriverInPage(page);
+  }
 }
 
 async function main() {

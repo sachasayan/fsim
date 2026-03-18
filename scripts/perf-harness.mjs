@@ -128,16 +128,14 @@ export async function getRendererBackendMetadata(page) {
   });
 }
 
-export async function collectPerfReportInPage(page, {
-  scenario,
-  captureStartMetadata,
-  metadata = {}
-}) {
-  return page.evaluate(async ({
-    activeScenario,
-    captureStart,
-    extraMetadata
-  }) => {
+export async function startScenarioDriverInPage(page, scenario) {
+  await page.evaluate((activeScenario) => {
+    const existingStop = window.__fsimPerfScenarioDriverStop;
+    if (typeof existingStop === 'function') {
+      existingStop();
+      window.__fsimPerfScenarioDriverStop = null;
+    }
+
     function startScenarioDriver(scenarioConfig) {
       const movement = scenarioConfig.movement || { type: 'none' };
       if (movement.type === 'none') return () => {};
@@ -157,11 +155,46 @@ export async function collectPerfReportInPage(page, {
         if (!active) return;
         const elapsed = (now - initialTimeMs) / 1000;
 
-        if (movement.type === 'path') {
+        if (movement.type === 'velocity_heading') {
+          const pitchRad = movement.pitchRad || 0;
+          const yawRad = movement.yawRad || 0;
+          const rollRad = movement.rollRad || 0;
+          const planarSpeed = (movement.targetSpeedMps || 0) * Math.cos(pitchRad);
+
+          PHYSICS.position.y = movement.altitude ?? origin.y;
+          planeGroup.rotation.set(pitchRad, -yawRad, rollRad, 'YXZ');
+          PHYSICS.quaternion.copy(planeGroup.quaternion);
+          planeGroup.quaternion.copy(PHYSICS.quaternion);
+          PHYSICS.velocity.set(
+            Math.sin(yawRad) * planarSpeed,
+            Math.sin(pitchRad) * (movement.targetSpeedMps || 0),
+            -Math.cos(yawRad) * planarSpeed
+          );
+          PHYSICS.angularVelocity.set(0, 0, 0);
+          PHYSICS.externalForce.set(0, 0, 0);
+          PHYSICS.externalTorque.set(0, 0, 0);
+          PHYSICS.throttle = movement.throttle ?? PHYSICS.throttle;
+          PHYSICS.targetFlaps = movement.targetFlaps ?? 0;
+          PHYSICS.flaps = movement.flaps ?? PHYSICS.flaps;
+          PHYSICS.gearDown = movement.gearDown ?? false;
+          PHYSICS.spoilers = false;
+          PHYSICS.brakes = false;
+          PHYSICS.onGround = false;
+          PHYSICS.crashState = 'active';
+          PHYSICS.impactSpeed = 0;
+          PHYSICS.impactVerticalSpeed = 0;
+          PHYSICS.impactAngularSpeed = 0;
+          planeGroup.position.copy(PHYSICS.position);
+          physicsAdapter.syncFromState();
+        } else if (movement.type === 'path') {
           const dx = Math.cos(movement.yawRad || 0) * movement.speedMps * elapsed;
           const dz = Math.sin(movement.yawRad || 0) * movement.speedMps * elapsed;
           PHYSICS.position.set(origin.x + dx, origin.y, origin.z + dz);
-          PHYSICS.velocity.set(Math.cos(movement.yawRad || 0) * movement.speedMps, 0, Math.sin(movement.yawRad || 0) * movement.speedMps);
+          PHYSICS.velocity.set(
+            Math.cos(movement.yawRad || 0) * movement.speedMps,
+            0,
+            Math.sin(movement.yawRad || 0) * movement.speedMps
+          );
           planeGroup.rotation.set(0, -(movement.yawRad || 0), 0);
         } else if (movement.type === 'orbit') {
           const angle = elapsed * (movement.angularSpeedRadPerSec || 0.2);
@@ -180,22 +213,48 @@ export async function collectPerfReportInPage(page, {
           planeGroup.rotation.set(0, -angle + Math.PI * 0.5, 0);
         }
 
-        planeGroup.position.copy(PHYSICS.position);
-        PHYSICS.angularVelocity.set(0, 0, 0);
-        PHYSICS.externalForce.set(0, 0, 0);
-        PHYSICS.externalTorque.set(0, 0, 0);
-        physicsAdapter.syncFromState();
+        if (movement.type !== 'velocity_heading') {
+          planeGroup.position.copy(PHYSICS.position);
+          PHYSICS.angularVelocity.set(0, 0, 0);
+          PHYSICS.externalForce.set(0, 0, 0);
+          PHYSICS.externalTorque.set(0, 0, 0);
+          physicsAdapter.syncFromState();
+        }
+
         cameraController?.snapToTarget?.();
         requestAnimationFrame(tick);
       }
 
-      requestAnimationFrame(tick);
+      tick(initialTimeMs);
       return () => {
         active = false;
       };
     }
 
-    const stopDriver = startScenarioDriver(activeScenario);
+    window.__fsimPerfScenarioDriverStop = startScenarioDriver(activeScenario);
+  }, scenario);
+}
+
+export async function stopScenarioDriverInPage(page) {
+  await page.evaluate(() => {
+    const stop = window.__fsimPerfScenarioDriverStop;
+    if (typeof stop === 'function') {
+      stop();
+    }
+    window.__fsimPerfScenarioDriverStop = null;
+  });
+}
+
+export async function collectPerfReportInPage(page, {
+  scenario,
+  captureStartMetadata,
+  metadata = {}
+}) {
+  return page.evaluate(async ({
+    activeScenario,
+    captureStart,
+    extraMetadata
+  }) => {
     const scenarioMetadata = {
       scenarioId: activeScenario.id,
       scenarioLabel: activeScenario.label,
@@ -223,25 +282,21 @@ export async function collectPerfReportInPage(page, {
       ...extraMetadata
     };
 
-    try {
-      if ((activeScenario.capture?.sampleFrames ?? 0) > 0) {
-        return await window.fsimPerf.collectSample({
-          scenario: activeScenario.id,
-          warmupFrames: activeScenario.capture.warmupFrames,
-          sampleFrames: activeScenario.capture.sampleFrames,
-          metadata: scenarioMetadata
-        });
-      }
-
-      window.fsimPerf.reset({
+    if ((activeScenario.capture?.sampleFrames ?? 0) > 0) {
+      return await window.fsimPerf.collectSample({
         scenario: activeScenario.id,
+        warmupFrames: activeScenario.capture.warmupFrames,
+        sampleFrames: activeScenario.capture.sampleFrames,
         metadata: scenarioMetadata
       });
-      await new Promise((resolve) => setTimeout(resolve, activeScenario.capture.sampleMs));
-      return window.fsimPerf.getReport();
-    } finally {
-      stopDriver();
     }
+
+    window.fsimPerf.reset({
+      scenario: activeScenario.id,
+      metadata: scenarioMetadata
+    });
+    await new Promise((resolve) => setTimeout(resolve, activeScenario.capture.sampleMs));
+    return window.fsimPerf.getReport();
   }, {
     activeScenario: scenario,
     captureStart: captureStartMetadata,

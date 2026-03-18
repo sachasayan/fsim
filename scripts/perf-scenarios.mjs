@@ -25,6 +25,13 @@ const DEFAULT_RUNTIME = {
   }
 };
 
+const DEFAULT_LEVEL_FLIGHT_CAPTURE = {
+  ...DEFAULT_CAPTURE,
+  warmupFrames: 0,
+  sampleFrames: 0,
+  sampleMs: 10_000
+};
+
 const PERF_SCENARIOS = {
   startup_steady_state: {
     id: 'startup_steady_state',
@@ -39,6 +46,50 @@ const PERF_SCENARIOS = {
     capture: DEFAULT_CAPTURE,
     runtime: DEFAULT_RUNTIME,
     movement: { type: 'none' }
+  },
+  level_flight_low_alt: {
+    id: 'level_flight_low_alt',
+    label: 'Level flight low altitude',
+    query: {
+      ...BASE_QUERY,
+      renderDist: '5'
+    },
+    spawn: { x: 1200, y: 1000, z: 900 },
+    camera: {
+      rotationX: 0.22,
+      rotationY: -0.18,
+      distance: 115
+    },
+    capture: DEFAULT_LEVEL_FLIGHT_CAPTURE,
+    runtime: DEFAULT_RUNTIME,
+    movement: {
+      type: 'velocity_heading',
+      targetSpeedMps: 180,
+      yawRad: 0.35,
+      throttle: 0.62
+    }
+  },
+  level_flight_cruise: {
+    id: 'level_flight_cruise',
+    label: 'Level flight cruise',
+    query: {
+      ...BASE_QUERY,
+      renderDist: '7'
+    },
+    spawn: { x: 3200, y: 8000, z: -1400 },
+    camera: {
+      rotationX: 0.18,
+      rotationY: -0.24,
+      distance: 145
+    },
+    capture: DEFAULT_LEVEL_FLIGHT_CAPTURE,
+    runtime: DEFAULT_RUNTIME,
+    movement: {
+      type: 'velocity_heading',
+      targetSpeedMps: 240,
+      yawRad: 0.18,
+      throttle: 0.58
+    }
   },
   terrain_streaming_low_alt: {
     id: 'terrain_streaming_low_alt',

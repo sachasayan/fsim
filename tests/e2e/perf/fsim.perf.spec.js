@@ -9,6 +9,8 @@ import {
     buildBrowserMetricDelta,
     collectPerfReportInPage,
     getRendererBackendMetadata,
+    startScenarioDriverInPage,
+    stopScenarioDriverInPage,
     waitForPageReady,
     waitForProfilingReadiness
 } from '../../../scripts/perf-harness.mjs';
@@ -45,32 +47,42 @@ test.describe('fsim perf e2e', () => {
         await page.goto(`/fsim.html?${query.toString()}`);
         await waitForPageReady(page);
         await applyScenarioRuntime(page, SCENARIO);
-        const captureStart = await waitForProfilingReadiness(page, {
-            profilingReadyTimeoutMs: SCENARIO.capture?.profilingReadyTimeoutMs ?? 45_000,
-            settleDelayMs: SCENARIO.capture?.settleDelayMs ?? 10_000,
-            requireSteadyState: false
-        });
-        const rendererBackend = await getRendererBackendMetadata(page);
+        await startScenarioDriverInPage(page, SCENARIO);
+        let report;
+        let captureStart;
+        let rendererBackend;
+        let beforeMetrics;
+        let afterMetrics;
+        try {
+            captureStart = await waitForProfilingReadiness(page, {
+                profilingReadyTimeoutMs: SCENARIO.capture?.profilingReadyTimeoutMs ?? 45_000,
+                settleDelayMs: SCENARIO.capture?.settleDelayMs ?? 10_000,
+                requireSteadyState: false
+            });
+            rendererBackend = await getRendererBackendMetadata(page);
 
-        const beforeMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
+            beforeMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
 
-        const report = await collectPerfReportInPage(page, {
-            scenario: {
-                ...SCENARIO,
-                capture: {
-                    ...(SCENARIO.capture || {}),
-                    sampleFrames: 0,
-                    sampleMs: TEST_CAPTURE.sampleMs
+            report = await collectPerfReportInPage(page, {
+                scenario: {
+                    ...SCENARIO,
+                    capture: {
+                        ...(SCENARIO.capture || {}),
+                        sampleFrames: 0,
+                        sampleMs: TEST_CAPTURE.sampleMs
+                    }
+                },
+                captureStartMetadata: captureStart,
+                metadata: {
+                    rendererBackend,
+                    rendererMode: 'playwright_test'
                 }
-            },
-            captureStartMetadata: captureStart,
-            metadata: {
-                rendererBackend,
-                rendererMode: 'playwright_test'
-            }
-        });
+            });
 
-        const afterMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
+            afterMetrics = metricsToObject((await client.send('Performance.getMetrics')).metrics);
+        } finally {
+            await stopScenarioDriverInPage(page);
+        }
         await client.send('Performance.disable');
 
         report.environment = {
