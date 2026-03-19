@@ -9,7 +9,7 @@ import { QuadtreeMapSampler } from '../js/modules/world/terrain/TerrainUtils.js'
 function createMockQuadtreeBuffer() {
     const HEADER_SIZE = 32;
     const NODE_SIZE = 32;
-    const LEAF_RES = 32;
+    const LEAF_RES = 64;
     const STRIDE = LEAF_RES + 1;
     const BLOCK_SIZE = STRIDE * STRIDE * 2;
 
@@ -99,7 +99,7 @@ test('QuadtreeMapSampler: Handles out of bounds', () => {
 test('QuadtreeMapSampler: Bilinear interpolation check', () => {
     const HEADER_SIZE = 32;
     const NODE_SIZE = 32;
-    const LEAF_RES = 32;
+    const LEAF_RES = 64;
     const STRIDE = LEAF_RES + 1;
     const BLOCK_SIZE = STRIDE * STRIDE * 2;
 
@@ -131,9 +131,9 @@ test('QuadtreeMapSampler: Bilinear interpolation check', () => {
     assert.equal(sampler.getAltitudeAt(-500, -500), -200);
 
     // Sample half-way between pixels (0.5, 0) relative to leaf resolution
-    // Pixel width = Size/LEAF_RES = 1000/32 = 31.25m
-    // Half way = 15.625m
-    const midX = -500 + 15.625;
+    // Pixel width = Size/LEAF_RES = 1000/64 = 15.625m
+    // Half way = 7.8125m
+    const midX = -500 + 7.8125;
     const hMid = sampler.getAltitudeAt(midX, -500);
     // (0.5 * 65535 / 65535) * 2000 - 200 = 0.5 * 2000 - 200 = 800
     assert.ok(Math.abs(hMid - 800) < 1.0);

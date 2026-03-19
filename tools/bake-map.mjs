@@ -109,7 +109,7 @@ function getTerrainHeight(x, z) {
 // ---------------------------------------------------------------------------
 const WORLD_SIZE = 50000;      // 50km
 const MAX_DEPTH = 6;           // Subdivides 50km down to ~780m nodes
-const LEAF_RES = 32;           // 33x33 grid
+const LEAF_RES = 64;           // 65x65 grid
 const VARIANCE_THRESHOLD = 8.0; // Subdivide if peak-to-valley > 8m
 const MIN_ALTITUDE = -200;
 const ALTITUDE_RANGE = 2000;
@@ -212,7 +212,7 @@ function buildTreeRecursive(node) {
  *    Empty: Avg Height (Float32) + Pad(12)
  * 
  * [Section 3: Leaf Data (Uint16 Blocks)]
- * Each Leaf node points to a 33x33 grid of Uint16 height values.
+ * Each Leaf node points to a 65x65 grid of Uint16 height values.
  * Values are normalized to [0, 65535] mapping from MIN_ALTITUDE to MAX_ALTITUDE.
  * 
  * [Section 4: Metadata (JSON String)]

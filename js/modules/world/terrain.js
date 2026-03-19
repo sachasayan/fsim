@@ -815,6 +815,7 @@ export function createTerrainSystem({
   let bootstrapMode = true;
   let quadtreeSelectionController = null;
   let blockingLeafIds = new Set();
+  const HIGH_LOD_SURFACE_RESOLUTION = 64;
   const terrainDebugSettings = {
     selectionInterestRadius: CHUNK_SIZE * Math.max(3, lodSettings.terrain.renderDistance + 1),
     selectionBlockingRadius: CHUNK_SIZE * 2,
@@ -825,10 +826,11 @@ export function createTerrainSystem({
     selectionLookaheadRadiusPadding: CHUNK_SIZE * 0.5,
     selectionMaxDepth: 6,
     bootstrapRadius: 10000,
-    resolution32MaxNodeSize: CHUNK_SIZE * 0.25,
-    resolution16MaxNodeSize: CHUNK_SIZE * 0.5,
-    resolution8MaxNodeSize: CHUNK_SIZE,
-    resolution4MaxNodeSize: CHUNK_SIZE * 2,
+    resolution64MaxNodeSize: CHUNK_SIZE * 0.25,
+    resolution32MaxNodeSize: CHUNK_SIZE * 0.5,
+    resolution16MaxNodeSize: CHUNK_SIZE,
+    resolution8MaxNodeSize: CHUNK_SIZE * 2,
+    resolution4MaxNodeSize: CHUNK_SIZE * 4,
     showTerrainWireframe: false,
     showTrees: true,
     showBuildings: true
@@ -1119,12 +1121,14 @@ export function createTerrainSystem({
 
   function getNativeSurfaceResolution(nodeSize, { bootstrapBlocking = false } = {}) {
     let resolution = 2;
-    if (nodeSize <= terrainDebugSettings.resolution32MaxNodeSize) resolution = 32;
+    if (nodeSize <= terrainDebugSettings.resolution64MaxNodeSize) resolution = HIGH_LOD_SURFACE_RESOLUTION;
+    else if (nodeSize <= terrainDebugSettings.resolution32MaxNodeSize) resolution = 32;
     else if (nodeSize <= terrainDebugSettings.resolution16MaxNodeSize) resolution = 16;
     else if (nodeSize <= terrainDebugSettings.resolution8MaxNodeSize) resolution = 8;
     else if (nodeSize <= terrainDebugSettings.resolution4MaxNodeSize) resolution = 4;
 
     if (bootstrapMode && bootstrapBlocking) {
+      if (resolution >= HIGH_LOD_SURFACE_RESOLUTION) return 32;
       if (resolution >= 32) return 16;
       if (resolution >= 16) return 8;
       if (resolution >= 8) return 4;
@@ -1145,12 +1149,14 @@ export function createTerrainSystem({
     terrainDebugSettings.bootstrapRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.bootstrapRadius);
 
     const thresholds = [
+      Math.max(32, terrainDebugSettings.resolution64MaxNodeSize),
       Math.max(32, terrainDebugSettings.resolution32MaxNodeSize),
       Math.max(32, terrainDebugSettings.resolution16MaxNodeSize),
       Math.max(32, terrainDebugSettings.resolution8MaxNodeSize),
       Math.max(32, terrainDebugSettings.resolution4MaxNodeSize)
     ].sort((a, b) => a - b);
     [
+      terrainDebugSettings.resolution64MaxNodeSize,
       terrainDebugSettings.resolution32MaxNodeSize,
       terrainDebugSettings.resolution16MaxNodeSize,
       terrainDebugSettings.resolution8MaxNodeSize,
@@ -1289,7 +1295,7 @@ export function createTerrainSystem({
       return null;
     }
 
-    const decodedLeaf = resolution === 32 ? sampler.decodeLeafHeightSamples(node.id, depth) : null;
+    const decodedLeaf = resolution === HIGH_LOD_SURFACE_RESOLUTION ? sampler.decodeLeafHeightSamples(node.id, depth) : null;
     if (decodedLeaf && decodedLeaf.resolution === resolution) {
       return decodedLeaf;
     }

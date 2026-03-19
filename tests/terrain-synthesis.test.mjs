@@ -182,7 +182,7 @@ test('new preview overlays render deterministically and report coverage metrics'
             maxZ: 1000
         }, {
             overlayKind,
-            resolution: 32
+            resolution: 64
         });
         const previewB = synth.buildViewportPreview({
             minX: -1000,
@@ -191,10 +191,10 @@ test('new preview overlays render deterministically and report coverage metrics'
             maxZ: 1000
         }, {
             overlayKind,
-            resolution: 32
+            resolution: 64
         });
 
-        assert.equal(previewA.width, 32);
+        assert.equal(previewA.width, 64);
         assert.deepEqual(Array.from(previewA.pixels), Array.from(previewB.pixels));
         assert.ok(previewA.metrics.maxRelief >= 0);
         assert.ok(previewA.metrics.cliffCoverage >= 0);

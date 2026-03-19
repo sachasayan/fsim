@@ -147,7 +147,6 @@ await initializeEditorE2eData();
 const server = http.createServer(async (req, res) => {
     try {
         const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-        console.log(`[DevServer] ${req.method} ${url.pathname}`);
 
         // SSE for hot-reload
         if (url.pathname === '/events') {

@@ -6,7 +6,7 @@ import { Noise } from '../../noise.js';
 const NODE_BRANCH = 0;
 const NODE_LEAF = 1;
 const NODE_EMPTY = 2;
-const LEAF_RESOLUTION = 32;
+const LEAF_RESOLUTION = 64;
 const MIN_ALTITUDE = -200;
 const ALTITUDE_RANGE = 2000;
 

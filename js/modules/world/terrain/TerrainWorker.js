@@ -291,7 +291,7 @@ function sampleNodeHeightGrid(node, resolution, depth, sampler) {
         return null;
     }
 
-    const decodedLeaf = resolution === 32 ? sampler.decodeLeafHeightSamples(node.id, depth) : null;
+    const decodedLeaf = resolution === 64 ? sampler.decodeLeafHeightSamples(node.id, depth) : null;
     if (decodedLeaf && decodedLeaf.resolution === resolution) {
         return decodedLeaf;
     }
