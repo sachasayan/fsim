@@ -785,13 +785,18 @@ export function createTerrainSystem({
       queueSchedulingMs: 0,
       queuePruneMs: 0,
       leafBuildMs: 0,
+      leafBuildDispatchMs: 0,
+      leafBuildApplyMs: 0,
       chunkBuildQueueMs: 0,
       propBuildQueueMs: 0,
       totalMs: 0,
       leafBuilds: 0,
+      leafBuildApplies: 0,
       chunkBuildsStarted: 0,
       propBuildsStarted: 0
     },
+    pendingFrameLeafApplyMs: 0,
+    pendingFrameLeafApplyCount: 0,
     leafBuildBreakdown: {
       count: 0,
       sampleHeightMs: 0,
@@ -832,6 +837,22 @@ export function createTerrainSystem({
     bucket.totalMs += sample.totalMs || 0;
     bucket.workerComputeMs = (bucket.workerComputeMs || 0) + (sample.workerComputeMs || 0);
     bucket.maxTotalMs = Math.max(bucket.maxTotalMs, sample.totalMs || 0);
+  }
+
+  function recordLeafBuildApplyTiming(durationMs) {
+    const applyMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+    terrainPerfState.pendingFrameLeafApplyMs += applyMs;
+    terrainPerfState.pendingFrameLeafApplyCount += 1;
+  }
+
+  function consumeLeafBuildApplyTiming() {
+    const summary = {
+      applyMs: terrainPerfState.pendingFrameLeafApplyMs,
+      applies: terrainPerfState.pendingFrameLeafApplyCount
+    };
+    terrainPerfState.pendingFrameLeafApplyMs = 0;
+    terrainPerfState.pendingFrameLeafApplyCount = 0;
+    return summary;
   }
 
   function getLeafBuildBreakdownSummary() {
@@ -1407,6 +1428,7 @@ export function createTerrainSystem({
       workerComputeMs: workerMs,
       totalMs: performance.now() - buildStartedAtMs
     });
+    recordLeafBuildApplyTiming(performance.now() - buildStartedAtMs);
     recordTerrainGenerationPerf('leafSurface', {
       workerMs,
       applyMs: performance.now() - buildStartedAtMs
@@ -2435,16 +2457,20 @@ export function createTerrainSystem({
     const leafBuildStats = processLeafBuildQueue(leafBuildBudget);
     const chunkBuildStats = processChunkBuildQueue(buildBudget);
     const propBuildStats = processPropBuildQueue(propBuildBudget);
+    const leafApplyStats = consumeLeafBuildApplyTiming();
     refreshTerrainSelectionDiagnostics();
     terrainPerfState.lastUpdate = {
       selectionBuildMs,
       queueSchedulingMs,
       queuePruneMs,
-      leafBuildMs: leafBuildStats.durationMs,
+      leafBuildMs: leafBuildStats.durationMs + leafApplyStats.applyMs,
+      leafBuildDispatchMs: leafBuildStats.durationMs,
+      leafBuildApplyMs: leafApplyStats.applyMs,
       chunkBuildQueueMs: chunkBuildStats.durationMs,
       propBuildQueueMs: propBuildStats.durationMs,
       totalMs: performance.now() - updateStartedAtMs,
       leafBuilds: leafBuildStats.builds,
+      leafBuildApplies: leafApplyStats.applies,
       chunkBuildsStarted: chunkBuildStats.builds,
       propBuildsStarted: propBuildStats.builds
     };
@@ -2483,6 +2509,8 @@ export function createTerrainSystem({
 
   function getTerrainSelectionDiagnostics() {
     const generationDiagnostics = getTerrainGenerationDiagnostics();
+    const pendingLeafApplyMs = terrainPerfState.pendingFrameLeafApplyMs;
+    const pendingLeafApplies = terrainPerfState.pendingFrameLeafApplyCount;
     return {
       ...lastTerrainSelection,
       blockingChunkCount: lastTerrainSelection.blockingChunkCount,
@@ -2497,7 +2525,12 @@ export function createTerrainSystem({
       chunkStates: getChunkStateCounts(),
       worker: generationDiagnostics.worker,
       generation: generationDiagnostics.generation,
-      timings: { ...terrainPerfState.lastUpdate }
+      timings: {
+        ...terrainPerfState.lastUpdate,
+        leafBuildMs: (terrainPerfState.lastUpdate.leafBuildMs || 0) + pendingLeafApplyMs,
+        leafBuildApplyMs: (terrainPerfState.lastUpdate.leafBuildApplyMs || 0) + pendingLeafApplyMs,
+        leafBuildApplies: (terrainPerfState.lastUpdate.leafBuildApplies || 0) + pendingLeafApplies
+      }
     };
   }
 
@@ -2845,6 +2878,7 @@ export function createTerrainSystem({
     updateTerrain,
     updateTerrainAtmosphere,
     getTerrainSelectionDiagnostics,
+    consumeLeafBuildApplyTiming,
     terrainDebugSettings,
     roadMarkingDebugSettings,
     applyTerrainDebugSettings,

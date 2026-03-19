@@ -152,6 +152,7 @@ const {
   updateTerrain,
   updateTerrainAtmosphere,
   getTerrainSelectionDiagnostics,
+  consumeLeafBuildApplyTiming,
   hasPendingTerrainWork,
   terrainDebugSettings,
   applyTerrainDebugSettings,
@@ -893,9 +894,16 @@ function animate() {
       perfCollector.recordPhase('terrain_queue_schedule', terrainDiagnostics.timings.queueSchedulingMs ?? 0);
       perfCollector.recordPhase('terrain_queue_prune', terrainDiagnostics.timings.queuePruneMs ?? 0);
       perfCollector.recordPhase('terrain_leaf_build', terrainDiagnostics.timings.leafBuildMs ?? 0);
+      perfCollector.recordPhase('terrain_leaf_build_dispatch', terrainDiagnostics.timings.leafBuildDispatchMs ?? 0);
+      perfCollector.recordPhase('terrain_leaf_apply', terrainDiagnostics.timings.leafBuildApplyMs ?? 0);
       perfCollector.recordPhase('terrain_chunk_queue', terrainDiagnostics.timings.chunkBuildQueueMs ?? 0);
       perfCollector.recordPhase('terrain_prop_queue', terrainDiagnostics.timings.propBuildQueueMs ?? 0);
     }
+  }
+  const asyncLeafApplyStats = consumeLeafBuildApplyTiming?.() || null;
+  if (!shouldUpdateTerrain && asyncLeafApplyStats?.applyMs > 0) {
+    perfCollector.recordPhase('terrain_leaf_build', asyncLeafApplyStats.applyMs);
+    perfCollector.recordPhase('terrain_leaf_apply', asyncLeafApplyStats.applyMs);
   }
   if (terrainDue || chunkChanged) {
     updateWorldLOD(camera.position);
