@@ -620,15 +620,8 @@ function TerrainLabPanel({ store, controller }) {
     ]);
 }
 
-function FooterPanel({ store, controller, onSave, onRebuild }) {
+function FooterPanel({ store, controller }) {
     const state = useStore(store, value => value);
-    const saveLabel = state.ui.saveState === 'saving'
-        ? 'Saving...'
-        : state.ui.saveState === 'saved'
-            ? 'Saved'
-            : state.history.dirty
-                ? 'Save Changes'
-                : 'Saved';
     return h('div', { className: 'property-panel footer-panel' }, [
         h('div', { className: 'status-row', key: 'status' }, [
             h('span', { className: `status-chip ${state.history.dirty ? 'dirty' : 'clean'}`, 'data-testid': 'dirty-state-chip' }, state.history.dirty ? 'Unsaved changes' : 'Up to date'),
@@ -639,9 +632,30 @@ function FooterPanel({ store, controller, onSave, onRebuild }) {
         h('div', { className: 'property-group inline-actions', key: 'actions' }, [
             h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'undo-button' }, 'Undo'),
             h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'redo-button' }, 'Redo'),
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'reset-view-button' }, 'Reset View'),
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: onRebuild, 'data-testid': 'rebuild-world-button' }, 'Rebuild World'),
-            h('button', { className: 'save-btn', type: 'button', onClick: onSave, 'data-testid': 'save-button' }, saveLabel)
+            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'reset-view-button' }, 'Reset View')
+        ])
+    ]);
+}
+
+function CommandStrip({ store, controller, onSave, onRebuild }) {
+    const state = useStore(store, value => value);
+    const saveLabel = state.ui.saveState === 'saving'
+        ? 'Saving...'
+        : state.ui.saveState === 'saved'
+            ? 'Saved'
+            : state.history.dirty
+                ? 'Save Changes'
+                : 'Saved';
+
+    return h('div', { className: 'command-strip', 'data-testid': 'command-strip' }, [
+        h('div', { className: 'command-cluster', key: 'history' }, [
+            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'app-undo-button' }, 'Undo'),
+            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'app-redo-button' }, 'Redo'),
+            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'app-reset-view-button' }, 'Reset View')
+        ]),
+        h('div', { className: 'command-cluster', key: 'document' }, [
+            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: onRebuild, 'data-testid': 'rebuild-world-button' }, 'Rebuild World'),
+            h('button', { className: 'save-btn command-save-btn', type: 'button', onClick: onSave, 'data-testid': 'save-button' }, saveLabel)
         ])
     ]);
 }
@@ -684,31 +698,67 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
         ['terrain-lower', 'Lower', 'L', 'M4 18h16M12 6v8M9 11l3 3 3-3'],
         ['terrain-flatten', 'Flatten', 'F', 'M4 16h16M4 11h16M4 8h16']
     ];
+    const activeToolLabel = toolDefs.find(([tool]) => tool === currentTool)?.[1] || currentTool;
+
+    const saveStatus = state.ui.saveState === 'saving'
+        ? 'Saving'
+        : state.history.dirty
+            ? 'Draft'
+            : 'Saved';
 
     return h(React.Fragment, null, [
-        h('div', { id: 'editor-container', key: 'layout' }, [
-            h('div', { id: 'canvas-container', className: `tool-${currentTool}`, key: 'canvas-area' }, [
-                h('canvas', { id: 'map-canvas', ref: canvasRef, key: 'canvas', 'data-testid': 'map-canvas' }),
-                h('div', { className: 'toolbar', key: 'toolbar', 'data-testid': 'toolbar' }, toolDefs.map(([tool, label, shortcut, path]) => (
-                    h(ToolButton, {
-                        key: tool,
-                        id: `tool-${tool}`,
-                        label,
-                        shortcut,
-                        active: currentTool === tool,
-                        onClick: () => store.dispatch({ type: 'set-tool', tool })
-                    }, h(Icon, { path }))
-                ))),
-                h('div', { id: 'coords', ref: coordsRef, key: 'coords', 'data-testid': 'coords-readout' }, 'X: 0, Z: 0')
+        h('div', { id: 'editor-shell', key: 'layout' }, [
+            h('header', { id: 'app-bar', key: 'app-bar' }, [
+                h('div', { className: 'app-bar-title', key: 'title' }, [
+                    h('span', { className: 'eyebrow', key: 'eyebrow' }, 'FSIM Workspace'),
+                    h('h2', { key: 'heading' }, ['WORLD EDITOR ', h('span', { className: 'status-badge', key: 'badge' }, 'v2.0')]),
+                    h('span', { className: 'app-bar-subtitle', key: 'subtitle' }, 'Docked tools, layered navigation, and a larger central stage.')
+                ]),
+                h('div', { className: 'app-bar-chips', key: 'chips' }, [
+                    h('span', { className: `status-chip ${state.history.dirty ? 'dirty' : 'clean'}`, key: 'save-status' }, saveStatus),
+                    h('span', { className: 'status-chip', key: 'tool-status' }, activeToolLabel),
+                    h('span', { className: 'status-chip', key: 'snap-status' }, state.tools.snappingEnabled ? 'Snap on' : 'Snap off')
+                ]),
+                h(CommandStrip, { store, controller, onSave, onRebuild, key: 'command-strip' })
             ]),
-            h('aside', { id: 'sidebar', key: 'sidebar', 'data-testid': 'sidebar' }, [
-                h('h2', { key: 'heading' }, ['WORLD EDITOR ', h('span', { className: 'status-badge', key: 'badge' }, 'v2.0')]),
-                h(LayersPanel, { store, key: 'layers' }),
-                h(InspectorPanel, { store, controller, key: 'inspector' }),
-                h(TerrainBrushPanel, { store, key: 'terrain' }),
-                h(TerrainLabPanel, { store, controller, key: 'terrain-lab' }),
-                h(HelpPanel, { store, key: 'help' }),
-                h(FooterPanel, { store, controller, onSave, onRebuild, key: 'footer' })
+            h('div', { id: 'editor-workspace', key: 'workspace' }, [
+                h('aside', { id: 'sidebar', className: 'dock', key: 'sidebar', 'data-testid': 'sidebar' }, [
+                    h('div', { className: 'dock-heading', key: 'left-heading' }, [
+                        h('div', { className: 'section-title', key: 'tools-title' }, 'Tools'),
+                        h('p', { key: 'tools-copy' }, 'Keep the tool chest and scene hierarchy visible together, like a proper design desk.')
+                    ]),
+                    h('div', { className: 'toolbar', key: 'toolbar', 'data-testid': 'toolbar' }, toolDefs.map(([tool, label, shortcut, path]) => (
+                        h(ToolButton, {
+                            key: tool,
+                            id: `tool-${tool}`,
+                            label,
+                            shortcut,
+                            active: currentTool === tool,
+                            onClick: () => store.dispatch({ type: 'set-tool', tool })
+                        }, h(Icon, { path }))
+                    ))),
+                    h(LayersPanel, { store, key: 'layers' }),
+                    h(HelpPanel, { store, key: 'help' })
+                ]),
+                h('main', { id: 'canvas-stage', key: 'canvas-stage' }, [
+                    h('div', { id: 'canvas-container', className: `tool-${currentTool}`, key: 'canvas-area' }, [
+                        h('canvas', { id: 'map-canvas', ref: canvasRef, key: 'canvas', 'data-testid': 'map-canvas' })
+                    ])
+                ]),
+                h('aside', { id: 'inspector-dock', className: 'dock', key: 'inspector-dock' }, [
+                    h('div', { className: 'dock-heading', key: 'right-heading' }, [
+                        h('div', { className: 'section-title', key: 'properties-title' }, 'Properties'),
+                        h('p', { key: 'properties-copy' }, 'Selection details and terrain systems stay docked off the canvas, not stacked over it.')
+                    ]),
+                    h(InspectorPanel, { store, controller, key: 'inspector' }),
+                    h(TerrainBrushPanel, { store, key: 'terrain' }),
+                    h(TerrainLabPanel, { store, controller, key: 'terrain-lab' }),
+                    h(FooterPanel, { store, controller, key: 'footer' })
+                ])
+            ]),
+            h('footer', { id: 'status-bar', key: 'status-bar' }, [
+                h('span', { className: 'status-bar-label', key: 'status-label' }, 'Canvas Status'),
+                h('div', { id: 'coords', ref: coordsRef, key: 'coords', 'data-testid': 'coords-readout' }, 'X: 0, Z: 0')
             ])
         ]),
         h(Toast, { store, key: 'toast' })

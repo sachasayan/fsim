@@ -40,19 +40,140 @@
         }
 
         #editor-app,
+        #editor-shell,
+        #editor-workspace,
         #editor-container {
             width: 100%;
             height: 100%;
         }
 
-        #editor-container {
+        #editor-shell {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 16%),
+                radial-gradient(circle at top, #111827 0%, #030712 62%);
+        }
+
+        #app-bar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-areas:
+                "title status"
+                "commands commands";
+            gap: 14px 18px;
+            align-items: center;
+            padding: 16px 22px 14px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(3, 7, 18, 0.82);
+            backdrop-filter: blur(24px) saturate(160%);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+            z-index: 3;
+        }
+
+        .app-bar-title {
+            grid-area: title;
             display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .eyebrow {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+
+        .app-bar-subtitle {
+            color: var(--text-dim);
+            font-size: 12px;
+            letter-spacing: 0.04em;
+        }
+
+        .app-bar-chips {
+            grid-area: status;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .command-strip {
+            grid-area: commands;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding-top: 2px;
+        }
+
+        .command-cluster {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .command-btn {
+            min-width: 112px;
+            padding: 11px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
+        .command-save-btn {
+            min-width: 156px;
+            padding: 11px 18px;
+        }
+
+        #editor-workspace {
+            display: grid;
+            grid-template-columns: 258px minmax(0, 1fr) 340px;
+            gap: 0;
+            min-height: 0;
         }
 
         #canvas-container {
             position: relative;
-            flex: 1;
-            background: radial-gradient(circle at center, #111827 0%, #030712 100%);
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%),
+                radial-gradient(circle at center, #111827 0%, #030712 100%);
+        }
+
+        #canvas-stage {
+            position: relative;
+            min-width: 0;
+            min-height: 0;
+            padding: 14px;
+            background:
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 28px 28px;
+            background-position: center;
+        }
+
+        #canvas-stage::before {
+            content: '';
+            position: absolute;
+            inset: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 20px;
+            pointer-events: none;
+            box-shadow:
+                inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+                0 20px 50px rgba(0, 0, 0, 0.28);
+        }
+
+        #canvas-container,
+        #canvas-container canvas {
+            border-radius: 18px;
         }
 
         canvas {
@@ -61,33 +182,50 @@
             height: 100%;
         }
 
-        #sidebar {
-            width: 360px;
+        .dock {
             display: flex;
             flex-direction: column;
-            gap: 20px;
-            padding: 24px 20px;
+            gap: 12px;
+            padding: 16px 14px;
             overflow-y: auto;
-            background: var(--panel);
+            background: rgba(8, 13, 24, 0.92);
             backdrop-filter: blur(24px) saturate(180%);
+            min-height: 0;
+        }
+
+        #sidebar {
+            border-right: 1px solid var(--border);
+            box-shadow: 18px 0 40px rgba(0, 0, 0, 0.22);
+        }
+
+        #inspector-dock {
             border-left: 1px solid var(--border);
-            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.45);
+            box-shadow: -18px 0 40px rgba(0, 0, 0, 0.22);
+        }
+
+        .dock-heading {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 4px 4px 8px;
+        }
+
+        .dock-heading p {
+            margin: 0;
+            color: var(--text-dim);
+            font-size: 12px;
         }
 
         .toolbar {
-            position: absolute;
-            top: 24px;
-            left: 24px;
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            padding: 6px;
-            max-width: min(88vw, 640px);
-            background: var(--panel);
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 5px;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border);
             border-radius: 16px;
             backdrop-filter: blur(20px) saturate(150%);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
         }
 
         .tool-btn {
@@ -122,11 +260,12 @@
         }
 
         .tool-btn.tool-icon {
-            min-width: 62px;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
+            gap: 3px;
+            padding: 10px 8px;
         }
 
         .tool-btn.tool-icon svg {
@@ -166,11 +305,14 @@
         .property-panel {
             display: flex;
             flex-direction: column;
-            gap: 14px;
-            padding: 16px;
+            gap: 12px;
+            padding: 14px;
             border-radius: 16px;
             border: 1px solid var(--border);
-            background: var(--glass);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+                rgba(255, 255, 255, 0.02);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
         }
 
         .muted-panel {
@@ -322,16 +464,32 @@
             margin-bottom: 0;
         }
 
+        #status-bar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            min-height: 38px;
+            padding: 0 18px;
+            border-top: 1px solid var(--border);
+            background: rgba(3, 7, 18, 0.82);
+            backdrop-filter: blur(18px) saturate(150%);
+        }
+
+        .status-bar-label {
+            color: var(--text-dim);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
         #coords {
-            position: absolute;
-            bottom: 24px;
-            left: 24px;
+            justify-self: end;
             border-radius: 10px;
             border: 1px solid var(--border);
-            background: var(--panel);
-            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.04);
             color: var(--text-dim);
-            padding: 6px 14px;
+            padding: 6px 12px;
             font-size: 11px;
             font-family: 'JetBrains Mono', monospace;
             letter-spacing: 0.05em;
@@ -467,13 +625,72 @@
         }
 
         @media (max-width: 1080px) {
-            #sidebar {
-                width: 320px;
-                padding: 18px 16px;
+            #app-bar {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "title"
+                    "status"
+                    "commands";
+                align-items: start;
+            }
+
+            .app-bar-chips {
+                justify-content: flex-start;
+            }
+
+            .command-strip {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            #editor-workspace {
+                grid-template-columns: 232px minmax(0, 1fr) 300px;
             }
 
             .toolbar {
-                max-width: min(92vw, 520px);
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 860px) {
+            #editor-shell {
+                grid-template-rows: auto minmax(0, 1fr) auto;
+            }
+
+            #app-bar,
+            #status-bar {
+                padding-left: 14px;
+                padding-right: 14px;
+            }
+
+            .command-cluster {
+                width: 100%;
+            }
+
+            .command-btn,
+            .command-save-btn {
+                flex: 1 1 0;
+                min-width: 0;
+            }
+
+            #editor-workspace {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto minmax(280px, 44vh) auto auto;
+            }
+
+            #sidebar,
+            #inspector-dock {
+                border: 0;
+                box-shadow: none;
+            }
+
+            #canvas-stage {
+                padding: 14px;
+                min-height: 44vh;
+            }
+
+            #canvas-stage::before {
+                inset: 14px;
             }
         }
     </style>
