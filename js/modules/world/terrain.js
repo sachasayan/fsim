@@ -739,6 +739,9 @@ export function createTerrainSystem({
     selectionBlockingRadius: CHUNK_SIZE * 2,
     selectionMinCellSize: CHUNK_SIZE * 0.25,
     selectionSplitDistanceFactor: 0.6,
+    selectionLookaheadSeconds: 1.6,
+    selectionLookaheadMaxDistance: CHUNK_SIZE * 1.5,
+    selectionLookaheadRadiusPadding: CHUNK_SIZE * 0.5,
     selectionMaxDepth: 6,
     bootstrapRadius: 10000,
     resolution32MaxNodeSize: CHUNK_SIZE * 0.25,
@@ -1050,6 +1053,9 @@ export function createTerrainSystem({
     terrainDebugSettings.selectionBlockingRadius = Math.max(CHUNK_SIZE * 0.125, terrainDebugSettings.selectionBlockingRadius);
     terrainDebugSettings.selectionMinCellSize = Math.max(32, terrainDebugSettings.selectionMinCellSize);
     terrainDebugSettings.selectionSplitDistanceFactor = Math.max(0.05, terrainDebugSettings.selectionSplitDistanceFactor);
+    terrainDebugSettings.selectionLookaheadSeconds = Math.max(0, terrainDebugSettings.selectionLookaheadSeconds);
+    terrainDebugSettings.selectionLookaheadMaxDistance = Math.max(0, terrainDebugSettings.selectionLookaheadMaxDistance);
+    terrainDebugSettings.selectionLookaheadRadiusPadding = Math.max(0, terrainDebugSettings.selectionLookaheadRadiusPadding);
     terrainDebugSettings.selectionMaxDepth = Math.max(0, Math.min(12, Math.round(terrainDebugSettings.selectionMaxDepth)));
     terrainDebugSettings.bootstrapRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.bootstrapRadius);
 
@@ -2213,11 +2219,27 @@ export function createTerrainSystem({
       return buildGridActiveChunks(centerChunkX, centerChunkZ);
     }
 
+    const velocityX = Number.isFinite(PHYSICS?.velocity?.x) ? PHYSICS.velocity.x : 0;
+    const velocityZ = Number.isFinite(PHYSICS?.velocity?.z) ? PHYSICS.velocity.z : 0;
+    const speed = Math.hypot(velocityX, velocityZ);
+    const baseInterestRadius = bootstrapMode ? terrainDebugSettings.bootstrapRadius : terrainDebugSettings.selectionInterestRadius;
+    const lookaheadDistance = Math.min(
+      terrainDebugSettings.selectionLookaheadMaxDistance,
+      speed * terrainDebugSettings.selectionLookaheadSeconds
+    );
+    const lookaheadScale = speed > 1 && lookaheadDistance > 0 ? (lookaheadDistance / speed) : 0;
+    const selectionFocusX = PHYSICS.position.x + velocityX * lookaheadScale;
+    const selectionFocusZ = PHYSICS.position.z + velocityZ * lookaheadScale;
+    const interestRadius = baseInterestRadius + Math.min(
+      terrainDebugSettings.selectionLookaheadRadiusPadding,
+      lookaheadDistance * 0.5
+    );
+
     const selection = controller.select({
-      cameraX: PHYSICS.position.x,
-      cameraZ: PHYSICS.position.z,
+      cameraX: selectionFocusX,
+      cameraZ: selectionFocusZ,
       blockingRadius: bootstrapMode ? terrainDebugSettings.bootstrapRadius : terrainDebugSettings.selectionBlockingRadius,
-      interestRadius: bootstrapMode ? terrainDebugSettings.bootstrapRadius : terrainDebugSettings.selectionInterestRadius,
+      interestRadius,
       minCellSize: terrainDebugSettings.selectionMinCellSize,
       splitDistanceFactor: terrainDebugSettings.selectionSplitDistanceFactor,
       maxSelectionDepth: terrainDebugSettings.selectionMaxDepth

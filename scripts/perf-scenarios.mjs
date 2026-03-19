@@ -52,7 +52,7 @@ const PERF_SCENARIOS = {
     label: 'Level flight low altitude',
     query: {
       ...BASE_QUERY,
-      renderDist: '5'
+      renderDist: '6'
     },
     spawn: { x: 1200, y: 1000, z: 900 },
     camera: {
