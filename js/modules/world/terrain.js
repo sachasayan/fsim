@@ -214,6 +214,86 @@ export function createRoadGeometry(points, width, colorHex, sampler, yOffset = 0
   return geometry;
 }
 
+function buildRoadFlattenSegments(roads, settings) {
+  if (!Array.isArray(roads) || roads.length === 0) return [];
+  const centerPadding = Math.max(0, Number.isFinite(settings?.centerPadding) ? settings.centerPadding : 32);
+  const shoulderWidth = Math.max(0, Number.isFinite(settings?.shoulderWidth) ? settings.shoulderWidth : 48);
+  const segments = [];
+
+  for (const road of roads) {
+    if (!Array.isArray(road?.points) || road.points.length < 2) continue;
+    let roadWidth = road.width;
+    if (!Number.isFinite(roadWidth)) {
+      roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0;
+    }
+    const halfWidth = roadWidth * 0.5 + centerPadding;
+    const embankment = shoulderWidth;
+    const totalRadius = halfWidth + embankment;
+
+    for (let i = 0; i < road.points.length - 1; i += 1) {
+      const p1 = road.points[i];
+      const p2 = road.points[i + 1];
+      segments.push({
+        p1,
+        p2,
+        halfWidth,
+        embankment,
+        totalRadius,
+        startHeight: getTerrainHeight(p1[0], p1[1], Noise),
+        endHeight: getTerrainHeight(p2[0], p2[1], Noise)
+      });
+    }
+  }
+
+  return segments;
+}
+
+function createRoadAwareSampler(baseSampler, roads, settings, Noise) {
+  if (!baseSampler || typeof baseSampler.getAltitudeAt !== 'function') return baseSampler;
+  const roadSegments = buildRoadFlattenSegments(roads, settings);
+  if (roadSegments.length === 0) return baseSampler;
+
+  return {
+    getAltitudeAt(x, z) {
+      const baseHeight = getTerrainHeight(x, z, Noise);
+      let maxBlend = 0;
+      let targetHeight = baseHeight;
+
+      for (let i = 0; i < roadSegments.length; i += 1) {
+        const seg = roadSegments[i];
+        const abx = seg.p2[0] - seg.p1[0];
+        const abz = seg.p2[1] - seg.p1[1];
+        const lenSq = abx * abx + abz * abz;
+        let t = 0;
+        if (lenSq > 1e-6) {
+          t = ((x - seg.p1[0]) * abx + (z - seg.p1[1]) * abz) / lenSq;
+          if (t < 0) t = 0;
+          else if (t > 1) t = 1;
+        }
+        const projX = seg.p1[0] + abx * t;
+        const projZ = seg.p1[1] + abz * t;
+        const dist = Math.hypot(x - projX, z - projZ);
+        if (dist >= seg.totalRadius) continue;
+
+        let blend = 0;
+        if (dist <= seg.halfWidth) {
+          blend = 1;
+        } else {
+          const blendT = 1 - (dist - seg.halfWidth) / Math.max(1e-6, seg.embankment);
+          blend = blendT * blendT * (3 - 2 * blendT);
+        }
+        if (blend <= maxBlend) continue;
+
+        maxBlend = blend;
+        targetHeight = seg.startHeight + (seg.endHeight - seg.startHeight) * t;
+      }
+
+      if (maxBlend <= 0) return baseHeight;
+      return baseHeight * (1 - maxBlend) + targetHeight * maxBlend;
+    }
+  };
+}
+
 export function createLakeSurfaceGeometry(lake, sampler, options = {}) {
   if (!lake || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
   const centerX = Number(lake.x);
@@ -442,10 +522,11 @@ export function createTerrainSystem({
     const sampler = getStaticSampler();
     const metadata = getStaticWorldMetadata() || windowRef?.fsimWorld || null;
     const hydrology = metadata?.hydrology || null;
+    const roadAwareSampler = createRoadAwareSampler(sampler, metadata?.roads || [], roadFlattenDebugSettings, Noise);
     
     if (sampler && metadata?.roads) {
       const graph = buildRoadNetworkGraph(metadata.roads);
-      const networkGeom = generateRoadNetworkGeometries(graph, sampler, 0.20);
+      const networkGeom = generateRoadNetworkGeometries(graph, roadAwareSampler || sampler, 0.20);
       
       if (networkGeom && networkGeom.surfaceGeometry) {
         const surfaceMesh = new THREE.Mesh(networkGeom.surfaceGeometry, splineSurfaceMaterial);
@@ -456,7 +537,7 @@ export function createTerrainSystem({
         // 2. the centerline markings - keeping individual splines for now, but drawing over the intersections
         const style = getRoadMarkingStyle(road, DASH_SCALE);
         if (style) {
-          const markingGeo = createRoadGeometry(road.points, style.width, style.color, sampler, 0.35);
+          const markingGeo = createRoadGeometry(road.points, style.width, style.color, roadAwareSampler || sampler, 0.35);
           if (markingGeo) {
             const markingMesh = new THREE.Mesh(markingGeo, splineMarkingMaterial);
             roadMarkingSplineGroup.add(markingMesh);
@@ -766,6 +847,10 @@ export function createTerrainSystem({
     fadeEnd: 1400.0,
     splineMode: false,
     splineSurfaceMode: false
+  };
+  const roadFlattenDebugSettings = {
+    centerPadding: 32.0,
+    shoulderWidth: 48.0
   };
   let lastTerrainSelection = {
     mode: 'grid_fallback',
@@ -1089,6 +1174,11 @@ export function createTerrainSystem({
     roadMarkingDebugSettings.splineSurfaceMode = Boolean(roadMarkingDebugSettings.splineSurfaceMode);
   }
 
+  function normalizeRoadFlattenDebugSettings() {
+    roadFlattenDebugSettings.centerPadding = Math.max(0, roadFlattenDebugSettings.centerPadding);
+    roadFlattenDebugSettings.shoulderWidth = Math.max(0, roadFlattenDebugSettings.shoulderWidth);
+  }
+
   function applyTerrainWireframeSetting() {
     terrainMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
     terrainFarMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
@@ -1153,11 +1243,15 @@ export function createTerrainSystem({
     }
   }
 
-  function applyTerrainDebugSettings({ rebuildSurfaces = false, refreshSelection = false, rebuildProps = false } = {}) {
+  function applyTerrainDebugSettings({ rebuildSurfaces = false, refreshSelection = false, rebuildProps = false, rebuildHydrology = false } = {}) {
     normalizeTerrainDebugSettings();
+    normalizeRoadFlattenDebugSettings();
     applyTerrainWireframeSetting();
     if (rebuildSurfaces) {
       invalidateActiveLeafSurfaces();
+    }
+    if (rebuildHydrology) {
+      rebuildHydrologyMeshes();
     }
     if (rebuildProps) {
       invalidateChunkProps();
@@ -1470,7 +1564,8 @@ export function createTerrainSystem({
       nodeId: leafState.nodeId,
       depth: leafState.depth,
       surfaceResolution,
-      waterDepthResolution
+      waterDepthResolution,
+      roadFlattenSettings: roadFlattenDebugSettings
     }).then((result) => {
       const activeLeafState = activeLeaves.get(leafState.leafId);
       if (!activeLeafState || activeLeafState !== leafState || activeLeafState.retired || activeLeafState.buildVersion !== buildVersion) {
@@ -1673,7 +1768,17 @@ export function createTerrainSystem({
   }
 
   function generateChunkBase(cx, cz, lod = 0) {
-    return genBase(cx, cz, lod, { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial, Noise, scene })
+    return genBase(cx, cz, lod, {
+      LOD_LEVELS,
+      chunkPools,
+      terrainMaterial,
+      terrainFarMaterial,
+      waterMaterial,
+      waterFarMaterial,
+      Noise,
+      scene,
+      roadFlattenSettings: roadFlattenDebugSettings
+    })
       .then((group) => {
         if (group?.children?.[0]) {
           group.children[0].visible = false;
@@ -2903,6 +3008,7 @@ export function createTerrainSystem({
     consumeLeafBuildApplyTiming,
     terrainDebugSettings,
     roadMarkingDebugSettings,
+    roadFlattenDebugSettings,
     applyTerrainDebugSettings,
     applyRoadMarkingDebugSettings,
     isReady,

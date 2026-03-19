@@ -610,25 +610,25 @@ export function getTerrainMaskSet(x, z) {
 }
 
 export function getTerrainHeight(x, z, Noise, octaves = 6) {
-    if (_staticSampler) {
-        return _staticSampler.getAltitudeAt(x, z);
-    }
-
-    // Fallback to noise if sampler isn't loaded yet
-    let distFromRunwayZ = Math.abs(z);
-    let distFromRunwayX = Math.abs(x);
-    let noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
     let baseHeight;
-
-    if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        baseHeight = 0;
-    } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-        let blendX = Math.max(0, (distFromRunwayX - 150) / 450);
-        let blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-        let runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-        baseHeight = noiseVal * runwayMask;
+    if (_staticSampler) {
+        baseHeight = _staticSampler.getAltitudeAt(x, z);
     } else {
-        baseHeight = noiseVal;
+        // Fallback to noise if sampler isn't loaded yet
+        const distFromRunwayZ = Math.abs(z);
+        const distFromRunwayX = Math.abs(x);
+        const noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
+
+        if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
+            baseHeight = 0;
+        } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
+            const blendX = Math.max(0, (distFromRunwayX - 150) / 450);
+            const blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
+            const runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
+            baseHeight = noiseVal * runwayMask;
+        } else {
+            baseHeight = noiseVal;
+        }
     }
     const fsimWorld = (typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null;
     return applyTerrainEdits(baseHeight, x, z, fsimWorld?.terrainEdits || []);

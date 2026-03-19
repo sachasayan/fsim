@@ -91,6 +91,151 @@ function srgbArrayToLinear(rgb) {
 
 let matricesGenerated = 0; // tracking stats if needed
 
+export function projectPointToRoadSegment(px, pz, ax, az, bx, bz) {
+    const l2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az);
+    if (l2 === 0) {
+        return {
+            dist: Math.hypot(px - ax, pz - az),
+            projX: ax,
+            projZ: az,
+            t: 0
+        };
+    }
+    let t = ((px - ax) * (bx - ax) + (pz - az) * (bz - az)) / l2;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const projX = ax + t * (bx - ax);
+    const projZ = az + t * (bz - az);
+    return {
+        dist: Math.hypot(px - projX, pz - projZ),
+        projX,
+        projZ,
+        t
+    };
+}
+
+export function carveHeightForRoadSegments(vx, vz, baseHeight, roadSegments = [], sampleHeight = null) {
+    if (!Array.isArray(roadSegments) || roadSegments.length === 0) return baseHeight;
+
+    let maxBlend = 0;
+    let targetHeight = baseHeight;
+
+    for (let i = 0; i < roadSegments.length; i++) {
+        const seg = roadSegments[i];
+        const projection = projectPointToRoadSegment(vx, vz, seg.p1[0], seg.p1[1], seg.p2[0], seg.p2[1]);
+        if (projection.dist >= seg.totalRadius) continue;
+
+        let blend = 0;
+        if (projection.dist <= seg.halfWidth) {
+            blend = 1.0;
+        } else {
+            const t = 1.0 - (projection.dist - seg.halfWidth) / seg.embankment;
+            blend = t * t * (3 - 2 * t);
+        }
+
+        if (blend <= maxBlend) continue;
+
+        const startHeight = Number.isFinite(seg.startHeight)
+            ? seg.startHeight
+            : sampleHeight?.(seg.p1[0], seg.p1[1]);
+        const endHeight = Number.isFinite(seg.endHeight)
+            ? seg.endHeight
+            : sampleHeight?.(seg.p2[0], seg.p2[1]);
+        if (!Number.isFinite(startHeight) || !Number.isFinite(endHeight)) continue;
+
+        maxBlend = blend;
+        targetHeight = startHeight + (endHeight - startHeight) * projection.t;
+    }
+
+    if (maxBlend <= 0) return baseHeight;
+    return baseHeight * (1 - maxBlend) + targetHeight * maxBlend;
+}
+
+function getRoadFlattenSettings(settings = null) {
+    const centerPadding = Number.isFinite(settings?.centerPadding) ? settings.centerPadding : 32.0;
+    const shoulderWidth = Number.isFinite(settings?.shoulderWidth) ? settings.shoulderWidth : 48.0;
+    return {
+        centerPadding: Math.max(0, centerPadding),
+        shoulderWidth: Math.max(0, shoulderWidth)
+    };
+}
+
+function collectLocalRoadSegments(staticWorldMetadata, bounds, settings, margin = 300) {
+    const localRoadSegments = [];
+    const localRoadsForOverrides = [];
+    if (!staticWorldMetadata?.roads) {
+        return { localRoadSegments, localRoadsForOverrides };
+    }
+
+    const chunkMinX = bounds.minX;
+    const chunkMinZ = bounds.minZ;
+    const chunkMaxX = bounds.maxX;
+    const chunkMaxZ = bounds.maxZ;
+
+    for (const road of staticWorldMetadata.roads) {
+        if (!road.points || road.points.length < 2) continue;
+
+        let roadMinX = Infinity;
+        let roadMaxX = -Infinity;
+        let roadMinZ = Infinity;
+        let roadMaxZ = -Infinity;
+        for (const p of road.points) {
+            if (p[0] < roadMinX) roadMinX = p[0];
+            if (p[0] > roadMaxX) roadMaxX = p[0];
+            if (p[1] < roadMinZ) roadMinZ = p[1];
+            if (p[1] > roadMaxZ) roadMaxZ = p[1];
+        }
+
+        if (roadMaxX < chunkMinX - margin || roadMinX > chunkMaxX + margin ||
+            roadMaxZ < chunkMinZ - margin || roadMinZ > chunkMaxZ + margin) {
+            continue;
+        }
+
+        localRoadsForOverrides.push(road);
+
+        let roadWidth = road.width;
+        if (!Number.isFinite(roadWidth)) {
+            roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0;
+        }
+
+        const halfWidth = roadWidth * 0.5 + settings.centerPadding;
+        const embankment = settings.shoulderWidth;
+        const totalRadius = halfWidth + embankment;
+
+        for (let i = 0; i < road.points.length - 1; i++) {
+            localRoadSegments.push({ p1: road.points[i], p2: road.points[i + 1], halfWidth, embankment, totalRadius });
+        }
+    }
+
+    return { localRoadSegments, localRoadsForOverrides };
+}
+
+function primeRoadSegmentHeights(roadSegments) {
+    for (let i = 0; i < roadSegments.length; i++) {
+        const seg = roadSegments[i];
+        seg.startHeight = getTerrainHeight(seg.p1[0], seg.p1[1], Noise);
+        seg.endHeight = getTerrainHeight(seg.p2[0], seg.p2[1], Noise);
+    }
+}
+
+function applyRoadCarvingToHeightGrid(node, heights, stride, roadSegments) {
+    if (!heights || !roadSegments?.length || !node || !Number.isFinite(stride) || stride < 2) return heights;
+    const carvedHeights = new Float32Array(heights);
+    const resolution = stride - 1;
+    const segmentSize = node.size / resolution;
+
+    for (let z = 0; z < stride; z += 1) {
+        const worldZ = node.minZ + z * segmentSize;
+        for (let x = 0; x < stride; x += 1) {
+            const worldX = node.minX + x * segmentSize;
+            const index = z * stride + x;
+            carvedHeights[index] = carveHeightForRoadSegments(worldX, worldZ, heights[index], roadSegments);
+        }
+    }
+
+    return carvedHeights;
+}
+
 function computeGridNormals(positions, segments) {
     const verticesPerSide = segments + 1;
     const normals = new Float32Array(positions.length);
@@ -340,6 +485,7 @@ function buildWaterDepthTextureData(node, sampler, resolution = 64) {
 function buildLeafSurface(job) {
     const staticSampler = getStaticSampler();
     const worldData = getStaticWorldMetadata();
+    const roadFlattenSettings = getRoadFlattenSettings(job.roadFlattenSettings);
     if (!staticSampler || !Number.isInteger(job.nodeId)) {
         throw new Error('Leaf surface build requires initialized static sampler and node id');
     }
@@ -350,10 +496,19 @@ function buildLeafSurface(job) {
         throw new Error('Leaf surface build failed to resolve node data');
     }
 
-    const hasWater = leafContainsWater(decoded.heights);
+    const { localRoadSegments } = collectLocalRoadSegments(staticSampler.getMetadata?.() || worldData, {
+        minX: node.minX,
+        minZ: node.minZ,
+        maxX: node.minX + node.size,
+        maxZ: node.minZ + node.size
+    }, roadFlattenSettings, 300);
+    primeRoadSegmentHeights(localRoadSegments);
+    const carvedHeights = applyRoadCarvingToHeightGrid(node, decoded.heights, decoded.stride, localRoadSegments);
+
+    const hasWater = leafContainsWater(carvedHeights);
     const terrain = createLeafSurfaceBuffers({
         node,
-        heights: decoded.heights,
+        heights: carvedHeights,
         stride: decoded.stride,
         worldData,
         sampler: staticSampler,
@@ -365,7 +520,7 @@ function buildLeafSurface(job) {
     if (hasWater) {
         water = createLeafSurfaceBuffers({
             node,
-            heights: decoded.heights,
+            heights: carvedHeights,
             stride: decoded.stride,
             worldData,
             sampler: staticSampler,
@@ -391,99 +546,24 @@ function buildLeafSurface(job) {
 function buildChunkBase(job) {
     const { cx, cz, lodCfg, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols } = job;
     const staticWorldMetadata = getStaticWorldMetadata();
+    const roadFlattenSettings = getRoadFlattenSettings(job.roadFlattenSettings);
 
     const chunkMinX = cx * CHUNK_SIZE;
     const chunkMinZ = cz * CHUNK_SIZE;
     const chunkMaxX = chunkMinX + CHUNK_SIZE;
     const chunkMaxZ = chunkMinZ + CHUNK_SIZE;
-    const margin = 300; // Buffer for feathering/overrides
-
-    const localRoadSegments = [];
-    const localRoadsForOverrides = [];
-
-    if (staticWorldMetadata?.roads) {
-        for (const road of staticWorldMetadata.roads) {
-            if (!road.points || road.points.length < 2) continue;
-            
-            // Check if road is within chunk boundary + margin
-            let roadMinX = Infinity, roadMaxX = -Infinity, roadMinZ = Infinity, roadMaxZ = -Infinity;
-            for (const p of road.points) {
-                if (p[0] < roadMinX) roadMinX = p[0];
-                if (p[0] > roadMaxX) roadMaxX = p[0];
-                if (p[1] < roadMinZ) roadMinZ = p[1];
-                if (p[1] > roadMaxZ) roadMaxZ = p[1];
-            }
-
-            if (roadMaxX < chunkMinX - margin || roadMinX > chunkMaxX + margin ||
-                roadMaxZ < chunkMinZ - margin || roadMinZ > chunkMaxZ + margin) {
-                continue;
-            }
-
-            localRoadsForOverrides.push(road);
-            
-            let roadWidth = road.width;
-            if (!Number.isFinite(roadWidth)) {
-                roadWidth = road.kind === 'taxiway' ? 12.0 : 8.0; 
-            }
-            
-            const halfWidth = roadWidth * 0.5 + 32.0; 
-            const embankment = 48.0; 
-            const totalRadius = halfWidth + embankment;
-
-            for (let i = 0; i < road.points.length - 1; i++) {
-                localRoadSegments.push({ p1: road.points[i], p2: road.points[i+1], halfWidth, embankment, totalRadius });
-            }
-        }
-    }
-
-    function distToSegment(px, pz, ax, az, bx, bz, out) {
-        const l2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az);
-        if (l2 === 0) {
-            out.dist = Math.hypot(px - ax, pz - az);
-            out.projX = ax;
-            out.projZ = az;
-            return;
-        }
-        let t = ((px - ax) * (bx - ax) + (pz - az) * (bz - az)) / l2;
-        if (t < 0) t = 0; else if (t > 1) t = 1;
-        const projX = ax + t * (bx - ax);
-        const projZ = az + t * (bz - az);
-        out.dist = Math.hypot(px - projX, pz - projZ);
-        out.projX = projX;
-        out.projZ = projZ;
-    }
-
-    const tmpSegOut = { dist: 0, projX: 0, projZ: 0 };
+    const { localRoadSegments, localRoadsForOverrides } = collectLocalRoadSegments(staticWorldMetadata, {
+        minX: chunkMinX,
+        minZ: chunkMinZ,
+        maxX: chunkMaxX,
+        maxZ: chunkMaxZ
+    }, roadFlattenSettings, 300);
+    primeRoadSegmentHeights(localRoadSegments);
     
     // A helper to get the potentially carved height so slope calculations match the physics surface
     function getCarvedHeight(vx, vz) {
-        let height = getTerrainHeight(vx, vz, Noise);
-        if (localRoadSegments.length > 0) {
-            let maxBlend = 0;
-            let targetHeight = height;
-
-            for (let i = 0; i < localRoadSegments.length; i++) {
-                const seg = localRoadSegments[i];
-                distToSegment(vx, vz, seg.p1[0], seg.p1[1], seg.p2[0], seg.p2[1], tmpSegOut);
-                if (tmpSegOut.dist < seg.totalRadius) {
-                    let blend = 0;
-                    if (tmpSegOut.dist <= seg.halfWidth) {
-                        blend = 1.0;
-                    } else {
-                        const t = 1.0 - (tmpSegOut.dist - seg.halfWidth) / seg.embankment;
-                        blend = t * t * (3 - 2 * t);
-                    }
-                    if (blend > maxBlend) {
-                        maxBlend = blend;
-                        targetHeight = getTerrainHeight(tmpSegOut.projX, tmpSegOut.projZ, Noise);
-                    }
-                }
-            }
-            if (maxBlend > 0) {
-                height = height * (1 - maxBlend) + targetHeight * maxBlend;
-            }
-        }
-        return height;
+        const height = getTerrainHeight(vx, vz, Noise);
+        return carveHeightForRoadSegments(vx, vz, height, localRoadSegments);
     }
 
     // Process terrain
@@ -672,73 +752,75 @@ function buildChunkProps(job) {
     return { cx, cz, treeInstances, buildingPositions, boatPositions };
 }
 
-self.postMessage({ type: 'workerReady' });
+if (typeof self !== 'undefined') {
+    self.postMessage({ type: 'workerReady' });
 
-self.onmessage = function (e) {
-    const { type, payload, jobId } = e.data;
+    self.onmessage = function (e) {
+        const { type, payload, jobId } = e.data;
 
-    try {
-        if (type === 'initStaticMap') {
-            const sampler = new QuadtreeMapSampler(payload);
-            setStaticSampler(sampler);
-            self.postMessage({ type: 'initStaticMap_done' });
-        } else if (type === 'chunkBase') {
-            const result = buildChunkBase(payload);
-            self.postMessage({
-                jobId,
-                type: 'chunkBase_done',
-                result: result
-            }, [
-                result.positions.buffer,
-                result.normals.buffer,
-                result.colors.buffer,
-                result.surfaceWeights.buffer,
-                result.surfaceOverrides.buffer,
-                result.wPos.buffer,
-                result.wNormals.buffer,
-                result.wCols.buffer
-            ]);
-        } else if (type === 'chunkProps') {
-            const result = buildChunkProps(payload);
-            const transferables = [];
-            for (const key of Object.keys(result.treeInstances)) {
-                transferables.push(result.treeInstances[key].buffer);
+        try {
+            if (type === 'initStaticMap') {
+                const sampler = new QuadtreeMapSampler(payload);
+                setStaticSampler(sampler);
+                self.postMessage({ type: 'initStaticMap_done' });
+            } else if (type === 'chunkBase') {
+                const result = buildChunkBase(payload);
+                self.postMessage({
+                    jobId,
+                    type: 'chunkBase_done',
+                    result: result
+                }, [
+                    result.positions.buffer,
+                    result.normals.buffer,
+                    result.colors.buffer,
+                    result.surfaceWeights.buffer,
+                    result.surfaceOverrides.buffer,
+                    result.wPos.buffer,
+                    result.wNormals.buffer,
+                    result.wCols.buffer
+                ]);
+            } else if (type === 'chunkProps') {
+                const result = buildChunkProps(payload);
+                const transferables = [];
+                for (const key of Object.keys(result.treeInstances)) {
+                    transferables.push(result.treeInstances[key].buffer);
+                }
+                self.postMessage({
+                    jobId,
+                    type: 'chunkProps_done',
+                    result: result
+                }, transferables);
+            } else if (type === 'leafSurface') {
+                const result = buildLeafSurface(payload);
+                const transferables = [
+                    result.terrain.positions.buffer,
+                    result.terrain.normals.buffer,
+                    result.terrain.colors.buffer,
+                    result.terrain.uvs.buffer,
+                    result.terrain.indices.buffer,
+                    result.terrain.surfaceWeights.buffer,
+                    result.terrain.surfaceOverrides.buffer
+                ];
+                if (result.water) {
+                    transferables.push(
+                        result.water.positions.buffer,
+                        result.water.normals.buffer,
+                        result.water.colors.buffer,
+                        result.water.uvs.buffer,
+                        result.water.indices.buffer
+                    );
+                }
+                if (result.waterDepth) {
+                    transferables.push(result.waterDepth.data.buffer);
+                }
+                self.postMessage({
+                    jobId,
+                    type: 'leafSurface_done',
+                    result
+                }, transferables);
             }
-            self.postMessage({
-                jobId,
-                type: 'chunkProps_done',
-                result: result
-            }, transferables);
-        } else if (type === 'leafSurface') {
-            const result = buildLeafSurface(payload);
-            const transferables = [
-                result.terrain.positions.buffer,
-                result.terrain.normals.buffer,
-                result.terrain.colors.buffer,
-                result.terrain.uvs.buffer,
-                result.terrain.indices.buffer,
-                result.terrain.surfaceWeights.buffer,
-                result.terrain.surfaceOverrides.buffer
-            ];
-            if (result.water) {
-                transferables.push(
-                    result.water.positions.buffer,
-                    result.water.normals.buffer,
-                    result.water.colors.buffer,
-                    result.water.uvs.buffer,
-                    result.water.indices.buffer
-                );
-            }
-            if (result.waterDepth) {
-                transferables.push(result.waterDepth.data.buffer);
-            }
-            self.postMessage({
-                jobId,
-                type: 'leafSurface_done',
-                result
-            }, transferables);
+        } catch (err) {
+            self.postMessage({ jobId, error: err.message, stack: err.stack });
         }
-    } catch (err) {
-        self.postMessage({ jobId, error: err.message, stack: err.stack });
-    }
-};
+    };
+}

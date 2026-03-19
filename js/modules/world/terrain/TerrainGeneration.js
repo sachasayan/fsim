@@ -152,7 +152,7 @@ export function getTerrainGenerationDiagnostics() {
 }
 
 export async function generateChunkBase(cx, cz, lod, ctx) {
-    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
+    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial, roadFlattenSettings } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const receiveTerrainShadows = lod <= 1;
     const receiveWaterShadows = lod === 0;
@@ -194,6 +194,7 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
 
     const payload = {
         cx, cz, lodCfg,
+        roadFlattenSettings,
         positions: tGeo.attributes.position.array.slice(),
         normals: new Float32Array(tGeo.attributes.normal.array.length),
         colors: new Float32Array(tGeo.attributes.color.array.length),

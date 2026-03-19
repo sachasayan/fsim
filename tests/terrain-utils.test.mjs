@@ -7,7 +7,8 @@ import {
     cityHubInfluence,
     getDistrictProfile,
     getTerrainHeight,
-    getLodForRingDistance
+    getLodForRingDistance,
+    setStaticSampler
 } from '../js/modules/world/terrain/TerrainUtils.js';
 
 // getForestProfile signature: getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
@@ -225,6 +226,36 @@ test('getTerrainHeight blend zone is between 0 and full noise value', () => {
     const nonFlatNoise = { fractal: () => 0.5 }; // full value = 400
     const h = getTerrainHeight(400, 100, nonFlatNoise);
     assert.ok(h > 0 && h < 400, `Blend zone height should be partial, got ${h}`);
+});
+
+test('getTerrainHeight still applies terrain edits when using the static sampler', () => {
+    const previousWindow = global.window;
+    global.window = {
+        fsimWorld: {
+            terrainEdits: [{
+                kind: 'raise',
+                x: 0,
+                z: 0,
+                radius: 100,
+                delta: 25
+            }]
+        }
+    };
+    setStaticSampler({
+        getAltitudeAt() {
+            return 100;
+        },
+        getMetadata() {
+            return null;
+        }
+    });
+
+    try {
+        assert.equal(getTerrainHeight(0, 0, flatNoise), 125);
+    } finally {
+        setStaticSampler(null);
+        global.window = previousWindow;
+    }
 });
 
 // ─── getLodForRingDistance ────────────────────────────────────────────────────

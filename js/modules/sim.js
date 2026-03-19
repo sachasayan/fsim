@@ -157,6 +157,7 @@ const {
   terrainDebugSettings,
   applyTerrainDebugSettings,
   roadMarkingDebugSettings,
+  roadFlattenDebugSettings,
   applyRoadMarkingDebugSettings,
   clouds,
   cloudMaterial,
