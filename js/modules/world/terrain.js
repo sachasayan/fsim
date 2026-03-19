@@ -30,9 +30,11 @@ import {
 import {
   generateChunkBase as genBase,
   generateChunkProps as genProps,
+  dispatchTerrainWorker,
   getTerrainGenerationDiagnostics,
   getOverlappingDistricts,
   loadStaticWorld,
+  recordTerrainGenerationPerf,
   CHUNK_SIZE
 } from './terrain/TerrainGeneration.js';
 import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsForChunk } from './terrain/BuildingSpawner.js';
@@ -678,6 +680,34 @@ export function createTerrainSystem({
     return geometry;
   }
 
+  function createLeafSurfaceGeometryFromBuffers(payload, materialKind = 'terrain') {
+    if (!payload) return null;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setIndex(new THREE.BufferAttribute(payload.indices, 1));
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(payload.positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(payload.normals, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(payload.colors, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(payload.uvs, 2));
+    if (materialKind === 'terrain' && payload.surfaceWeights && payload.surfaceOverrides) {
+      geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(payload.surfaceWeights, 4));
+      geometry.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(payload.surfaceOverrides, 4));
+    }
+    return geometry;
+  }
+
+  function createWaterDepthTextureFromPayload(payload) {
+    if (!payload?.data || !Number.isFinite(payload.size)) return null;
+    const texture = new THREE.DataTexture(payload.data, payload.size, payload.size, THREE.RGBAFormat);
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
   const waterFarMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true
   });
@@ -909,6 +939,8 @@ export function createTerrainSystem({
       leafState.waterDepthTexture = null;
     }
     leafState.hasWater = false;
+    leafState.workerBuildPromise = null;
+    leafState.workerBuildStartedAtMs = null;
   }
 
   function createNativeLeafRuntime(leaf) {
@@ -933,6 +965,8 @@ export function createTerrainSystem({
       pendingSinceAtMs: now,
       enqueuedAtMs: now,
       lastBuildStartedAtMs: null,
+      workerBuildStartedAtMs: null,
+      workerBuildPromise: null,
       lastSurfaceReadyAtMs: null,
       lastWaitMs: null,
       maxWaitMs: null,
@@ -1314,67 +1348,34 @@ export function createTerrainSystem({
     return false;
   }
 
-  function buildNativeLeafSurface(leafState) {
+  function applyWorkerLeafSurfaceResult(leafState, result, { workerMs = null } = {}) {
+    if (!leafState || !result?.terrain || !result?.node) {
+      return;
+    }
+
     const buildStartedAtMs = performance.now();
-    const sampler = getStaticSampler();
-    if (!sampler || !Number.isInteger(leafState.nodeId)) {
-      leafState.state = 'error';
-      return;
-    }
-
-    const node = sampler.getNode(leafState.nodeId, leafState.depth);
-    const surfaceResolution = getNativeSurfaceResolution(node?.size ?? CHUNK_SIZE, {
-      bootstrapBlocking: leafState.blockingReady
-    });
-    const sampleStartedAtMs = performance.now();
-    const decoded = sampleNodeHeightGrid(sampler, node, surfaceResolution, leafState.depth);
-    if (!node || !decoded) {
-      leafState.state = 'error';
-      return;
-    }
-    const sampleHeightMs = performance.now() - sampleStartedAtMs;
-
-    const worldData = getStaticWorldMetadata() || windowRef?.fsimWorld || null;
     const materialSetupStartedAtMs = performance.now();
-    const hasWater = leafContainsWater(decoded.heights);
-    const terrainGeometryStartedAtMs = performance.now();
-    const terrainGeometry = createLeafSurfaceGeometry({
-      node,
-      heights: decoded.heights,
-      stride: decoded.stride,
-      worldData,
-      sampler,
-      materialKind: 'terrain'
-    });
-    const terrainGeometryMs = performance.now() - terrainGeometryStartedAtMs;
-    let waterGeometry = null;
-    let waterGeometryMs = 0;
-    if (hasWater) {
-      const waterGeometryStartedAtMs = performance.now();
-      waterGeometry = createLeafSurfaceGeometry({
-        node,
-        heights: decoded.heights,
-        stride: decoded.stride,
-        worldData,
-        sampler,
-        materialKind: 'water'
-      });
-      waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
-    }
+    const terrainGeometry = createLeafSurfaceGeometryFromBuffers(result.terrain, 'terrain');
+    const terrainGeometryMs = performance.now() - materialSetupStartedAtMs;
     const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
     terrainMesh.receiveShadow = true;
-    terrainMesh.position.set(node.minX, 0, node.minZ);
-    let waterDepthTexture = null;
+    terrainMesh.position.set(result.node.minX, 0, result.node.minZ);
+
+    let waterGeometryMs = 0;
     let waterDepthTextureMs = 0;
+    let waterDepthTexture = null;
     let waterMesh = null;
-    if (hasWater) {
+    if (result.hasWater && result.water) {
+      const waterGeometryStartedAtMs = performance.now();
+      const waterGeometry = createLeafSurfaceGeometryFromBuffers(result.water, 'water');
+      waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
       const waterDepthStartedAtMs = performance.now();
-      waterDepthTexture = createWaterDepthTexture(node, sampler, (bootstrapMode && leafState.blockingReady) ? 16 : (bootstrapMode ? 32 : 64));
+      waterDepthTexture = createWaterDepthTextureFromPayload(result.waterDepth);
       waterDepthTextureMs = performance.now() - waterDepthStartedAtMs;
-      const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, node);
+      const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, result.node);
       waterMesh = new THREE.Mesh(waterGeometry, leafWaterMaterial);
       waterMesh.receiveShadow = leafState.chunkLod === 0;
-      waterMesh.position.set(node.minX, 0, node.minZ);
+      waterMesh.position.set(result.node.minX, 0, result.node.minZ);
     }
     const materialSetupMs = performance.now() - materialSetupStartedAtMs;
 
@@ -1385,9 +1386,11 @@ export function createTerrainSystem({
     leafState.terrainMesh = terrainMesh;
     leafState.waterMesh = waterMesh;
     leafState.waterDepthTexture = waterDepthTexture;
-    leafState.hasWater = hasWater;
-    leafState.surfaceResolution = surfaceResolution;
+    leafState.hasWater = result.hasWater === true;
+    leafState.surfaceResolution = result.surfaceResolution;
     leafState.state = 'surface_ready';
+    leafState.workerBuildPromise = null;
+    leafState.workerBuildStartedAtMs = null;
     recordLeafCompletion(leafState, performance.now());
     scene.add(terrainMesh);
     if (waterMesh) {
@@ -1395,13 +1398,68 @@ export function createTerrainSystem({
     }
     const sceneAttachMs = performance.now() - sceneAttachStartedAtMs;
     recordLeafBuildBreakdown({
-      sampleHeightMs,
+      sampleHeightMs: 0,
       terrainGeometryMs,
       waterGeometryMs,
       waterDepthTextureMs,
       materialSetupMs,
       sceneAttachMs,
+      workerComputeMs: workerMs,
       totalMs: performance.now() - buildStartedAtMs
+    });
+    recordTerrainGenerationPerf('leafSurface', {
+      workerMs,
+      applyMs: performance.now() - buildStartedAtMs
+    });
+  }
+
+  function startWorkerLeafSurfaceBuild(leafState) {
+    const sampler = getStaticSampler();
+    if (!sampler || !Number.isInteger(leafState?.nodeId)) {
+      leafState.state = 'error';
+      leafState.workerBuildPromise = null;
+      leafState.workerBuildStartedAtMs = null;
+      return;
+    }
+
+    const node = sampler.getNode(leafState.nodeId, leafState.depth);
+    if (!node) {
+      leafState.state = 'error';
+      leafState.workerBuildPromise = null;
+      leafState.workerBuildStartedAtMs = null;
+      return;
+    }
+
+    const surfaceResolution = getNativeSurfaceResolution(node.size ?? CHUNK_SIZE, {
+      bootstrapBlocking: leafState.blockingReady
+    });
+    const waterDepthResolution = (bootstrapMode && leafState.blockingReady) ? 16 : (bootstrapMode ? 32 : 64);
+    const buildVersion = leafState.buildVersion;
+    const workerStartedAtMs = performance.now();
+    leafState.state = 'building_surface';
+    leafState.workerBuildStartedAtMs = workerStartedAtMs;
+    leafState.workerBuildPromise = dispatchTerrainWorker('leafSurface', {
+      nodeId: leafState.nodeId,
+      depth: leafState.depth,
+      surfaceResolution,
+      waterDepthResolution
+    }).then((result) => {
+      const activeLeafState = activeLeaves.get(leafState.leafId);
+      if (!activeLeafState || activeLeafState !== leafState || activeLeafState.retired || activeLeafState.buildVersion !== buildVersion) {
+        return;
+      }
+      applyWorkerLeafSurfaceResult(activeLeafState, result, {
+        workerMs: performance.now() - workerStartedAtMs
+      });
+    }).catch((error) => {
+      const activeLeafState = activeLeaves.get(leafState.leafId);
+      if (!activeLeafState || activeLeafState !== leafState || activeLeafState.buildVersion !== buildVersion) {
+        return;
+      }
+      console.error('[terrain] Leaf surface worker build failed', error);
+      activeLeafState.state = 'error';
+      activeLeafState.workerBuildPromise = null;
+      activeLeafState.workerBuildStartedAtMs = null;
     });
   }
 
@@ -1421,10 +1479,10 @@ export function createTerrainSystem({
       const job = pendingLeafBuilds.pop();
       pendingLeafBuildIds.delete(job.leafId);
       const leafState = activeLeaves.get(job.leafId);
-      if (!leafState || leafState.retired || leafState.state === 'surface_ready') continue;
+      if (!leafState || leafState.retired || leafState.state === 'surface_ready' || leafState.workerBuildPromise) continue;
       leafState.buildVersion += 1;
       leafState.lastBuildStartedAtMs = performance.now();
-      buildNativeLeafSurface(leafState);
+      startWorkerLeafSurfaceBuild(leafState);
       builds += 1;
     }
 
@@ -1984,9 +2042,9 @@ export function createTerrainSystem({
         }
       }
 
-      if (!leafState.terrainMesh || (leafState.hasWater && !leafState.waterMesh)) {
+      if ((!leafState.terrainMesh || (leafState.hasWater && !leafState.waterMesh)) && leafState.state !== 'building_surface') {
         markLeafPendingSurface(leafState);
-      } else if (leafState.state !== 'error') {
+      } else if (leafState.state !== 'error' && leafState.state !== 'building_surface') {
         leafState.state = 'surface_ready';
       }
 

@@ -31,6 +31,15 @@ const _generationPerf = {
         avgApplyMs: 0,
         maxWorkerMs: 0,
         maxApplyMs: 0
+    },
+    leafSurface: {
+        count: 0,
+        workerMs: null,
+        applyMs: null,
+        avgWorkerMs: 0,
+        avgApplyMs: 0,
+        maxWorkerMs: 0,
+        maxApplyMs: 0
     }
 };
 
@@ -112,6 +121,14 @@ function dispatchWorker(type, payload, transferables = []) {
         _workerManager = initWorkerManager(_staticWorldBuffer);
     }
     return _workerManager.dispatchWorker(type, payload, transferables);
+}
+
+export function dispatchTerrainWorker(type, payload, transferables = []) {
+    return dispatchWorker(type, payload, transferables);
+}
+
+export function recordTerrainGenerationPerf(kind, sample = {}) {
+    recordGenerationPerf(kind, sample);
 }
 
 export function getTerrainGenerationDiagnostics() {

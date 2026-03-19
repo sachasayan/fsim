@@ -11,11 +11,20 @@ function createJobSummary() {
 export function initWorkerManager(_staticWorldBuffer) {
     const maxWorkers = navigator.hardwareConcurrency ? Math.min(navigator.hardwareConcurrency, 4) : 2;
     const workers = [];
+    const readyWorkers = new Set();
     const pendingJobs = new Map();
     const inFlightByType = new Map();
     const jobSummaries = new Map();
     let jobIdCounter = 0;
     let workerIdx = 0;
+    const pendingDispatches = [];
+
+    function flushPendingDispatches() {
+        while (readyWorkers.size > 0 && pendingDispatches.length > 0) {
+            const launch = pendingDispatches.shift();
+            launch();
+        }
+    }
 
     for (let i = 0; i < maxWorkers; i++) {
         const worker = new Worker(new URL('./TerrainWorker.js', import.meta.url), { type: 'module' });
@@ -24,7 +33,18 @@ export function initWorkerManager(_staticWorldBuffer) {
         worker.onmessage = (e) => {
             const { jobId, type, result, error } = e.data;
             if (type === 'workerReady' && _staticWorldBuffer) {
+                readyWorkers.delete(worker);
                 worker.postMessage({ type: 'initStaticMap', payload: _staticWorldBuffer });
+                return;
+            }
+            if (type === 'workerReady') {
+                readyWorkers.add(worker);
+                flushPendingDispatches();
+                return;
+            }
+            if (type === 'initStaticMap_done') {
+                readyWorkers.add(worker);
+                flushPendingDispatches();
                 return;
             }
             if (pendingJobs.has(jobId)) {
@@ -54,25 +74,38 @@ export function initWorkerManager(_staticWorldBuffer) {
 
     function dispatchWorker(type, payload, transferables = []) {
         return new Promise((resolve, reject) => {
-            const jobId = jobIdCounter++;
-            const timeout = setTimeout(() => {
-                if (pendingJobs.has(jobId)) {
-                    pendingJobs.delete(jobId);
-                    reject(new Error(`Worker job ${type} timed out after 60s`));
+            const launch = () => {
+                const readyList = workers.filter((worker) => readyWorkers.has(worker));
+                if (readyList.length === 0) {
+                    pendingDispatches.push(launch);
+                    return;
                 }
-            }, 60000);
 
-            pendingJobs.set(jobId, {
-                type,
-                startedAtMs: performance.now(),
-                resolve: (res) => { clearTimeout(timeout); resolve(res); },
-                reject: (err) => { clearTimeout(timeout); reject(err); }
-            });
-            inFlightByType.set(type, (inFlightByType.get(type) || 0) + 1);
+                const worker = readyList[workerIdx % readyList.length];
+                workerIdx = (workerIdx + 1) % Math.max(1, readyList.length);
+                const jobId = jobIdCounter++;
+                const timeout = setTimeout(() => {
+                    if (pendingJobs.has(jobId)) {
+                        pendingJobs.delete(jobId);
+                        reject(new Error(`Worker job ${type} timed out after 60s`));
+                    }
+                }, 60000);
 
-            const worker = workers[workerIdx];
-            workerIdx = (workerIdx + 1) % workers.length;
-            worker.postMessage({ type, payload, jobId }, transferables);
+                pendingJobs.set(jobId, {
+                    type,
+                    startedAtMs: performance.now(),
+                    resolve: (res) => { clearTimeout(timeout); resolve(res); },
+                    reject: (err) => { clearTimeout(timeout); reject(err); }
+                });
+                inFlightByType.set(type, (inFlightByType.get(type) || 0) + 1);
+                worker.postMessage({ type, payload, jobId }, transferables);
+            };
+
+            if (readyWorkers.size === 0) {
+                pendingDispatches.push(launch);
+            } else {
+                launch();
+            }
         });
     }
 

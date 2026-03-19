@@ -1,12 +1,13 @@
-import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, getTerrainMaskSet, QuadtreeMapSampler, setStaticSampler, getStaticWorldMetadata } from './TerrainUtils.js';
+import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, getTerrainMaskSet, QuadtreeMapSampler, setStaticSampler, getStaticWorldMetadata, getStaticSampler } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
-import { SEA_LEVEL, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
+import { SEA_LEVEL, WATER_DEPTH_BANDS, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
 import { getTerrainSurfaceWeights } from './TerrainSurfaceWeights.js';
 import { getTerrainSurfaceOverrides } from './TerrainSurfaceOverrides.js';
 
 // Re-declare constants from TerrainGeneration to avoid importing THREE
 const TREE_DENSITY_MULTIPLIER = 4.0;
 const CHUNK_SIZE = 4000;
+const SKIRT_DEPTH = 28;
 
 const treeSizes = {
     broadleaf: { hRange: [12, 21], wScale: 0.68 },
@@ -129,6 +130,262 @@ function computeGridNormals(positions, segments) {
     }
 
     return normals;
+}
+
+function buildBorderLoopIndices(stride) {
+    const indices = [];
+    for (let x = 0; x < stride; x += 1) indices.push(x);
+    for (let z = 1; z < stride; z += 1) indices.push((z * stride) + (stride - 1));
+    for (let x = stride - 2; x >= 0; x -= 1) indices.push(((stride - 1) * stride) + x);
+    for (let z = stride - 2; z > 0; z -= 1) indices.push(z * stride);
+    return indices;
+}
+
+function sampleNodeHeightGrid(node, resolution, depth, sampler) {
+    if (!sampler || !node || !Number.isFinite(resolution) || resolution < 1) {
+        return null;
+    }
+
+    const decodedLeaf = resolution === 32 ? sampler.decodeLeafHeightSamples(node.id, depth) : null;
+    if (decodedLeaf && decodedLeaf.resolution === resolution) {
+        return decodedLeaf;
+    }
+
+    const stride = resolution + 1;
+    const heights = new Float32Array(stride * stride);
+    for (let z = 0; z <= resolution; z += 1) {
+        const wz = node.minZ + (z / resolution) * node.size;
+        for (let x = 0; x <= resolution; x += 1) {
+            const wx = node.minX + (x / resolution) * node.size;
+            heights[z * stride + x] = sampler.getAltitudeAt(wx, wz);
+        }
+    }
+
+    return {
+        resolution,
+        stride,
+        heights
+    };
+}
+
+function leafContainsWater(heights) {
+    if (!heights) return false;
+    for (let index = 0; index < heights.length; index += 1) {
+        if (heights[index] < SEA_LEVEL) return true;
+    }
+    return false;
+}
+
+function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, materialKind }) {
+    const resolution = stride - 1;
+    const topVertexCount = stride * stride;
+    const borderLoop = buildBorderLoopIndices(stride);
+    const vertexCount = topVertexCount + borderLoop.length;
+    const positions = new Float32Array(vertexCount * 3);
+    const colors = new Float32Array(vertexCount * 3);
+    const uvs = new Float32Array(vertexCount * 2);
+    const surfaceWeights = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
+    const surfaceOverrides = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
+    const segmentSize = node.size / resolution;
+    const gridStride = stride;
+
+    for (let z = 0; z < stride; z += 1) {
+        for (let x = 0; x < stride; x += 1) {
+            const index = z * stride + x;
+            const positionIndex = index * 3;
+            const worldX = node.minX + x * segmentSize;
+            const worldZ = node.minZ + z * segmentSize;
+            const height = materialKind === 'terrain' ? heights[index] : SEA_LEVEL;
+            const rightIndex = z * gridStride + Math.min(resolution, x + 1);
+            const downIndex = Math.min(resolution, z + 1) * gridStride + x;
+            const slope = materialKind === 'terrain'
+                ? Math.max(
+                    Math.abs(heights[rightIndex] - heights[index]),
+                    Math.abs(heights[downIndex] - heights[index])
+                ) / Math.max(1e-3, segmentSize)
+                : 0;
+            const color = materialKind === 'terrain'
+                ? srgbArrayToLinear(getTerrainBaseSrgb(height))
+                : srgbArrayToLinear(getWaterDepthSrgb(Math.max(0, SEA_LEVEL - heights[index])));
+
+            positions[positionIndex] = x * segmentSize;
+            positions[positionIndex + 1] = height;
+            positions[positionIndex + 2] = z * segmentSize;
+            uvs[index * 2] = worldX / 512;
+            uvs[index * 2 + 1] = worldZ / 512;
+            colors[positionIndex] = color.r;
+            colors[positionIndex + 1] = color.g;
+            colors[positionIndex + 2] = color.b;
+
+            if (materialKind === 'terrain') {
+                const weightIndex = index * 4;
+                const weights = getTerrainSurfaceWeights(height, slope, getTerrainMaskSet(worldX, worldZ));
+                const overrides = getTerrainSurfaceOverrides(worldX, worldZ, worldData);
+                surfaceWeights[weightIndex] = weights[0];
+                surfaceWeights[weightIndex + 1] = weights[1];
+                surfaceWeights[weightIndex + 2] = weights[2];
+                surfaceWeights[weightIndex + 3] = weights[3];
+                surfaceOverrides[weightIndex] = overrides[0];
+                surfaceOverrides[weightIndex + 1] = overrides[1];
+                surfaceOverrides[weightIndex + 2] = overrides[2];
+                surfaceOverrides[weightIndex + 3] = overrides[3];
+            }
+        }
+    }
+
+    const topNormals = computeGridNormals(positions.slice(0, topVertexCount * 3), resolution);
+    const normals = new Float32Array(vertexCount * 3);
+    normals.set(topNormals, 0);
+
+    for (let index = 0; index < borderLoop.length; index += 1) {
+        const topIndex = borderLoop[index];
+        const sourcePositionIndex = topIndex * 3;
+        const sourceWeightIndex = topIndex * 4;
+        const skirtVertexIndex = topVertexCount + index;
+        const skirtPositionIndex = skirtVertexIndex * 3;
+
+        positions[skirtPositionIndex] = positions[sourcePositionIndex];
+        positions[skirtPositionIndex + 1] = positions[sourcePositionIndex + 1] - SKIRT_DEPTH;
+        positions[skirtPositionIndex + 2] = positions[sourcePositionIndex + 2];
+        uvs[skirtVertexIndex * 2] = uvs[topIndex * 2];
+        uvs[(skirtVertexIndex * 2) + 1] = uvs[(topIndex * 2) + 1];
+
+        colors[skirtPositionIndex] = colors[sourcePositionIndex];
+        colors[skirtPositionIndex + 1] = colors[sourcePositionIndex + 1];
+        colors[skirtPositionIndex + 2] = colors[sourcePositionIndex + 2];
+        normals[skirtPositionIndex] = normals[sourcePositionIndex];
+        normals[skirtPositionIndex + 1] = normals[sourcePositionIndex + 1];
+        normals[skirtPositionIndex + 2] = normals[sourcePositionIndex + 2];
+
+        if (materialKind === 'terrain') {
+            const skirtWeightIndex = skirtVertexIndex * 4;
+            surfaceWeights[skirtWeightIndex] = surfaceWeights[sourceWeightIndex];
+            surfaceWeights[skirtWeightIndex + 1] = surfaceWeights[sourceWeightIndex + 1];
+            surfaceWeights[skirtWeightIndex + 2] = surfaceWeights[sourceWeightIndex + 2];
+            surfaceWeights[skirtWeightIndex + 3] = surfaceWeights[sourceWeightIndex + 3];
+            surfaceOverrides[skirtWeightIndex] = surfaceOverrides[sourceWeightIndex];
+            surfaceOverrides[skirtWeightIndex + 1] = surfaceOverrides[sourceWeightIndex + 1];
+            surfaceOverrides[skirtWeightIndex + 2] = surfaceOverrides[sourceWeightIndex + 2];
+            surfaceOverrides[skirtWeightIndex + 3] = surfaceOverrides[sourceWeightIndex + 3];
+        }
+    }
+
+    const topIndexCount = resolution * resolution * 6;
+    const skirtIndexCount = borderLoop.length * 6;
+    const indices = new Uint32Array(topIndexCount + skirtIndexCount);
+    let writeIndex = 0;
+
+    for (let z = 0; z < resolution; z += 1) {
+        for (let x = 0; x < resolution; x += 1) {
+            const a = z * stride + x;
+            const b = a + 1;
+            const c = a + stride;
+            const d = c + 1;
+            indices[writeIndex++] = a;
+            indices[writeIndex++] = c;
+            indices[writeIndex++] = b;
+            indices[writeIndex++] = b;
+            indices[writeIndex++] = c;
+            indices[writeIndex++] = d;
+        }
+    }
+
+    for (let index = 0; index < borderLoop.length; index += 1) {
+        const next = (index + 1) % borderLoop.length;
+        const topA = borderLoop[index];
+        const topB = borderLoop[next];
+        const skirtA = topVertexCount + index;
+        const skirtB = topVertexCount + next;
+        indices[writeIndex++] = topA;
+        indices[writeIndex++] = topB;
+        indices[writeIndex++] = skirtA;
+        indices[writeIndex++] = skirtA;
+        indices[writeIndex++] = topB;
+        indices[writeIndex++] = skirtB;
+    }
+
+    return {
+        positions,
+        normals,
+        colors,
+        uvs,
+        indices,
+        surfaceWeights,
+        surfaceOverrides
+    };
+}
+
+function buildWaterDepthTextureData(node, sampler, resolution = 64) {
+    const size = Math.max(4, resolution);
+    const data = new Uint8Array(size * size * 4);
+    for (let z = 0; z < size; z += 1) {
+        const vz = size === 1 ? 0 : z / (size - 1);
+        const worldZ = node.minZ + vz * node.size;
+        for (let x = 0; x < size; x += 1) {
+            const ux = size === 1 ? 0 : x / (size - 1);
+            const worldX = node.minX + ux * node.size;
+            const terrainHeight = sampler.getAltitudeAt(worldX, worldZ);
+            const depth = Math.max(0, Math.min(WATER_DEPTH_BANDS.deepEnd, SEA_LEVEL - terrainHeight));
+            const encoded = Math.round((depth / WATER_DEPTH_BANDS.deepEnd) * 255);
+            const index = (z * size + x) * 4;
+            data[index] = encoded;
+            data[index + 1] = encoded;
+            data[index + 2] = encoded;
+            data[index + 3] = 255;
+        }
+    }
+    return { data, size };
+}
+
+function buildLeafSurface(job) {
+    const staticSampler = getStaticSampler();
+    const worldData = getStaticWorldMetadata();
+    if (!staticSampler || !Number.isInteger(job.nodeId)) {
+        throw new Error('Leaf surface build requires initialized static sampler and node id');
+    }
+
+    const node = staticSampler.getNode(job.nodeId, job.depth);
+    const decoded = sampleNodeHeightGrid(node, job.surfaceResolution, job.depth, staticSampler);
+    if (!node || !decoded) {
+        throw new Error('Leaf surface build failed to resolve node data');
+    }
+
+    const hasWater = leafContainsWater(decoded.heights);
+    const terrain = createLeafSurfaceBuffers({
+        node,
+        heights: decoded.heights,
+        stride: decoded.stride,
+        worldData,
+        sampler: staticSampler,
+        materialKind: 'terrain'
+    });
+
+    let water = null;
+    let waterDepth = null;
+    if (hasWater) {
+        water = createLeafSurfaceBuffers({
+            node,
+            heights: decoded.heights,
+            stride: decoded.stride,
+            worldData,
+            sampler: staticSampler,
+            materialKind: 'water'
+        });
+        waterDepth = buildWaterDepthTextureData(node, staticSampler, job.waterDepthResolution);
+    }
+
+    return {
+        node: {
+            minX: node.minX,
+            minZ: node.minZ,
+            size: node.size
+        },
+        surfaceResolution: job.surfaceResolution,
+        hasWater,
+        terrain,
+        water,
+        waterDepth
+    };
 }
 
 function buildChunkBase(job) {
@@ -424,6 +681,7 @@ self.onmessage = function (e) {
         if (type === 'initStaticMap') {
             const sampler = new QuadtreeMapSampler(payload);
             setStaticSampler(sampler);
+            self.postMessage({ type: 'initStaticMap_done' });
         } else if (type === 'chunkBase') {
             const result = buildChunkBase(payload);
             self.postMessage({
@@ -450,6 +708,34 @@ self.onmessage = function (e) {
                 jobId,
                 type: 'chunkProps_done',
                 result: result
+            }, transferables);
+        } else if (type === 'leafSurface') {
+            const result = buildLeafSurface(payload);
+            const transferables = [
+                result.terrain.positions.buffer,
+                result.terrain.normals.buffer,
+                result.terrain.colors.buffer,
+                result.terrain.uvs.buffer,
+                result.terrain.indices.buffer,
+                result.terrain.surfaceWeights.buffer,
+                result.terrain.surfaceOverrides.buffer
+            ];
+            if (result.water) {
+                transferables.push(
+                    result.water.positions.buffer,
+                    result.water.normals.buffer,
+                    result.water.colors.buffer,
+                    result.water.uvs.buffer,
+                    result.water.indices.buffer
+                );
+            }
+            if (result.waterDepth) {
+                transferables.push(result.waterDepth.data.buffer);
+            }
+            self.postMessage({
+                jobId,
+                type: 'leafSurface_done',
+                result
             }, transferables);
         }
     } catch (err) {
