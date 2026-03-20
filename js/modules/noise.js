@@ -1,3 +1,11 @@
+// Pre-calculate gradient values to avoid conditional branching
+const grad3 = new Float32Array([
+     1, 1, 0,    -1, 1, 0,     1,-1, 0,    -1,-1, 0,
+     1, 0, 1,    -1, 0, 1,     1, 0,-1,    -1, 0,-1,
+     0, 1, 1,     0,-1, 1,     0, 1,-1,     0,-1,-1,
+     1, 1, 0,     0,-1, 1,    -1, 1, 0,     0,-1,-1
+]);
+
 export const Noise = {
   permutation: new Uint8Array(512),
   init(seed = 12345) {
@@ -29,9 +37,12 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
+
+    // Inline fade
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
     let A = this.permutation[X] + Y;
     let AA = this.permutation[A] + Z;
     let AB = this.permutation[A + 1] + Z;
@@ -39,23 +50,39 @@ export const Noise = {
     let BA = this.permutation[B] + Z;
     let BB = this.permutation[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    // Fast inline gradient lookups using flat array for multipliers
+    let hAA = (this.permutation[AA] & 15) * 3;
+    let hBA = (this.permutation[BA] & 15) * 3;
+    let hAB = (this.permutation[AB] & 15) * 3;
+    let hBB = (this.permutation[BB] & 15) * 3;
+    let hAA1 = (this.permutation[AA + 1] & 15) * 3;
+    let hBA1 = (this.permutation[BA + 1] & 15) * 3;
+    let hAB1 = (this.permutation[AB + 1] & 15) * 3;
+    let hBB1 = (this.permutation[BB + 1] & 15) * 3;
+
+    let x1 = x - 1, y1 = y - 1, z1 = z - 1;
+
+    let l1 = grad3[hAA]*x + grad3[hAA+1]*y + grad3[hAA+2]*z;
+    let l2 = grad3[hBA]*x1 + grad3[hBA+1]*y + grad3[hBA+2]*z;
+    let res1 = l1 + u * (l2 - l1);
+
+    let l3 = grad3[hAB]*x + grad3[hAB+1]*y1 + grad3[hAB+2]*z;
+    let l4 = grad3[hBB]*x1 + grad3[hBB+1]*y1 + grad3[hBB+2]*z;
+    let res2 = l3 + u * (l4 - l3);
+
+    let resA = res1 + v * (res2 - res1);
+
+    let l5 = grad3[hAA1]*x + grad3[hAA1+1]*y + grad3[hAA1+2]*z1;
+    let l6 = grad3[hBA1]*x1 + grad3[hBA1+1]*y + grad3[hBA1+2]*z1;
+    let res3 = l5 + u * (l6 - l5);
+
+    let l7 = grad3[hAB1]*x + grad3[hAB1+1]*y1 + grad3[hAB1+2]*z1;
+    let l8 = grad3[hBB1]*x1 + grad3[hBB1+1]*y1 + grad3[hBB1+2]*z1;
+    let res4 = l7 + u * (l8 - l7);
+
+    let resB = res3 + v * (res4 - res3);
+
+    return resA + w * (resB - resA);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {
