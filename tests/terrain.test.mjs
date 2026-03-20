@@ -62,6 +62,13 @@ test('terrain tests', async (t) => {
     const { createTerrainSystem, createRiverStripGeometry, createLakeSurfaceGeometry } = await import('../js/modules/world/terrain.js');
     const { createRuntimeLodSettings } = await import('../js/modules/world/LodSystem.js');
     const loadStaticWorldFn = async () => false;
+    const renderer = {
+        capabilities: {
+            getMaxAnisotropy() {
+                return 1;
+            }
+        }
+    };
 
     const mockNoise = {
         noise: (x, y) => 0,
@@ -73,7 +80,7 @@ test('terrain tests', async (t) => {
         const PHYSICS = { position: new THREE.Vector3() };
         const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         assert.ok(system.waterMaterial instanceof THREE.Material);
         assert.equal(typeof system.getTerrainHeight, 'function');
@@ -86,7 +93,7 @@ test('terrain tests', async (t) => {
         const PHYSICS = { position: new THREE.Vector3() };
         const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         const camera = new THREE.PerspectiveCamera();
         camera.position.set(100, 200, 300);
@@ -108,7 +115,7 @@ test('terrain tests', async (t) => {
         const PHYSICS = { position: new THREE.Vector3() };
         const lodSettings = createRuntimeLodSettings();
 
-        const system = createTerrainSystem({ scene, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
 
         // Ensure no pending builds before updateTerrain
         system.updateTerrain();

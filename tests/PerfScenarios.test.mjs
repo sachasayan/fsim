@@ -13,6 +13,8 @@ test('perf scenarios expose the expected named suite', () => {
     const scenarioIds = listPerfScenarios().map((scenario) => scenario.id);
     assert.deepEqual(scenarioIds, [
         'startup_steady_state',
+        'level_flight_low_alt',
+        'level_flight_cruise',
         'terrain_streaming_low_alt',
         'terrain_streaming_high_alt',
         'gpu_heavy_visuals',

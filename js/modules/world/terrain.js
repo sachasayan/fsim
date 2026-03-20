@@ -214,7 +214,7 @@ export function createRoadGeometry(points, width, colorHex, sampler, yOffset = 0
   return geometry;
 }
 
-function buildRoadFlattenSegments(roads, settings) {
+function buildRoadFlattenSegments(roads, settings, Noise) {
   if (!Array.isArray(roads) || roads.length === 0) return [];
   const centerPadding = Math.max(0, Number.isFinite(settings?.centerPadding) ? settings.centerPadding : 32);
   const shoulderWidth = Math.max(0, Number.isFinite(settings?.shoulderWidth) ? settings.shoulderWidth : 48);
@@ -250,7 +250,7 @@ function buildRoadFlattenSegments(roads, settings) {
 
 function createRoadAwareSampler(baseSampler, roads, settings, Noise) {
   if (!baseSampler || typeof baseSampler.getAltitudeAt !== 'function') return baseSampler;
-  const roadSegments = buildRoadFlattenSegments(roads, settings);
+  const roadSegments = buildRoadFlattenSegments(roads, settings, Noise);
   if (roadSegments.length === 0) return baseSampler;
 
   return {

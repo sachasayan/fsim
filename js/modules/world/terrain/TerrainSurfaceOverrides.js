@@ -86,6 +86,15 @@ export function getTerrainSurfaceOverrides(x, z, worldData = null, localRoads = 
     const runtimeWorld = worldData || (typeof window !== 'undefined' ? window?.fsimWorld || null : null);
     const roads = localRoads || (Array.isArray(runtimeWorld?.roads) ? runtimeWorld.roads : []);
     const hasAuthoredRoads = roads.length > 0;
+    const runway = rectWeight(
+        x,
+        z,
+        AIRPORT_CONFIG.RUNWAY.x,
+        AIRPORT_CONFIG.RUNWAY.z,
+        AIRPORT_CONFIG.RUNWAY.width,
+        AIRPORT_CONFIG.RUNWAY.length,
+        12
+    );
     const apron = rectWeight(
         x,
         z,
@@ -101,6 +110,6 @@ export function getTerrainSurfaceOverrides(x, z, worldData = null, localRoads = 
             Math.max(best, polylineWeight(x, z, points, AIRPORT_CONFIG.TAXIWAY.width + 10, 10))
         ), 0);
 
-    const asphalt = Math.max(apron, taxiway);
+    const asphalt = Math.max(runway, apron, taxiway);
     return [asphalt, 0, 0, 0];
 }

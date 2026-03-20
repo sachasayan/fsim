@@ -30,7 +30,7 @@ export function createRuntimeLodSettings({ urlSearch = '' } = {}) {
     },
     terrain: {
       renderDistance,
-      ringThresholds: [1, 3, 6],
+      ringThresholds: [3, 6, 12],
       ringHysteresis: 1,
         lodLevels: cloneLodLevels([
         {

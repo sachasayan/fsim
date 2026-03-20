@@ -9,7 +9,7 @@ import {
 } from '../js/modules/world/terrain/WaterOwnedShaderSource.js';
 import { describeOwnedShaderDescriptor } from '../js/modules/world/shaders/ShaderDescriptor.js';
 import {
-    applyDistanceAtmosphereShaderPatch,
+    applyWaterSurfaceColorShaderPatch,
     applyWaterDualScrollShaderPatch
 } from '../js/modules/world/terrain/TerrainShaderPatches.js';
 
@@ -26,9 +26,11 @@ test('water owned shader sources are cached and expose expected near/far behavio
     const farSource = getWaterOwnedShaderSource({ isFarLOD: true, strength: 0.74, desat: 0.08 });
 
     assert.equal(nearSourceA, nearSourceB);
-    assert.match(nearSourceA.vertexShader, /varying vec3 vAtmosWorldPos;/);
+    assert.match(nearSourceA.vertexShader, /varying vec3 vWaterWorldPos;/);
     assert.match(nearSourceA.fragmentShader, /uniform float uTime;/);
     assert.match(nearSourceA.fragmentShader, /vec2 normalUv1 = vNormalMapUv \+ vec2\(uTime \* 0\.12, uTime \* 0\.08\);/);
+    assert.match(nearSourceA.fragmentShader, /uniform sampler2D uWaterDepthTex;/);
+    assert.match(nearSourceA.fragmentShader, /float waterDepth = texture2D\(uWaterDepthTex, waterUv\)\.r \* uWaterDepthScale;/);
     assert.match(nearSourceA.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
     assert.match(farSource.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
     assert.doesNotMatch(farSource.fragmentShader, /uniform float uTime;/);
@@ -41,24 +43,41 @@ test('water owned uniform bindings expose live references and reject missing nea
         uAtmosNear: { value: 1 },
         uAtmosFar: { value: 2 }
     };
+    const waterSurfaceUniforms = {
+        uWaterDepthTex: { value: 'depth' },
+        uWaterBoundsMin: { value: 'min' },
+        uWaterBoundsSize: { value: 'size' },
+        uWaterDepthScale: { value: 1 },
+        uWaterFoamDepth: { value: 2 },
+        uWaterShallowStart: { value: 3 },
+        uWaterShallowEnd: { value: 4 },
+        uWaterDeepEnd: { value: 5 },
+        uWaterFoamColor: { value: 'foam' },
+        uWaterShallowColor: { value: 'shallow' },
+        uWaterDeepColor: { value: 'deep' }
+    };
     const timeUniform = { value: 42 };
 
     const nearBindings = getWaterOwnedUniformBindings({
         atmosphereUniforms,
+        waterSurfaceUniforms,
         timeUniform,
         isFarLOD: false
     });
     const farBindings = getWaterOwnedUniformBindings({
         atmosphereUniforms,
+        waterSurfaceUniforms,
         isFarLOD: true
     });
 
     assert.equal(nearBindings.uAtmosColor, atmosphereUniforms.uAtmosColor);
+    assert.equal(nearBindings.uWaterDepthTex, waterSurfaceUniforms.uWaterDepthTex);
     assert.equal(nearBindings.uTime, timeUniform);
     assert.equal(farBindings.uAtmosNear, atmosphereUniforms.uAtmosNear);
+    assert.equal(farBindings.uWaterDeepColor, waterSurfaceUniforms.uWaterDeepColor);
     assert.equal(Object.prototype.hasOwnProperty.call(farBindings, 'uTime'), false);
     assert.throws(
-        () => getWaterOwnedUniformBindings({ atmosphereUniforms, isFarLOD: false }),
+        () => getWaterOwnedUniformBindings({ atmosphereUniforms, waterSurfaceUniforms, isFarLOD: false }),
         /Near water owned shader requires a time uniform binding/
     );
 });
@@ -110,14 +129,28 @@ test('water owned shader templates match the legacy water patch output', () => {
     ].map((key) => [key, { value: null }]));
 
     function buildLegacyWaterSource(isFarLOD) {
+        const waterSurfaceUniforms = Object.fromEntries([
+            'uWaterDepthTex',
+            'uWaterBoundsMin',
+            'uWaterBoundsSize',
+            'uWaterDepthScale',
+            'uWaterFoamDepth',
+            'uWaterShallowStart',
+            'uWaterShallowEnd',
+            'uWaterDeepEnd',
+            'uWaterFoamColor',
+            'uWaterShallowColor',
+            'uWaterDeepColor'
+        ].map((key) => [key, { value: null }]));
         const shader = {
             uniforms: {},
             defines: {},
             vertexShader: isFarLOD ? THREE.ShaderLib.basic.vertexShader : THREE.ShaderLib.standard.vertexShader,
             fragmentShader: isFarLOD ? THREE.ShaderLib.basic.fragmentShader : THREE.ShaderLib.standard.fragmentShader
         };
-        applyDistanceAtmosphereShaderPatch(shader, {
+        applyWaterSurfaceColorShaderPatch(shader, {
             atmosphereUniforms,
+            waterSurfaceUniforms,
             strength: 0.74,
             desat: 0.08
         });
