@@ -802,6 +802,7 @@ export function createTerrainSystem({
   const LOD_LEVELS = lodSettings.terrain.lodLevels;
 
   const terrainChunks = new Map();
+  const warmChunkCache = new Map();
   const activeLeaves = new Map();
   const chunkLeafOwners = new Map();
   const pendingChunkBuilds = [];
@@ -812,6 +813,7 @@ export function createTerrainSystem({
   let pendingPropQueueDirty = false;
   const chunkPools = [[], [], [], []];
   const instancedMeshPools = new Map();
+  const WARM_CHUNK_CACHE_MAX = 24;
   let bootstrapMode = true;
   let quadtreeSelectionController = null;
   let blockingLeafIds = new Set();
@@ -884,6 +886,11 @@ export function createTerrainSystem({
       leafBuildApplies: 0,
       chunkBuildsStarted: 0,
       propBuildsStarted: 0
+    },
+    warmChunkCache: {
+      hits: 0,
+      misses: 0,
+      evictions: 0
     },
     pendingFrameLeafApplyMs: 0,
     pendingFrameLeafApplyCount: 0,
@@ -1193,6 +1200,7 @@ export function createTerrainSystem({
   }
 
   function invalidateActiveLeafSurfaces() {
+    clearWarmChunkCache();
     for (const leafState of activeLeaves.values()) {
       if (leafState.retired) continue;
       if (leafState.terrainMesh || leafState.waterMesh) {
@@ -1232,7 +1240,66 @@ export function createTerrainSystem({
     }
   }
 
+  function clearWarmChunkCache() {
+    for (const cached of warmChunkCache.values()) {
+      if (cached?.group) disposeChunkGroup(cached.group);
+    }
+    warmChunkCache.clear();
+  }
+
+  function cacheWarmChunkState(key, chunkState) {
+    if (!key || !chunkState?.group || chunkState.state !== 'done' || !chunkState.propsBuilt) {
+      return false;
+    }
+
+    const cacheKey = `${key}|${chunkState.lod}`;
+    const existing = warmChunkCache.get(cacheKey);
+    if (existing?.group && existing.group !== chunkState.group) {
+      disposeChunkGroup(existing.group);
+    }
+
+    scene.remove(chunkState.group);
+    warmChunkCache.delete(cacheKey);
+    warmChunkCache.set(cacheKey, {
+      key,
+      lod: chunkState.lod,
+      group: chunkState.group,
+      cachedAt: performance.now()
+    });
+
+    while (warmChunkCache.size > WARM_CHUNK_CACHE_MAX) {
+      const oldestKey = warmChunkCache.keys().next().value;
+      const oldest = warmChunkCache.get(oldestKey);
+      warmChunkCache.delete(oldestKey);
+      if (oldest?.group) disposeChunkGroup(oldest.group);
+      terrainPerfState.warmChunkCache.evictions += 1;
+    }
+
+    return true;
+  }
+
+  function restoreWarmChunkState(key, lod) {
+    const cacheKey = `${key}|${lod}`;
+    const cached = warmChunkCache.get(cacheKey);
+    if (!cached?.group) {
+      terrainPerfState.warmChunkCache.misses += 1;
+      return null;
+    }
+
+    warmChunkCache.delete(cacheKey);
+    if (!cached.group.parent) scene.add(cached.group);
+    terrainPerfState.warmChunkCache.hits += 1;
+    return {
+      group: cached.group,
+      pendingGroup: null,
+      lod,
+      propsBuilt: true,
+      state: 'done'
+    };
+  }
+
   function invalidateChunkProps() {
+    clearWarmChunkCache();
     for (const [key, state] of terrainChunks.entries()) {
       removePendingPropJobs(key);
       const targetGroup = state.pendingGroup || state.group;
@@ -2424,6 +2491,14 @@ export function createTerrainSystem({
         continue;
       }
 
+      if (!existing) {
+        const restored = restoreWarmChunkState(job.key, job.lod);
+        if (restored) {
+          terrainChunks.set(job.key, restored);
+          continue;
+        }
+      }
+
       let oldGroup = null;
       if (existing) {
         removePendingPropJobs(job.key);
@@ -2480,7 +2555,16 @@ export function createTerrainSystem({
         const current = terrainChunks.get(job.key);
         if (current && (current.pendingGroup === job.groupRef || current.group === job.groupRef) && current.lod === job.lod && current.state === 'building_props') {
           if (current.pendingGroup) {
-            if (current.group) disposeChunkGroup(current.group);
+            if (current.group) {
+              const priorState = {
+                group: current.group,
+                pendingGroup: null,
+                lod: current.lod,
+                propsBuilt: current.propsBuilt,
+                state: current.propsBuilt ? 'done' : current.state
+              };
+              if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
+            }
             current.group = current.pendingGroup;
             scene.add(current.group);
             current.pendingGroup = null;
@@ -2495,7 +2579,16 @@ export function createTerrainSystem({
         const current = terrainChunks.get(job.key);
         if (current && current.state === 'building_props') {
           if (current.pendingGroup) {
-            if (current.group) disposeChunkGroup(current.group);
+            if (current.group) {
+              const priorState = {
+                group: current.group,
+                pendingGroup: null,
+                lod: current.lod,
+                propsBuilt: current.propsBuilt,
+                state: current.propsBuilt ? 'done' : current.state
+              };
+              if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
+            }
             current.group = current.pendingGroup;
             scene.add(current.group);
             current.pendingGroup = null;
@@ -2564,7 +2657,10 @@ export function createTerrainSystem({
     for (const [key, chunkState] of terrainChunks.entries()) {
       if (!chunkLeafOwners.has(key)) {
         removePendingPropJobs(key);
-        if (chunkState.group) disposeChunkGroup(chunkState.group);
+        if (chunkState.group) {
+          const cached = cacheWarmChunkState(key, chunkState);
+          if (!cached) disposeChunkGroup(chunkState.group);
+        }
         if (chunkState.pendingGroup) disposeChunkGroup(chunkState.pendingGroup);
         terrainChunks.delete(key);
       }
@@ -2656,6 +2752,11 @@ export function createTerrainSystem({
       leafResponsiveness: lastTerrainSelection.leafResponsiveness ?? null,
       leafBuildBreakdown: getLeafBuildBreakdownSummary(),
       chunkStates: getChunkStateCounts(),
+      warmChunkCache: {
+        size: warmChunkCache.size,
+        maxSize: WARM_CHUNK_CACHE_MAX,
+        ...terrainPerfState.warmChunkCache
+      },
       worker: generationDiagnostics.worker,
       generation: generationDiagnostics.generation,
       timings: {

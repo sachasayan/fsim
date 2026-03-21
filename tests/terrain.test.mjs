@@ -4,8 +4,50 @@ import * as THREE from 'three';
 
 // Define globals needed for terrain logic
 global.Worker = class {
-    constructor() { }
-    postMessage() { }
+    constructor() {
+        setTimeout(() => {
+            this.onmessage?.({ data: { type: 'workerReady' } });
+        }, 0);
+    }
+    postMessage(message) {
+        const { type, jobId, payload } = message || {};
+        setTimeout(() => {
+            if (type === 'initStaticMap') {
+                this.onmessage?.({ data: { type: 'initStaticMap_done', jobId } });
+                return;
+            }
+            if (type === 'chunkBase') {
+                this.onmessage?.({
+                    data: {
+                        jobId,
+                        result: {
+                            positions: payload.positions,
+                            normals: payload.normals,
+                            colors: payload.colors,
+                            surfaceWeights: payload.surfaceWeights,
+                            surfaceOverrides: payload.surfaceOverrides,
+                            wPos: payload.wPos,
+                            wNormals: payload.wNormals,
+                            wCols: payload.wCols
+                        }
+                    }
+                });
+                return;
+            }
+            if (type === 'chunkProps') {
+                this.onmessage?.({
+                    data: {
+                        jobId,
+                        result: {
+                            treeInstances: {},
+                            buildingPositions: {},
+                            boatPositions: []
+                        }
+                    }
+                });
+            }
+        }, 0);
+    }
 };
 
 Object.defineProperty(global, 'navigator', {
@@ -58,9 +100,20 @@ global.document = {
     }
 };
 
+global.fetch = async () => ({
+    ok: true,
+    async json() {
+        return [];
+    },
+    async arrayBuffer() {
+        return new ArrayBuffer(0);
+    }
+});
+
 test('terrain tests', async (t) => {
     const { createTerrainSystem, createRiverStripGeometry, createLakeSurfaceGeometry } = await import('../js/modules/world/terrain.js');
     const { createRuntimeLodSettings } = await import('../js/modules/world/LodSystem.js');
+    const { CHUNK_SIZE } = await import('../js/modules/world/terrain/TerrainGeneration.js');
     const loadStaticWorldFn = async () => false;
     const renderer = {
         capabilities: {
@@ -74,6 +127,24 @@ test('terrain tests', async (t) => {
         noise: (x, y) => 0,
         fractal: (x, y, octaves) => 0
     };
+
+    async function waitForChunkWorkIdle(system, maxIterations = 60) {
+        let lastDiagnostics = null;
+        for (let i = 0; i < maxIterations; i += 1) {
+            system.updateTerrain();
+            const diagnostics = system.getTerrainSelectionDiagnostics();
+            lastDiagnostics = diagnostics;
+            const pendingBase = diagnostics.queueDepths?.pendingBaseChunkJobs ?? 0;
+            const pendingProps = diagnostics.queueDepths?.pendingPropJobs ?? 0;
+            const buildingBase = diagnostics.chunkStates?.building_base ?? 0;
+            const buildingProps = diagnostics.chunkStates?.building_props ?? 0;
+            if (pendingBase === 0 && pendingProps === 0 && buildingBase === 0 && buildingProps === 0) {
+                return diagnostics;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        assert.fail(`terrain chunk work did not become idle in time: ${JSON.stringify(lastDiagnostics)}`);
+    }
 
     await t.test('createTerrainSystem returns expected interface', () => {
         const scene = new THREE.Scene();
@@ -123,6 +194,50 @@ test('terrain tests', async (t) => {
         // Because pendingChunkBuilds is private, the best we can do is ensure
         // updateTerrain doesn't throw and executes successfully.
         assert.ok(typeof system.updateTerrain === 'function');
+    });
+
+    await t.test('warm chunk cache records a hit when revisiting a recently evicted chunk', async () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+        lodSettings.terrain.renderDistance = 0;
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+
+        await waitForChunkWorkIdle(system);
+        let diagnostics = system.getTerrainSelectionDiagnostics();
+        assert.equal(diagnostics.warmChunkCache.hits, 0, JSON.stringify(diagnostics.warmChunkCache));
+        assert.equal(diagnostics.warmChunkCache.size, 0, JSON.stringify(diagnostics.warmChunkCache));
+
+        PHYSICS.position.x = CHUNK_SIZE;
+        await waitForChunkWorkIdle(system);
+        diagnostics = system.getTerrainSelectionDiagnostics();
+        assert.ok(diagnostics.warmChunkCache.size >= 1, JSON.stringify(diagnostics.warmChunkCache));
+
+        PHYSICS.position.x = 0;
+        await waitForChunkWorkIdle(system);
+        diagnostics = system.getTerrainSelectionDiagnostics();
+        assert.ok(diagnostics.warmChunkCache.hits >= 1, JSON.stringify(diagnostics.warmChunkCache));
+    });
+
+    await t.test('refreshBakedTerrain clears the warm chunk cache', async () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+        lodSettings.terrain.renderDistance = 0;
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+
+        await waitForChunkWorkIdle(system);
+        PHYSICS.position.x = CHUNK_SIZE;
+        await waitForChunkWorkIdle(system);
+
+        let diagnostics = system.getTerrainSelectionDiagnostics();
+        assert.ok(diagnostics.warmChunkCache.size >= 1, JSON.stringify(diagnostics.warmChunkCache));
+
+        system.refreshBakedTerrain();
+        diagnostics = system.getTerrainSelectionDiagnostics();
+        assert.equal(diagnostics.warmChunkCache.size, 0, JSON.stringify(diagnostics.warmChunkCache));
     });
 
     await t.test('createRiverStripGeometry ignores duplicate points and builds valid geometry', () => {
