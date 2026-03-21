@@ -135,21 +135,21 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise,
     if (height > 280 || heat < 0.28 || alpineMask > 0.38) {
         return {
             kind: 'alpine',
-            density: (0.05 + forestNoise * 0.05) * (1.0 - cliff * 0.65) * (1.0 - talus * 0.35),
+            density: (0.05 + forestNoise * 0.1) * (1.0 - cliff * 0.65) * (1.0 - talus * 0.35),
             typeWeights: { poplar: 0.38, broadleaf: 0.2, dry: 0.42 }
         };
     }
     if (cliff > 0.55 || talus > 0.58) {
         return {
             kind: 'dry_scrub',
-            density: (0.03 + forestNoise * 0.03) * (1.0 - cliff * 0.35),
+            density: (0.03 + forestNoise * 0.06) * (1.0 - cliff * 0.35),
             typeWeights: { dry: 0.66, broadleaf: 0.18, poplar: 0.16 }
         };
     }
     if (moistureBoost > 0.72) {
         return {
             kind: wetland > 0.4 ? 'dense_mixed' : 'dense_mixed',
-            density: (0.16 + forestNoise * 0.1) * (1.0 + wetland * 0.25),
+            density: (0.16 + forestNoise * 0.2) * (1.0 + wetland * 0.25),
             typeWeights: wetland > 0.35
                 ? { broadleaf: 0.8, poplar: 0.17, dry: 0.03 }
                 : { broadleaf: 0.72, poplar: 0.2, dry: 0.08 }
@@ -158,13 +158,13 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise,
     if (moistureBoost < 0.35) {
         return {
             kind: 'dry_scrub',
-            density: 0.05 + forestNoise * 0.05,
+            density: 0.05 + forestNoise * 0.1,
             typeWeights: { dry: 0.58, broadleaf: 0.24, poplar: 0.18 }
         };
     }
     return {
         kind: 'temperate_mixed',
-        density: (0.1 + forestNoise * 0.07) * (1.0 - cliff * 0.4),
+        density: (0.1 + forestNoise * 0.14) * (1.0 - cliff * 0.4),
         typeWeights: wetland > 0.25
             ? { broadleaf: 0.7, poplar: 0.24, dry: 0.06 }
             : { broadleaf: 0.62, poplar: 0.26, dry: 0.12 }

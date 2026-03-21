@@ -44,7 +44,7 @@ test('getForestProfile returns alpine when height > 280', () => {
     const mockNoise = createMockNoise(0, 0);
     const profile = getForestProfile(0, 0, 300, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'alpine');
-    assert.equal(profile.density, 0.05 + 0.5 * 0.05); // forestNoise = 0.5
+    assert.equal(profile.density, 0.05 + 0.5 * 0.1); // forestNoise = 0.5
     assert.deepEqual(profile.typeWeights, { poplar: 0.38, broadleaf: 0.2, dry: 0.42 });
 });
 
@@ -56,7 +56,7 @@ test('getForestProfile returns alpine when heat < 0.28', () => {
     const mockNoise = createMockNoise(0, -0.5);
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'alpine');
-    assert.equal(profile.density, 0.05 + 0.5 * 0.05);
+    assert.equal(profile.density, 0.05 + 0.5 * 0.1);
 });
 
 test('getForestProfile returns dense_mixed when moisture > 0.66', () => {
@@ -67,7 +67,7 @@ test('getForestProfile returns dense_mixed when moisture > 0.66', () => {
     const mockNoise = createMockNoise(0.5, 0);
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'dense_mixed');
-    assert.equal(profile.density, 0.16 + 0.5 * 0.1);
+    assert.equal(profile.density, 0.16 + 0.5 * 0.2);
     assert.deepEqual(profile.typeWeights, { broadleaf: 0.72, poplar: 0.2, dry: 0.08 });
 });
 
@@ -79,7 +79,7 @@ test('getForestProfile returns dry_scrub when moisture < 0.35', () => {
     const mockNoise = createMockNoise(-0.5, 0);
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'dry_scrub');
-    assert.equal(profile.density, 0.05 + 0.5 * 0.05);
+    assert.equal(profile.density, 0.05 + 0.5 * 0.1);
     assert.deepEqual(profile.typeWeights, { dry: 0.58, broadleaf: 0.24, poplar: 0.18 });
 });
 
@@ -91,7 +91,7 @@ test('getForestProfile returns temperate_mixed as default', () => {
     const mockNoise = createMockNoise(0, 0);
     const profile = getForestProfile(0, 0, 200, 0.5, 0.2, mockNoise);
     assert.equal(profile.kind, 'temperate_mixed');
-    assert.equal(profile.density, 0.1 + 0.5 * 0.07);
+    assert.equal(profile.density, 0.1 + 0.5 * 0.14);
     assert.deepEqual(profile.typeWeights, { broadleaf: 0.62, poplar: 0.26, dry: 0.12 });
 });
 
