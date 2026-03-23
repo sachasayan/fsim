@@ -1876,6 +1876,17 @@ export function createTerrainSystem({
     }
   }
 
+  function ensureChunkHostGroup(chunkGroup, cx, cz, lod) {
+    const group = chunkGroup || new THREE.Group();
+    group.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
+    group.userData.lod = lod;
+    group.userData.chunkKey = `${cx},${cz}`;
+    if (!group.parent) {
+      scene.add(group);
+    }
+    return group;
+  }
+
   function addChunkKeysToSet(target, chunkKeys) {
     if (!target || !chunkKeys) return;
     for (const key of chunkKeys) {
@@ -2625,6 +2636,21 @@ export function createTerrainSystem({
         removePendingPropJobs(job.key);
         oldGroup = existing.group;
         if (existing.pendingGroup) disposeChunkGroup(existing.pendingGroup);
+      }
+
+      if (!chunkNeedsVisibleBaseTerrain(job.key)) {
+        const hostGroup = ensureChunkHostGroup(oldGroup, job.cx, job.cz, job.lod);
+        terrainChunks.set(job.key, {
+          group: hostGroup,
+          pendingGroup: null,
+          lod: job.lod,
+          propsBuilt: false,
+          state: 'base_done'
+        });
+        enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, hostGroup);
+        syncChunkBaseSurfaceVisibility();
+        builds += 1;
+        continue;
       }
 
       terrainChunks.set(job.key, { group: oldGroup, pendingGroup: null, lod: job.lod, propsBuilt: false, state: 'building_base' });

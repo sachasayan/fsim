@@ -42,6 +42,7 @@ const _generationPerf = {
         maxApplyMs: 0
     }
 };
+const _chunkPropSampleTemplateCache = new Map();
 
 function roundPerf(value) {
     return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
@@ -149,6 +150,25 @@ export function getTerrainGenerationDiagnostics() {
             maxApplyMs: roundPerf(value.maxApplyMs)
         }]))
     };
+}
+
+function createChunkPropSamplePositions(terrainRes) {
+    const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, terrainRes, terrainRes);
+    geometry.rotateX(-Math.PI / 2);
+    const positions = geometry.attributes.position.array.slice();
+    geometry.dispose();
+    return positions;
+}
+
+function getChunkPropSamplePositions(lodCfg) {
+    const terrainRes = Math.max(1, lodCfg?.terrainRes || 1);
+    const cacheKey = `${terrainRes}`;
+    let cached = _chunkPropSampleTemplateCache.get(cacheKey);
+    if (!cached) {
+        cached = createChunkPropSamplePositions(terrainRes);
+        _chunkPropSampleTemplateCache.set(cacheKey, cached);
+    }
+    return cached.slice();
 }
 
 export async function generateChunkBase(cx, cz, lod, ctx) {
@@ -470,8 +490,9 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const boatShadowsEnabled = lod === 0;
     const terrainMesh = chunkGroup.children[0];
-    if (!terrainMesh || !terrainMesh.geometry || !terrainMesh.geometry.attributes.position) return;
-    const positions = terrainMesh.geometry.attributes.position.array;
+    const positions = terrainMesh?.geometry?.attributes?.position?.array
+        ? terrainMesh.geometry.attributes.position.array
+        : getChunkPropSamplePositions(lodCfg);
 
     const districtIndex = await getDistrictIndex();
     const payload = {
