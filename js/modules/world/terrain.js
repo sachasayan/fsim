@@ -1561,6 +1561,71 @@ export function createTerrainSystem({
     return false;
   }
 
+  function resolveRetiredLeafTransitions(selectedLeafStates = []) {
+    const visibilityDirtyChunkKeys = new Set();
+    const retiredLeafIdsToDispose = [];
+
+    for (const [leafId, leafState] of activeLeaves.entries()) {
+      if (!leafState?.retired || !leafState.bounds) continue;
+      const overlappingSelected = selectedLeafStates.filter((selectedLeafState) =>
+        selectedLeafState
+        && !selectedLeafState.retired
+        && boundsOverlap(leafState.bounds, selectedLeafState.bounds)
+      );
+      const transitionReady = overlappingSelected.length === 0 || overlappingSelected.every((selectedLeafState) => {
+        if (selectedLeafState.state !== 'surface_ready' || !selectedLeafState.terrainMesh) return false;
+        if (selectedLeafState.hasWater && !selectedLeafState.waterMesh) return false;
+        return true;
+      });
+      if (transitionReady) {
+        retiredLeafIdsToDispose.push(leafId);
+        addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
+      }
+    }
+
+    for (const leafId of retiredLeafIdsToDispose) {
+      const leafState = activeLeaves.get(leafId);
+      if (!leafState) continue;
+      disposeLeafRuntimeLeaf(leafState);
+      activeLeaves.delete(leafId);
+      pendingLeafBuildIds.delete(leafId);
+    }
+
+    return visibilityDirtyChunkKeys;
+  }
+
+  function syncLeafSurfaceTransitionVisibility(selectedLeafStates = []) {
+    const retainedLeafStates = Array.from(activeLeaves.values()).filter((leafState) =>
+      leafState?.retired && leafState.terrainMesh
+    );
+    retainedLeafStates.sort((a, b) => {
+      const sizeDelta = (b.size ?? 0) - (a.size ?? 0);
+      if (sizeDelta !== 0) return sizeDelta;
+      return (a.firstSelectedAtMs ?? 0) - (b.firstSelectedAtMs ?? 0);
+    });
+    const visibleRetainedLeafStates = [];
+    for (const retainedLeafState of retainedLeafStates) {
+      const hiddenByOtherRetainedLeaf = visibleRetainedLeafStates.some((visibleRetainedLeafState) =>
+        boundsOverlap(visibleRetainedLeafState.bounds, retainedLeafState.bounds)
+      );
+      const visible = !hiddenByOtherRetainedLeaf;
+      if (retainedLeafState.terrainMesh) retainedLeafState.terrainMesh.visible = visible;
+      if (retainedLeafState.waterMesh) retainedLeafState.waterMesh.visible = visible;
+      if (visible) visibleRetainedLeafStates.push(retainedLeafState);
+    }
+    for (const leafState of selectedLeafStates) {
+      const terrainMesh = leafState?.terrainMesh || null;
+      const waterMesh = leafState?.waterMesh || null;
+      if (!terrainMesh && !waterMesh) continue;
+      const hiddenByRetainedLeaf = visibleRetainedLeafStates.some((retainedLeafState) =>
+        boundsOverlap(retainedLeafState.bounds, leafState.bounds)
+      );
+      const visible = !hiddenByRetainedLeaf;
+      if (terrainMesh) terrainMesh.visible = visible;
+      if (waterMesh) waterMesh.visible = visible;
+    }
+  }
+
   function applyWorkerLeafSurfaceResult(leafState, result, { workerMs = null } = {}) {
     if (!leafState || !result?.terrain || !result?.node) {
       return;
@@ -1615,7 +1680,10 @@ export function createTerrainSystem({
     if (waterMesh) {
       scene.add(waterMesh);
     }
-    syncChunkBaseSurfaceVisibility();
+    const selectedLeafStates = Array.from(activeLeaves.values()).filter((activeLeafState) => !activeLeafState.retired);
+    const visibilityDirtyChunkKeys = resolveRetiredLeafTransitions(selectedLeafStates);
+    syncLeafSurfaceTransitionVisibility(selectedLeafStates);
+    syncChunkBaseSurfaceVisibility(visibilityDirtyChunkKeys.size > 0 ? visibilityDirtyChunkKeys : null);
     const sceneAttachMs = performance.now() - sceneAttachStartedAtMs;
     recordLeafBuildBreakdown({
       sampleHeightMs: 0,
@@ -1876,7 +1944,7 @@ export function createTerrainSystem({
       terrainMesh.receiveShadow = lod <= 1;
     }
     if (waterMesh) {
-      waterMesh.visible = true;
+      waterMesh.visible = false;
       waterMesh.receiveShadow = lod === 0;
     }
   }
@@ -1898,11 +1966,11 @@ export function createTerrainSystem({
       const state = terrainChunks.get(chunkKey);
       const chunkGroup = state?.group;
       if (!chunkGroup) continue;
-      const showBaseSurfaces = !chunkHasReadyLeafSurface(chunkKey);
+      const showBaseTerrain = !chunkHasReadyLeafSurface(chunkKey);
       const terrainMesh = chunkGroup.children?.[0] || null;
       const waterMesh = chunkGroup.children?.[1] || null;
-      if (terrainMesh && terrainMesh.visible !== showBaseSurfaces) terrainMesh.visible = showBaseSurfaces;
-      if (waterMesh && waterMesh.visible !== showBaseSurfaces) waterMesh.visible = showBaseSurfaces;
+      if (terrainMesh && terrainMesh.visible !== showBaseTerrain) terrainMesh.visible = showBaseTerrain;
+      if (waterMesh && waterMesh.visible !== false) waterMesh.visible = false;
     }
   }
 
@@ -2377,7 +2445,11 @@ export function createTerrainSystem({
       pendingLeafBuildIds.delete(leafId);
     }
 
+    const resolvedTransitionDirtyChunkKeys = resolveRetiredLeafTransitions(selectedLeafStates);
+    addChunkKeysToSet(visibilityDirtyChunkKeys, resolvedTransitionDirtyChunkKeys);
+
     if (visibilityDirtyChunkKeys.size > 0) {
+      syncLeafSurfaceTransitionVisibility(selectedLeafStates);
       syncChunkBaseSurfaceVisibility(visibilityDirtyChunkKeys);
     }
 
