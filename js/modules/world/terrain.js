@@ -221,6 +221,7 @@ function buildRoadFlattenSegments(roads, settings, Noise) {
   const segments = [];
 
   for (const road of roads) {
+    continue;
     if (!Array.isArray(road?.points) || road.points.length < 2) continue;
     let roadWidth = road.width;
     if (!Number.isFinite(roadWidth)) {
@@ -389,7 +390,7 @@ export function createTerrainSystem({
 
   const roadMarkingSplineGroup = new THREE.Group();
   roadMarkingSplineGroup.name = 'terrain-spline-markings';
-  roadMarkingSplineGroup.visible = false; // A/B testing: can be toggled via console / UI
+  roadMarkingSplineGroup.visible = true;
   scene.add(roadMarkingSplineGroup);
   const splineMarkingMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
@@ -404,7 +405,7 @@ export function createTerrainSystem({
 
   const roadSurfaceSplineGroup = new THREE.Group();
   roadSurfaceSplineGroup.name = 'terrain-spline-surfaces';
-  roadSurfaceSplineGroup.visible = false; // A/B testing
+  roadSurfaceSplineGroup.visible = true;
   scene.add(roadSurfaceSplineGroup);
   const splineSurfaceMaterial = new THREE.MeshBasicMaterial({
     color: 0x1d1e21, // asphalt base color
@@ -848,11 +849,9 @@ export function createTerrainSystem({
     taxiwayWidth: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayWidth,
     taxiwayDashLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayDashLength,
     taxiwayGapLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayGapLength,
-    opacity: 1.0,
+    opacity: 0.0,
     fadeStart: 800.0,
-    fadeEnd: 1400.0,
-    splineMode: false,
-    splineSurfaceMode: false
+    fadeEnd: 1400.0
   };
   const roadFlattenDebugSettings = {
     centerPadding: 32.0,
@@ -1202,8 +1201,6 @@ export function createTerrainSystem({
     roadMarkingDebugSettings.opacity = Math.max(0, Math.min(1, roadMarkingDebugSettings.opacity));
     roadMarkingDebugSettings.fadeStart = Math.max(0, roadMarkingDebugSettings.fadeStart);
     roadMarkingDebugSettings.fadeEnd = Math.max(roadMarkingDebugSettings.fadeStart, roadMarkingDebugSettings.fadeEnd);
-    roadMarkingDebugSettings.splineMode = Boolean(roadMarkingDebugSettings.splineMode);
-    roadMarkingDebugSettings.splineSurfaceMode = Boolean(roadMarkingDebugSettings.splineSurfaceMode);
   }
 
   function normalizeRoadFlattenDebugSettings() {
@@ -1357,16 +1354,12 @@ export function createTerrainSystem({
     normalizeRoadMarkingDebugSettings();
     roadMarkingOverlay.configure(roadMarkingDebugSettings);
     terrainDetailUniforms.uRoadMarkingWorldSize.value = roadMarkingDebugSettings.worldSize;
-    terrainDetailUniforms.uRoadMarkingOpacity.value = roadMarkingDebugSettings.opacity;
+    terrainDetailUniforms.uRoadMarkingOpacity.value = 0;
     terrainDetailUniforms.uRoadMarkingFadeStart.value = roadMarkingDebugSettings.fadeStart;
     terrainDetailUniforms.uRoadMarkingFadeEnd.value = roadMarkingDebugSettings.fadeEnd;
 
-    roadMarkingSplineGroup.visible = roadMarkingDebugSettings.splineMode;
-    roadSurfaceSplineGroup.visible = roadMarkingDebugSettings.splineSurfaceMode;
-    
-    // We only disable the canvas lines if splineMode is on. 
-    // We don't disable them if ONLY the surface Spline mode is toggled, so they stay independent.
-    terrainDetailUniforms.uRoadMarkingOpacity.value = roadMarkingDebugSettings.splineMode ? 0 : roadMarkingDebugSettings.opacity;
+    roadMarkingSplineGroup.visible = true;
+    roadSurfaceSplineGroup.visible = true;
 
     if (redraw && windowRef?.fsimWorld) {
       roadMarkingOverlay.refresh(windowRef.fsimWorld);

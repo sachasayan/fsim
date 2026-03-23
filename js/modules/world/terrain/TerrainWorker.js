@@ -160,6 +160,10 @@ function getRoadFlattenSettings(settings = null) {
     };
 }
 
+function roadNeedsTerrainSupport(road) {
+    return false;
+}
+
 function collectLocalRoadSegments(staticWorldMetadata, bounds, settings, margin = 300) {
     const localRoadSegments = [];
     const localRoadsForOverrides = [];
@@ -173,6 +177,7 @@ function collectLocalRoadSegments(staticWorldMetadata, bounds, settings, margin 
     const chunkMaxZ = bounds.maxZ;
 
     for (const road of staticWorldMetadata.roads) {
+        if (!roadNeedsTerrainSupport(road)) continue;
         if (!road.points || road.points.length < 2) continue;
 
         let roadMinX = Infinity;
