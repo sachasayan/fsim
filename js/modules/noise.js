@@ -1,5 +1,8 @@
 export const Noise = {
   permutation: new Uint8Array(512),
+  gradX: new Float64Array([1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, 0, -1, 0]),
+  gradY: new Float64Array([1, 1, -1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1]),
+  gradZ: new Float64Array([0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 0, 1, 0, -1]),
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
@@ -23,39 +26,74 @@ export const Noise = {
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   },
   noise(x, y, z) {
-    let X = Math.floor(x) & 255;
-    let Y = Math.floor(y) & 255;
-    let Z = Math.floor(z) & 255;
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+    // ⚡ Bolt: Inline math and array lookups to significantly reduce execution overhead.
+    let X = Math.floor(x);
+    let Y = Math.floor(y);
+    let Z = Math.floor(z);
+    x -= X;
+    y -= Y;
+    z -= Z;
+    X &= 255;
+    Y &= 255;
+    Z &= 255;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let p = this.permutation;
+    let A = p[X] + Y;
+    let AA = p[A] + Z;
+    let AB = p[A + 1] + Z;
+    let B = p[X + 1] + Y;
+    let BA = p[B] + Z;
+    let BB = p[B + 1] + Z;
+
+    let xm1 = x - 1;
+    let ym1 = y - 1;
+    let zm1 = z - 1;
+
+    let gX = this.gradX;
+    let gY = this.gradY;
+    let gZ = this.gradZ;
+
+    let h = p[AA] & 15;
+    let g1 = gX[h] * x + gY[h] * y + gZ[h] * z;
+
+    h = p[BA] & 15;
+    let g2 = gX[h] * xm1 + gY[h] * y + gZ[h] * z;
+
+    let l1 = g1 + u * (g2 - g1);
+
+    h = p[AB] & 15;
+    let g3 = gX[h] * x + gY[h] * ym1 + gZ[h] * z;
+
+    h = p[BB] & 15;
+    let g4 = gX[h] * xm1 + gY[h] * ym1 + gZ[h] * z;
+
+    let l2 = g3 + u * (g4 - g3);
+
+    let l12 = l1 + v * (l2 - l1);
+
+    h = p[AA + 1] & 15;
+    let g5 = gX[h] * x + gY[h] * y + gZ[h] * zm1;
+
+    h = p[BA + 1] & 15;
+    let g6 = gX[h] * xm1 + gY[h] * y + gZ[h] * zm1;
+
+    let l3 = g5 + u * (g6 - g5);
+
+    h = p[AB + 1] & 15;
+    let g7 = gX[h] * x + gY[h] * ym1 + gZ[h] * zm1;
+
+    h = p[BB + 1] & 15;
+    let g8 = gX[h] * xm1 + gY[h] * ym1 + gZ[h] * zm1;
+
+    let l4 = g7 + u * (g8 - g7);
+
+    let l34 = l3 + v * (l4 - l3);
+
+    return l12 + w * (l34 - l12);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {

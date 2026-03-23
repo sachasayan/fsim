@@ -31,7 +31,41 @@ function fbm2D(x, z, octaves, lacunarity, gain, seed = 0) {
   let norm = 0;
 
   for (let i = 0; i < octaves; i++) {
-    sum += valueNoise2D(x * frequency, z * frequency, seed + i * 17) * amplitude;
+    // ⚡ Bolt: Inline hash and interpolation logic to eliminate function calls.
+    let s = seed + i * 17;
+    let fx = x * frequency;
+    let fz = z * frequency;
+    let x0 = Math.floor(fx);
+    let z0 = Math.floor(fz);
+    let tx = fx - x0;
+    let tz = fz - z0;
+
+    let txSmooth = tx * tx * (3 - 2 * tx);
+    let tzSmooth = tz * tz * (3 - 2 * tz);
+
+    let seedTerm = s * 74.7;
+    let z0Term = z0 * 311.7 + seedTerm;
+    let z1Term = (z0 + 1) * 311.7 + seedTerm;
+    let x0Term = x0 * 127.1;
+    let x1Term = (x0 + 1) * 127.1;
+
+    let n = Math.sin(x0Term + z0Term) * 43758.5453123;
+    let n00 = n - Math.floor(n);
+
+    n = Math.sin(x1Term + z0Term) * 43758.5453123;
+    let n10 = n - Math.floor(n);
+
+    n = Math.sin(x0Term + z1Term) * 43758.5453123;
+    let n01 = n - Math.floor(n);
+
+    n = Math.sin(x1Term + z1Term) * 43758.5453123;
+    let n11 = n - Math.floor(n);
+
+    let nx0 = n00 + txSmooth * (n10 - n00);
+    let nx1 = n01 + txSmooth * (n11 - n01);
+    let val = nx0 + tzSmooth * (nx1 - nx0);
+
+    sum += val * amplitude;
     norm += amplitude;
     frequency *= lacunarity;
     amplitude *= gain;
