@@ -24,12 +24,8 @@ test('getTerrainOwnedShaderSource caches and returns owned terrain shader varian
 
     assert.equal(nearSourceA, nearSourceB);
     assert.match(nearSourceA.vertexShader, /attribute vec4 surfaceWeights;/);
-    assert.match(nearSourceA.fragmentShader, /vec3 roadMarkingSrgbToLinear\(vec3 value\)/);
-    assert.match(nearSourceA.fragmentShader, /vec3 resolveRoadMarkingColor\(vec4 sampleColor\)/);
     assert.match(nearSourceA.fragmentShader, /baseTerrainColor \*= naturalTerrainVertexTint;/);
-    assert.match(nearSourceA.fragmentShader, /float asphaltMacro = mix\(detailA\.g, detailB\.g, 0\.55\);/);
-    assert.match(nearSourceA.fragmentShader, /float asphaltTone = clamp\(\(asphaltMacro - 0\.5\) \* 1\.6 \+ \(asphaltMicro - 0\.5\) \* 0\.7 \+ 0\.5, 0\.0, 1\.0\);/);
-    assert.match(nearSourceA.fragmentShader, /vec3 asphaltDarkColor = asphaltBaseColor \* vec3\(0\.58, 0\.6, 0\.64\);/);
+    assert.match(nearSourceA.fragmentShader, /diffuseColor\.rgb = baseTerrainColor;/);
     assert.doesNotMatch(nearSourceA.fragmentShader, /#include <color_fragment>/);
     assert.match(farSource.fragmentShader, /#define IS_FAR_LOD/);
 });
@@ -37,16 +33,6 @@ test('getTerrainOwnedShaderSource caches and returns owned terrain shader varian
 test('getTerrainOwnedUniformBindings returns live uniform references', () => {
     const terrainDetailUniforms = {
         uTerrainDetailTex: { value: 'detail' },
-        uRoadMarkingTex: { value: 'road' },
-        uRoadMarkingCenter: { value: 'center' },
-        uRoadMarkingWorldSize: { value: 1 },
-        uRoadMarkingOpacity: { value: 1 },
-        uRoadMarkingFadeStart: { value: 1 },
-        uRoadMarkingFadeEnd: { value: 1 },
-        uRoadMarkingBodyStart: { value: 1 },
-        uRoadMarkingBodyEnd: { value: 1 },
-        uRoadMarkingCoreStart: { value: 1 },
-        uRoadMarkingCoreEnd: { value: 1 },
         uTerrainDetailScale: { value: 1 },
         uTerrainDetailStrength: { value: 1 },
         uTerrainSlopeStart: { value: 1 },
@@ -60,8 +46,7 @@ test('getTerrainOwnedUniformBindings returns live uniform references', () => {
         uTerrainSandColor: { value: 'sand' },
         uTerrainGrassColor: { value: 'grass' },
         uTerrainRockColor: { value: 'rock' },
-        uTerrainSnowColor: { value: 'snow' },
-        uTerrainAsphaltColor: { value: 'asphalt' }
+        uTerrainSnowColor: { value: 'snow' }
     };
     const atmosphereUniforms = {
         uAtmosCameraPos: { value: 'camera' },
@@ -117,16 +102,6 @@ test('getTerrainShaderDescriptor returns cached near/far descriptors with stable
 test('terrain owned shader templates match the legacy terrain patch output', () => {
     const terrainDetailUniforms = Object.fromEntries([
         'uTerrainDetailTex',
-        'uRoadMarkingTex',
-        'uRoadMarkingCenter',
-        'uRoadMarkingWorldSize',
-        'uRoadMarkingOpacity',
-        'uRoadMarkingFadeStart',
-        'uRoadMarkingFadeEnd',
-        'uRoadMarkingBodyStart',
-        'uRoadMarkingBodyEnd',
-        'uRoadMarkingCoreStart',
-        'uRoadMarkingCoreEnd',
         'uTerrainDetailScale',
         'uTerrainDetailStrength',
         'uTerrainSlopeStart',
@@ -140,8 +115,7 @@ test('terrain owned shader templates match the legacy terrain patch output', () 
         'uTerrainSandColor',
         'uTerrainGrassColor',
         'uTerrainRockColor',
-        'uTerrainSnowColor',
-        'uTerrainAsphaltColor'
+        'uTerrainSnowColor'
     ].map((key) => [key, { value: null }]));
     const atmosphereUniforms = Object.fromEntries([
         'uAtmosCameraPos',

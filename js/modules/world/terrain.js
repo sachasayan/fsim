@@ -8,7 +8,7 @@ import {
   setupWaterMaterial,
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
-import { RoadMarkingOverlay, ROAD_MARKING_OVERLAY_DEFAULTS, getRoadMarkingStyle, DASH_SCALE } from './terrain/RoadMarkingOverlay.js';
+import { getRoadMarkingStyle, DASH_SCALE } from './terrain/RoadMarkingOverlay.js';
 import { buildRoadNetworkGraph, generateRoadNetworkGeometries } from './terrain/RoadNetworkGeometry.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
@@ -21,7 +21,6 @@ import {
 } from './terrain/TerrainUtils.js';
 import { SEA_LEVEL, WATER_DEPTH_BANDS, getTerrainBaseSrgb, getWaterDepthSrgb } from './terrain/TerrainPalette.js';
 import { getTerrainSurfaceWeights } from './terrain/TerrainSurfaceWeights.js';
-import { getTerrainSurfaceOverrides } from './terrain/TerrainSurfaceOverrides.js';
 import { normalizeLodSettings } from './LodSystem.js';
 import {
   fetchDistrictIndex,
@@ -250,49 +249,7 @@ function buildRoadFlattenSegments(roads, settings, Noise) {
 }
 
 function createRoadAwareSampler(baseSampler, roads, settings, Noise) {
-  if (!baseSampler || typeof baseSampler.getAltitudeAt !== 'function') return baseSampler;
-  const roadSegments = buildRoadFlattenSegments(roads, settings, Noise);
-  if (roadSegments.length === 0) return baseSampler;
-
-  return {
-    getAltitudeAt(x, z) {
-      const baseHeight = getTerrainHeight(x, z, Noise);
-      let maxBlend = 0;
-      let targetHeight = baseHeight;
-
-      for (let i = 0; i < roadSegments.length; i += 1) {
-        const seg = roadSegments[i];
-        const abx = seg.p2[0] - seg.p1[0];
-        const abz = seg.p2[1] - seg.p1[1];
-        const lenSq = abx * abx + abz * abz;
-        let t = 0;
-        if (lenSq > 1e-6) {
-          t = ((x - seg.p1[0]) * abx + (z - seg.p1[1]) * abz) / lenSq;
-          if (t < 0) t = 0;
-          else if (t > 1) t = 1;
-        }
-        const projX = seg.p1[0] + abx * t;
-        const projZ = seg.p1[1] + abz * t;
-        const dist = Math.hypot(x - projX, z - projZ);
-        if (dist >= seg.totalRadius) continue;
-
-        let blend = 0;
-        if (dist <= seg.halfWidth) {
-          blend = 1;
-        } else {
-          const blendT = 1 - (dist - seg.halfWidth) / Math.max(1e-6, seg.embankment);
-          blend = blendT * blendT * (3 - 2 * blendT);
-        }
-        if (blend <= maxBlend) continue;
-
-        maxBlend = blend;
-        targetHeight = seg.startHeight + (seg.endHeight - seg.startHeight) * t;
-      }
-
-      if (maxBlend <= 0) return baseHeight;
-      return baseHeight * (1 - maxBlend) + targetHeight * maxBlend;
-    }
-  };
+  return baseSampler;
 }
 
 export function createLakeSurfaceGeometry(lake, sampler, options = {}) {
@@ -523,11 +480,9 @@ export function createTerrainSystem({
     const sampler = getStaticSampler();
     const metadata = getStaticWorldMetadata() || windowRef?.fsimWorld || null;
     const hydrology = metadata?.hydrology || null;
-    const roadAwareSampler = createRoadAwareSampler(sampler, metadata?.roads || [], roadFlattenDebugSettings, Noise);
-    
     if (sampler && metadata?.roads) {
       const graph = buildRoadNetworkGraph(metadata.roads);
-      const networkGeom = generateRoadNetworkGeometries(graph, roadAwareSampler || sampler, 0.20);
+      const networkGeom = generateRoadNetworkGeometries(graph, sampler, 0.20);
       
       if (networkGeom && networkGeom.surfaceGeometry) {
         const surfaceMesh = new THREE.Mesh(networkGeom.surfaceGeometry, splineSurfaceMaterial);
@@ -538,7 +493,7 @@ export function createTerrainSystem({
         // 2. the centerline markings - keeping individual splines for now, but drawing over the intersections
         const style = getRoadMarkingStyle(road, DASH_SCALE);
         if (style) {
-          const markingGeo = createRoadGeometry(road.points, style.width, style.color, roadAwareSampler || sampler, 0.35);
+          const markingGeo = createRoadGeometry(road.points, style.width, style.color, sampler, 0.35);
           if (markingGeo) {
             const markingMesh = new THREE.Mesh(markingGeo, splineMarkingMaterial);
             roadMarkingSplineGroup.add(markingMesh);
@@ -630,7 +585,6 @@ export function createTerrainSystem({
     const colors = new Float32Array(vertexCount * 3);
     const uvs = new Float32Array(vertexCount * 2);
     const surfaceWeights = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
-    const surfaceOverrides = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
     const segmentSize = node.size / resolution;
     const gridStride = stride;
 
@@ -665,15 +619,10 @@ export function createTerrainSystem({
         if (materialKind === 'terrain') {
           const weightIndex = index * 4;
           const weights = getTerrainSurfaceWeights(height, slope, getTerrainMaskSet(worldX, worldZ));
-          const overrides = getTerrainSurfaceOverrides(worldX, worldZ, worldData);
           surfaceWeights[weightIndex] = weights[0];
           surfaceWeights[weightIndex + 1] = weights[1];
           surfaceWeights[weightIndex + 2] = weights[2];
           surfaceWeights[weightIndex + 3] = weights[3];
-          surfaceOverrides[weightIndex] = overrides[0];
-          surfaceOverrides[weightIndex + 1] = overrides[1];
-          surfaceOverrides[weightIndex + 2] = overrides[2];
-          surfaceOverrides[weightIndex + 3] = overrides[3];
         }
       }
     }
@@ -708,10 +657,6 @@ export function createTerrainSystem({
         surfaceWeights[skirtWeightIndex + 1] = surfaceWeights[sourceWeightIndex + 1];
         surfaceWeights[skirtWeightIndex + 2] = surfaceWeights[sourceWeightIndex + 2];
         surfaceWeights[skirtWeightIndex + 3] = surfaceWeights[sourceWeightIndex + 3];
-        surfaceOverrides[skirtWeightIndex] = surfaceOverrides[sourceWeightIndex];
-        surfaceOverrides[skirtWeightIndex + 1] = surfaceOverrides[sourceWeightIndex + 1];
-        surfaceOverrides[skirtWeightIndex + 2] = surfaceOverrides[sourceWeightIndex + 2];
-        surfaceOverrides[skirtWeightIndex + 3] = surfaceOverrides[sourceWeightIndex + 3];
       }
     }
 
@@ -757,7 +702,6 @@ export function createTerrainSystem({
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     if (materialKind === 'terrain') {
       geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(surfaceWeights, 4));
-      geometry.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(surfaceOverrides, 4));
     }
     return geometry;
   }
@@ -770,9 +714,8 @@ export function createTerrainSystem({
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(payload.normals, 3));
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(payload.colors, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(payload.uvs, 2));
-    if (materialKind === 'terrain' && payload.surfaceWeights && payload.surfaceOverrides) {
+    if (materialKind === 'terrain' && payload.surfaceWeights) {
       geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(payload.surfaceWeights, 4));
-      geometry.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(payload.surfaceOverrides, 4));
     }
     return geometry;
   }
@@ -839,23 +782,6 @@ export function createTerrainSystem({
     showTerrainWireframe: false,
     showTrees: true,
     showBuildings: true
-  };
-  const roadMarkingDebugSettings = {
-    worldSize: ROAD_MARKING_OVERLAY_DEFAULTS.worldSize,
-    recenterDistance: ROAD_MARKING_OVERLAY_DEFAULTS.recenterDistance,
-    roadWidth: ROAD_MARKING_OVERLAY_DEFAULTS.roadWidth,
-    roadDashLength: ROAD_MARKING_OVERLAY_DEFAULTS.roadDashLength,
-    roadGapLength: ROAD_MARKING_OVERLAY_DEFAULTS.roadGapLength,
-    taxiwayWidth: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayWidth,
-    taxiwayDashLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayDashLength,
-    taxiwayGapLength: ROAD_MARKING_OVERLAY_DEFAULTS.taxiwayGapLength,
-    opacity: 0.0,
-    fadeStart: 800.0,
-    fadeEnd: 1400.0
-  };
-  const roadFlattenDebugSettings = {
-    centerPadding: 32.0,
-    shoulderWidth: 48.0
   };
   let lastTerrainSelection = {
     mode: 'grid_fallback',
@@ -985,14 +911,9 @@ export function createTerrainSystem({
     };
   }
   const terrainDetailTex = createPackedTerrainDetailTexture();
-  const roadMarkingOverlay = new RoadMarkingOverlay({
-    worldSize: roadMarkingDebugSettings.worldSize,
-    recenterDistance: roadMarkingDebugSettings.recenterDistance
-  });
 
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   terrainDetailTex.anisotropy = maxAnisotropy;
-  roadMarkingOverlay.texture.anisotropy = maxAnisotropy;
   if (waterMaterial.normalMap) waterMaterial.normalMap.anisotropy = maxAnisotropy;
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
   const terrainFarMaterial = terrainMaterial.clone();
@@ -1001,16 +922,6 @@ export function createTerrainSystem({
 
   const terrainDetailUniforms = {
     uTerrainDetailTex: { value: terrainDetailTex },
-    uRoadMarkingTex: { value: roadMarkingOverlay.texture },
-    uRoadMarkingCenter: { value: new THREE.Vector2(0, 0) },
-    uRoadMarkingWorldSize: { value: roadMarkingOverlay.worldSize },
-    uRoadMarkingOpacity: { value: roadMarkingDebugSettings.opacity },
-    uRoadMarkingFadeStart: { value: roadMarkingDebugSettings.fadeStart },
-    uRoadMarkingFadeEnd: { value: roadMarkingDebugSettings.fadeEnd },
-    uRoadMarkingBodyStart: { value: 0.2 },
-    uRoadMarkingBodyEnd: { value: 0.45 },
-    uRoadMarkingCoreStart: { value: 0.55 },
-    uRoadMarkingCoreEnd: { value: 0.8 },
     uTerrainDetailScale: { value: 0.16 },
     uTerrainDetailStrength: { value: 1.1 },
     uTerrainSlopeStart: { value: 0.26 },
@@ -1024,8 +935,7 @@ export function createTerrainSystem({
     uTerrainSandColor: { value: new THREE.Color(194 / 255, 178 / 255, 128 / 255) },
     uTerrainGrassColor: { value: new THREE.Color(42 / 255, 75 / 255, 42 / 255) },
     uTerrainRockColor: { value: new THREE.Color(85 / 255, 85 / 255, 85 / 255) },
-    uTerrainSnowColor: { value: new THREE.Color(1, 1, 1) },
-    uTerrainAsphaltColor: { value: new THREE.Color(0x000000) }
+    uTerrainSnowColor: { value: new THREE.Color(1, 1, 1) }
   };
 
   setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, false);
@@ -1034,8 +944,6 @@ export function createTerrainSystem({
   setColorFromLinearArray(waterSurfaceUniforms.uWaterShallowColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.shallowStart + 0.01));
   setColorFromLinearArray(waterSurfaceUniforms.uWaterDeepColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.deepEnd + 1));
   applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false });
-  applyRoadMarkingDebugSettings({ redraw: false });
-
   const pendingLeafBuilds = [];
   const pendingLeafBuildIds = new Set();
   let pendingLeafQueueDirty = false;
@@ -1189,25 +1097,6 @@ export function createTerrainSystem({
     ] = thresholds;
   }
 
-  function normalizeRoadMarkingDebugSettings() {
-    roadMarkingDebugSettings.worldSize = Math.max(128, roadMarkingDebugSettings.worldSize);
-    roadMarkingDebugSettings.recenterDistance = Math.max(0, roadMarkingDebugSettings.recenterDistance);
-    roadMarkingDebugSettings.roadWidth = Math.max(0, roadMarkingDebugSettings.roadWidth);
-    roadMarkingDebugSettings.roadDashLength = Math.max(0, roadMarkingDebugSettings.roadDashLength);
-    roadMarkingDebugSettings.roadGapLength = Math.max(0, roadMarkingDebugSettings.roadGapLength);
-    roadMarkingDebugSettings.taxiwayWidth = Math.max(0, roadMarkingDebugSettings.taxiwayWidth);
-    roadMarkingDebugSettings.taxiwayDashLength = Math.max(0, roadMarkingDebugSettings.taxiwayDashLength);
-    roadMarkingDebugSettings.taxiwayGapLength = Math.max(0, roadMarkingDebugSettings.taxiwayGapLength);
-    roadMarkingDebugSettings.opacity = Math.max(0, Math.min(1, roadMarkingDebugSettings.opacity));
-    roadMarkingDebugSettings.fadeStart = Math.max(0, roadMarkingDebugSettings.fadeStart);
-    roadMarkingDebugSettings.fadeEnd = Math.max(roadMarkingDebugSettings.fadeStart, roadMarkingDebugSettings.fadeEnd);
-  }
-
-  function normalizeRoadFlattenDebugSettings() {
-    roadFlattenDebugSettings.centerPadding = Math.max(0, roadFlattenDebugSettings.centerPadding);
-    roadFlattenDebugSettings.shoulderWidth = Math.max(0, roadFlattenDebugSettings.shoulderWidth);
-  }
-
   function applyTerrainWireframeSetting() {
     terrainMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
     terrainFarMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
@@ -1334,7 +1223,6 @@ export function createTerrainSystem({
 
   function applyTerrainDebugSettings({ rebuildSurfaces = false, refreshSelection = false, rebuildProps = false, rebuildHydrology = false } = {}) {
     normalizeTerrainDebugSettings();
-    normalizeRoadFlattenDebugSettings();
     applyTerrainWireframeSetting();
     if (rebuildSurfaces) {
       invalidateActiveLeafSurfaces();
@@ -1347,25 +1235,6 @@ export function createTerrainSystem({
     }
     if (refreshSelection) {
       updateTerrain();
-    }
-  }
-
-  function applyRoadMarkingDebugSettings({ redraw = true } = {}) {
-    normalizeRoadMarkingDebugSettings();
-    roadMarkingOverlay.configure(roadMarkingDebugSettings);
-    terrainDetailUniforms.uRoadMarkingWorldSize.value = roadMarkingDebugSettings.worldSize;
-    terrainDetailUniforms.uRoadMarkingOpacity.value = 0;
-    terrainDetailUniforms.uRoadMarkingFadeStart.value = roadMarkingDebugSettings.fadeStart;
-    terrainDetailUniforms.uRoadMarkingFadeEnd.value = roadMarkingDebugSettings.fadeEnd;
-
-    roadMarkingSplineGroup.visible = true;
-    roadSurfaceSplineGroup.visible = true;
-
-    if (redraw && windowRef?.fsimWorld) {
-      roadMarkingOverlay.refresh(windowRef.fsimWorld);
-      if (roadMarkingOverlay.center) {
-        terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
-      }
     }
   }
 
@@ -1724,8 +1593,7 @@ export function createTerrainSystem({
       nodeId: leafState.nodeId,
       depth: leafState.depth,
       surfaceResolution,
-      waterDepthResolution,
-      roadFlattenSettings: roadFlattenDebugSettings
+      waterDepthResolution
     }).then((result) => {
       const activeLeafState = activeLeaves.get(leafState.leafId);
       if (!activeLeafState || activeLeafState !== leafState || activeLeafState.retired || activeLeafState.buildVersion !== buildVersion) {
@@ -1788,8 +1656,6 @@ export function createTerrainSystem({
         maxDepth: terrainDebugSettings.selectionMaxDepth
       });
       rebuildHydrologyMeshes();
-      roadMarkingOverlay.update(PHYSICS.position.x, PHYSICS.position.z, windowRef.fsimWorld);
-      terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
     }
   });
 
@@ -1976,8 +1842,7 @@ export function createTerrainSystem({
       waterMaterial,
       waterFarMaterial,
       Noise,
-      scene,
-      roadFlattenSettings: roadFlattenDebugSettings
+      scene
     })
       .then((group) => {
         if (group?.children?.[0]) {
@@ -2951,9 +2816,6 @@ export function createTerrainSystem({
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
-      if (windowRef?.fsimWorld && roadMarkingOverlay.update(camera.position.x, camera.position.z, windowRef.fsimWorld)) {
-        terrainDetailUniforms.uRoadMarkingCenter.value.set(roadMarkingOverlay.center.x, roadMarkingOverlay.center.z);
-      }
     }
     const windmillTime = performance.now() * 0.001;
     for (const state of terrainChunks.values()) {
@@ -2986,7 +2848,6 @@ export function createTerrainSystem({
       0.00, 0.30, 0.70, 0.00,
       0.00, 0.05, 0.15, 0.80
     ]), 4));
-    terrainGeo.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 4), 4));
     return terrainGeo;
   }
 
@@ -3292,10 +3153,7 @@ export function createTerrainSystem({
     getTerrainSelectionDiagnostics,
     consumeLeafBuildApplyTiming,
     terrainDebugSettings,
-    roadMarkingDebugSettings,
-    roadFlattenDebugSettings,
     applyTerrainDebugSettings,
-    applyRoadMarkingDebugSettings,
     isReady,
     hasPendingTerrainWork,
     refreshBakedTerrain,

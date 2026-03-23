@@ -10,16 +10,6 @@ const DESCRIPTOR_CACHE = new Map();
 
 const TERRAIN_DETAIL_UNIFORM_KEYS = [
     'uTerrainDetailTex',
-    'uRoadMarkingTex',
-    'uRoadMarkingCenter',
-    'uRoadMarkingWorldSize',
-    'uRoadMarkingOpacity',
-    'uRoadMarkingFadeStart',
-    'uRoadMarkingFadeEnd',
-    'uRoadMarkingBodyStart',
-    'uRoadMarkingBodyEnd',
-    'uRoadMarkingCoreStart',
-    'uRoadMarkingCoreEnd',
     'uTerrainDetailScale',
     'uTerrainDetailStrength',
     'uTerrainSlopeStart',
@@ -33,8 +23,7 @@ const TERRAIN_DETAIL_UNIFORM_KEYS = [
     'uTerrainSandColor',
     'uTerrainGrassColor',
     'uTerrainRockColor',
-    'uTerrainSnowColor',
-    'uTerrainAsphaltColor'
+    'uTerrainSnowColor'
 ];
 
 const ATMOSPHERE_UNIFORM_KEYS = [

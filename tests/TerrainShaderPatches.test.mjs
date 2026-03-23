@@ -127,16 +127,6 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
     const shader = makeShader();
     const terrainDetailUniforms = {
         uTerrainDetailTex: { value: 'detail' },
-        uRoadMarkingTex: { value: 'road' },
-        uRoadMarkingCenter: { value: 'center' },
-        uRoadMarkingWorldSize: { value: 1 },
-        uRoadMarkingOpacity: { value: 1 },
-        uRoadMarkingFadeStart: { value: 1 },
-        uRoadMarkingFadeEnd: { value: 1 },
-        uRoadMarkingBodyStart: { value: 1 },
-        uRoadMarkingBodyEnd: { value: 1 },
-        uRoadMarkingCoreStart: { value: 1 },
-        uRoadMarkingCoreEnd: { value: 1 },
         uTerrainDetailScale: { value: 1 },
         uTerrainDetailStrength: { value: 1 },
         uTerrainSlopeStart: { value: 1 },
@@ -150,8 +140,7 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
         uTerrainSandColor: { value: 'sand' },
         uTerrainGrassColor: { value: 'grass' },
         uTerrainRockColor: { value: 'rock' },
-        uTerrainSnowColor: { value: 'snow' },
-        uTerrainAsphaltColor: { value: 'asphalt' }
+        uTerrainSnowColor: { value: 'snow' }
     };
     const atmosphereUniforms = {
         uAtmosCameraPos: { value: 'camera' },
@@ -169,22 +158,9 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
     });
 
     assert.equal(shader.uniforms.uTime, timeUniform);
-    assert.equal(shader.uniforms.uRoadMarkingTex, terrainDetailUniforms.uRoadMarkingTex);
     assert.match(shader.vertexShader, /attribute vec4 surfaceWeights;/);
-    assert.match(shader.fragmentShader, /vec3 roadMarkingSrgbToLinear\(vec3 value\)/);
-    assert.match(shader.fragmentShader, /vec3 resolveRoadMarkingColor\(vec4 sampleColor\)/);
-    assert.match(shader.fragmentShader, /return clamp\(linearColor \/ sampleColor\.a, 0\.0, 1\.0\);/);
     assert.match(shader.fragmentShader, /baseTerrainColor \*= naturalTerrainVertexTint;/);
-    assert.match(shader.fragmentShader, /diffuseColor\.rgb = mix\(baseTerrainColor, asphaltBaseColor, asphaltSurface\);/);
-    assert.match(shader.fragmentShader, /float asphaltMacro = mix\(detailA\.g, detailB\.g, 0\.55\);/);
-    assert.match(shader.fragmentShader, /float asphaltMicro = mix\(detailA\.a, detailB\.a, 0\.5\);/);
-    assert.match(shader.fragmentShader, /float asphaltTone = clamp\(\(asphaltMacro - 0\.5\) \* 1\.6 \+ \(asphaltMicro - 0\.5\) \* 0\.7 \+ 0\.5, 0\.0, 1\.0\);/);
-    assert.match(shader.fragmentShader, /float asphaltPatchMask = smoothstep\(0\.58, 0\.82, detailB\.r \+ asphaltMacro \* 0\.25\);/);
-    assert.match(shader.fragmentShader, /float asphaltCrackMask = smoothstep\(0\.62, 0\.9, 1\.0 - detailA\.a\) \* smoothstep\(0\.34, 0\.76, asphaltMacro\);/);
-    assert.match(shader.fragmentShader, /vec3 asphaltDarkColor = asphaltBaseColor \* vec3\(0\.58, 0\.6, 0\.64\);/);
-    assert.match(shader.fragmentShader, /vec3 asphaltLightColor = asphaltBaseColor \* vec3\(1\.28, 1\.24, 1\.16\);/);
-    assert.match(shader.fragmentShader, /vec3 roadSurfaceColor = mix\(diffuseColor\.rgb, asphaltDetailColor, asphaltSurface\);/);
-    assert.match(shader.fragmentShader, /markingComposite = mix\(roadSurfaceColor, roadMarkingColor, markingCoverage\);/);
+    assert.match(shader.fragmentShader, /diffuseColor\.rgb = baseTerrainColor;/);
     assert.doesNotMatch(shader.fragmentShader, /#include <color_fragment>/);
     assert.match(shader.fragmentShader, /float cityAlpha = 0\.0;/);
     assert.match(shader.fragmentShader, /#define IS_FAR_LOD/);

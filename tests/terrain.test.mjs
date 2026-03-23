@@ -25,7 +25,6 @@ global.Worker = class {
                             normals: payload.normals,
                             colors: payload.colors,
                             surfaceWeights: payload.surfaceWeights,
-                            surfaceOverrides: payload.surfaceOverrides,
                             wPos: payload.wPos,
                             wNormals: payload.wNormals,
                             wCols: payload.wCols
@@ -230,7 +229,6 @@ test('terrain tests', async (t) => {
                                     normals: payload.normals,
                                     colors: payload.colors,
                                     surfaceWeights: payload.surfaceWeights,
-                                    surfaceOverrides: payload.surfaceOverrides,
                                     wPos: payload.wPos,
                                     wNormals: payload.wNormals,
                                     wCols: payload.wCols

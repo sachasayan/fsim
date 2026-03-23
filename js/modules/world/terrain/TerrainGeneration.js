@@ -152,7 +152,7 @@ export function getTerrainGenerationDiagnostics() {
 }
 
 export async function generateChunkBase(cx, cz, lod, ctx) {
-    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial, roadFlattenSettings } = ctx;
+    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const receiveTerrainShadows = lod <= 1;
     const receiveWaterShadows = lod === 0;
@@ -169,7 +169,6 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         geometry.rotateX(-Math.PI / 2);
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
         geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
-        geometry.setAttribute('surfaceOverrides', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
         terrainMesh = new THREE.Mesh(geometry, lod === 0 ? terrainMaterial : terrainFarMaterial);
         terrainMesh.receiveShadow = receiveTerrainShadows;
         chunkGroup.add(terrainMesh);
@@ -194,12 +193,10 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
 
     const payload = {
         cx, cz, lodCfg,
-        roadFlattenSettings,
         positions: tGeo.attributes.position.array.slice(),
         normals: new Float32Array(tGeo.attributes.normal.array.length),
         colors: new Float32Array(tGeo.attributes.color.array.length),
         surfaceWeights: new Float32Array(tGeo.attributes.surfaceWeights.array.length),
-        surfaceOverrides: new Float32Array(tGeo.attributes.surfaceOverrides.array.length),
         wPos: wGeo.attributes.position.array.slice(),
         wNormals: new Float32Array(wGeo.attributes.normal.array.length),
         wCols: new Float32Array(wGeo.attributes.color.array.length)
@@ -210,7 +207,6 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
         payload.normals.buffer,
         payload.colors.buffer,
         payload.surfaceWeights.buffer,
-        payload.surfaceOverrides.buffer,
         payload.wPos.buffer,
         payload.wNormals.buffer,
         payload.wCols.buffer
@@ -234,8 +230,6 @@ export async function generateChunkBase(cx, cz, lod, ctx) {
     tGeo.attributes.color.needsUpdate = true;
     tGeo.attributes.surfaceWeights.array.set(result.surfaceWeights);
     tGeo.attributes.surfaceWeights.needsUpdate = true;
-    tGeo.attributes.surfaceOverrides.array.set(result.surfaceOverrides);
-    tGeo.attributes.surfaceOverrides.needsUpdate = true;
 
     wGeo.attributes.position.array.set(result.wPos);
     wGeo.attributes.position.needsUpdate = true;

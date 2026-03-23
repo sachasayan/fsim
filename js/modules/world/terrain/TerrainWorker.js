@@ -2,7 +2,6 @@ import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestPro
 import { Noise } from '../../noise.js';
 import { SEA_LEVEL, WATER_DEPTH_BANDS, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
 import { getTerrainSurfaceWeights } from './TerrainSurfaceWeights.js';
-import { getTerrainSurfaceOverrides } from './TerrainSurfaceOverrides.js';
 
 // Re-declare constants from TerrainGeneration to avoid importing THREE
 const TREE_DENSITY_MULTIPLIER = 4.0;
@@ -335,7 +334,6 @@ function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, m
     const colors = new Float32Array(vertexCount * 3);
     const uvs = new Float32Array(vertexCount * 2);
     const surfaceWeights = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
-    const surfaceOverrides = materialKind === 'terrain' ? new Float32Array(vertexCount * 4) : null;
     const segmentSize = node.size / resolution;
     const gridStride = stride;
 
@@ -370,15 +368,10 @@ function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, m
             if (materialKind === 'terrain') {
                 const weightIndex = index * 4;
                 const weights = getTerrainSurfaceWeights(height, slope, getTerrainMaskSet(worldX, worldZ));
-                const overrides = getTerrainSurfaceOverrides(worldX, worldZ, worldData);
                 surfaceWeights[weightIndex] = weights[0];
                 surfaceWeights[weightIndex + 1] = weights[1];
                 surfaceWeights[weightIndex + 2] = weights[2];
                 surfaceWeights[weightIndex + 3] = weights[3];
-                surfaceOverrides[weightIndex] = overrides[0];
-                surfaceOverrides[weightIndex + 1] = overrides[1];
-                surfaceOverrides[weightIndex + 2] = overrides[2];
-                surfaceOverrides[weightIndex + 3] = overrides[3];
             }
         }
     }
@@ -413,10 +406,6 @@ function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, m
             surfaceWeights[skirtWeightIndex + 1] = surfaceWeights[sourceWeightIndex + 1];
             surfaceWeights[skirtWeightIndex + 2] = surfaceWeights[sourceWeightIndex + 2];
             surfaceWeights[skirtWeightIndex + 3] = surfaceWeights[sourceWeightIndex + 3];
-            surfaceOverrides[skirtWeightIndex] = surfaceOverrides[sourceWeightIndex];
-            surfaceOverrides[skirtWeightIndex + 1] = surfaceOverrides[sourceWeightIndex + 1];
-            surfaceOverrides[skirtWeightIndex + 2] = surfaceOverrides[sourceWeightIndex + 2];
-            surfaceOverrides[skirtWeightIndex + 3] = surfaceOverrides[sourceWeightIndex + 3];
         }
     }
 
@@ -460,8 +449,7 @@ function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, m
         colors,
         uvs,
         indices,
-        surfaceWeights,
-        surfaceOverrides
+        surfaceWeights
     };
 }
 
@@ -490,7 +478,6 @@ function buildWaterDepthTextureData(node, sampler, resolution = 64) {
 function buildLeafSurface(job) {
     const staticSampler = getStaticSampler();
     const worldData = getStaticWorldMetadata();
-    const roadFlattenSettings = getRoadFlattenSettings(job.roadFlattenSettings);
     if (!staticSampler || !Number.isInteger(job.nodeId)) {
         throw new Error('Leaf surface build requires initialized static sampler and node id');
     }
@@ -501,13 +488,7 @@ function buildLeafSurface(job) {
         throw new Error('Leaf surface build failed to resolve node data');
     }
 
-    const { localRoadSegments } = collectLocalRoadSegments(staticSampler.getMetadata?.() || worldData, {
-        minX: node.minX,
-        minZ: node.minZ,
-        maxX: node.minX + node.size,
-        maxZ: node.minZ + node.size
-    }, roadFlattenSettings, 300);
-    primeRoadSegmentHeights(localRoadSegments);
+    const localRoadSegments = [];
     const carvedHeights = applyRoadCarvingToHeightGrid(node, decoded.heights, decoded.stride, localRoadSegments);
 
     const hasWater = leafContainsWater(carvedHeights);
@@ -549,21 +530,14 @@ function buildLeafSurface(job) {
 }
 
 function buildChunkBase(job) {
-    const { cx, cz, lodCfg, positions, colors, surfaceWeights, surfaceOverrides, wPos, wCols } = job;
+    const { cx, cz, lodCfg, positions, colors, surfaceWeights, wPos, wCols } = job;
     const staticWorldMetadata = getStaticWorldMetadata();
-    const roadFlattenSettings = getRoadFlattenSettings(job.roadFlattenSettings);
 
     const chunkMinX = cx * CHUNK_SIZE;
     const chunkMinZ = cz * CHUNK_SIZE;
     const chunkMaxX = chunkMinX + CHUNK_SIZE;
     const chunkMaxZ = chunkMinZ + CHUNK_SIZE;
-    const { localRoadSegments, localRoadsForOverrides } = collectLocalRoadSegments(staticWorldMetadata, {
-        minX: chunkMinX,
-        minZ: chunkMinZ,
-        maxX: chunkMaxX,
-        maxZ: chunkMaxZ
-    }, roadFlattenSettings, 300);
-    primeRoadSegmentHeights(localRoadSegments);
+    const localRoadSegments = [];
     
     // A helper to get the potentially carved height so slope calculations match the physics surface
     function getCarvedHeight(vx, vz) {
@@ -640,7 +614,6 @@ function buildChunkBase(job) {
 
         const col = srgbArrayToLinear(getTerrainBaseSrgb(height));
         const weights = getTerrainSurfaceWeights(height, slope, terrainMasks);
-        const overrides = getTerrainSurfaceOverrides(vx, vz, staticWorldMetadata, localRoadsForOverrides);
 
         colors[i] = col.r;
         colors[i + 1] = col.g;
@@ -651,10 +624,6 @@ function buildChunkBase(job) {
         surfaceWeights[weightIndex + 1] = weights[1];
         surfaceWeights[weightIndex + 2] = weights[2];
         surfaceWeights[weightIndex + 3] = weights[3];
-        surfaceOverrides[weightIndex] = overrides[0];
-        surfaceOverrides[weightIndex + 1] = overrides[1];
-        surfaceOverrides[weightIndex + 2] = overrides[2];
-        surfaceOverrides[weightIndex + 3] = overrides[3];
     }
 
     // Process water
@@ -677,7 +646,7 @@ function buildChunkBase(job) {
     const normals = computeGridNormals(positions, lodCfg.terrainRes);
     const wNormals = computeGridNormals(wPos, lodCfg.waterRes);
 
-    return { cx, cz, positions, normals, colors, surfaceWeights, surfaceOverrides, wPos, wNormals, wCols };
+    return { cx, cz, positions, normals, colors, surfaceWeights, wPos, wNormals, wCols };
 }
 
 function buildChunkProps(job) {
@@ -830,7 +799,6 @@ if (typeof self !== 'undefined') {
                     result.normals.buffer,
                     result.colors.buffer,
                     result.surfaceWeights.buffer,
-                    result.surfaceOverrides.buffer,
                     result.wPos.buffer,
                     result.wNormals.buffer,
                     result.wCols.buffer
@@ -854,8 +822,7 @@ if (typeof self !== 'undefined') {
                     result.terrain.colors.buffer,
                     result.terrain.uvs.buffer,
                     result.terrain.indices.buffer,
-                    result.terrain.surfaceWeights.buffer,
-                    result.terrain.surfaceOverrides.buffer
+                    result.terrain.surfaceWeights.buffer
                 ];
                 if (result.water) {
                     transferables.push(
