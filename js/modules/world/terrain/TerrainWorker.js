@@ -347,7 +347,16 @@ function leafContainsWater(heights) {
     return false;
 }
 
-function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, materialKind }) {
+function fillFlatNormals(normals, vertexCount, nx = 0, ny = 1, nz = 0) {
+    for (let index = 0; index < vertexCount; index += 1) {
+        const offset = index * 3;
+        normals[offset] = nx;
+        normals[offset + 1] = ny;
+        normals[offset + 2] = nz;
+    }
+}
+
+export function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, materialKind }) {
     const resolution = stride - 1;
     const topVertexCount = stride * stride;
     const borderLoop = buildBorderLoopIndices(stride);
@@ -398,9 +407,13 @@ function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, m
         }
     }
 
-    const topNormals = computeGridNormals(positions.slice(0, topVertexCount * 3), resolution);
     const normals = new Float32Array(vertexCount * 3);
-    normals.set(topNormals, 0);
+    if (materialKind === 'water') {
+        fillFlatNormals(normals, topVertexCount, 0, 1, 0);
+    } else {
+        const topNormals = computeGridNormals(positions.slice(0, topVertexCount * 3), resolution);
+        normals.set(topNormals, 0);
+    }
 
     for (let index = 0; index < borderLoop.length; index += 1) {
         const topIndex = borderLoop[index];

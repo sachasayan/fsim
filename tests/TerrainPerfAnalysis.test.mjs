@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   TERRAIN_PERF_SCENARIOS,
+  aggregateTerrainReports,
   analyzeTerrainPerfPair,
   renderTerrainPerfMarkdown,
   summarizeTerrainPerfSuite
@@ -88,4 +89,17 @@ test('terrain perf analysis surfaces improvements and renders markdown', () => {
   assert.equal(summary.status, 'improvement');
   assert.match(markdown, /Terrain Perf A\/B/);
   assert.match(markdown, /frameMs: improvement/);
+});
+
+test('terrain perf aggregation uses medians across repeated runs', () => {
+  const aggregated = aggregateTerrainReports([
+    makeReport({ frameMs: 10, leafBuildMs: 20, stable: true }),
+    makeReport({ frameMs: 14, leafBuildMs: 30, stable: false }),
+    makeReport({ frameMs: 12, leafBuildMs: 24, stable: true })
+  ]);
+
+  assert.equal(aggregated.metrics.frameMs.p95, 12);
+  assert.equal(aggregated.profiling.terrainSelection.timings.leafBuildMs, 24);
+  assert.equal(aggregated.aggregate.runCount, 3);
+  assert.equal(aggregated.capture.stable, true);
 });

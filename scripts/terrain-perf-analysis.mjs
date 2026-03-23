@@ -16,6 +16,12 @@ function computeDelta(baselineValue, candidateValue) {
   };
 }
 
+function median(values) {
+  const filtered = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (filtered.length === 0) return null;
+  return round(filtered[Math.floor(filtered.length / 2)]);
+}
+
 function classifyDelta(delta, threshold) {
   if (!Number.isFinite(delta?.absolute)) return 'unknown';
   const absolute = Math.abs(delta.absolute);
@@ -133,6 +139,53 @@ export function readTerrainSignal(report, signal) {
   return null;
 }
 
+function setNestedValue(target, path, value) {
+  let current = target;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const segment = path[index];
+    current[segment] ||= {};
+    current = current[segment];
+  }
+  current[path[path.length - 1]] = value;
+}
+
+export function aggregateTerrainReports(reports) {
+  const validReports = (reports || []).filter(Boolean);
+  const representative = {
+    scenarioId: validReports[0]?.scenarioId || null,
+    capture: {
+      stable: null
+    },
+    metrics: {},
+    profiling: {
+      terrainSelection: {}
+    },
+    aggregate: {
+      runCount: validReports.length,
+      stableRunCount: validReports.filter((report) => report?.capture?.stable === true).length,
+      unstableRunCount: validReports.filter((report) => report?.capture?.stable === false).length
+    }
+  };
+
+  if (validReports.length === 0) {
+    return representative;
+  }
+
+  for (const signal of TERRAIN_PERF_SIGNALS) {
+    const values = validReports.map((report) => readTerrainSignal(report, signal));
+    const value = median(values);
+    if (!Number.isFinite(value)) continue;
+    if (signal.source === 'metric') {
+      representative.metrics[signal.key] = { p95: value };
+    } else if (signal.source === 'profiling') {
+      setNestedValue(representative.profiling.terrainSelection, signal.key, value);
+    }
+  }
+
+  representative.capture.stable = representative.aggregate.stableRunCount > (validReports.length / 2);
+  return representative;
+}
+
 export function analyzeTerrainPerfPair(baseline, candidate) {
   const metrics = TERRAIN_PERF_SIGNALS.map((signal) => {
     const baselineValue = readTerrainSignal(baseline, signal);
@@ -159,7 +212,9 @@ export function analyzeTerrainPerfPair(baseline, candidate) {
     regressions,
     improvements,
     baselineStable: baseline?.capture?.stable ?? null,
-    candidateStable: candidate?.capture?.stable ?? null
+    candidateStable: candidate?.capture?.stable ?? null,
+    baselineRunCount: baseline?.aggregate?.runCount ?? 1,
+    candidateRunCount: candidate?.aggregate?.runCount ?? 1
   };
 }
 
@@ -197,6 +252,8 @@ export function renderTerrainPerfMarkdown(summary) {
     const analysis = scenario.analysis;
     lines.push(`- Baseline stable: ${analysis.baselineStable}`);
     lines.push(`- Candidate stable: ${analysis.candidateStable}`);
+    lines.push(`- Baseline runs: ${analysis.baselineRunCount}`);
+    lines.push(`- Candidate runs: ${analysis.candidateRunCount}`);
 
     const interesting = [...analysis.regressions, ...analysis.improvements];
     if (!interesting.length) {

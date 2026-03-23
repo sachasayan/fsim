@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWaterDepthTextureData, sampleHeightGridBilinear } from '../js/modules/world/terrain/TerrainWorker.js';
+import { buildWaterDepthTextureData, createLeafSurfaceBuffers, sampleHeightGridBilinear } from '../js/modules/world/terrain/TerrainWorker.js';
 
 test('sampleHeightGridBilinear interpolates across a regular height grid', () => {
     const stride = 2;
@@ -34,4 +34,22 @@ test('buildWaterDepthTextureData can derive depth from the decoded leaf height g
     assert.equal(result.size, 4);
     assert.equal(result.data.length, 4 * 4 * 4);
     assert.equal(result.data[3], 255);
+});
+
+test('createLeafSurfaceBuffers uses flat up normals for water surfaces', () => {
+    const result = createLeafSurfaceBuffers({
+        node: { minX: 0, minZ: 0, size: 10 },
+        heights: new Float32Array([
+            -5, -5,
+            -5, -5
+        ]),
+        stride: 2,
+        worldData: null,
+        sampler: null,
+        materialKind: 'water'
+    });
+
+    assert.equal(result.normals[0], 0);
+    assert.equal(result.normals[1], 1);
+    assert.equal(result.normals[2], 0);
 });

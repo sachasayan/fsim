@@ -4,6 +4,7 @@ import path from 'node:path';
 import { loadJson } from './perf-analysis.mjs';
 import {
   TERRAIN_PERF_SCENARIOS,
+  aggregateTerrainReports,
   analyzeTerrainPerfPair,
   renderTerrainPerfMarkdown,
   summarizeTerrainPerfSuite
@@ -50,12 +51,26 @@ function isDirectoryPath(value) {
   return !/\.json$/i.test(value || '');
 }
 
-function loadScenarioReport(rootPath, scenarioId, cwd) {
+function listScenarioReportPaths(rootPath, scenarioId, cwd) {
   const resolved = path.resolve(cwd, rootPath);
-  const reportPath = isDirectoryPath(rootPath)
-    ? path.join(resolved, `${scenarioId}-latest.json`)
-    : resolved;
-  return loadJson(reportPath);
+  if (!isDirectoryPath(rootPath)) return [resolved];
+  const repeated = [];
+  for (let run = 1; run <= 99; run += 1) {
+    const runPath = path.join(resolved, `${scenarioId}-run${run}.json`);
+    try {
+      loadJson(runPath);
+      repeated.push(runPath);
+    } catch {
+      break;
+    }
+  }
+  if (repeated.length > 0) return repeated;
+  return [path.join(resolved, `${scenarioId}-latest.json`)];
+}
+
+function loadScenarioReport(rootPath, scenarioId, cwd) {
+  const reports = listScenarioReportPaths(rootPath, scenarioId, cwd).map((reportPath) => loadJson(reportPath));
+  return reports.length === 1 ? reports[0] : aggregateTerrainReports(reports);
 }
 
 function writeOutput(filePath, payload) {
