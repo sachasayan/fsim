@@ -566,19 +566,70 @@ function buildChunkBase(job) {
         return carveHeightForRoadSegments(vx, vz, height, localRoadSegments);
     }
 
-    // Process terrain
+    const terrainStride = lodCfg.terrainRes + 1;
+    const terrainVertexCount = positions.length / 3;
+    const terrainHeights = new Float32Array(terrainVertexCount);
+    const sampleDist = Math.max(12, 90 / Math.max(1, lodCfg.terrainRes));
+
+    const firstColX = positions[0];
+    const secondColX = terrainStride > 1 ? positions[3] : firstColX;
+    const firstRowZ = positions[2];
+    const secondRowZ = terrainVertexCount > terrainStride ? positions[(terrainStride * 3) + 2] : firstRowZ;
+    const xAscending = secondColX >= firstColX;
+    const zAscending = secondRowZ >= firstRowZ;
+    const terrainStepX = lodCfg.terrainRes > 0 ? Math.abs(secondColX - firstColX) || (CHUNK_SIZE / lodCfg.terrainRes) : CHUNK_SIZE;
+    const terrainStepZ = lodCfg.terrainRes > 0 ? Math.abs(secondRowZ - firstRowZ) || (CHUNK_SIZE / lodCfg.terrainRes) : CHUNK_SIZE;
+
+    function sampleTerrainHeightFromGrid(localX, localZ) {
+        if (terrainVertexCount === 0) return 0;
+
+        const px = xAscending
+            ? (localX - firstColX) / Math.max(1e-6, terrainStepX)
+            : (firstColX - localX) / Math.max(1e-6, terrainStepX);
+        const pz = zAscending
+            ? (localZ - firstRowZ) / Math.max(1e-6, terrainStepZ)
+            : (firstRowZ - localZ) / Math.max(1e-6, terrainStepZ);
+
+        const clampedX = Math.max(0, Math.min(lodCfg.terrainRes, px));
+        const clampedZ = Math.max(0, Math.min(lodCfg.terrainRes, pz));
+        const x0 = Math.floor(clampedX);
+        const z0 = Math.floor(clampedZ);
+        const x1 = Math.min(lodCfg.terrainRes, x0 + 1);
+        const z1 = Math.min(lodCfg.terrainRes, z0 + 1);
+        const fx = clampedX - x0;
+        const fz = clampedZ - z0;
+
+        const i00 = z0 * terrainStride + x0;
+        const i10 = z0 * terrainStride + x1;
+        const i01 = z1 * terrainStride + x0;
+        const i11 = z1 * terrainStride + x1;
+
+        const h0 = terrainHeights[i00] * (1 - fx) + terrainHeights[i10] * fx;
+        const h1 = terrainHeights[i01] * (1 - fx) + terrainHeights[i11] * fx;
+        return h0 * (1 - fz) + h1 * fz;
+    }
+
     for (let i = 0; i < positions.length; i += 3) {
-        let lx = positions[i];
-        let lz = positions[i + 2];
-        let vx = lx + cx * CHUNK_SIZE;
-        let vz = lz + cz * CHUNK_SIZE;
+        const localX = positions[i];
+        const localZ = positions[i + 2];
+        const worldX = localX + cx * CHUNK_SIZE;
+        const worldZ = localZ + cz * CHUNK_SIZE;
+        const height = getCarvedHeight(worldX, worldZ);
 
-        let height = getCarvedHeight(vx, vz);
         positions[i + 1] = height;
+        terrainHeights[i / 3] = height;
+    }
 
-        const sampleDist = Math.max(12, 90 / Math.max(1, lodCfg.terrainRes));
-        const hx = getCarvedHeight(vx + sampleDist, vz);
-        const hz = getCarvedHeight(vx, vz + sampleDist);
+    // Process terrain surface data using the cached height grid.
+    for (let i = 0; i < positions.length; i += 3) {
+        const lx = positions[i];
+        const lz = positions[i + 2];
+        const vx = lx + cx * CHUNK_SIZE;
+        const vz = lz + cz * CHUNK_SIZE;
+        const height = terrainHeights[i / 3];
+
+        const hx = sampleTerrainHeightFromGrid(lx + sampleDist, lz);
+        const hz = sampleTerrainHeightFromGrid(lx, lz + sampleDist);
         const slope = Math.max(Math.abs(hx - height), Math.abs(hz - height)) / sampleDist;
         const terrainMasks = getTerrainMaskSet(vx, vz);
 
