@@ -763,6 +763,7 @@ export function createTerrainSystem({
   let bootstrapMode = true;
   let quadtreeSelectionController = null;
   let blockingLeafIds = new Set();
+  let currentBlockingChunkKeys = new Set();
   const HIGH_LOD_SURFACE_RESOLUTION = 64;
   const terrainDebugSettings = {
     selectionInterestRadius: CHUNK_SIZE * Math.max(3, lodSettings.terrain.renderDistance + 1),
@@ -1886,6 +1887,10 @@ export function createTerrainSystem({
     return (readyLeafSurfaceChunkCounts.get(chunkKey) || 0) > 0;
   }
 
+  function chunkNeedsVisibleBaseTerrain(chunkKey) {
+    return bootstrapMode || currentBlockingChunkKeys.has(chunkKey);
+  }
+
   function syncChunkBaseSurfaceVisibility(chunkKeys = null) {
     const keys = chunkKeys ? Array.from(chunkKeys) : Array.from(terrainChunks.keys());
     let currentVisibleChunkCount = 0;
@@ -1895,7 +1900,7 @@ export function createTerrainSystem({
       const state = terrainChunks.get(chunkKey);
       const chunkGroup = state?.group;
       if (!chunkGroup) continue;
-      const showBaseTerrain = !chunkHasReadyLeafSurface(chunkKey);
+      const showBaseTerrain = chunkNeedsVisibleBaseTerrain(chunkKey) && !chunkHasReadyLeafSurface(chunkKey);
       const terrainMesh = chunkGroup.children?.[0] || null;
       const waterMesh = chunkGroup.children?.[1] || null;
       if (terrainMesh && terrainMesh.visible !== showBaseTerrain) terrainMesh.visible = showBaseTerrain;
@@ -2756,6 +2761,7 @@ export function createTerrainSystem({
     const activeChunks = smoothActiveChunkLods(selectionState.activeChunks);
     updateLeafChunkLods(selectionState.selectedLeaves, activeChunks);
     blockingLeafIds = selectionState.blockingLeafIds || new Set();
+    currentBlockingChunkKeys = selectionState.blockingKeys || new Set();
     syncActiveLeaves(
       selectionState.selectedLeaves || [],
       blockingLeafIds,
