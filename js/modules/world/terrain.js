@@ -1836,9 +1836,12 @@ export function createTerrainSystem({
     scene.remove(chunkGroup);
     chunkGroup.userData.windmillBladeMeshes = null;
     const lod = chunkGroup.userData.lod;
+    const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
+    const preservedMeshes = new Set([terrainMesh, waterMesh].filter(Boolean));
     if (lod !== undefined && chunkPools[lod]) {
-      while (chunkGroup.children.length > 2) {
-        const child = chunkGroup.children[chunkGroup.children.length - 1];
+      for (let index = chunkGroup.children.length - 1; index >= 0; index -= 1) {
+        const child = chunkGroup.children[index];
+        if (preservedMeshes.has(child)) continue;
         chunkGroup.remove(child);
         if (child.isInstancedMesh) {
           child.count = 0;
@@ -1855,17 +1858,47 @@ export function createTerrainSystem({
           pool.push(child);
         }
       }
-      chunkPools[lod].push(chunkGroup);
+      if (terrainMesh && waterMesh) {
+        chunkPools[lod].push(chunkGroup);
+      } else {
+        setChunkBaseSurfaceMeshes(chunkGroup, null, null);
+      }
     } else {
       chunkGroup.traverse((child) => { if (child.isMesh || child.isInstancedMesh) child.geometry.dispose(); });
     }
   }
 
+  function getChunkBaseSurfaceMeshes(chunkGroup) {
+    return {
+      terrainMesh: chunkGroup?.userData?.chunkBaseTerrainMesh || null,
+      waterMesh: chunkGroup?.userData?.chunkBaseWaterMesh || null
+    };
+  }
+
+  function setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh) {
+    if (!chunkGroup) return;
+    chunkGroup.userData.chunkBaseTerrainMesh = terrainMesh || null;
+    chunkGroup.userData.chunkBaseWaterMesh = waterMesh || null;
+  }
+
+  function pruneChunkBaseSurface(chunkGroup) {
+    if (!chunkGroup) return;
+    const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
+    if (terrainMesh) {
+      chunkGroup.remove(terrainMesh);
+      terrainMesh.geometry?.dispose?.();
+    }
+    if (waterMesh) {
+      chunkGroup.remove(waterMesh);
+      waterMesh.geometry?.dispose?.();
+    }
+    setChunkBaseSurfaceMeshes(chunkGroup, null, null);
+  }
+
   function activateChunkBaseGroup(chunkGroup) {
     if (!chunkGroup) return;
     const lod = Number.isInteger(chunkGroup.userData?.lod) ? chunkGroup.userData.lod : 3;
-    const terrainMesh = chunkGroup.children?.[0] || null;
-    const waterMesh = chunkGroup.children?.[1] || null;
+    const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
     if (terrainMesh) {
       terrainMesh.visible = true;
       terrainMesh.receiveShadow = lod <= 1;
@@ -1912,13 +1945,18 @@ export function createTerrainSystem({
       const chunkGroup = state?.group;
       if (!chunkGroup) continue;
       const showBaseTerrain = chunkNeedsVisibleBaseTerrain(chunkKey) && !chunkHasReadyLeafSurface(chunkKey);
-      const terrainMesh = chunkGroup.children?.[0] || null;
-      const waterMesh = chunkGroup.children?.[1] || null;
-      if (terrainMesh && terrainMesh.visible !== showBaseTerrain) terrainMesh.visible = showBaseTerrain;
-      if (waterMesh && waterMesh.visible !== false) waterMesh.visible = false;
-      if (terrainMesh?.visible) currentVisibleChunkCount += 1;
-      if (terrainMesh && !terrainMesh.visible && !showBaseTerrain) currentHiddenByReadyLeafCount += 1;
-      trackChunkBaseVisibility(chunkKey, terrainMesh?.visible === true, showBaseTerrain === false, now);
+      const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
+      if (!showBaseTerrain && !chunkNeedsVisibleBaseTerrain(chunkKey) && (terrainMesh || waterMesh)) {
+        pruneChunkBaseSurface(chunkGroup);
+      }
+      const refreshedMeshes = getChunkBaseSurfaceMeshes(chunkGroup);
+      const activeTerrainMesh = refreshedMeshes.terrainMesh;
+      const activeWaterMesh = refreshedMeshes.waterMesh;
+      if (activeTerrainMesh && activeTerrainMesh.visible !== showBaseTerrain) activeTerrainMesh.visible = showBaseTerrain;
+      if (activeWaterMesh && activeWaterMesh.visible !== false) activeWaterMesh.visible = false;
+      if (activeTerrainMesh?.visible) currentVisibleChunkCount += 1;
+      if (activeTerrainMesh && !activeTerrainMesh.visible && !showBaseTerrain) currentHiddenByReadyLeafCount += 1;
+      trackChunkBaseVisibility(chunkKey, activeTerrainMesh?.visible === true, showBaseTerrain === false, now);
     }
 
     if (!chunkKeys) {
@@ -1930,7 +1968,7 @@ export function createTerrainSystem({
     currentVisibleChunkCount = 0;
     currentHiddenByReadyLeafCount = 0;
     for (const [chunkKey, state] of terrainChunks.entries()) {
-      const terrainMesh = state?.group?.children?.[0] || null;
+      const terrainMesh = state?.group?.userData?.chunkBaseTerrainMesh || null;
       if (terrainMesh?.visible) currentVisibleChunkCount += 1;
       if (terrainMesh && chunkHasReadyLeafSurface(chunkKey) && !terrainMesh.visible) currentHiddenByReadyLeafCount += 1;
     }
@@ -1948,15 +1986,16 @@ export function createTerrainSystem({
       waterFarMaterial,
       Noise,
       scene
-    })
+    }, terrainChunks.get(`${cx}, ${cz}`)?.group || null)
       .then((group) => {
-        if (group?.children?.[0]) {
-          group.children[0].visible = false;
-          group.children[0].receiveShadow = false;
+        const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(group);
+        if (terrainMesh) {
+          terrainMesh.visible = false;
+          terrainMesh.receiveShadow = false;
         }
-        if (group?.children?.[1]) {
-          group.children[1].visible = false;
-          group.children[1].receiveShadow = false;
+        if (waterMesh) {
+          waterMesh.visible = false;
+          waterMesh.receiveShadow = false;
         }
         return group;
       });
@@ -2672,6 +2711,7 @@ export function createTerrainSystem({
             if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
           }
           current.group = group;
+          setChunkBaseSurfaceMeshes(current.group, group.userData?.chunkBaseTerrainMesh || null, group.userData?.chunkBaseWaterMesh || null);
           if (!current.group.parent) {
             scene.add(current.group);
           }

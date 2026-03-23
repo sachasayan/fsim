@@ -171,34 +171,61 @@ function getChunkPropSamplePositions(lodCfg) {
     return cached.slice();
 }
 
-export async function generateChunkBase(cx, cz, lod, ctx) {
+function getChunkBaseSurfaceMeshes(chunkGroup) {
+    return {
+        terrainMesh: chunkGroup?.userData?.chunkBaseTerrainMesh || null,
+        waterMesh: chunkGroup?.userData?.chunkBaseWaterMesh || null
+    };
+}
+
+function setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh) {
+    if (!chunkGroup) return;
+    chunkGroup.userData.chunkBaseTerrainMesh = terrainMesh || null;
+    chunkGroup.userData.chunkBaseWaterMesh = waterMesh || null;
+}
+
+function insertChunkBaseSurfaceMesh(chunkGroup, mesh, index) {
+    chunkGroup.add(mesh);
+    const currentIndex = chunkGroup.children.indexOf(mesh);
+    if (currentIndex >= 0 && currentIndex !== index) {
+        chunkGroup.children.splice(currentIndex, 1);
+        chunkGroup.children.splice(index, 0, mesh);
+    }
+}
+
+export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) {
     const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const receiveTerrainShadows = lod <= 1;
     const receiveWaterShadows = lod === 0;
-    let chunkGroup;
-    let terrainMesh, waterMesh;
+    let chunkGroup = existingGroup;
+    let { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
 
-    if (chunkPools[lod] && chunkPools[lod].length > 0) {
-        chunkGroup = chunkPools[lod].pop();
-        terrainMesh = chunkGroup.children[0];
-        waterMesh = chunkGroup.children[1];
-    } else {
-        chunkGroup = new THREE.Group();
+    if (!chunkGroup) {
+        if (chunkPools[lod] && chunkPools[lod].length > 0) {
+            chunkGroup = chunkPools[lod].pop();
+            ({ terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup));
+        } else {
+            chunkGroup = new THREE.Group();
+        }
+    }
+
+    if (!terrainMesh || !waterMesh) {
         const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.terrainRes, lodCfg.terrainRes);
         geometry.rotateX(-Math.PI / 2);
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
         geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
         terrainMesh = new THREE.Mesh(geometry, lod === 0 ? terrainMaterial : terrainFarMaterial);
         terrainMesh.receiveShadow = receiveTerrainShadows;
-        chunkGroup.add(terrainMesh);
+        insertChunkBaseSurfaceMesh(chunkGroup, terrainMesh, 0);
 
         const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
         waterGeo.rotateX(-Math.PI / 2);
         waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
         waterMesh = new THREE.Mesh(waterGeo, lod === 0 ? waterMaterial : waterFarMaterial);
         waterMesh.receiveShadow = receiveWaterShadows;
-        chunkGroup.add(waterMesh);
+        insertChunkBaseSurfaceMesh(chunkGroup, waterMesh, 1);
+        setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh);
     }
 
     terrainMesh.receiveShadow = receiveTerrainShadows;
@@ -489,7 +516,7 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const boatShadowsEnabled = lod === 0;
-    const terrainMesh = chunkGroup.children[0];
+    const terrainMesh = chunkGroup.userData?.chunkBaseTerrainMesh || chunkGroup.children[0];
     const positions = terrainMesh?.geometry?.attributes?.position?.array
         ? terrainMesh.geometry.attributes.position.array
         : getChunkPropSamplePositions(lodCfg);
