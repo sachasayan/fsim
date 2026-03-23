@@ -146,6 +146,14 @@ test('terrain tests', async (t) => {
         assert.fail(`terrain chunk work did not become idle in time: ${JSON.stringify(lastDiagnostics)}`);
     }
 
+    function findVisibleChunkGroup(scene) {
+        return scene.children.find((child) =>
+            child instanceof THREE.Group
+            && typeof child.userData?.chunkKey === 'string'
+            && child.children?.[0]?.visible === true
+        ) || null;
+    }
+
     await t.test('createTerrainSystem returns expected interface', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
@@ -194,6 +202,90 @@ test('terrain tests', async (t) => {
         // Because pendingChunkBuilds is private, the best we can do is ensure
         // updateTerrain doesn't throw and executes successfully.
         assert.ok(typeof system.updateTerrain === 'function');
+    });
+
+    await t.test('terrain base becomes visible before deferred props finish', async () => {
+        const OriginalWorker = global.Worker;
+        global.Worker = class {
+            constructor() {
+                setTimeout(() => {
+                    this.onmessage?.({ data: { type: 'workerReady' } });
+                }, 0);
+            }
+            postMessage(message) {
+                const { type, jobId, payload } = message || {};
+                if (type === 'initStaticMap') {
+                    setTimeout(() => {
+                        this.onmessage?.({ data: { type: 'initStaticMap_done', jobId } });
+                    }, 0);
+                    return;
+                }
+                if (type === 'chunkBase') {
+                    setTimeout(() => {
+                        this.onmessage?.({
+                            data: {
+                                jobId,
+                                result: {
+                                    positions: payload.positions,
+                                    normals: payload.normals,
+                                    colors: payload.colors,
+                                    surfaceWeights: payload.surfaceWeights,
+                                    surfaceOverrides: payload.surfaceOverrides,
+                                    wPos: payload.wPos,
+                                    wNormals: payload.wNormals,
+                                    wCols: payload.wCols
+                                }
+                            }
+                        });
+                    }, 0);
+                    return;
+                }
+                if (type === 'chunkProps') {
+                    setTimeout(() => {
+                        this.onmessage?.({
+                            data: {
+                                jobId,
+                                result: {
+                                    treeInstances: {},
+                                    buildingPositions: {},
+                                    boatPositions: []
+                                }
+                            }
+                        });
+                    }, 40);
+                }
+            }
+        };
+
+        try {
+            const scene = new THREE.Scene();
+            const PHYSICS = { position: new THREE.Vector3() };
+            const lodSettings = createRuntimeLodSettings();
+            lodSettings.terrain.renderDistance = 0;
+
+            const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+
+            let sawBaseVisibleBeforeDone = false;
+            for (let i = 0; i < 30; i += 1) {
+                system.updateTerrain();
+                const diagnostics = system.getTerrainSelectionDiagnostics();
+                const visibleChunk = findVisibleChunkGroup(scene);
+                const stillStreamingProps = (diagnostics.chunkStates?.done ?? 0) === 0
+                    || (diagnostics.chunkStates?.building_props ?? 0) > 0
+                    || (diagnostics.queueDepths?.pendingPropJobs ?? 0) > 0;
+                if (visibleChunk && stillStreamingProps) {
+                    assert.equal(visibleChunk.children[0].visible, true);
+                    sawBaseVisibleBeforeDone = true;
+                    break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+
+            assert.equal(sawBaseVisibleBeforeDone, true);
+            await waitForChunkWorkIdle(system);
+        } finally {
+            global.Worker = OriginalWorker;
+        }
     });
 
     await t.test('warm chunk cache records a hit when revisiting a recently evicted chunk', async () => {

@@ -805,6 +805,7 @@ export function createTerrainSystem({
   const warmChunkCache = new Map();
   const activeLeaves = new Map();
   const chunkLeafOwners = new Map();
+  const readyLeafSurfaceChunkCounts = new Map();
   const pendingChunkBuilds = [];
   const pendingChunkKeys = new Set();
   let pendingQueueDirty = false;
@@ -814,6 +815,7 @@ export function createTerrainSystem({
   const chunkPools = [[], [], [], []];
   const instancedMeshPools = new Map();
   const WARM_CHUNK_CACHE_MAX = 24;
+  const BOOTSTRAP_MAX_LEAVES = 28;
   let bootstrapMode = true;
   let quadtreeSelectionController = null;
   let blockingLeafIds = new Set();
@@ -1041,6 +1043,14 @@ export function createTerrainSystem({
 
   function disposeLeafRuntimeLeaf(leafState) {
     if (!leafState) return;
+    if (leafState.readyChunkCoverageActive) {
+      for (const key of leafState.chunkKeys || []) {
+        const nextCount = (readyLeafSurfaceChunkCounts.get(key) || 0) - 1;
+        if (nextCount > 0) readyLeafSurfaceChunkCounts.set(key, nextCount);
+        else readyLeafSurfaceChunkCounts.delete(key);
+      }
+      leafState.readyChunkCoverageActive = false;
+    }
     if (leafState.terrainMesh) {
       scene.remove(leafState.terrainMesh);
       leafState.terrainMesh.geometry?.dispose?.();
@@ -1089,6 +1099,7 @@ export function createTerrainSystem({
       lastWaitMs: null,
       maxWaitMs: null,
       buildVersion: 0,
+      readyChunkCoverageActive: false,
       retired: false
     };
   }
@@ -1096,6 +1107,14 @@ export function createTerrainSystem({
   function markLeafPendingSurface(leafState, { resetPendingStart = false } = {}) {
     if (!leafState) return;
     const now = performance.now();
+    if (leafState.readyChunkCoverageActive) {
+      for (const key of leafState.chunkKeys || []) {
+        const nextCount = (readyLeafSurfaceChunkCounts.get(key) || 0) - 1;
+        if (nextCount > 0) readyLeafSurfaceChunkCounts.set(key, nextCount);
+        else readyLeafSurfaceChunkCounts.delete(key);
+      }
+      leafState.readyChunkCoverageActive = false;
+    }
     leafState.state = 'pending_surface';
     leafState.pendingSinceAtMs = resetPendingStart || !Number.isFinite(leafState.pendingSinceAtMs)
       ? now
@@ -1585,11 +1604,18 @@ export function createTerrainSystem({
     leafState.state = 'surface_ready';
     leafState.workerBuildPromise = null;
     leafState.workerBuildStartedAtMs = null;
+    if (!leafState.readyChunkCoverageActive) {
+      for (const key of leafState.chunkKeys || []) {
+        readyLeafSurfaceChunkCounts.set(key, (readyLeafSurfaceChunkCounts.get(key) || 0) + 1);
+      }
+      leafState.readyChunkCoverageActive = true;
+    }
     recordLeafCompletion(leafState, performance.now());
     scene.add(terrainMesh);
     if (waterMesh) {
       scene.add(waterMesh);
     }
+    syncChunkBaseSurfaceVisibility();
     const sceneAttachMs = performance.now() - sceneAttachStartedAtMs;
     recordLeafBuildBreakdown({
       sampleHeightMs: 0,
@@ -1840,6 +1866,46 @@ export function createTerrainSystem({
     }
   }
 
+  function activateChunkBaseGroup(chunkGroup) {
+    if (!chunkGroup) return;
+    const lod = Number.isInteger(chunkGroup.userData?.lod) ? chunkGroup.userData.lod : 3;
+    const terrainMesh = chunkGroup.children?.[0] || null;
+    const waterMesh = chunkGroup.children?.[1] || null;
+    if (terrainMesh) {
+      terrainMesh.visible = true;
+      terrainMesh.receiveShadow = lod <= 1;
+    }
+    if (waterMesh) {
+      waterMesh.visible = true;
+      waterMesh.receiveShadow = lod === 0;
+    }
+  }
+
+  function addChunkKeysToSet(target, chunkKeys) {
+    if (!target || !chunkKeys) return;
+    for (const key of chunkKeys) {
+      target.add(key);
+    }
+  }
+
+  function chunkHasReadyLeafSurface(chunkKey) {
+    return (readyLeafSurfaceChunkCounts.get(chunkKey) || 0) > 0;
+  }
+
+  function syncChunkBaseSurfaceVisibility(chunkKeys = null) {
+    const keys = chunkKeys ? Array.from(chunkKeys) : Array.from(terrainChunks.keys());
+    for (const chunkKey of keys) {
+      const state = terrainChunks.get(chunkKey);
+      const chunkGroup = state?.group;
+      if (!chunkGroup) continue;
+      const showBaseSurfaces = !chunkHasReadyLeafSurface(chunkKey);
+      const terrainMesh = chunkGroup.children?.[0] || null;
+      const waterMesh = chunkGroup.children?.[1] || null;
+      if (terrainMesh && terrainMesh.visible !== showBaseSurfaces) terrainMesh.visible = showBaseSurfaces;
+      if (waterMesh && waterMesh.visible !== showBaseSurfaces) waterMesh.visible = showBaseSurfaces;
+    }
+  }
+
   function generateChunkBase(cx, cz, lod = 0) {
     return genBase(cx, cz, lod, {
       LOD_LEVELS,
@@ -1924,7 +1990,8 @@ export function createTerrainSystem({
       return String(a.leafId).localeCompare(String(b.leafId));
     });
 
-    const keptLeaves = prioritizedLeaves.map((leaf) => ({ ...leaf }));
+    const keptLeafCount = Math.min(prioritizedLeaves.length, BOOTSTRAP_MAX_LEAVES);
+    const keptLeaves = prioritizedLeaves.slice(0, keptLeafCount).map((leaf) => ({ ...leaf }));
     const blockingLeafIdSet = new Set(
       keptLeaves
         .filter((leaf) => leaf.blockingReady)
@@ -2213,6 +2280,7 @@ export function createTerrainSystem({
 
   function syncActiveLeaves(selectedLeaves, nextBlockingLeafIds, selectionRegion, mode) {
     chunkLeafOwners.clear();
+    const visibilityDirtyChunkKeys = new Set();
 
     const selectedIds = new Set((selectedLeaves || []).map((leaf) => leaf.leafId));
 
@@ -2225,7 +2293,11 @@ export function createTerrainSystem({
         leafState = createNativeLeafRuntime(leaf);
         activeLeaves.set(leaf.leafId, leafState);
         enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+        addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
       } else {
+        const previousChunkKeys = [...(leafState.chunkKeys || [])];
+        const wasSurfaceReady = leafState.state === 'surface_ready';
+        const hadReadyChunkCoverage = leafState.readyChunkCoverageActive === true;
         const changedNode = leafState.nodeId !== leaf.nodeId || leafState.depth !== leaf.depth || leafState.size !== leaf.size;
         leafState.nodeId = leaf.nodeId;
         leafState.depth = leaf.depth;
@@ -2242,14 +2314,34 @@ export function createTerrainSystem({
         if (changedNode && leafState.terrainMesh) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+          addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
+          addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
         } else if (leafState.state === 'surface_ready' && leafState.surfaceResolution !== desiredResolution) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+          addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
+        } else if (previousChunkKeys.length !== leafState.chunkKeys.length
+          || previousChunkKeys.some((key, index) => key !== leafState.chunkKeys[index])) {
+          if (hadReadyChunkCoverage) {
+            for (const key of previousChunkKeys) {
+              const nextCount = (readyLeafSurfaceChunkCounts.get(key) || 0) - 1;
+              if (nextCount > 0) readyLeafSurfaceChunkCounts.set(key, nextCount);
+              else readyLeafSurfaceChunkCounts.delete(key);
+            }
+            for (const key of leafState.chunkKeys || []) {
+              readyLeafSurfaceChunkCounts.set(key, (readyLeafSurfaceChunkCounts.get(key) || 0) + 1);
+            }
+          }
+          addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
+          addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
+        } else if (wasSurfaceReady !== (leafState.state === 'surface_ready')) {
+          addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
         }
       }
 
       if ((!leafState.terrainMesh || (leafState.hasWater && !leafState.waterMesh)) && leafState.state !== 'building_surface') {
         markLeafPendingSurface(leafState);
+        addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
       } else if (leafState.state !== 'error' && leafState.state !== 'building_surface') {
         leafState.state = 'surface_ready';
       }
@@ -2279,9 +2371,14 @@ export function createTerrainSystem({
         leafState.blockingReady = false;
         continue;
       }
+      addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
       disposeLeafRuntimeLeaf(leafState);
       activeLeaves.delete(leafId);
       pendingLeafBuildIds.delete(leafId);
+    }
+
+    if (visibilityDirtyChunkKeys.size > 0) {
+      syncChunkBaseSurfaceVisibility(visibilityDirtyChunkKeys);
     }
 
     lastTerrainSelection = {
@@ -2512,9 +2609,25 @@ export function createTerrainSystem({
       generateChunkBase(job.cx, job.cz, job.lod).then(group => {
         const current = terrainChunks.get(job.key);
         if (current && current.lod === job.lod && current.state === 'building_base') {
-          current.pendingGroup = group;
+          activateChunkBaseGroup(group);
+          if (current.group) {
+            const priorState = {
+              group: current.group,
+              pendingGroup: null,
+              lod: current.lod,
+              propsBuilt: current.propsBuilt,
+              state: current.propsBuilt ? 'done' : current.state
+            };
+            if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
+          }
+          current.group = group;
+          if (!current.group.parent) {
+            scene.add(current.group);
+          }
+          current.pendingGroup = null;
           current.state = 'base_done';
           enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
+          syncChunkBaseSurfaceVisibility();
         } else {
           disposeChunkGroup(group);
         }
