@@ -290,6 +290,28 @@ function buildBorderLoopIndices(stride) {
     return indices;
 }
 
+export function sampleHeightGridBilinear(heights, stride, gridX, gridZ) {
+    if (!heights || !Number.isFinite(stride) || stride < 2) return 0;
+    const resolution = stride - 1;
+    const clampedX = Math.max(0, Math.min(resolution, gridX));
+    const clampedZ = Math.max(0, Math.min(resolution, gridZ));
+    const x0 = Math.floor(clampedX);
+    const z0 = Math.floor(clampedZ);
+    const x1 = Math.min(resolution, x0 + 1);
+    const z1 = Math.min(resolution, z0 + 1);
+    const fx = clampedX - x0;
+    const fz = clampedZ - z0;
+
+    const i00 = z0 * stride + x0;
+    const i10 = z0 * stride + x1;
+    const i01 = z1 * stride + x0;
+    const i11 = z1 * stride + x1;
+
+    const h0 = heights[i00] * (1 - fx) + heights[i10] * fx;
+    const h1 = heights[i01] * (1 - fx) + heights[i11] * fx;
+    return h0 * (1 - fz) + h1 * fz;
+}
+
 function sampleNodeHeightGrid(node, resolution, depth, sampler) {
     if (!sampler || !node || !Number.isFinite(resolution) || resolution < 1) {
         return null;
@@ -453,16 +475,21 @@ function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, m
     };
 }
 
-function buildWaterDepthTextureData(node, sampler, resolution = 64) {
+export function buildWaterDepthTextureData(node, sampler, resolution = 64, sourceGrid = null) {
     const size = Math.max(4, resolution);
     const data = new Uint8Array(size * size * 4);
+    const sourceHeights = sourceGrid?.heights || null;
+    const sourceStride = sourceGrid?.stride || 0;
+    const sourceResolution = sourceStride > 1 ? sourceStride - 1 : 0;
     for (let z = 0; z < size; z += 1) {
         const vz = size === 1 ? 0 : z / (size - 1);
         const worldZ = node.minZ + vz * node.size;
         for (let x = 0; x < size; x += 1) {
             const ux = size === 1 ? 0 : x / (size - 1);
             const worldX = node.minX + ux * node.size;
-            const terrainHeight = sampler.getAltitudeAt(worldX, worldZ);
+            const terrainHeight = sourceHeights && sourceResolution > 0
+                ? sampleHeightGridBilinear(sourceHeights, sourceStride, ux * sourceResolution, vz * sourceResolution)
+                : sampler.getAltitudeAt(worldX, worldZ);
             const depth = Math.max(0, Math.min(WATER_DEPTH_BANDS.deepEnd, SEA_LEVEL - terrainHeight));
             const encoded = Math.round((depth / WATER_DEPTH_BANDS.deepEnd) * 255);
             const index = (z * size + x) * 4;
@@ -512,7 +539,10 @@ function buildLeafSurface(job) {
             sampler: staticSampler,
             materialKind: 'water'
         });
-        waterDepth = buildWaterDepthTextureData(node, staticSampler, job.waterDepthResolution);
+        waterDepth = buildWaterDepthTextureData(node, staticSampler, job.waterDepthResolution, {
+            heights: carvedHeights,
+            stride: decoded.stride
+        });
     }
 
     return {
@@ -569,23 +599,7 @@ function buildChunkBase(job) {
             ? (localZ - firstRowZ) / Math.max(1e-6, terrainStepZ)
             : (firstRowZ - localZ) / Math.max(1e-6, terrainStepZ);
 
-        const clampedX = Math.max(0, Math.min(lodCfg.terrainRes, px));
-        const clampedZ = Math.max(0, Math.min(lodCfg.terrainRes, pz));
-        const x0 = Math.floor(clampedX);
-        const z0 = Math.floor(clampedZ);
-        const x1 = Math.min(lodCfg.terrainRes, x0 + 1);
-        const z1 = Math.min(lodCfg.terrainRes, z0 + 1);
-        const fx = clampedX - x0;
-        const fz = clampedZ - z0;
-
-        const i00 = z0 * terrainStride + x0;
-        const i10 = z0 * terrainStride + x1;
-        const i01 = z1 * terrainStride + x0;
-        const i11 = z1 * terrainStride + x1;
-
-        const h0 = terrainHeights[i00] * (1 - fx) + terrainHeights[i10] * fx;
-        const h1 = terrainHeights[i01] * (1 - fx) + terrainHeights[i11] * fx;
-        return h0 * (1 - fz) + h1 * fz;
+        return sampleHeightGridBilinear(terrainHeights, terrainStride, px, pz);
     }
 
     for (let i = 0; i < positions.length; i += 3) {
