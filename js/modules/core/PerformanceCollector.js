@@ -83,6 +83,12 @@ export function createPerformanceCollector({
         'terrain.blockingLeafReadyWaitP95Ms',
         'terrain.pendingLeafAgeP95Ms',
         'terrain.pendingBlockingLeafAgeP95Ms',
+        'terrain.chunkBaseVisibleChunks',
+        'terrain.chunkBaseHiddenByReadyLeafCount',
+        'terrain.chunkBaseHideByLeafReadyCount',
+        'terrain.chunkBaseVisibleDwellP95Ms',
+        'terrain.chunkBaseBuildStarts',
+        'terrain.chunkBaseBuildCompletes',
         'render.sceneMs',
         'render.smaaMs',
         'render.bloomMs',
@@ -219,6 +225,12 @@ export function createPerformanceCollector({
         recordMetric('terrain.blockingLeafReadyWaitP95Ms', profiling.terrainSelection?.leafResponsiveness?.blockingReadyWaitMs?.p95Ms);
         recordMetric('terrain.pendingLeafAgeP95Ms', profiling.terrainSelection?.leafResponsiveness?.pendingAgeMs?.p95Ms);
         recordMetric('terrain.pendingBlockingLeafAgeP95Ms', profiling.terrainSelection?.leafResponsiveness?.pendingBlockingAgeMs?.p95Ms);
+        recordMetric('terrain.chunkBaseVisibleChunks', profiling.terrainSelection?.chunkBaseRole?.currentVisibleChunkCount);
+        recordMetric('terrain.chunkBaseHiddenByReadyLeafCount', profiling.terrainSelection?.chunkBaseRole?.currentHiddenByReadyLeafCount);
+        recordMetric('terrain.chunkBaseHideByLeafReadyCount', profiling.terrainSelection?.chunkBaseRole?.hideByLeafReadyCount);
+        recordMetric('terrain.chunkBaseVisibleDwellP95Ms', profiling.terrainSelection?.chunkBaseRole?.visibleDwellMs?.p95Ms);
+        recordMetric('terrain.chunkBaseBuildStarts', profiling.terrainSelection?.chunkBaseRole?.buildStarts);
+        recordMetric('terrain.chunkBaseBuildCompletes', profiling.terrainSelection?.chunkBaseRole?.buildCompletes);
         recordMetric('render.sceneMs', renderPassTimings.renderScene);
         recordMetric('render.smaaMs', renderPassTimings.smaa);
         recordMetric('render.bloomMs', renderPassTimings.bloom);
@@ -277,6 +289,7 @@ export function createPerformanceCollector({
                     queueDepths: profiling.terrainSelection.queueDepths ?? null,
                     leafResponsiveness: profiling.terrainSelection.leafResponsiveness ?? null,
                     leafBuildBreakdown: profiling.terrainSelection.leafBuildBreakdown ?? null,
+                    chunkBaseRole: profiling.terrainSelection.chunkBaseRole ?? null,
                     chunkStates: profiling.terrainSelection.chunkStates ?? null,
                     worker: profiling.terrainSelection.worker ?? null,
                     generation: profiling.terrainSelection.generation ?? null,
@@ -414,6 +427,7 @@ export function createPerformanceCollector({
                     queueDepths: profiling.terrainSelection.queueDepths ?? null,
                     leafResponsiveness: profiling.terrainSelection.leafResponsiveness ?? null,
                     leafBuildBreakdown: profiling.terrainSelection.leafBuildBreakdown ?? null,
+                    chunkBaseRole: profiling.terrainSelection.chunkBaseRole ?? null,
                     chunkStates: profiling.terrainSelection.chunkStates ?? null,
                     worker: profiling.terrainSelection.worker ?? null,
                     generation: profiling.terrainSelection.generation ?? null,

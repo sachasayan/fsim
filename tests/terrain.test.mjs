@@ -280,10 +280,28 @@ test('terrain tests', async (t) => {
             }
 
             assert.equal(sawBaseVisibleBeforeDone, true);
-            await waitForChunkWorkIdle(system);
+            const finalDiagnostics = await waitForChunkWorkIdle(system);
+            assert.ok((finalDiagnostics.chunkBaseRole?.currentVisibleChunkCount ?? 0) >= 1, JSON.stringify(finalDiagnostics.chunkBaseRole));
         } finally {
             global.Worker = OriginalWorker;
         }
+    });
+
+    await t.test('terrain diagnostics expose chunkBase fallback role summary', async () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+        lodSettings.terrain.renderDistance = 0;
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const diagnostics = await waitForChunkWorkIdle(system);
+
+        assert.ok(diagnostics.chunkBaseRole);
+        assert.equal(typeof diagnostics.chunkBaseRole.currentVisibleChunkCount, 'number');
+        assert.equal(typeof diagnostics.chunkBaseRole.currentHiddenByReadyLeafCount, 'number');
+        assert.equal(typeof diagnostics.chunkBaseRole.buildStarts, 'number');
+        assert.equal(typeof diagnostics.chunkBaseRole.buildCompletes, 'number');
+        assert.ok(diagnostics.chunkBaseRole.visibleDwellMs);
     });
 
     await t.test('warm chunk cache records a hit when revisiting a recently evicted chunk', async () => {

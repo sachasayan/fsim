@@ -819,6 +819,16 @@ export function createTerrainSystem({
       misses: 0,
       evictions: 0
     },
+    chunkBaseRole: {
+      currentVisibleChunkCount: 0,
+      currentHiddenByReadyLeafCount: 0,
+      buildStarts: 0,
+      buildCompletes: 0,
+      hideByLeafReadyCount: 0,
+      visibleSessions: [],
+      maxVisibleSessions: 64,
+      visibilityByChunk: new Map()
+    },
     pendingFrameLeafApplyMs: 0,
     pendingFrameLeafApplyCount: 0,
     leafBuildBreakdown: {
@@ -908,6 +918,63 @@ export function createTerrainSystem({
       workerComputeAvgMs: avg(bucket.workerComputeMs || 0),
       totalAvgMs: avg(bucket.totalMs),
       maxTotalMs: Math.round(bucket.maxTotalMs * 1000) / 1000
+    };
+  }
+
+  function finalizeChunkBaseVisibilitySession(chunkKey, now = performance.now()) {
+    const visibilityState = terrainPerfState.chunkBaseRole.visibilityByChunk.get(chunkKey);
+    if (!visibilityState || !Number.isFinite(visibilityState.visibleSinceAtMs)) return;
+    const durationMs = Math.max(0, now - visibilityState.visibleSinceAtMs);
+    terrainPerfState.chunkBaseRole.visibleSessions.push(durationMs);
+    if (terrainPerfState.chunkBaseRole.visibleSessions.length > terrainPerfState.chunkBaseRole.maxVisibleSessions) {
+      terrainPerfState.chunkBaseRole.visibleSessions.splice(
+        0,
+        terrainPerfState.chunkBaseRole.visibleSessions.length - terrainPerfState.chunkBaseRole.maxVisibleSessions
+      );
+    }
+    visibilityState.visibleSinceAtMs = null;
+  }
+
+  function trackChunkBaseVisibility(chunkKey, isVisible, hiddenByReadyLeaf, now = performance.now()) {
+    const roleState = terrainPerfState.chunkBaseRole;
+    let visibilityState = roleState.visibilityByChunk.get(chunkKey);
+    if (!visibilityState) {
+      visibilityState = {
+        visible: false,
+        hiddenByReadyLeaf: false,
+        visibleSinceAtMs: null
+      };
+      roleState.visibilityByChunk.set(chunkKey, visibilityState);
+    }
+
+    if (isVisible && !visibilityState.visible) {
+      visibilityState.visibleSinceAtMs = now;
+    } else if (!isVisible && visibilityState.visible) {
+      finalizeChunkBaseVisibilitySession(chunkKey, now);
+      if (hiddenByReadyLeaf) {
+        roleState.hideByLeafReadyCount += 1;
+      }
+    }
+
+    visibilityState.visible = isVisible;
+    visibilityState.hiddenByReadyLeaf = hiddenByReadyLeaf;
+  }
+
+  function clearChunkBaseVisibilityTracking(chunkKey, now = performance.now()) {
+    finalizeChunkBaseVisibilitySession(chunkKey, now);
+    terrainPerfState.chunkBaseRole.visibilityByChunk.delete(chunkKey);
+  }
+
+  function getChunkBaseRoleSummary() {
+    const roleState = terrainPerfState.chunkBaseRole;
+    const visibleSessionSummary = summarizeNumberSet(roleState.visibleSessions);
+    return {
+      currentVisibleChunkCount: roleState.currentVisibleChunkCount,
+      currentHiddenByReadyLeafCount: roleState.currentHiddenByReadyLeafCount,
+      buildStarts: roleState.buildStarts,
+      buildCompletes: roleState.buildCompletes,
+      hideByLeafReadyCount: roleState.hideByLeafReadyCount,
+      visibleDwellMs: visibleSessionSummary
     };
   }
   const terrainDetailTex = createPackedTerrainDetailTexture();
@@ -1821,6 +1888,9 @@ export function createTerrainSystem({
 
   function syncChunkBaseSurfaceVisibility(chunkKeys = null) {
     const keys = chunkKeys ? Array.from(chunkKeys) : Array.from(terrainChunks.keys());
+    let currentVisibleChunkCount = 0;
+    let currentHiddenByReadyLeafCount = 0;
+    const now = performance.now();
     for (const chunkKey of keys) {
       const state = terrainChunks.get(chunkKey);
       const chunkGroup = state?.group;
@@ -1830,7 +1900,26 @@ export function createTerrainSystem({
       const waterMesh = chunkGroup.children?.[1] || null;
       if (terrainMesh && terrainMesh.visible !== showBaseTerrain) terrainMesh.visible = showBaseTerrain;
       if (waterMesh && waterMesh.visible !== false) waterMesh.visible = false;
+      if (terrainMesh?.visible) currentVisibleChunkCount += 1;
+      if (terrainMesh && !terrainMesh.visible && !showBaseTerrain) currentHiddenByReadyLeafCount += 1;
+      trackChunkBaseVisibility(chunkKey, terrainMesh?.visible === true, showBaseTerrain === false, now);
     }
+
+    if (!chunkKeys) {
+      terrainPerfState.chunkBaseRole.currentVisibleChunkCount = currentVisibleChunkCount;
+      terrainPerfState.chunkBaseRole.currentHiddenByReadyLeafCount = currentHiddenByReadyLeafCount;
+      return;
+    }
+
+    currentVisibleChunkCount = 0;
+    currentHiddenByReadyLeafCount = 0;
+    for (const [chunkKey, state] of terrainChunks.entries()) {
+      const terrainMesh = state?.group?.children?.[0] || null;
+      if (terrainMesh?.visible) currentVisibleChunkCount += 1;
+      if (terrainMesh && chunkHasReadyLeafSurface(chunkKey) && !terrainMesh.visible) currentHiddenByReadyLeafCount += 1;
+    }
+    terrainPerfState.chunkBaseRole.currentVisibleChunkCount = currentVisibleChunkCount;
+    terrainPerfState.chunkBaseRole.currentHiddenByReadyLeafCount = currentHiddenByReadyLeafCount;
   }
 
   function generateChunkBase(cx, cz, lod = 0) {
@@ -2534,6 +2623,7 @@ export function createTerrainSystem({
       }
 
       terrainChunks.set(job.key, { group: oldGroup, pendingGroup: null, lod: job.lod, propsBuilt: false, state: 'building_base' });
+      terrainPerfState.chunkBaseRole.buildStarts += 1;
       builds++;
 
       generateChunkBase(job.cx, job.cz, job.lod).then(group => {
@@ -2556,6 +2646,7 @@ export function createTerrainSystem({
           }
           current.pendingGroup = null;
           current.state = 'base_done';
+          terrainPerfState.chunkBaseRole.buildCompletes += 1;
           enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
           syncChunkBaseSurfaceVisibility();
         } else {
@@ -2705,6 +2796,7 @@ export function createTerrainSystem({
           if (!cached) disposeChunkGroup(chunkState.group);
         }
         if (chunkState.pendingGroup) disposeChunkGroup(chunkState.pendingGroup);
+        clearChunkBaseVisibilityTracking(key);
         terrainChunks.delete(key);
       }
     }
@@ -2795,6 +2887,7 @@ export function createTerrainSystem({
       leafResponsiveness: lastTerrainSelection.leafResponsiveness ?? null,
       leafBuildBreakdown: getLeafBuildBreakdownSummary(),
       chunkStates: getChunkStateCounts(),
+      chunkBaseRole: getChunkBaseRoleSummary(),
       warmChunkCache: {
         size: warmChunkCache.size,
         maxSize: WARM_CHUNK_CACHE_MAX,

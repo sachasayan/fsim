@@ -104,6 +104,18 @@ export const TERRAIN_PERF_SIGNALS = [
     threshold: { abs: 750, pct: 10 }
   },
   {
+    label: 'terrain.chunkBaseVisibleChunks',
+    source: 'metric',
+    key: 'terrain.chunkBaseVisibleChunks',
+    threshold: { abs: 1, pct: 20 }
+  },
+  {
+    label: 'terrain.chunkBaseVisibleDwellP95Ms',
+    source: 'metric',
+    key: 'terrain.chunkBaseVisibleDwellP95Ms',
+    threshold: { abs: 250, pct: 10 }
+  },
+  {
     label: 'leafBuildBreakdown.totalAvgMs',
     source: 'profiling',
     key: ['leafBuildBreakdown', 'totalAvgMs'],
