@@ -1932,7 +1932,7 @@ export function createTerrainSystem({
   }
 
   function chunkNeedsVisibleBaseTerrain(chunkKey) {
-    return bootstrapMode || currentBlockingChunkKeys.has(chunkKey);
+    return bootstrapMode && currentBlockingChunkKeys.has(chunkKey);
   }
 
   function syncChunkBaseSurfaceVisibility(chunkKeys = null) {
