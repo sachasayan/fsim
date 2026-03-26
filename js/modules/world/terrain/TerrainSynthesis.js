@@ -1,3 +1,4 @@
+import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
 import { SEA_LEVEL } from './TerrainPalette.js';
 
 function clamp01(value) {
@@ -1216,7 +1217,7 @@ function getOverlayColor(overlayKind, value, heightValue, showContours) {
 
 export function createTerrainSynthesizer({
     Noise,
-    worldSize = 50000,
+    worldSize = DEFAULT_WORLD_SIZE,
     config = {}
 } = {}) {
     if (!Noise) {
@@ -1357,6 +1358,7 @@ export function createTerrainSynthesizer({
 
     function getMetadata() {
         return {
+            worldSize,
             terrainModel: {
                 version: 2,
                 kind: 'offline-synth-v2',

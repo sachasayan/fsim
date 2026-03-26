@@ -2,17 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Noise } from '../js/modules/noise.js';
+import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import {
     TERRAIN_PREVIEW_OVERLAYS,
     createTerrainSynthesizer,
     normalizeTerrainGeneratorConfig
 } from '../js/modules/world/terrain/TerrainSynthesis.js';
 
+const HYDROLOGY_TOPOLOGY_TEST_WORLD_SIZE = 50000;
+
 test('terrain synthesizer is deterministic for a fixed seed', () => {
     Noise.init(12345);
-    const synthA = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const synthA = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'cinematic' } });
     Noise.init(12345);
-    const synthB = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const synthB = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'cinematic' } });
 
     const samples = [
         [0, 0],
@@ -29,7 +32,7 @@ test('terrain synthesizer is deterministic for a fixed seed', () => {
 
 test('terrain synthesizer preserves the runway flattening corridor', () => {
     Noise.init(12345);
-    const synth = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345 } });
+    const synth = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345 } });
 
     assert.equal(synth.sampleHeight(0, 0), 0);
     assert.equal(synth.sampleHeight(100, 1200), 0);
@@ -41,9 +44,10 @@ test('terrain synthesizer preserves the runway flattening corridor', () => {
 
 test('terrain synthesizer emits v2 hydrology metadata with summary coverage', () => {
     Noise.init(12345);
-    const synth = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const synth = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'cinematic' } });
     const meta = synth.getMetadata();
 
+    assert.equal(meta.worldSize, DEFAULT_WORLD_SIZE);
     assert.equal(meta.terrainModel.kind, 'offline-synth-v2');
     assert.equal(meta.terrainModel.version, 2);
     assert.ok(meta.hydrology.riverCount > 0, 'expected at least one river candidate');
@@ -56,7 +60,11 @@ test('terrain synthesizer emits v2 hydrology metadata with summary coverage', ()
 
 test('terrain synthesizer exports cleaned river paths with merge-aware continuity', () => {
     Noise.init(12345);
-    const synth = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const synth = createTerrainSynthesizer({
+        Noise,
+        worldSize: HYDROLOGY_TOPOLOGY_TEST_WORLD_SIZE,
+        config: { seed: 12345, preset: 'cinematic' }
+    });
     const { rivers } = synth.getMetadata().hydrology;
 
     assert.ok(rivers.some(river => river.outlet === 'merge'));
@@ -72,13 +80,21 @@ test('terrain synthesizer exports cleaned river paths with merge-aware continuit
 
 test('terrain synthesizer records lake, coast, edge, and merge river outlets deterministically', () => {
     Noise.init(12345);
-    const cinematic = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const cinematic = createTerrainSynthesizer({
+        Noise,
+        worldSize: HYDROLOGY_TOPOLOGY_TEST_WORLD_SIZE,
+        config: { seed: 12345, preset: 'cinematic' }
+    });
     const cinematicOutlets = new Set(cinematic.getMetadata().hydrology.rivers.map(river => river.outlet));
     assert.ok(cinematicOutlets.has('lake'));
     assert.ok(cinematicOutlets.has('merge'));
 
     Noise.init(12345);
-    const coastal = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'coastal' } });
+    const coastal = createTerrainSynthesizer({
+        Noise,
+        worldSize: HYDROLOGY_TOPOLOGY_TEST_WORLD_SIZE,
+        config: { seed: 12345, preset: 'coastal' }
+    });
     const coastalOutlets = new Set(coastal.getMetadata().hydrology.rivers.map(river => river.outlet));
     assert.ok(coastalOutlets.has('coast'));
     assert.ok(coastalOutlets.has('edge'));
@@ -120,9 +136,9 @@ test('terrain synthesizer clamps new config fields', () => {
 
 test('cinematic preset produces more relief than balanced', () => {
     Noise.init(12345);
-    const balanced = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'balanced' } });
+    const balanced = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'balanced' } });
     Noise.init(12345);
-    const cinematic = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const cinematic = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'cinematic' } });
 
     const samplePoints = [
         [-16000, -9000],
@@ -139,7 +155,7 @@ test('canyon settings deepen terrain more than broad basins at the same point', 
     Noise.init(12345);
     const canyon = createTerrainSynthesizer({
         Noise,
-        worldSize: 50000,
+        worldSize: DEFAULT_WORLD_SIZE,
         config: {
             preset: 'cinematic',
             landforms: {
@@ -153,7 +169,7 @@ test('canyon settings deepen terrain more than broad basins at the same point', 
     Noise.init(12345);
     const basin = createTerrainSynthesizer({
         Noise,
-        worldSize: 50000,
+        worldSize: DEFAULT_WORLD_SIZE,
         config: {
             preset: 'cinematic',
             landforms: {
@@ -172,7 +188,7 @@ test('canyon settings deepen terrain more than broad basins at the same point', 
 
 test('new preview overlays render deterministically and report coverage metrics', () => {
     Noise.init(12345);
-    const synth = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const synth = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'cinematic' } });
 
     for (const overlayKind of TERRAIN_PREVIEW_OVERLAYS) {
         const previewA = synth.buildViewportPreview({
@@ -204,8 +220,8 @@ test('new preview overlays render deterministically and report coverage metrics'
 
 test('terrain synthesizer returns fallback heights outside the authored world bounds', () => {
     Noise.init(12345);
-    const synth = createTerrainSynthesizer({ Noise, worldSize: 50000, config: { seed: 12345, preset: 'cinematic' } });
+    const synth = createTerrainSynthesizer({ Noise, worldSize: DEFAULT_WORLD_SIZE, config: { seed: 12345, preset: 'cinematic' } });
 
-    assert.equal(synth.sampleHeight(30000, 0), -100);
-    assert.equal(synth.sampleHeight(0, -30000), -100);
+    assert.equal(synth.sampleHeight(DEFAULT_WORLD_SIZE * 0.5 + 1, 0), -100);
+    assert.equal(synth.sampleHeight(0, -(DEFAULT_WORLD_SIZE * 0.5 + 1)), -100);
 });

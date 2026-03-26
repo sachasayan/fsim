@@ -1,5 +1,6 @@
 import { createTerrainSynthesizer } from '../../modules/world/terrain/TerrainSynthesis.js';
 import { applyTerrainEdits } from '../../modules/world/terrain/TerrainEdits.js';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { MAP_COLORS } from '../../modules/ui/MapColors.js';
 import { Noise } from '../../modules/noise.js';
 
@@ -12,7 +13,7 @@ function getSynthesizer(config) {
     synthCacheKey = nextKey;
     synthCache = createTerrainSynthesizer({
         Noise,
-        worldSize: 50000,
+        worldSize: DEFAULT_WORLD_SIZE,
         config
     });
     return synthCache;

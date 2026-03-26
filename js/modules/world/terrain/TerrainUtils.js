@@ -1,6 +1,7 @@
 import { applyTerrainEdits } from './TerrainEdits.js';
 import { resolveTerrainRingLod } from '../LodSystem.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from './TerrainSynthesis.js';
+import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
 import { Noise } from '../../noise.js';
 
 const NODE_BRANCH = 0;
@@ -548,7 +549,7 @@ function getRuntimeWorldMetadata() {
 function getTerrainModelSampler() {
     const metadata = getRuntimeWorldMetadata();
     if (!metadata?.terrainGenerator) return null;
-    const worldSize = _staticSampler?.worldSize || 50000;
+    const worldSize = _staticSampler?.worldSize || metadata?.worldSize || DEFAULT_WORLD_SIZE;
     const config = normalizeTerrainGeneratorConfig(metadata.terrainGenerator);
     const key = JSON.stringify({
         worldSize,

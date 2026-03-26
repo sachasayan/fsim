@@ -1,4 +1,5 @@
 import { createTerrainSynthesizer } from '../../modules/world/terrain/TerrainSynthesis.js';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { Noise } from '../../modules/noise.js';
 
 let synthCache = null;
@@ -10,7 +11,7 @@ function getSynthesizer(config) {
     synthCacheKey = nextKey;
     synthCache = createTerrainSynthesizer({
         Noise,
-        worldSize: 50000,
+        worldSize: DEFAULT_WORLD_SIZE,
         config
     });
     return synthCache;

@@ -1,7 +1,7 @@
 /**
  * bake-map.mjs — Recursive Quadtree World Baker
  * 
- * Generates an adaptive quadtree from procedural noise for a 50km x 50km area.
+ * Generates an adaptive quadtree from procedural noise for the authored world area.
  * Areas with high complexity subdivide to capture detail, while flat areas are simplified.
  */
 
@@ -16,6 +16,7 @@ const MAP_JSON_PATH = path.join(ROOT, 'tools', 'map.json');
 
 import { readFileSync as readFileSyncSync } from 'node:fs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
+import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from '../js/modules/world/terrain/TerrainSynthesis.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
@@ -90,7 +91,7 @@ Noise.init(12345);
 const terrainSynthConfig = normalizeTerrainGeneratorConfig(mapData?.terrainGenerator);
 const terrainSynthesizer = createTerrainSynthesizer({
     Noise,
-    worldSize: 50000,
+    worldSize: DEFAULT_WORLD_SIZE,
     config: terrainSynthConfig
 });
 
@@ -107,8 +108,8 @@ function getTerrainHeight(x, z) {
 // ---------------------------------------------------------------------------
 // Quadtree Configuration
 // ---------------------------------------------------------------------------
-const WORLD_SIZE = 50000;      // 50km
-const MAX_DEPTH = 6;           // Subdivides 50km down to ~780m nodes
+const WORLD_SIZE = DEFAULT_WORLD_SIZE; // 100km
+const MAX_DEPTH = 7;           // Keeps leaf nodes near the prior ~780m resolution
 const LEAF_RES = 64;           // 65x65 grid
 const VARIANCE_THRESHOLD = 8.0; // Subdivide if peak-to-valley > 8m
 const MIN_ALTITUDE = -200;
@@ -224,12 +225,14 @@ function serializeQuadtree(root) {
     const metadataMap = mapData
         ? {
             ...mapData,
+            worldSize: WORLD_SIZE,
             ...terrainSynthesizer.getMetadata(),
             terrainEdits: clearTerrainEdits ? [] : (mapData.terrainEdits || []),
             districts: mapData.districts,
             districtRecords: buildDistrictRecords(mapData)
         }
         : {
+            worldSize: WORLD_SIZE,
             ...terrainSynthesizer.getMetadata(),
             terrainEdits: [],
             districts: [],

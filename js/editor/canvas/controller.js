@@ -7,6 +7,7 @@ import { TOOL_SHORTCUTS } from '../../modules/editor/constants.js';
 import { isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
 import { debugLog } from '../../modules/core/logging.js';
 import { Noise } from '../../modules/noise.js';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { nudgeEntityCommand, snapWorldPoint } from '../core/commands.js';
 import { getEntityById, getEntityBounds } from '../core/document.js';
 import { createCoordinateHelpers, findObjectsAtWorldPos, renderEditorScene } from './render.js';
@@ -51,7 +52,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         synthCacheKey = nextKey;
         synthCache = createTerrainSynthesizer({
             Noise,
-            worldSize: 50000,
+            worldSize: DEFAULT_WORLD_SIZE,
             config: draftConfig
         });
         return synthCache;
