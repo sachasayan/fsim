@@ -1,7 +1,7 @@
 import { normalizeMapData, normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { objectLabel } from '../../modules/editor/objectTypes.js';
 
-const ENTITY_GROUPS = ['cities', 'districts', 'roads', 'terrain', 'vantage'];
+const ENTITY_GROUPS = ['districts', 'roads', 'terrain', 'vantage'];
 
 function clone(value) {
     return structuredClone(value);
@@ -11,7 +11,6 @@ function createEmptyIndex() {
     return {
         entitiesById: new Map(),
         groupIds: {
-            cities: [],
             districts: [],
             roads: [],
             terrain: [],
@@ -23,12 +22,9 @@ function createEmptyIndex() {
 }
 
 function computeStableKey(type, entity, aux = '') {
-    if (type === 'city') {
-        return `city:${entity.id || aux}`;
-    }
     if (type === 'district') {
         const center = Array.isArray(entity.center) ? entity.center.join(',') : 'na';
-        return `district:${entity.city_id || 'none'}:${entity.district_type || entity.type || 'district'}:${center}:${aux}`;
+        return `district:${entity.district_type || entity.type || 'district'}:${center}:${aux}`;
     }
     if (type === 'road') {
         const points = Array.isArray(entity.points)
@@ -81,7 +77,6 @@ export function createEditorDocument(worldData, vantageData, prevDocument = null
         normalizeRoad(road);
     }
 
-    indexGroup(document, prevDocument, document.worldData.cities || [], 'city', 'cities', (entity, index) => entity.id || String(index));
     indexGroup(document, prevDocument, document.worldData.districts || [], 'district', 'districts', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.roads || [], 'road', 'roads', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.terrainEdits || [], 'terrain', 'terrain', (_entity, index) => String(index));
@@ -112,7 +107,6 @@ export function getEntityById(document, entityId) {
 }
 
 export function findEntityGroup(document, entityId) {
-    if (document.index.groupIds.cities.includes(entityId)) return 'cities';
     if (document.index.groupIds.districts.includes(entityId)) return 'districts';
     if (document.index.groupIds.roads.includes(entityId)) return 'roads';
     if (document.index.groupIds.terrain.includes(entityId)) return 'terrain';
@@ -174,14 +168,6 @@ export function getEntityBounds(document, entityId) {
     const group = findEntityGroup(document, entityId);
     if (!entity || !group) return null;
 
-    if (group === 'cities') {
-        return {
-            minX: entity.center[0] - 500,
-            maxX: entity.center[0] + 500,
-            minZ: entity.center[1] - 500,
-            maxZ: entity.center[1] + 500
-        };
-    }
     if (group === 'districts') {
         const points = Array.isArray(entity.points) && entity.points.length > 0 ? entity.points : [entity.center];
         let minX = Infinity;

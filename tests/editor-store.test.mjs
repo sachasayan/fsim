@@ -11,8 +11,7 @@ import {
 function createFixture() {
     return createEditorDocument(
         {
-            cities: [{ id: 'alpha', center: [0, 0] }],
-            districts: [{ district_type: 'commercial', center: [0, 0], radius: 500, points: [[-500, -500], [500, -500], [500, 500], [-500, 500]], city_id: 'alpha' }],
+            districts: [{ district_type: 'commercial', center: [0, 0], radius: 500, points: [[-500, -500], [500, -500], [500, 500], [-500, 500]] }],
             roads: [{ kind: 'road', surface: 'asphalt', width: 24, feather: 8, points: [[0, 0], [400, 0]] }],
             terrainEdits: [{ kind: 'raise', x: 100, z: 100, radius: 150, delta: 40 }]
         },
@@ -51,8 +50,23 @@ test('serializeEditorDocument strips editor metadata from payloads', () => {
     const document = createFixture();
     const { mapPayload, vantagePayload } = serializeEditorDocument(document);
 
-    assert.equal(Object.hasOwn(mapPayload.cities[0], '__editorId'), false);
+    assert.equal(Object.hasOwn(mapPayload.districts[0], '__editorId'), false);
     assert.equal(Object.hasOwn(vantagePayload.gateA, '__editorId'), false);
+});
+
+test('legacy city-authored data is flattened and city metadata is removed', () => {
+    const document = createEditorDocument(
+        {
+            cities: [{ id: 'alpha', center: [0, 0], districts: [{ district_type: 'commercial', center: [0, 0], radius: 500, points: [[-500, -500], [500, -500], [500, 500], [-500, 500]] }] }],
+            districts: []
+        },
+        {}
+    );
+
+    const { mapPayload } = serializeEditorDocument(document);
+    assert.equal(mapPayload.cities, undefined);
+    assert.equal(mapPayload.districts.length, 1);
+    assert.equal(mapPayload.districts[0].city_id, undefined);
 });
 
 test('snapWorldPoint honors snapping toggle', () => {

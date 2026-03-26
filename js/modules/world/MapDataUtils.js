@@ -66,11 +66,8 @@ export function normalizeDistrict(rawDistrict, cityId = null) {
     if (district.district_type === 'windmill_farm') {
         normalizeWindmillFarmProps(district);
     }
+    delete district.city_id;
     return district;
-}
-
-export function getDistrictsForCity(data, cityId) {
-    return (data.districts || []).filter(district => district.city_id === cityId);
 }
 
 export function normalizeTerrainEdit(rawEdit) {
@@ -196,6 +193,7 @@ export function normalizeMapData(data) {
         .map(road => normalizeRoad(road))
         .filter(road => Array.isArray(road.points) && road.points.length >= 2);
     data.terrainEdits = data.terrainEdits.map(edit => normalizeTerrainEdit(edit));
+    delete data.cities;
     return data;
 }
 

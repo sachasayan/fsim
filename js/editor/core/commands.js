@@ -1,5 +1,5 @@
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
-import { isCity, isDistrict, isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { isDistrict, isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
 import {
     createTerrainStroke,
     refreshTerrainEditGeometry
@@ -56,18 +56,6 @@ function translateDistrict(district, dx, dz) {
     }
 }
 
-function getDistrictsForCity(worldData, cityId) {
-    return (worldData.districts || []).filter(district => district.city_id === cityId);
-}
-
-function translateCity(worldData, city, dx, dz) {
-    city.center[0] += dx;
-    city.center[1] += dz;
-    for (const district of getDistrictsForCity(worldData, city.id)) {
-        translateDistrict(district, dx, dz);
-    }
-}
-
 function translateRoad(road, dx, dz) {
     if (Array.isArray(road.points)) {
         for (const point of road.points) {
@@ -92,11 +80,6 @@ function removeEntityById(document, entityId) {
     const group = findEntityGroup(document, entityId);
     const entity = getEntityById(document, entityId);
     if (!group || !entity) return false;
-    if (group === 'cities') {
-        document.worldData.cities = document.worldData.cities.filter(item => item.__editorId !== entityId);
-        document.worldData.districts = document.worldData.districts.filter(item => item.city_id !== entity.id);
-        return true;
-    }
     if (group === 'districts') {
         document.worldData.districts = document.worldData.districts.filter(item => item.__editorId !== entityId);
         return true;
@@ -123,27 +106,6 @@ export function applyEditorCommand(document, command, context = {}) {
     let selectionId = command.selectionId ?? null;
 
     switch (command.type) {
-        case 'create-city': {
-            const center = [command.center.x, command.center.z];
-            const city = { id: command.cityId, center };
-            const district = {
-                district_type: 'commercial',
-                center: [...center],
-                radius: 500,
-                points: [
-                    [center[0] - 500, center[1] - 500],
-                    [center[0] + 500, center[1] - 500],
-                    [center[0] + 500, center[1] + 500],
-                    [center[0] - 500, center[1] + 500]
-                ],
-                city_id: city.id
-            };
-            nextDocument.worldData.cities.push(city);
-            nextDocument.worldData.districts.push(district);
-            const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
-            const created = finalized.worldData.cities[finalized.worldData.cities.length - 1];
-            return { document: finalized, selectionId: created?.__editorId || null };
-        }
         case 'create-district': {
             const district = {
                 district_type: command.districtType || 'commercial',
@@ -156,7 +118,6 @@ export function applyEditorCommand(document, command, context = {}) {
                     [command.center.x - 500, command.center.z + 500]
                 ]
             };
-            if (command.cityId) district.city_id = command.cityId;
             nextDocument.worldData.districts.push(district);
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
             const created = finalized.worldData.districts[finalized.worldData.districts.length - 1];
@@ -222,10 +183,7 @@ export function applyEditorCommand(document, command, context = {}) {
                 copy.z += 200;
                 refreshTerrainEditGeometry(copy);
             }
-            if (isCity(copy)) {
-                copy.id = `${copy.id || 'city'}_copy`;
-                nextDocument.worldData.cities.push(copy);
-            } else if (isDistrict(copy)) {
+            if (isDistrict(copy)) {
                 nextDocument.worldData.districts.push(copy);
             } else if (isRoad(copy)) {
                 normalizeRoad(copy);
@@ -234,7 +192,7 @@ export function applyEditorCommand(document, command, context = {}) {
                 nextDocument.worldData.terrainEdits.push(copy);
             }
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
-            const groupId = isCity(copy) ? 'cities' : isDistrict(copy) ? 'districts' : isRoad(copy) ? 'roads' : 'terrain';
+            const groupId = isDistrict(copy) ? 'districts' : isRoad(copy) ? 'roads' : 'terrain';
             const createdId = finalized.index.groupIds[groupId][finalized.index.groupIds[groupId].length - 1] || null;
             return { document: finalized, selectionId: createdId };
         }
@@ -246,7 +204,6 @@ export function applyEditorCommand(document, command, context = {}) {
                 const dz = command.nextCenter[1] - entity.center[1];
                 if (isDistrict(entity)) translateDistrict(entity, dx, dz);
                 else if (isRoad(entity)) translateRoad(entity, dx, dz);
-                else if (isCity(entity)) translateCity(nextDocument.worldData, entity, dx, dz);
                 else {
                     entity.center[0] = command.nextCenter[0];
                     entity.center[1] = command.nextCenter[1];

@@ -22,7 +22,7 @@ import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
 let mapData = null;
 try {
     mapData = normalizeMapData(JSON.parse(readFileSyncSync(MAP_JSON_PATH, 'utf8')));
-    console.log(`📖 Loaded ${MAP_JSON_PATH} (${mapData.cities.length} cities)`);
+    console.log(`📖 Loaded ${MAP_JSON_PATH} (${mapData.districts.length} districts)`);
 } catch (e) {
     console.error(`⚠️ Could not load ${MAP_JSON_PATH}, using defaults.`);
 }

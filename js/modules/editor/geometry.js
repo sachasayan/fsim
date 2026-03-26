@@ -18,10 +18,6 @@ export function districtContainsPoint(district, x, z) {
     return false;
 }
 
-export function cityContainsPoint(worldData, city, x, z, getDistrictsForCity) {
-    return getDistrictsForCity(worldData, city.id).some(district => districtContainsPoint(district, x, z));
-}
-
 export function getDistanceToSegment(x, z, ax, az, bx, bz) {
     const abx = bx - ax;
     const abz = bz - az;

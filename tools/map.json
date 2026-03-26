@@ -1,27 +1,7 @@
 {
-    "_comment": "Hand-authored world map. Edit this file to place cities. Run 'npm run build:world' to compile to binary chunks.",
+    "_comment": "Hand-authored world map. Edit this file to place districts, roads, and terrain edits. Run 'npm run build:world' to compile to binary chunks.",
     "worldSeed": 12345,
     "chunkSize": 4000,
-    "cities": [
-        {
-            "id": "city_a",
-            "_comment": "A mid-sized city to the northeast of the airport",
-            "center": [
-                -8100,
-                200
-            ],
-            "districts": []
-        },
-        {
-            "id": "city_b",
-            "_comment": "A smaller industrial/waterfront city to the southwest",
-            "center": [
-                -11100,
-                -6200
-            ],
-            "districts": []
-        }
-    ],
     "districts": [
         {
             "center": [
@@ -47,7 +27,6 @@
                     2300
                 ]
             ],
-            "city_id": "city_a",
             "district_type": "financial_core"
         },
         {
@@ -74,8 +53,7 @@
                     -3469,
                     1122
                 ]
-            ],
-            "city_id": "city_b"
+            ]
         },
         {
             "district_type": "industrial",
@@ -101,8 +79,7 @@
                     -2466,
                     -235
                 ]
-            ],
-            "city_id": "city_b"
+            ]
         },
         {
             "district_type": "industrial",
@@ -180,8 +157,7 @@
                     6256,
                     721
                 ]
-            ],
-            "city_id": "city_b"
+            ]
         },
         {
             "district_type": "windmill_farm",

@@ -46,14 +46,12 @@ export function isObjectLocked(layerState, obj, getLayerGroupId, getLayerKey) {
 }
 
 export function getLayerGroupsData(worldData, vantageEntries, objectLabel) {
-    const cities = (worldData?.cities || []).map((city, index) => ({ obj: city, label: objectLabel(city, index, 'City') }));
     const districts = (worldData?.districts || []).map((district, index) => ({ obj: district, label: objectLabel(district, index, 'District') }));
     const roads = (worldData?.roads || []).map((road, index) => ({ obj: road, label: objectLabel(road, index, 'Road') }));
     const terrain = (worldData?.terrainEdits || []).map((edit, index) => ({ obj: edit, label: objectLabel(edit, index, 'Terrain Edit') }));
     const vantage = vantageEntries.map((entry, index) => ({ obj: entry.obj, label: objectLabel(entry.obj, index, entry.id), id: entry.id }));
 
     return [
-        { id: 'cities', label: 'Cities', items: cities },
         { id: 'districts', label: 'Districts', items: districts },
         { id: 'roads', label: 'Roads', items: roads },
         { id: 'terrain', label: 'Terrain Edits', items: terrain },

@@ -1,7 +1,6 @@
 export const TOOL_SHORTCUTS = {
     v: 'select',
     h: 'select',
-    c: 'add-city',
     d: 'add-district',
     w: 'add-road',
     e: 'edit-poly',
@@ -28,8 +27,6 @@ export const CONTROL_GROUP_BY_ID = new Map(
 );
 
 export const COLORS = {
-    city: 'rgba(76, 201, 240, 0.4)',
-    citySelected: 'rgba(76, 201, 240, 0.8)',
     runway: 'rgba(255, 255, 255, 0.5)',
     district: 'rgba(255, 255, 100, 0.2)',
     districtSelected: 'rgba(255, 255, 100, 0.6)',

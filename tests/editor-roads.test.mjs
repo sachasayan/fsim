@@ -41,7 +41,7 @@ test('roads are exposed as a dedicated layer group', () => {
         points: [[0, 0], [300, 0]]
     });
 
-    const groups = getLayerGroupsData({ cities: [], districts: [], roads: [road], terrainEdits: [] }, [], objectLabel);
+    const groups = getLayerGroupsData({ districts: [], roads: [road], terrainEdits: [] }, [], objectLabel);
     const roadsGroup = groups.find(group => group.id === 'roads');
 
     assert.ok(roadsGroup);

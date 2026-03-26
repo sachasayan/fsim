@@ -421,26 +421,11 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 return;
             }
 
-            if (state.tools.currentTool === 'add-city') {
-                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
-                store.runCommand({
-                    type: 'create-city',
-                    center: pointSnapped,
-                    cityId: `city_${store.getState().document.worldData.cities.length + 1}`
-                });
-                queueToast('City created');
-                store.dispatch({ type: 'set-tool', tool: 'select' });
-                return;
-            }
-
             if (state.tools.currentTool === 'add-district') {
                 const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
-                const selectedEntity = getEntityById(state.document, state.selection.selectedId);
-                const cityId = selectedEntity?.id && selectedEntity.center && !selectedEntity.points ? selectedEntity.id : selectedEntity?.city_id || null;
                 store.runCommand({
                     type: 'create-district',
-                    center: pointSnapped,
-                    cityId
+                    center: pointSnapped
                 });
                 store.dispatch({ type: 'set-tool', tool: 'edit-poly' });
                 return;

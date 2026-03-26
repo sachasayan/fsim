@@ -2,15 +2,6 @@
     "_comment": "Fixture data for editor Playwright tests.",
     "worldSeed": 42,
     "chunkSize": 2048,
-    "cities": [
-        {
-            "id": "fixture_city",
-            "center": [
-                1200,
-                900
-            ]
-        }
-    ],
     "districts": [
         {
             "center": [
@@ -36,7 +27,6 @@
                     1400
                 ]
             ],
-            "city_id": "fixture_city",
             "district_type": "commercial"
         }
     ],

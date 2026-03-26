@@ -7,7 +7,6 @@ import { createEditorStore } from '../js/editor/core/store.js';
 function createStore() {
     return createEditorStore(createEditorDocument(
         {
-            cities: [],
             districts: [],
             roads: [{ kind: 'road', surface: 'asphalt', width: 24, feather: 8, points: [[0, 0], [400, 0]] }],
             terrainEdits: []

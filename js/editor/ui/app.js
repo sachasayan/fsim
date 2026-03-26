@@ -1,7 +1,7 @@
 import { React } from '../../vendor/react-loader.js';
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
 import { TERRAIN_GENERATOR_PRESETS, TERRAIN_PREVIEW_OVERLAYS, applyTerrainGeneratorPreset } from '../../modules/world/terrain/TerrainSynthesis.js';
-import { isCity, isDistrict, isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { isDistrict, isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
 import { getEntityById, getEntityLabel, listLayerGroups } from '../core/document.js';
 
 const h = React.createElement;
@@ -109,7 +109,7 @@ function InspectorPanel({ store, controller }) {
     }
 
     const groupLocked = state.layers.groupLocked[
-        isCity(selected) ? 'cities' : isDistrict(selected) ? 'districts' : isRoad(selected) ? 'roads' : isTerrainEdit(selected) ? 'terrain' : 'vantage'
+        isDistrict(selected) ? 'districts' : isRoad(selected) ? 'roads' : isTerrainEdit(selected) ? 'terrain' : 'vantage'
     ] === true;
     const itemLocked = state.layers.itemLocked[state.selection.selectedId] === true;
     const locked = groupLocked || itemLocked;
@@ -139,7 +139,7 @@ function InspectorPanel({ store, controller }) {
                 className: 'status-badge',
                 key: 'badge',
                 'data-testid': 'inspector-type-badge'
-            }, isCity(selected) ? 'CITY' : isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE')
+            }, isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE')
         ]),
         h('div', { className: 'property-group', key: 'group' }, [
             h(FieldRow, {
@@ -289,7 +289,7 @@ function InspectorPanel({ store, controller }) {
                         })
                     ])
             ]) : null,
-            !isCity(selected) && !isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) ? h('div', { key: 'vantage' }, [
+            !isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) ? h('div', { key: 'vantage' }, [
                 h(RangeNumberField, {
                     label: 'Altitude (m)',
                     value: selected.y || 0,
@@ -670,7 +670,7 @@ function HelpPanel({ store }) {
             onClick: () => store.dispatch({ type: 'toggle-help', value: !showHelp })
         }, showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'),
         showHelp ? h('div', { className: 'hint-card help-card', key: 'content' }, [
-            h('p', { key: 'tools' }, 'Tools: V Select, C City, D District, W Road, E Poly Edit, R Raise, L Lower, F Flatten.'),
+            h('p', { key: 'tools' }, 'Tools: V Select, D District, W Road, E Poly Edit, R Raise, L Lower, F Flatten.'),
             h('p', { key: 'history' }, 'History: Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y redo.'),
             h('p', { key: 'nav' }, 'Navigation: middle mouse pan, wheel zoom, F frame selection, 0 reset view, G toggle grid snap.'),
             h('p', { key: 'edit' }, 'Editing: arrows nudge, Shift arrows coarse nudge, Alt arrows fine nudge, Delete removes, Cmd/Ctrl+D duplicates.')
@@ -690,7 +690,6 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
 
     const toolDefs = [
         ['select', 'Select', 'V', 'M5 3v18l5-6 4 6 5-2-4-6 6-4z'],
-        ['add-city', 'City', 'C', 'M4 20V9l4 2V7l4 2V5l4 2v13z'],
         ['add-district', 'District', 'D', 'M4 6h16v12H4z'],
         ['add-road', 'Road', 'W', 'M8 3l2 7-2 11M16 3l-2 7 2 11'],
         ['edit-poly', 'Edit', 'E', 'M5 6l7-3 7 4v9l-7 5-7-4z'],

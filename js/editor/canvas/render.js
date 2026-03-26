@@ -1,6 +1,6 @@
 import { COLORS } from '../../modules/editor/constants.js';
 import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint } from '../../modules/editor/geometry.js';
-import { isRoad, isDistrict, isCity, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { isRoad, isDistrict, isTerrainEdit } from '../../modules/editor/objectTypes.js';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
 
 function isGroupVisible(state, groupId) {
@@ -55,7 +55,6 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
     drawRunway(ctx, worldToScreen, zoom);
     drawDistricts(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawRoads(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawCities(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrain(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawVantagePoints(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawOverlays(ctx, state, worldToScreen, selection, tools);
@@ -208,37 +207,6 @@ function drawRoads(ctx, state, document, worldToScreen, viewportRect, worldBound
     }
 }
 
-function drawCities(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
-    if (!isGroupVisible(state, 'cities')) return;
-    for (const entityId of getGroupEntityIds(document, 'cities')) {
-        if (!isObjectVisible(state, entityId, 'cities')) continue;
-        const city = getEntityById(document, entityId);
-        if (!city) continue;
-        if (city.center[0] < worldBounds.minX - 1200 || city.center[0] > worldBounds.maxX + 1200 || city.center[1] < worldBounds.minZ - 1200 || city.center[1] > worldBounds.maxZ + 1200) continue;
-        const pos = worldToScreen(city.center[0], city.center[1]);
-        if (!isScreenPointVisible(viewportRect, pos, 40)) continue;
-        const isSelected = state.selection.selectedId === entityId;
-        const isHovered = state.selection.hoverId === entityId && !isSelected;
-        const markerSize = isSelected ? 10 : isHovered ? 8 : 6;
-        ctx.strokeStyle = isSelected ? COLORS.citySelected : isHovered ? '#c9f2ff' : COLORS.city;
-        ctx.lineWidth = isSelected ? 2.4 : 2;
-        ctx.beginPath();
-        ctx.moveTo(pos.x - markerSize, pos.y);
-        ctx.lineTo(pos.x + markerSize, pos.y);
-        ctx.moveTo(pos.x, pos.y - markerSize);
-        ctx.lineTo(pos.x, pos.y + markerSize);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, isSelected ? 4 : 3, 0, Math.PI * 2);
-        ctx.fillStyle = isSelected ? COLORS.citySelected : isHovered ? '#c9f2ff' : COLORS.city;
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = '12px Outfit';
-        ctx.textAlign = 'center';
-        ctx.fillText(city.id, pos.x, pos.y - 18);
-    }
-}
-
 function drawTerrain(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'terrain')) return;
     for (const entityId of getGroupEntityIds(document, 'terrain')) {
@@ -361,7 +329,6 @@ export function findObjectsAtWorldPos(state, worldPos) {
     const checkOrder = [
         ['vantage', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < 500],
         ['terrain', entity => terrainEditContainsPoint(entity, worldPos.x, worldPos.z)],
-        ['cities', entity => Math.hypot(worldPos.x - entity.center[0], worldPos.z - entity.center[1]) < 250 / state.viewport.zoom],
         ['roads', entity => roadContainsPoint(entity, worldPos.x, worldPos.z, 6 / state.viewport.zoom)],
         ['districts', entity => districtContainsPoint(entity, worldPos.x, worldPos.z)]
     ];

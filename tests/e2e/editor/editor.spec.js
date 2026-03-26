@@ -12,20 +12,21 @@ test.describe('editor e2e', () => {
         const state = await getEditorState(page);
         expect(state.dirty).toBe(false);
         expect(state.currentTool).toBe('select');
-        expect(state.serialized.mapPayload.cities).toHaveLength(1);
+        expect(state.serialized.mapPayload.cities).toBeUndefined();
+        expect(state.serialized.mapPayload.districts).toHaveLength(1);
     });
 
     test('supports toolbar clicks, shortcuts, help toggle, snap toggle, and reset view', async ({ page }) => {
         await gotoEditor(page);
 
-        await page.getByTestId('tool-add-city').click();
-        await expect(page.getByTestId('tool-add-city')).toHaveClass(/active/);
+        await page.getByTestId('tool-add-district').click();
+        await expect(page.getByTestId('tool-add-district')).toHaveClass(/active/);
 
         await page.keyboard.press('w');
         await expect(page.getByTestId('tool-add-road')).toHaveClass(/active/);
 
         await page.keyboard.press('?');
-        await expect(page.getByText(/tools: v select, c city/i)).toBeVisible();
+        await expect(page.getByText(/tools: v select, d district/i)).toBeVisible();
 
         await expect(page.getByTestId('grid-snap-chip')).toHaveText('Grid snap on');
         await page.keyboard.press('g');
@@ -42,20 +43,20 @@ test.describe('editor e2e', () => {
         expect(afterReset.zoom).toBe(0.05);
     });
 
-    test('creates a city, edits it, and keeps history coherent', async ({ page }) => {
+    test('creates a district, edits it, and keeps history coherent', async ({ page }) => {
         await gotoEditor(page);
 
-        await page.getByTestId('tool-add-city').click();
+        await page.getByTestId('tool-add-district').click();
         await clickCanvas(page, 220, 180);
 
         await expect(page.getByTestId('dirty-state-chip')).toHaveText('Unsaved changes');
         await expect(page.getByTestId('inspector-panel')).toBeVisible();
-        await expect(page.getByTestId('inspector-type-badge')).toHaveText('CITY');
+        await expect(page.getByTestId('inspector-type-badge')).toHaveText('DISTRICT');
 
         const createdState = await getEditorState(page);
         expect(createdState.dirty).toBe(true);
         expect(createdState.selectedId).toBeTruthy();
-        expect(createdState.serialized.mapPayload.cities).toHaveLength(2);
+        expect(createdState.serialized.mapPayload.districts).toHaveLength(2);
 
         const createdId = createdState.selectedId;
         await expect(page.getByTestId(`layer-item-${createdId}`)).toBeVisible();
@@ -67,26 +68,25 @@ test.describe('editor e2e', () => {
         await expect(page.getByTestId('undo-count-chip')).toHaveText(/Undo 2/);
 
         let state = await getEditorState(page);
-        const createdCity = state.serialized.mapPayload.cities.find(city => city.id === 'city_2');
-        expect(createdCity.center[0]).toBe(1500);
+        expect(state.serialized.mapPayload.districts[1].center[0]).toBe(1500);
 
         await page.getByTestId('undo-button').click();
         state = await getEditorState(page);
         expect(state.undoCount).toBe(1);
-        expect(state.serialized.mapPayload.cities.find(city => city.id === 'city_2').center[0]).not.toBe(1500);
+        expect(state.serialized.mapPayload.districts[1].center[0]).not.toBe(1500);
 
         await page.getByTestId('redo-button').click();
         state = await getEditorState(page);
         expect(state.undoCount).toBe(2);
         expect(state.selectedId).toBe(createdId);
-        expect(state.serialized.mapPayload.cities.find(city => city.id === 'city_2').center[0]).toBe(1500);
+        expect(state.serialized.mapPayload.districts[1].center[0]).toBe(1500);
     });
 
     test('saves changes through isolated in-memory persistence', async ({ page }) => {
         await gotoEditor(page);
 
-        const firstCityId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.cities[0]);
-        await page.getByTestId(`layer-select-${firstCityId}`).click();
+        const firstDistrictId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.districts[0]);
+        await page.getByTestId(`layer-select-${firstDistrictId}`).click();
         await expect(page.getByTestId('inspector-panel')).toBeVisible();
 
         await page.getByTestId('field-coord-z').fill('1100');
@@ -101,7 +101,7 @@ test.describe('editor e2e', () => {
         const state = await getEditorState(page);
         expect(state.saveState).toBe('saved');
         expect(state.dirty).toBe(false);
-        expect(state.serialized.mapPayload.cities[0].center[1]).toBe(1100);
+        expect(state.serialized.mapPayload.districts[0].center[1]).toBe(1100);
     });
 
     test('clicking a selected terrain vertex edits it instead of starting a new terrain stroke', async ({ page }) => {
