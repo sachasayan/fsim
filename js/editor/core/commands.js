@@ -1,5 +1,6 @@
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
-import { isDistrict, isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { findTerrainRegionOverlap, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
 import {
     createTerrainStroke,
     refreshTerrainEditGeometry
@@ -88,6 +89,10 @@ function removeEntityById(document, entityId) {
         document.worldData.roads = document.worldData.roads.filter(item => item.__editorId !== entityId);
         return true;
     }
+    if (group === 'terrainRegions') {
+        document.worldData.terrainRegions = document.worldData.terrainRegions.filter(item => item.__editorId !== entityId);
+        return true;
+    }
     if (group === 'terrain') {
         document.worldData.terrainEdits = document.worldData.terrainEdits.filter(item => item.__editorId !== entityId);
         return true;
@@ -137,6 +142,23 @@ export function applyEditorCommand(document, command, context = {}) {
             nextDocument.worldData.roads.push(road);
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
             const created = finalized.worldData.roads[finalized.worldData.roads.length - 1];
+            return { document: finalized, selectionId: created?.__editorId || null };
+        }
+        case 'create-terrain-region': {
+            const region = normalizeTerrainRegion({
+                tileX: command.tileX,
+                tileZ: command.tileZ,
+                tileWidth: command.tileWidth,
+                tileHeight: command.tileHeight,
+                terrainGenerator: command.terrainGenerator
+            });
+            const overlap = findTerrainRegionOverlap(region, nextDocument.worldData.terrainRegions || []);
+            if (overlap) {
+                throw new Error('Selected tiles already belong to another terrain region');
+            }
+            nextDocument.worldData.terrainRegions.push(region);
+            const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
+            const created = finalized.worldData.terrainRegions[finalized.worldData.terrainRegions.length - 1];
             return { document: finalized, selectionId: created?.__editorId || null };
         }
         case 'create-terrain-stroke': {
@@ -199,6 +221,7 @@ export function applyEditorCommand(document, command, context = {}) {
         case 'move-entity': {
             const entity = getEntityById(nextDocument, command.entityId);
             if (!entity) return { document };
+            if (isTerrainRegion(entity)) return { document };
             if (entity.center) {
                 const dx = command.nextCenter[0] - entity.center[0];
                 const dz = command.nextCenter[1] - entity.center[1];
@@ -243,6 +266,10 @@ export function applyEditorCommand(document, command, context = {}) {
         case 'change-property': {
             const entity = getEntityById(nextDocument, command.entityId);
             if (!entity) return { document };
+            if (isTerrainRegion(entity) && command.key === 'terrainGenerator') {
+                entity.terrainGenerator = command.value;
+                return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
+            }
             entity[command.key] = command.value;
             if (command.key === 'kind' || command.key === 'surface' || command.key === 'width' || command.key === 'feather') {
                 normalizeRoad(entity);
@@ -267,6 +294,7 @@ export function applyEditorCommand(document, command, context = {}) {
 export function nudgeEntityCommand(document, entityId, delta, activeVertex = null) {
     const entity = getEntityById(document, entityId);
     if (!entity) return null;
+    if (isTerrainRegion(entity)) return null;
     if (activeVertex && entity.points?.[activeVertex.index]) {
         return {
             type: 'move-vertex',

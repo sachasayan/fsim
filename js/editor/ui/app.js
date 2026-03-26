@@ -1,7 +1,8 @@
 import { React } from '../../vendor/react-loader.js';
+import { isTerrainBrushTool } from '../../modules/editor/constants.js';
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
 import { TERRAIN_GENERATOR_PRESETS, TERRAIN_PREVIEW_OVERLAYS, applyTerrainGeneratorPreset } from '../../modules/world/terrain/TerrainSynthesis.js';
-import { isDistrict, isRoad, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getEntityById, getEntityLabel, listLayerGroups } from '../core/document.js';
 
 const h = React.createElement;
@@ -109,7 +110,7 @@ function InspectorPanel({ store, controller }) {
     }
 
     const groupLocked = state.layers.groupLocked[
-        isDistrict(selected) ? 'districts' : isRoad(selected) ? 'roads' : isTerrainEdit(selected) ? 'terrain' : 'vantage'
+        isDistrict(selected) ? 'districts' : isRoad(selected) ? 'roads' : isTerrainRegion(selected) ? 'terrainRegions' : isTerrainEdit(selected) ? 'terrain' : 'vantage'
     ] === true;
     const itemLocked = state.layers.itemLocked[state.selection.selectedId] === true;
     const locked = groupLocked || itemLocked;
@@ -139,7 +140,7 @@ function InspectorPanel({ store, controller }) {
                 className: 'status-badge',
                 key: 'badge',
                 'data-testid': 'inspector-type-badge'
-            }, isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE')
+            }, isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE')
         ]),
         h('div', { className: 'property-group', key: 'group' }, [
             h(FieldRow, {
@@ -147,20 +148,47 @@ function InspectorPanel({ store, controller }) {
                 label: 'ID',
                 children: h('input', { type: 'text', readOnly: true, value: getEntityLabel(state.document, state.selection.selectedId), 'data-testid': 'field-id' })
             }),
-            h(NumberInputField, {
-                key: 'x',
-                label: 'Coord X',
-                disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
-                value: selected.center ? selected.center[0] : selected.x,
-                onChange: event => updateCenter(0, Number(event.target.value))
-            }),
-            h(NumberInputField, {
-                key: 'z',
-                label: 'Coord Z',
-                disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
-                value: selected.center ? selected.center[1] : selected.z,
-                onChange: event => updateCenter(1, Number(event.target.value))
-            }),
+            isTerrainRegion(selected) ? h('div', { key: 'terrain-region' }, [
+                h(NumberInputField, {
+                    label: 'Tile X',
+                    value: selected.tileX,
+                    disabled: true,
+                    onChange: () => {}
+                }),
+                h(NumberInputField, {
+                    label: 'Tile Z',
+                    value: selected.tileZ,
+                    disabled: true,
+                    onChange: () => {}
+                }),
+                h(NumberInputField, {
+                    label: 'Tile Width',
+                    value: selected.tileWidth,
+                    disabled: true,
+                    onChange: () => {}
+                }),
+                h(NumberInputField, {
+                    label: 'Tile Height',
+                    value: selected.tileHeight,
+                    disabled: true,
+                    onChange: () => {}
+                })
+            ]) : [
+                h(NumberInputField, {
+                    key: 'x',
+                    label: 'Coord X',
+                    disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
+                    value: selected.center ? selected.center[0] : selected.x,
+                    onChange: event => updateCenter(0, Number(event.target.value))
+                }),
+                h(NumberInputField, {
+                    key: 'z',
+                    label: 'Coord Z',
+                    disabled: locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0),
+                    value: selected.center ? selected.center[1] : selected.z,
+                    onChange: event => updateCenter(1, Number(event.target.value))
+                })
+            ],
             isDistrict(selected) ? h('div', { key: 'district' }, [
                 h(FieldRow, {
                     label: 'District Type',
@@ -289,7 +317,7 @@ function InspectorPanel({ store, controller }) {
                         })
                     ])
             ]) : null,
-            !isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) ? h('div', { key: 'vantage' }, [
+            !isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) && !isTerrainRegion(selected) ? h('div', { key: 'vantage' }, [
                 h(RangeNumberField, {
                     label: 'Altitude (m)',
                     value: selected.y || 0,
@@ -448,6 +476,7 @@ function TerrainBrushPanel({ store }) {
 
 function TerrainLabPanel({ store, controller }) {
     const terrainLab = useStore(store, state => state.ui.terrainLab);
+    const selectedEntity = useStore(store, state => getEntityById(state.document, state.selection.selectedId));
     const config = terrainLab.draftConfig;
     const metrics = terrainLab.lastMetadata?.hydrology || { riverCount: 0, lakeCount: 0, summary: { cliffCoverage: 0, gorgeCoverage: 0, peakRelief: 0 } };
     const mountainDiagnosis = [];
@@ -505,6 +534,9 @@ function TerrainLabPanel({ store, controller }) {
             'Terrain Lab ',
             h('span', { className: 'status-badge', key: 'badge' }, previewBadge)
         ]),
+        h('div', { className: 'hint-card help-card', key: 'context' }, isTerrainRegion(selectedEntity)
+            ? 'Editing the selected terrain region. Apply writes these settings back to that rectangle.'
+            : 'Editing the default terrain template. New terrain regions use this config when you create them.'),
         h('div', { className: 'property-group', key: 'presets' }, [
             h(SelectField, {
                 key: 'preset',
@@ -609,10 +641,10 @@ function TerrainLabPanel({ store, controller }) {
                 type: 'button',
                 onClick: () => {
                     store.dispatch({ type: 'apply-terrain-generator' });
-                    store.dispatch({ type: 'set-toast', toast: { message: 'Terrain generator applied. Save to persist and rebuild world for the offline bake.', tone: 'success', timestamp: Date.now() } });
+                    store.dispatch({ type: 'set-toast', toast: { message: isTerrainRegion(selectedEntity) ? 'Terrain region updated. Save to persist and rebuild world for the offline bake.' : 'Terrain template updated. Save to persist and rebuild world for the offline bake.', tone: 'success', timestamp: Date.now() } });
                 },
                 'data-testid': 'terrain-lab-apply'
-            }, 'Apply to Bake'),
+            }, isTerrainRegion(selectedEntity) ? 'Apply to Region' : 'Apply Template'),
             h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'reset-terrain-generator' }), 'data-testid': 'terrain-lab-reset' }, 'Reset to Saved'),
             h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => controller.frameTerrainHydrology(), 'data-testid': 'terrain-lab-frame' }, 'Frame Rivers/Lakes')
         ])
@@ -669,7 +701,8 @@ function HelpPanel({ store }) {
             onClick: () => store.dispatch({ type: 'toggle-help', value: !showHelp })
         }, showHelp ? 'Hide Shortcuts' : 'Show Shortcuts'),
         showHelp ? h('div', { className: 'hint-card help-card', key: 'content' }, [
-            h('p', { key: 'tools' }, 'Tools: V Select, D District, W Road, E Poly Edit, R Raise, L Lower, F Flatten.'),
+            h('p', { key: 'tools' }, 'Tools: V Select, D District, W Road, T Region, E Poly Edit, R Raise, L Lower, F Flatten.'),
+            h('p', { key: 'regions' }, 'Terrain Regions: drag on the canvas with Region active to claim a rectangular group of tiles.'),
             h('p', { key: 'history' }, 'History: Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y redo.'),
             h('p', { key: 'nav' }, 'Navigation: middle mouse pan, wheel zoom, F frame selection, 0 reset view, G toggle grid snap.'),
             h('p', { key: 'edit' }, 'Editing: arrows nudge, Shift arrows coarse nudge, Alt arrows fine nudge, Delete removes, Cmd/Ctrl+D duplicates.')
@@ -686,11 +719,13 @@ function Toast({ store }) {
 export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onRebuild }) {
     const state = useStore(store, value => value);
     const currentTool = state.tools.currentTool;
+    const selectedEntity = getEntityById(state.document, state.selection.selectedId);
 
     const toolDefs = [
         ['select', 'Select', 'V', 'M5 3v18l5-6 4 6 5-2-4-6 6-4z'],
         ['add-district', 'District', 'D', 'M4 6h16v12H4z'],
         ['add-road', 'Road', 'W', 'M8 3l2 7-2 11M16 3l-2 7 2 11'],
+        ['terrain-region', 'Region', 'T', 'M4 4h16v16H4z'],
         ['edit-poly', 'Edit', 'E', 'M5 6l7-3 7 4v9l-7 5-7-4z'],
         ['terrain-raise', 'Raise', 'R', 'M4 18h16M12 6v8M9 9l3-3 3 3'],
         ['terrain-lower', 'Lower', 'L', 'M4 18h16M12 6v8M9 11l3 3 3-3'],
@@ -749,8 +784,8 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
                         h('p', { key: 'properties-copy' }, 'Selection details and terrain systems stay docked off the canvas, not stacked over it.')
                     ]),
                     h(InspectorPanel, { store, controller, key: 'inspector' }),
-                    h(TerrainBrushPanel, { store, key: 'terrain' }),
-                    h(TerrainLabPanel, { store, controller, key: 'terrain-lab' }),
+                    isTerrainBrushTool(currentTool) ? h(TerrainBrushPanel, { store, key: 'terrain' }) : null,
+                    isTerrainRegion(selectedEntity) ? h(TerrainLabPanel, { store, controller, key: 'terrain-lab' }) : null,
                     h(FooterPanel, { store, controller, key: 'footer' })
                 ])
             ]),

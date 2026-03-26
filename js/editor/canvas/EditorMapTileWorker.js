@@ -1,23 +1,8 @@
-import { createTerrainSynthesizer } from '../../modules/world/terrain/TerrainSynthesis.js';
 import { applyTerrainEdits } from '../../modules/world/terrain/TerrainEdits.js';
+import { createRegionalTerrainSampler } from '../../modules/world/terrain/TerrainRegions.js';
 import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { MAP_COLORS } from '../../modules/ui/MapColors.js';
 import { Noise } from '../../modules/noise.js';
-
-let synthCache = null;
-let synthCacheKey = null;
-
-function getSynthesizer(config) {
-    const nextKey = JSON.stringify(config);
-    if (synthCache && synthCacheKey === nextKey) return synthCache;
-    synthCacheKey = nextKey;
-    synthCache = createTerrainSynthesizer({
-        Noise,
-        worldSize: DEFAULT_WORLD_SIZE,
-        config
-    });
-    return synthCache;
-}
 
 function sampleTerrainHeight(synthesizer, terrainEdits, x, z) {
     const baseHeight = synthesizer.sampleHeight(x, z);
@@ -29,7 +14,11 @@ self.onmessage = function (event) {
     if (type !== 'renderTile') return;
 
     try {
-        const synthesizer = getSynthesizer(payload.config);
+        const synthesizer = createRegionalTerrainSampler({
+            Noise,
+            worldSize: DEFAULT_WORLD_SIZE,
+            regions: Array.isArray(payload.terrainRegions) ? payload.terrainRegions : []
+        });
         const terrainEdits = Array.isArray(payload.terrainEdits) ? payload.terrainEdits : [];
         const pixels = new Uint8ClampedArray(payload.canvasW * payload.canvasH * 4);
         const worldTileSize = payload.tileSize * payload.lod;

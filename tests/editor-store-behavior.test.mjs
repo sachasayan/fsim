@@ -9,6 +9,7 @@ function createStore() {
         {
             districts: [],
             roads: [{ kind: 'road', surface: 'asphalt', width: 24, feather: 8, points: [[0, 0], [400, 0]] }],
+            terrainRegions: [{ tileX: 2, tileZ: 3, tileWidth: 2, tileHeight: 2, terrainGenerator: { seed: 12345 } }],
             terrainEdits: []
         },
         {}
@@ -55,6 +56,19 @@ test('apply-terrain-generator persists the draft config and marks the document d
     const state = store.getState();
     assert.equal(state.document.worldData.terrainGenerator.seed, 33333);
     assert.equal(state.history.dirty, true);
+});
+
+test('terrain lab targets the selected terrain region when one is selected', () => {
+    const store = createStore();
+    const regionId = store.getState().document.index.groupIds.terrainRegions[0];
+
+    store.dispatch({ type: 'set-selection', selectedId: regionId });
+    store.dispatch({ type: 'set-terrain-generator-config', path: ['seed'], value: 55555 });
+    store.dispatch({ type: 'apply-terrain-generator' });
+
+    const state = store.getState();
+    assert.equal(state.document.worldData.terrainRegions[0].terrainGenerator.seed, 55555);
+    assert.equal(state.document.worldData.terrainGenerator.seed, 12345);
 });
 
 test('reset-terrain-generator restores the saved config', () => {

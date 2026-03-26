@@ -3,11 +3,16 @@ export const TOOL_SHORTCUTS = {
     h: 'select',
     d: 'add-district',
     w: 'add-road',
+    t: 'terrain-region',
     e: 'edit-poly',
     r: 'terrain-raise',
     l: 'terrain-lower',
     f: 'terrain-flatten'
 };
+
+export function isTerrainBrushTool(tool) {
+    return tool === 'terrain-raise' || tool === 'terrain-lower' || tool === 'terrain-flatten';
+}
 
 export const CONTROL_GROUPS = [
     { ids: ['prop-terrain-radius', 'prop-terrain-radius-range'], valueId: 'prop-terrain-radius-value' },
@@ -32,6 +37,8 @@ export const COLORS = {
     districtSelected: 'rgba(255, 255, 100, 0.6)',
     road: 'rgba(255, 159, 67, 0.9)',
     roadSelected: 'rgba(255, 236, 179, 1)',
+    terrainRegion: 'rgba(34, 197, 94, 0.22)',
+    terrainRegionSelected: 'rgba(74, 222, 128, 0.38)',
     accent: '#7dd3fc',
     grid: 'rgba(255, 255, 255, 0.05)',
     vantage: 'rgba(158, 255, 102, 0.6)',

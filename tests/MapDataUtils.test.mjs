@@ -34,6 +34,45 @@ test('normalizeMapData clamps terrain generator values', () => {
     assert.equal(data.terrainGenerator.preview.opacity, 1);
 });
 
+test('normalizeMapData normalizes terrain regions and their generator config', () => {
+    const data = {
+        terrainRegions: [
+            {
+                tileX: -4,
+                tileZ: 63,
+                tileWidth: 10,
+                tileHeight: 4,
+                terrainGenerator: {
+                    seed: -5,
+                    hydrology: { riverCount: 999 }
+                }
+            }
+        ]
+    };
+
+    normalizeMapData(data);
+
+    assert.equal(data.terrainRegions.length, 1);
+    assert.equal(data.terrainRegions[0].tileX, 0);
+    assert.equal(data.terrainRegions[0].tileZ, 63);
+    assert.equal(data.terrainRegions[0].tileWidth, 10);
+    assert.equal(data.terrainRegions[0].tileHeight, 1);
+    assert.equal(data.terrainRegions[0].terrainGenerator.seed, 1);
+    assert.equal(data.terrainRegions[0].terrainGenerator.hydrology.riverCount, 32);
+    assert.ok(data.terrainRegions[0].bounds);
+});
+
+test('normalizeMapData rejects overlapping terrain regions', () => {
+    const data = {
+        terrainRegions: [
+            { tileX: 4, tileZ: 4, tileWidth: 2, tileHeight: 2, terrainGenerator: { seed: 1 } },
+            { tileX: 5, tileZ: 5, tileWidth: 2, tileHeight: 2, terrainGenerator: { seed: 2 } }
+        ]
+    };
+
+    assert.throws(() => normalizeMapData(data), /Terrain region overlap detected/);
+});
+
 test('normalizeMapData normalizes authored road polylines', () => {
     const data = {
         roads: [

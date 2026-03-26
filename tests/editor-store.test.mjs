@@ -13,6 +13,7 @@ function createFixture() {
         {
             districts: [{ district_type: 'commercial', center: [0, 0], radius: 500, points: [[-500, -500], [500, -500], [500, 500], [-500, 500]] }],
             roads: [{ kind: 'road', surface: 'asphalt', width: 24, feather: 8, points: [[0, 0], [400, 0]] }],
+            terrainRegions: [{ tileX: 4, tileZ: 5, tileWidth: 2, tileHeight: 3, terrainGenerator: { seed: 24680 } }],
             terrainEdits: [{ kind: 'raise', x: 100, z: 100, radius: 150, delta: 40 }]
         },
         {
@@ -46,11 +47,36 @@ test('commands can create and delete editable entities', () => {
     assert.equal(deleteResult.document.worldData.roads.length, 1);
 });
 
+test('commands can create terrain regions and block overlap', () => {
+    const document = createFixture();
+    const createResult = applyEditorCommand(document, {
+        type: 'create-terrain-region',
+        tileX: 10,
+        tileZ: 10,
+        tileWidth: 2,
+        tileHeight: 2,
+        terrainGenerator: { seed: 13579 }
+    });
+    assert.equal(createResult.document.worldData.terrainRegions.length, 2);
+    assert.ok(createResult.selectionId);
+
+    assert.throws(() => applyEditorCommand(createResult.document, {
+        type: 'create-terrain-region',
+        tileX: 11,
+        tileZ: 11,
+        tileWidth: 1,
+        tileHeight: 1,
+        terrainGenerator: { seed: 97531 }
+    }), /already belong to another terrain region/);
+});
+
 test('serializeEditorDocument strips editor metadata from payloads', () => {
     const document = createFixture();
     const { mapPayload, vantagePayload } = serializeEditorDocument(document);
 
     assert.equal(Object.hasOwn(mapPayload.districts[0], '__editorId'), false);
+    assert.equal(Object.hasOwn(mapPayload.terrainRegions[0], '__editorId'), false);
+    assert.equal(Object.hasOwn(mapPayload.terrainRegions[0], 'bounds'), false);
     assert.equal(Object.hasOwn(vantagePayload.gateA, '__editorId'), false);
 });
 

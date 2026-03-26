@@ -18,6 +18,7 @@ import { readFileSync as readFileSyncSync } from 'node:fs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
 import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from '../js/modules/world/terrain/TerrainSynthesis.js';
+import { createRegionalTerrainSampler } from '../js/modules/world/terrain/TerrainRegions.js';
 import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
 let mapData = null;
@@ -94,6 +95,11 @@ const terrainSynthesizer = createTerrainSynthesizer({
     worldSize: DEFAULT_WORLD_SIZE,
     config: terrainSynthConfig
 });
+const terrainRegionSampler = createRegionalTerrainSampler({
+    Noise,
+    worldSize: DEFAULT_WORLD_SIZE,
+    regions: mapData?.terrainRegions || []
+});
 
 function getTerrainHeight(x, z) {
     if (existingTerrainSampler) {
@@ -101,7 +107,7 @@ function getTerrainHeight(x, z) {
         return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
     }
 
-    const baseHeight = terrainSynthesizer.sampleHeight(x, z);
+    const baseHeight = terrainRegionSampler.sampleHeight(x, z);
     return applyTerrainEdits(baseHeight, x, z, mapData?.terrainEdits || []);
 }
 
@@ -228,6 +234,7 @@ function serializeQuadtree(root) {
             worldSize: WORLD_SIZE,
             ...terrainSynthesizer.getMetadata(),
             terrainEdits: clearTerrainEdits ? [] : (mapData.terrainEdits || []),
+            terrainRegions: mapData.terrainRegions || [],
             districts: mapData.districts,
             districtRecords: buildDistrictRecords(mapData)
         }
@@ -235,6 +242,7 @@ function serializeQuadtree(root) {
             worldSize: WORLD_SIZE,
             ...terrainSynthesizer.getMetadata(),
             terrainEdits: [],
+            terrainRegions: [],
             districts: [],
             districtRecords: []
         };

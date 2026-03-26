@@ -13,9 +13,19 @@ export function isTerrainEdit(obj) {
     return !!obj && typeof obj.kind === 'string' && Number.isFinite(obj.x) && Number.isFinite(obj.z);
 }
 
+export function isTerrainRegion(obj) {
+    return !!obj
+        && Number.isFinite(obj.tileX)
+        && Number.isFinite(obj.tileZ)
+        && Number.isFinite(obj.tileWidth)
+        && Number.isFinite(obj.tileHeight)
+        && !!obj.terrainGenerator;
+}
+
 export function getLayerGroupId(obj) {
     if (isRoad(obj)) return 'roads';
     if (isDistrict(obj)) return 'districts';
+    if (isTerrainRegion(obj)) return 'terrainRegions';
     if (isTerrainEdit(obj)) return 'terrain';
     return 'vantage';
 }
@@ -29,6 +39,7 @@ export function objectLabel(obj, index = 0, fallback = 'Item') {
     if (isDistrict(obj)) {
         return `${getDistrictType(obj)}`;
     }
+    if (isTerrainRegion(obj)) return `region ${obj.tileWidth}x${obj.tileHeight} @ ${obj.tileX},${obj.tileZ}`;
     if (isTerrainEdit(obj)) return `${obj.kind} #${index + 1}`;
     return fallback;
 }

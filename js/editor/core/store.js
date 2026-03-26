@@ -1,5 +1,14 @@
 import { applyEditorCommand } from './commands.js';
 import { createEditorDocument, getEntityById, serializeEditorDocument } from './document.js';
+import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
+
+function getTerrainLabSourceConfig(document, selectedId = null) {
+    const selected = getEntityById(document, selectedId);
+    if (isTerrainRegion(selected)) {
+        return structuredClone(selected.terrainGenerator);
+    }
+    return structuredClone(document.worldData.terrainGenerator);
+}
 
 function cloneSnapshot(state) {
     return {
@@ -61,7 +70,9 @@ function createInitialState(document) {
                 selectedOverlay: document.worldData.terrainGenerator.preview.overlay,
                 pendingApply: false,
                 lastMetadata: null
-            }
+            },
+            terrainRegionHover: null,
+            terrainRegionSelection: null
         }
     };
 }
@@ -181,7 +192,20 @@ export function createEditorStore(initialDocument) {
                         }
                         return { ...current, selection: { ...current.selection, hoverId: action.hoverId }, viewport: { ...current.viewport, hoverWorldPos: action.hoverWorldPos } };
                     case 'set-selection':
-                        return { ...current, selection: { ...current.selection, selectedId: action.selectedId, activeVertex: action.activeVertex ?? null } };
+                        return {
+                            ...current,
+                            selection: { ...current.selection, selectedId: action.selectedId, activeVertex: action.activeVertex ?? null },
+                            ui: {
+                                ...current.ui,
+                                terrainLab: {
+                                    ...current.ui.terrainLab,
+                                    draftConfig: getTerrainLabSourceConfig(current.document, action.selectedId),
+                                    configVersion: bumpVersion(current.ui.terrainLab.configVersion),
+                                    selectedOverlay: getTerrainLabSourceConfig(current.document, action.selectedId).preview.overlay,
+                                    previewDirty: true
+                                }
+                            }
+                        };
                     case 'set-active-vertex':
                         return { ...current, selection: { ...current.selection, activeVertex: action.activeVertex } };
                     case 'set-camera':
@@ -206,6 +230,12 @@ export function createEditorStore(initialDocument) {
                         return { ...current, ui: { ...current.ui, saveState: action.value, saveError: action.error || '' } };
                     case 'set-toast':
                         return { ...current, ui: { ...current.ui, toast: action.toast } };
+                    case 'set-terrain-region-hover':
+                        return { ...current, ui: { ...current.ui, terrainRegionHover: action.hover } };
+                    case 'set-terrain-region-selection':
+                        return { ...current, ui: { ...current.ui, terrainRegionSelection: action.selection } };
+                    case 'clear-terrain-region-selection':
+                        return { ...current, ui: { ...current.ui, terrainRegionSelection: null } };
                     case 'toggle-help':
                         return { ...current, ui: { ...current.ui, showHelp: action.value ?? !current.ui.showHelp } };
                     case 'set-terrain-generator-config': {
@@ -284,10 +314,18 @@ export function createEditorStore(initialDocument) {
                             }
                         };
                     case 'apply-terrain-generator': {
-                        const nextDocument = createEditorDocument({
-                            ...current.document.worldData,
-                            terrainGenerator: structuredClone(current.ui.terrainLab.draftConfig)
-                        }, current.document.vantageData, current.document);
+                        const selected = getEntityById(current.document, current.selection.selectedId);
+                        const nextWorldData = structuredClone(current.document.worldData);
+                        if (isTerrainRegion(selected)) {
+                            nextWorldData.terrainRegions = nextWorldData.terrainRegions.map(region => (
+                                region.__editorId === selected.__editorId
+                                    ? { ...region, terrainGenerator: structuredClone(current.ui.terrainLab.draftConfig) }
+                                    : region
+                            ));
+                        } else {
+                            nextWorldData.terrainGenerator = structuredClone(current.ui.terrainLab.draftConfig);
+                        }
+                        const nextDocument = createEditorDocument(nextWorldData, current.document.vantageData, current.document);
                         const snapshot = cloneSnapshot(current);
                         return {
                             ...current,
@@ -303,10 +341,11 @@ export function createEditorStore(initialDocument) {
                                 saveState: current.ui.saveState === 'saving' ? 'saving' : 'dirty',
                                 terrainLab: {
                                     ...current.ui.terrainLab,
-                                    draftConfig: structuredClone(nextDocument.worldData.terrainGenerator),
+                                    draftConfig: getTerrainLabSourceConfig(nextDocument, current.selection.selectedId),
                                     configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     pendingApply: false,
-                                    previewDirty: true
+                                    previewDirty: true,
+                                    selectedOverlay: getTerrainLabSourceConfig(nextDocument, current.selection.selectedId).preview.overlay
                                 }
                             }
                         };
@@ -318,9 +357,9 @@ export function createEditorStore(initialDocument) {
                                 ...current.ui,
                                 terrainLab: {
                                     ...current.ui.terrainLab,
-                                    draftConfig: structuredClone(current.document.worldData.terrainGenerator),
+                                    draftConfig: getTerrainLabSourceConfig(current.document, current.selection.selectedId),
                                     configVersion: bumpVersion(current.ui.terrainLab.configVersion),
-                                    selectedOverlay: current.document.worldData.terrainGenerator.preview.overlay,
+                                    selectedOverlay: getTerrainLabSourceConfig(current.document, current.selection.selectedId).preview.overlay,
                                     previewDirty: true
                                 }
                             }
@@ -340,13 +379,13 @@ export function createEditorStore(initialDocument) {
                                 ...current.ui,
                                 terrainLab: {
                                     ...current.ui.terrainLab,
-                                    draftConfig: structuredClone(action.document.worldData.terrainGenerator),
+                                    draftConfig: getTerrainLabSourceConfig(action.document, action.selectedId ?? current.selection.selectedId),
                                     configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     previewStatus: 'idle',
                                     previewDirty: true,
                                     previewSnapshot: null,
                                     previewKey: null,
-                                    selectedOverlay: action.document.worldData.terrainGenerator.preview.overlay,
+                                    selectedOverlay: getTerrainLabSourceConfig(action.document, action.selectedId ?? current.selection.selectedId).preview.overlay,
                                     pendingApply: false,
                                     lastMetadata: null
                                 }

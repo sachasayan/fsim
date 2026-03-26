@@ -55,6 +55,12 @@ export function roadContainsPoint(road, x, z, threshold = 0) {
     return false;
 }
 
+export function terrainRegionContainsPoint(region, x, z) {
+    const bounds = region?.bounds;
+    if (!bounds) return false;
+    return x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ;
+}
+
 export function getVertexHitIndex(points, worldPos, threshold) {
     let bestIndex = -1;
     let bestDistance = threshold;

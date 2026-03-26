@@ -1,8 +1,9 @@
-import { COLORS } from '../../modules/editor/constants.js';
-import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint } from '../../modules/editor/geometry.js';
-import { isRoad, isDistrict, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { COLORS, isTerrainBrushTool } from '../../modules/editor/constants.js';
+import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint, terrainRegionContainsPoint } from '../../modules/editor/geometry.js';
+import { isRoad, isDistrict, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
+import { TERRAIN_REGION_GRID_SIZE, getTerrainRegionTileSize, getTerrainRegionTileWorldBounds } from '../../modules/world/terrain/TerrainRegions.js';
 
 function isGroupVisible(state, groupId) {
     return state.layers.groupVisibility[groupId] !== false;
@@ -14,6 +15,10 @@ function isObjectVisible(state, entityId, groupId) {
 
 function isScreenPointVisible({ width, height }, point, pad = 24) {
     return point.x >= -pad && point.x <= width + pad && point.y >= -pad && point.y <= height + pad;
+}
+
+function getTerrainRegionTileScreenSize(zoom) {
+    return getTerrainRegionTileSize(DEFAULT_WORLD_SIZE) * zoom;
 }
 
 export function createCoordinateHelpers(canvas, camera) {
@@ -56,6 +61,7 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
     drawRunway(ctx, worldToScreen, zoom);
     drawDistricts(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawRoads(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawTerrainRegions(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrain(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawVantagePoints(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawOverlays(ctx, state, worldToScreen, selection, tools);
@@ -126,6 +132,42 @@ function drawGrid(ctx, canvas, camera) {
         ctx.lineTo(width, sy);
     }
     ctx.stroke();
+
+    const tileSize = getTerrainRegionTileSize(DEFAULT_WORLD_SIZE);
+    const tileScreenSize = getTerrainRegionTileScreenSize(camera.zoom);
+    if (tileScreenSize < 6) return;
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.10)';
+    ctx.beginPath();
+    for (let gx = 0; gx <= TERRAIN_REGION_GRID_SIZE; gx += 1) {
+        const worldX = -DEFAULT_WORLD_SIZE * 0.5 + gx * tileSize;
+        const sx = width / 2 + (worldX - camera.x) * zoom;
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, height);
+    }
+    for (let gz = 0; gz <= TERRAIN_REGION_GRID_SIZE; gz += 1) {
+        const worldZ = -DEFAULT_WORLD_SIZE * 0.5 + gz * tileSize;
+        const sy = height / 2 + (worldZ - camera.z) * zoom;
+        ctx.moveTo(0, sy);
+        ctx.lineTo(width, sy);
+    }
+    ctx.stroke();
+}
+
+function drawTerrainRegionTile(ctx, worldToScreen, tileX, tileZ, fillStyle, strokeStyle, lineWidth = 1.2) {
+    const bounds = getTerrainRegionTileWorldBounds(tileX, tileZ, DEFAULT_WORLD_SIZE);
+    const topLeft = worldToScreen(bounds.minX, bounds.minZ);
+    const bottomRight = worldToScreen(bounds.maxX, bounds.maxZ);
+    const width = bottomRight.x - topLeft.x;
+    const height = bottomRight.y - topLeft.y;
+    if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        ctx.fillRect(topLeft.x, topLeft.y, width, height);
+    }
+    if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+    }
 }
 
 function drawRunway(ctx, worldToScreen, zoom) {
@@ -205,6 +247,47 @@ function drawRoads(ctx, state, document, worldToScreen, viewportRect, worldBound
         ctx.lineJoin = 'miter';
 
         drawVertexHandles(ctx, state, entityId, road.points, worldToScreen, viewportRect, stroke);
+    }
+}
+
+function drawTerrainRegions(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
+    if (!isGroupVisible(state, 'terrainRegions')) return;
+    const tileScreenSize = getTerrainRegionTileScreenSize(state.viewport.zoom);
+    const showPerTileFill = tileScreenSize >= 10;
+    for (const entityId of getGroupEntityIds(document, 'terrainRegions')) {
+        if (!isObjectVisible(state, entityId, 'terrainRegions')) continue;
+        const region = getEntityById(document, entityId);
+        const bounds = region?.bounds;
+        if (!bounds) continue;
+        if (bounds.maxX < worldBounds.minX || bounds.minX > worldBounds.maxX || bounds.maxZ < worldBounds.minZ || bounds.minZ > worldBounds.maxZ) continue;
+        const topLeft = worldToScreen(bounds.minX, bounds.minZ);
+        const bottomRight = worldToScreen(bounds.maxX, bounds.maxZ);
+        if (!isScreenPointVisible(viewportRect, topLeft, 48) && !isScreenPointVisible(viewportRect, bottomRight, 48)) continue;
+        const isSelected = state.selection.selectedId === entityId;
+        const isHovered = state.selection.hoverId === entityId && !isSelected;
+        if (showPerTileFill) {
+            for (let tileZ = region.tileZ; tileZ < region.tileZ + region.tileHeight; tileZ += 1) {
+                for (let tileX = region.tileX; tileX < region.tileX + region.tileWidth; tileX += 1) {
+                    drawTerrainRegionTile(
+                        ctx,
+                        worldToScreen,
+                        tileX,
+                        tileZ,
+                        isSelected ? 'rgba(74, 222, 128, 0.12)' : isHovered ? 'rgba(74, 222, 128, 0.10)' : 'rgba(34, 197, 94, 0.08)',
+                        'rgba(74, 222, 128, 0.18)',
+                        0.8
+                    );
+                }
+            }
+        }
+        ctx.save();
+        ctx.fillStyle = isSelected ? COLORS.terrainRegionSelected : isHovered ? 'rgba(74, 222, 128, 0.30)' : COLORS.terrainRegion;
+        ctx.strokeStyle = isSelected ? '#bbf7d0' : isHovered ? '#dcfce7' : '#4ade80';
+        ctx.lineWidth = isSelected ? 2.4 : 1.3;
+        ctx.setLineDash([10, 6]);
+        ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+        ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+        ctx.restore();
     }
 }
 
@@ -301,7 +384,43 @@ function drawVertexHandles(ctx, state, entityId, points, worldToScreen, viewport
 }
 
 function drawOverlays(ctx, state, worldToScreen) {
-    if (state.viewport.hoverWorldPos && state.tools.currentTool.startsWith('terrain-')) {
+    const tileScreenSize = getTerrainRegionTileScreenSize(state.viewport.zoom);
+    if (state.tools.currentTool === 'terrain-region' && state.ui.terrainRegionHover) {
+        drawTerrainRegionTile(
+            ctx,
+            worldToScreen,
+            state.ui.terrainRegionHover.tileX,
+            state.ui.terrainRegionHover.tileZ,
+            state.ui.terrainRegionHover.ownerId ? 'rgba(248, 113, 113, 0.16)' : 'rgba(74, 222, 128, 0.12)',
+            state.ui.terrainRegionHover.ownerId ? '#f87171' : '#86efac',
+            tileScreenSize >= 12 ? 1.6 : 2
+        );
+    }
+
+    const regionSelection = state.ui?.terrainRegionSelection;
+    if (regionSelection?.bounds && Array.isArray(regionSelection.tiles)) {
+        ctx.save();
+        for (const tile of regionSelection.tiles) {
+            drawTerrainRegionTile(
+                ctx,
+                worldToScreen,
+                tile.tileX,
+                tile.tileZ,
+                tile.blocked ? 'rgba(248, 113, 113, 0.22)' : 'rgba(74, 222, 128, 0.18)',
+                tileScreenSize >= 12 ? (tile.blocked ? 'rgba(248, 113, 113, 0.9)' : 'rgba(134, 239, 172, 0.9)') : null,
+                tileScreenSize >= 12 ? 1.2 : 0
+            );
+        }
+        const topLeft = worldToScreen(regionSelection.bounds.minX, regionSelection.bounds.minZ);
+        const bottomRight = worldToScreen(regionSelection.bounds.maxX, regionSelection.bounds.maxZ);
+        ctx.strokeStyle = regionSelection.valid === false ? '#f87171' : '#4ade80';
+        ctx.lineWidth = tileScreenSize >= 12 ? 2 : 2.4;
+        ctx.setLineDash([10, 6]);
+        ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+        ctx.restore();
+    }
+
+    if (state.viewport.hoverWorldPos && isTerrainBrushTool(state.tools.currentTool)) {
         const point = worldToScreen(state.viewport.hoverWorldPos.x, state.viewport.hoverWorldPos.z);
         const previewColor = state.tools.currentTool === 'terrain-lower'
             ? 'rgba(255, 89, 94, 0.85)'
@@ -329,6 +448,7 @@ export function findObjectsAtWorldPos(state, worldPos) {
     const document = state.document;
     const checkOrder = [
         ['vantage', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < 500],
+        ['terrainRegions', entity => terrainRegionContainsPoint(entity, worldPos.x, worldPos.z)],
         ['terrain', entity => terrainEditContainsPoint(entity, worldPos.x, worldPos.z)],
         ['roads', entity => roadContainsPoint(entity, worldPos.x, worldPos.z, 6 / state.viewport.zoom)],
         ['districts', entity => districtContainsPoint(entity, worldPos.x, worldPos.z)]
