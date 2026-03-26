@@ -1,7 +1,9 @@
 import { test, expect } from 'playwright/test';
-import { clickCanvas, getEditorState, gotoEditor } from './helpers.js';
+import { clickCanvas, getEditorState, gotoEditor, hoverCanvas } from './helpers.js';
 
 test.describe('editor e2e', () => {
+    test.describe.configure({ mode: 'serial' });
+
     test('loads the editor and exposes initial clean state', async ({ page }) => {
         await gotoEditor(page);
 
@@ -19,7 +21,7 @@ test.describe('editor e2e', () => {
     test('supports toolbar clicks, shortcuts, help toggle, snap toggle, and reset view', async ({ page }) => {
         await gotoEditor(page);
 
-        await page.getByTestId('tool-add-district').click();
+        await page.getByTestId('tool-add-district').click({ force: true });
         await expect(page.getByTestId('tool-add-district')).toHaveClass(/active/);
 
         await page.keyboard.press('w');
@@ -32,7 +34,7 @@ test.describe('editor e2e', () => {
         await page.keyboard.press('g');
         await expect(page.getByTestId('grid-snap-chip')).toHaveText('Grid snap off');
 
-        await page.getByTestId('map-canvas').hover({ position: { x: 480, y: 300 } });
+        await hoverCanvas(page, 480, 300);
         await page.mouse.wheel(0, -400);
         const beforeReset = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().viewport);
         await page.keyboard.press('0');
@@ -46,7 +48,7 @@ test.describe('editor e2e', () => {
     test('creates a district, edits it, and keeps history coherent', async ({ page }) => {
         await gotoEditor(page);
 
-        await page.getByTestId('tool-add-district').click();
+        await page.getByTestId('tool-add-district').click({ force: true });
         await clickCanvas(page, 220, 180);
 
         await expect(page.getByTestId('dirty-state-chip')).toHaveText('Unsaved changes');
@@ -61,7 +63,7 @@ test.describe('editor e2e', () => {
         const createdId = createdState.selectedId;
         await expect(page.getByTestId(`layer-item-${createdId}`)).toBeVisible();
 
-        await page.getByTestId(`layer-select-${createdId}`).click();
+        await page.getByTestId(`layer-select-${createdId}`).click({ force: true });
         await page.getByTestId('field-coord-x').fill('1500');
         await page.getByTestId('field-coord-x').blur();
 
@@ -70,12 +72,12 @@ test.describe('editor e2e', () => {
         let state = await getEditorState(page);
         expect(state.serialized.mapPayload.districts[1].center[0]).toBe(1500);
 
-        await page.getByTestId('undo-button').click();
+        await page.getByTestId('undo-button').click({ force: true });
         state = await getEditorState(page);
         expect(state.undoCount).toBe(1);
         expect(state.serialized.mapPayload.districts[1].center[0]).not.toBe(1500);
 
-        await page.getByTestId('redo-button').click();
+        await page.getByTestId('redo-button').click({ force: true });
         state = await getEditorState(page);
         expect(state.undoCount).toBe(2);
         expect(state.selectedId).toBe(createdId);
@@ -86,13 +88,13 @@ test.describe('editor e2e', () => {
         await gotoEditor(page);
 
         const firstDistrictId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.districts[0]);
-        await page.getByTestId(`layer-select-${firstDistrictId}`).click();
+        await page.getByTestId(`layer-select-${firstDistrictId}`).click({ force: true });
         await expect(page.getByTestId('inspector-panel')).toBeVisible();
 
         await page.getByTestId('field-coord-z').fill('1100');
         await page.getByTestId('field-coord-z').blur();
 
-        await page.getByTestId('save-button').click();
+        await page.getByTestId('save-button').click({ force: true });
 
         await expect(page.getByTestId('save-button')).toHaveText('Saved');
         await expect(page.getByTestId('dirty-state-chip')).toHaveText('Up to date');

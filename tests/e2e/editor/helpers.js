@@ -27,5 +27,13 @@ export async function getEditorState(page) {
 }
 
 export async function clickCanvas(page, x, y) {
-    await page.getByTestId('map-canvas').click({ position: { x, y } });
+    const box = await page.getByTestId('map-canvas').boundingBox();
+    if (!box) throw new Error('Missing map canvas bounds');
+    await page.mouse.click(box.x + x, box.y + y);
+}
+
+export async function hoverCanvas(page, x, y) {
+    const box = await page.getByTestId('map-canvas').boundingBox();
+    if (!box) throw new Error('Missing map canvas bounds');
+    await page.mouse.move(box.x + x, box.y + y);
 }

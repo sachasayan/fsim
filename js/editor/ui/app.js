@@ -649,13 +649,13 @@ function CommandStrip({ store, controller, onSave, onRebuild }) {
 
     return h('div', { className: 'command-strip', 'data-testid': 'command-strip' }, [
         h('div', { className: 'command-cluster', key: 'history' }, [
-            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'app-undo-button' }, 'Undo'),
-            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'app-redo-button' }, 'Redo'),
-            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'app-reset-view-button' }, 'Reset View')
+            h('button', { key: 'undo', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'app-undo-button' }, 'Undo'),
+            h('button', { key: 'redo', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'app-redo-button' }, 'Redo'),
+            h('button', { key: 'reset', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'app-reset-view-button' }, 'Reset View')
         ]),
         h('div', { className: 'command-cluster', key: 'document' }, [
-            h('button', { className: 'tool-btn secondary-action command-btn', type: 'button', onClick: onRebuild, 'data-testid': 'rebuild-world-button' }, 'Rebuild World'),
-            h('button', { className: 'save-btn command-save-btn', type: 'button', onClick: onSave, 'data-testid': 'save-button' }, saveLabel)
+            h('button', { key: 'rebuild', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: onRebuild, 'data-testid': 'rebuild-world-button' }, 'Rebuild World'),
+            h('button', { key: 'save', className: 'save-btn command-save-btn', type: 'button', onClick: onSave, 'data-testid': 'save-button' }, saveLabel)
         ])
     ]);
 }
