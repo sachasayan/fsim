@@ -81,7 +81,6 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             bounds: Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, Math.round(value)])),
             overlay: terrainLab.selectedOverlay,
             resolution: terrainLab.draftConfig.preview.resolution,
-            opacity: terrainLab.draftConfig.preview.opacity,
             contours: terrainLab.draftConfig.preview.showContours,
             config: terrainLab.draftConfig
         });
@@ -97,7 +96,6 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 config: terrainLab.draftConfig,
                 overlayKind: terrainLab.selectedOverlay,
                 resolution: terrainLab.draftConfig.preview.resolution,
-                opacity: terrainLab.draftConfig.preview.opacity,
                 showContours: terrainLab.draftConfig.preview.showContours
             });
             if (jobSerial !== terrainPreviewJobSerial) return;

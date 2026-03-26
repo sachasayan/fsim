@@ -47,8 +47,8 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
     const viewportRect = { width, height };
 
     ctx.clearRect(0, 0, width, height);
-    tileManager.draw(ctx, camera.x, camera.z, zoom, width, height);
     drawTerrainLabPreview(ctx, state, viewportRect);
+    tileManager.draw(ctx, camera.x, camera.z, zoom, width, height);
 
     drawGrid(ctx, canvas, camera);
     drawWorldBounds(ctx, state, worldToScreen);

@@ -584,7 +584,6 @@ function TerrainLabPanel({ store, controller }) {
                     markDirty();
                 }
             }),
-            h(RangeNumberField, { label: 'Opacity', value: config.preview.opacity, min: 0, max: 1, step: 0.05, onChange: value => setConfig(['preview', 'opacity'], value) }),
             h(RangeNumberField, { label: 'Resolution', value: config.preview.resolution, min: 32, max: 192, step: 8, onChange: value => setConfig(['preview', 'resolution'], Math.round(value)) }),
             h(FieldRow, {
                 key: 'contours',

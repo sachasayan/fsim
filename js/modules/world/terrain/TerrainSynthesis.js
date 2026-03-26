@@ -206,7 +206,7 @@ const DEFAULT_TERRAIN_GENERATOR = Object.freeze({
     },
     preview: {
         overlay: 'height',
-        opacity: 0.6,
+        opacity: 1,
         resolution: 96,
         showContours: true,
         enabled: true
@@ -1306,7 +1306,6 @@ export function createTerrainSynthesizer({
     function buildViewportPreview(bounds, {
         overlayKind = resolvedConfig.preview.overlay,
         resolution = resolvedConfig.preview.resolution,
-        opacity = resolvedConfig.preview.opacity,
         showContours = resolvedConfig.preview.showContours
     } = {}) {
         const width = Math.max(8, Math.round(resolution));
@@ -1338,7 +1337,7 @@ export function createTerrainSynthesizer({
                 pixels[index] = r;
                 pixels[index + 1] = g;
                 pixels[index + 2] = b;
-                pixels[index + 3] = Math.round(a * opacity);
+                pixels[index + 3] = Math.round(a * 255);
             }
         }
 
