@@ -16,6 +16,31 @@ import { createEditorMapTileWorkerManager } from './EditorMapTileWorkerManager.j
 
 const VERTEX_HIT_RADIUS_PX = 12;
 const PAN_DRAG_THRESHOLD_PX = 4;
+const MIN_VIEWPORT_ZOOM = 0.001;
+const MAX_VIEWPORT_ZOOM = 1;
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+export function clampViewportToWorld(viewport, canvasSize, worldSize = DEFAULT_WORLD_SIZE) {
+    const width = Math.max(1, canvasSize?.width || 1);
+    const height = Math.max(1, canvasSize?.height || 1);
+    const safeWorldSize = Math.max(1, worldSize);
+    const minZoom = Math.max(MIN_VIEWPORT_ZOOM, width / safeWorldSize, height / safeWorldSize);
+    const zoom = clamp(viewport?.zoom ?? MIN_VIEWPORT_ZOOM, minZoom, MAX_VIEWPORT_ZOOM);
+    const halfWorldSize = safeWorldSize * 0.5;
+    const halfViewportWidth = width * 0.5 / zoom;
+    const halfViewportHeight = height * 0.5 / zoom;
+    const xLimit = Math.max(0, halfWorldSize - halfViewportWidth);
+    const zLimit = Math.max(0, halfWorldSize - halfViewportHeight);
+
+    return {
+        x: clamp(viewport?.x ?? 0, -xLimit, xLimit),
+        z: clamp(viewport?.z ?? 0, -zLimit, zLimit),
+        zoom
+    };
+}
 
 export function getTerrainEditBoundsById(document) {
     const boundsById = new Map();
@@ -113,6 +138,22 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     let previousTerrainEditBoundsById = getTerrainEditBoundsById(store.getState().document);
     const terrainPreviewWorker = createTerrainPreviewWorkerManager();
     const mapTileWorker = createEditorMapTileWorkerManager();
+
+    function getClampedViewport(viewportPatch = {}) {
+        return clampViewportToWorld(
+            { ...store.getState().viewport, ...viewportPatch },
+            { width: canvas.width, height: canvas.height }
+        );
+    }
+
+    function setClampedCamera(viewportPatch = {}) {
+        const nextViewport = getClampedViewport(viewportPatch);
+        store.dispatch({
+            type: 'set-camera',
+            viewport: nextViewport
+        });
+        return nextViewport;
+    }
 
     function getTerrainSynthesizer() {
         const terrainLab = store.getState().ui.terrainLab;
@@ -313,6 +354,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const parent = canvas.parentElement;
         canvas.width = parent.clientWidth;
         canvas.height = parent.clientHeight;
+        setClampedCamera();
         scheduleRender();
     }
 
@@ -389,18 +431,15 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             0.4,
             Math.max(0.01, Math.min(canvas.width / (width * 1.6), canvas.height / (height * 1.6)))
         );
-        store.dispatch({
-            type: 'set-camera',
-            viewport: {
-                x: (bounds.minX + bounds.maxX) / 2,
-                z: (bounds.minZ + bounds.maxZ) / 2,
-                zoom: nextZoom
-            }
+        setClampedCamera({
+            x: (bounds.minX + bounds.maxX) / 2,
+            z: (bounds.minZ + bounds.maxZ) / 2,
+            zoom: nextZoom
         });
     }
 
     function resetView() {
-        store.dispatch({ type: 'set-camera', viewport: { x: 0, z: 0, zoom: 0.05 } });
+        setClampedCamera({ x: 0, z: 0, zoom: 0.05 });
     }
 
     function bindEvents() {
@@ -554,12 +593,9 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 const dx = point.x - lastMouse.x;
                 const dy = point.y - lastMouse.y;
                 lastMouse = { x: point.x, y: point.y };
-                store.dispatch({
-                    type: 'set-camera',
-                    viewport: {
-                        x: state.viewport.x - dx / state.viewport.zoom,
-                        z: state.viewport.z - dy / state.viewport.zoom
-                    }
+                setClampedCamera({
+                    x: state.viewport.x - dx / state.viewport.zoom,
+                    z: state.viewport.z - dy / state.viewport.zoom
                 });
                 return;
             }
@@ -652,17 +688,11 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             const nextZoom = event.deltaY < 0
                 ? store.getState().viewport.zoom * 1.1
                 : store.getState().viewport.zoom / 1.1;
-            store.dispatch({
-                type: 'set-camera',
-                viewport: { zoom: Math.max(0.001, Math.min(1, nextZoom)) }
-            });
+            setClampedCamera({ zoom: nextZoom });
             const mouseWorldAfter = createCoordinateHelpers(canvas, store.getState().viewport).screenToWorld(point.x, point.y);
-            store.dispatch({
-                type: 'set-camera',
-                viewport: {
-                    x: store.getState().viewport.x - (mouseWorldAfter.x - mouseWorldBefore.x),
-                    z: store.getState().viewport.z - (mouseWorldAfter.z - mouseWorldBefore.z)
-                }
+            setClampedCamera({
+                x: store.getState().viewport.x - (mouseWorldAfter.x - mouseWorldBefore.x),
+                z: store.getState().viewport.z - (mouseWorldAfter.z - mouseWorldBefore.z)
             });
         }, { passive: false });
 
@@ -789,13 +819,10 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
             const width = Math.max(1000, maxX - minX);
             const height = Math.max(1000, maxZ - minZ);
-            store.dispatch({
-                type: 'set-camera',
-                viewport: {
-                    x: (minX + maxX) * 0.5,
-                    z: (minZ + maxZ) * 0.5,
-                    zoom: Math.min(0.4, Math.max(0.01, Math.min(canvas.width / (width * 1.4), canvas.height / (height * 1.4))))
-                }
+            setClampedCamera({
+                x: (minX + maxX) * 0.5,
+                z: (minZ + maxZ) * 0.5,
+                zoom: Math.min(0.4, Math.max(0.01, Math.min(canvas.width / (width * 1.4), canvas.height / (height * 1.4))))
             });
             updateTerrainLabPreview(true);
         },

@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    clampViewportToWorld,
     getTerrainEditBoundsById,
     invalidateChangedTerrainTiles,
     reconcileTerrainTileInvalidation
 } from '../js/editor/canvas/controller.js';
+import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import { createEditorDocument } from '../js/editor/core/document.js';
 
 function createDocumentWithTerrainEdits(terrainEdits, terrainGeneratorOverrides = {}) {
@@ -136,4 +138,26 @@ test('reconcileTerrainTileInvalidation invalidates all tiles when terrain lab co
     assert.deepEqual(tileManager.invalidateWorldRectCalls, []);
     assert.equal(result.previousTerrainLabVersion, 2);
     assert.equal(result.previousDocumentRef, document);
+});
+
+test('clampViewportToWorld prevents zooming out past the world extents', () => {
+    const viewport = clampViewportToWorld(
+        { x: 0, z: 0, zoom: 0.001 },
+        { width: 1600, height: 900 }
+    );
+
+    assert.equal(viewport.zoom, 1600 / DEFAULT_WORLD_SIZE);
+    assert.equal(viewport.x, 0);
+    assert.equal(viewport.z, 0);
+});
+
+test('clampViewportToWorld keeps the camera center inside the visible world bounds', () => {
+    const viewport = clampViewportToWorld(
+        { x: 50000, z: -50000, zoom: 0.02 },
+        { width: 1200, height: 800 }
+    );
+
+    assert.equal(viewport.zoom, 0.02);
+    assert.equal(viewport.x, 20000);
+    assert.equal(viewport.z, -30000);
 });

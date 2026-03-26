@@ -1,6 +1,7 @@
 import { COLORS } from '../../modules/editor/constants.js';
 import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint } from '../../modules/editor/geometry.js';
 import { isRoad, isDistrict, isTerrainEdit } from '../../modules/editor/objectTypes.js';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
 
 function isGroupVisible(state, groupId) {
@@ -61,7 +62,7 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
 }
 
 function drawWorldBounds(ctx, state, worldToScreen) {
-    const halfWorldSize = 25000;
+    const halfWorldSize = DEFAULT_WORLD_SIZE * 0.5;
     const min = worldToScreen(-halfWorldSize, -halfWorldSize);
     const max = worldToScreen(halfWorldSize, halfWorldSize);
     const width = max.x - min.x;
