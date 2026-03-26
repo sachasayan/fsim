@@ -33,6 +33,30 @@ function Icon({ path }) {
     return h('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }, h('path', { d: path }));
 }
 
+function StatusChip({ testId, tone, iconPath, children }) {
+    return h('span', {
+        className: `status-chip${tone ? ` ${tone}` : ''}`,
+        'data-testid': testId
+    }, [
+        iconPath ? h(Icon, { key: 'icon', path: iconPath }) : null,
+        h('span', { key: 'label' }, children)
+    ]);
+}
+
+function CommandButton({ buttonKey, testId, title, onClick, iconPath, children, className = 'tool-btn secondary-action command-btn' }) {
+    return h('button', {
+        key: buttonKey,
+        className,
+        type: 'button',
+        onClick,
+        title,
+        'data-testid': testId
+    }, [
+        iconPath ? h(Icon, { key: 'icon', path: iconPath }) : null,
+        h('span', { key: 'label' }, children)
+    ]);
+}
+
 function FieldRow({ label, children, value }) {
     return h('div', { className: 'property-row' }, [
         h('div', { className: 'field-label', key: 'label' }, [
@@ -651,20 +675,11 @@ function TerrainLabPanel({ store, controller }) {
     ]);
 }
 
-function FooterPanel({ store, controller }) {
+function FooterPanel({ store }) {
     const state = useStore(store, value => value);
+    if (!state.ui.saveError) return null;
     return h('div', { className: 'property-panel footer-panel' }, [
-        h('div', { className: 'status-row', key: 'status' }, [
-            h('span', { className: `status-chip ${state.history.dirty ? 'dirty' : 'clean'}`, 'data-testid': 'dirty-state-chip' }, state.history.dirty ? 'Unsaved changes' : 'Up to date'),
-            h('span', { className: 'status-chip', 'data-testid': 'grid-snap-chip' }, state.tools.snappingEnabled ? 'Grid snap on' : 'Grid snap off'),
-            h('span', { className: 'status-chip', 'data-testid': 'undo-count-chip' }, `Undo ${state.history.undoStack.length}`)
-        ]),
-        state.ui.saveError ? h('div', { className: 'hint-card error-card', key: 'error' }, state.ui.saveError) : null,
-        h('div', { className: 'property-group inline-actions', key: 'actions' }, [
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'undo-button' }, 'Undo'),
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'redo-button' }, 'Redo'),
-            h('button', { className: 'tool-btn secondary-action', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'reset-view-button' }, 'Reset View')
-        ])
+        h('div', { className: 'hint-card error-card', key: 'error' }, state.ui.saveError)
     ]);
 }
 
@@ -679,14 +694,70 @@ function CommandStrip({ store, controller, onSave, onRebuild }) {
                 : 'Saved';
 
     return h('div', { className: 'command-strip', 'data-testid': 'command-strip' }, [
+        h('div', { className: 'command-cluster command-status-cluster', key: 'status' }, [
+            h(StatusChip, {
+                key: 'dirty',
+                testId: 'dirty-state-chip',
+                tone: state.history.dirty ? 'dirty' : 'clean',
+                iconPath: state.history.dirty ? 'M12 7v6l4 2M12 3a9 9 0 100 18 9 9 0 000-18z' : 'M5 12l4 4L19 7'
+            }, state.history.dirty ? 'Unsaved changes' : 'Up to date'),
+            h(StatusChip, {
+                key: 'snap',
+                testId: 'grid-snap-chip',
+                iconPath: state.tools.snappingEnabled ? 'M12 3v5M12 16v5M3 12h5M16 12h5M6.5 6.5l3 3M14.5 14.5l3 3M17.5 6.5l-3 3M9.5 14.5l-3 3' : 'M5 5l14 14M12 3v3M3 12h3M18 12h3M12 18v3'
+            }, state.tools.snappingEnabled ? 'Grid snap on' : 'Grid snap off'),
+            h(StatusChip, {
+                key: 'undo-count',
+                testId: 'undo-count-chip',
+                iconPath: 'M9 7l-4 4 4 4M5 11h8a6 6 0 110 12h-1'
+            }, `Undo ${state.history.undoStack.length}`)
+        ]),
         h('div', { className: 'command-cluster', key: 'history' }, [
-            h('button', { key: 'undo', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'undo' }), 'data-testid': 'app-undo-button' }, 'Undo'),
-            h('button', { key: 'redo', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => store.dispatch({ type: 'redo' }), 'data-testid': 'app-redo-button' }, 'Redo'),
-            h('button', { key: 'reset', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: () => controller.resetView(), 'data-testid': 'app-reset-view-button' }, 'Reset View')
+            h(CommandButton, {
+                key: 'undo',
+                buttonKey: 'undo',
+                testId: 'undo-button',
+                title: 'Undo',
+                onClick: () => store.dispatch({ type: 'undo' }),
+                iconPath: 'M9 7l-4 4 4 4M5 11h8a6 6 0 110 12h-1'
+            }, 'Undo'),
+            h(CommandButton, {
+                key: 'redo',
+                buttonKey: 'redo',
+                testId: 'redo-button',
+                title: 'Redo',
+                onClick: () => store.dispatch({ type: 'redo' }),
+                iconPath: 'M15 7l4 4-4 4M19 11h-8a6 6 0 100 12h1'
+            }, 'Redo'),
+            h(CommandButton, {
+                key: 'reset',
+                buttonKey: 'reset',
+                testId: 'reset-view-button',
+                title: 'Reset View',
+                onClick: () => controller.resetView(),
+                iconPath: 'M12 4V1m0 22v-3M4 12H1m22 0h-3M6.3 6.3L4.2 4.2m15.6 15.6l-2.1-2.1m0-11.4l2.1-2.1M6.3 17.7l-2.1 2.1'
+            }, 'Reset View')
         ]),
         h('div', { className: 'command-cluster', key: 'document' }, [
-            h('button', { key: 'rebuild', className: 'tool-btn secondary-action command-btn', type: 'button', onClick: onRebuild, 'data-testid': 'rebuild-world-button' }, 'Rebuild World'),
-            h('button', { key: 'save', className: 'save-btn command-save-btn', type: 'button', onClick: onSave, 'data-testid': 'save-button' }, saveLabel)
+            h(CommandButton, {
+                key: 'rebuild',
+                buttonKey: 'rebuild',
+                testId: 'rebuild-world-button',
+                title: 'Rebuild World',
+                onClick: onRebuild,
+                iconPath: 'M4 12a8 8 0 0113.66-5.66L20 8M20 4v4h-4M20 12a8 8 0 01-13.66 5.66L4 16M4 20v-4h4'
+            }, 'Rebuild World'),
+            h(CommandButton, {
+                key: 'save',
+                buttonKey: 'save',
+                testId: 'save-button',
+                title: saveLabel,
+                onClick: onSave,
+                className: 'tool-btn save-btn command-btn command-save-btn',
+                iconPath: state.ui.saveState === 'saved'
+                    ? 'M5 12l4 4L19 7'
+                    : 'M6 4h10l4 4v12H6zM9 4v6h6V4M9 20v-6h6v6'
+            }, saveLabel)
         ])
     ]);
 }
@@ -733,12 +804,6 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
     ];
     const activeToolLabel = toolDefs.find(([tool]) => tool === currentTool)?.[1] || currentTool;
 
-    const saveStatus = state.ui.saveState === 'saving'
-        ? 'Saving'
-        : state.history.dirty
-            ? 'Draft'
-            : 'Saved';
-
     return h(React.Fragment, null, [
         h('div', { id: 'editor-shell', key: 'layout' }, [
             h('header', { id: 'app-bar', key: 'app-bar' }, [
@@ -748,9 +813,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
                     h('span', { className: 'app-bar-subtitle', key: 'subtitle' }, 'Docked tools, layered navigation, and a larger central stage.')
                 ]),
                 h('div', { className: 'app-bar-chips', key: 'chips' }, [
-                    h('span', { className: `status-chip ${state.history.dirty ? 'dirty' : 'clean'}`, key: 'save-status' }, saveStatus),
-                    h('span', { className: 'status-chip', key: 'tool-status' }, activeToolLabel),
-                    h('span', { className: 'status-chip', key: 'snap-status' }, state.tools.snappingEnabled ? 'Snap on' : 'Snap off')
+                    h(StatusChip, { key: 'tool-status', iconPath: 'M12 3l7 4v10l-7 4-7-4V7z' }, activeToolLabel)
                 ]),
                 h(CommandStrip, { store, controller, onSave, onRebuild, key: 'command-strip' })
             ]),
@@ -786,7 +849,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
                     h(InspectorPanel, { store, controller, key: 'inspector' }),
                     isTerrainBrushTool(currentTool) ? h(TerrainBrushPanel, { store, key: 'terrain' }) : null,
                     isTerrainRegion(selectedEntity) ? h(TerrainLabPanel, { store, controller, key: 'terrain-lab' }) : null,
-                    h(FooterPanel, { store, controller, key: 'footer' })
+                    h(FooterPanel, { store, key: 'footer' })
                 ])
             ]),
             h('footer', { id: 'status-bar', key: 'status-bar' }, [

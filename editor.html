@@ -107,6 +107,7 @@
             justify-content: space-between;
             align-items: center;
             gap: 12px;
+            flex-wrap: wrap;
             padding-top: 2px;
         }
 
@@ -117,12 +118,31 @@
             align-items: center;
         }
 
+        .command-status-cluster {
+            flex: 1 1 320px;
+        }
+
         .command-btn {
             min-width: 112px;
             padding: 11px 14px;
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 0.04em;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .command-btn svg {
+            width: 15px;
+            height: 15px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex: 0 0 auto;
         }
 
         .command-save-btn {
@@ -415,6 +435,23 @@
             font-weight: 700;
             text-align: center;
             font-family: 'JetBrains Mono', monospace;
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-chip svg {
+            width: 13px;
+            height: 13px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex: 0 0 auto;
         }
 
         .status-chip.dirty {
