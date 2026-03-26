@@ -37,10 +37,12 @@ test('move-vertex preserves the active vertex while dragging', () => {
 test('terrain lab config edits stay in draft state until apply', () => {
     const store = createStore();
     const originalSeed = store.getState().document.worldData.terrainGenerator.seed;
+    const originalVersion = store.getState().ui.terrainLab.configVersion;
 
     store.dispatch({ type: 'set-terrain-generator-config', path: ['seed'], value: 22222 });
 
     assert.equal(store.getState().ui.terrainLab.draftConfig.seed, 22222);
+    assert.equal(store.getState().ui.terrainLab.configVersion, originalVersion + 1);
     assert.equal(store.getState().document.worldData.terrainGenerator.seed, originalSeed);
 });
 

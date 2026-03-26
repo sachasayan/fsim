@@ -17,6 +17,74 @@ import { createEditorMapTileWorkerManager } from './EditorMapTileWorkerManager.j
 const VERTEX_HIT_RADIUS_PX = 12;
 const PAN_DRAG_THRESHOLD_PX = 4;
 
+export function getTerrainEditBoundsById(document) {
+    const boundsById = new Map();
+    for (const edit of document?.worldData?.terrainEdits || []) {
+        if (!edit?.__editorId || !edit?.bounds) continue;
+        boundsById.set(edit.__editorId, { ...edit.bounds });
+    }
+    return boundsById;
+}
+
+export function invalidateChangedTerrainTiles(tileManager, previousBoundsById, nextDocument) {
+    const nextBoundsById = getTerrainEditBoundsById(nextDocument);
+    const changedBounds = [];
+    const allIds = new Set([...previousBoundsById.keys(), ...nextBoundsById.keys()]);
+
+    for (const id of allIds) {
+        const prevBounds = previousBoundsById.get(id);
+        const nextBounds = nextBoundsById.get(id);
+        if (!prevBounds || !nextBounds) {
+            changedBounds.push(prevBounds || nextBounds);
+            continue;
+        }
+        if (
+            prevBounds.minX !== nextBounds.minX
+            || prevBounds.maxX !== nextBounds.maxX
+            || prevBounds.minZ !== nextBounds.minZ
+            || prevBounds.maxZ !== nextBounds.maxZ
+        ) {
+            changedBounds.push(prevBounds, nextBounds);
+        }
+    }
+
+    for (const bounds of changedBounds) {
+        tileManager.invalidateWorldRect(bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ);
+    }
+
+    return nextBoundsById;
+}
+
+export function reconcileTerrainTileInvalidation({
+    tileManager,
+    previousDocumentRef,
+    previousTerrainEditBoundsById,
+    previousTerrainLabVersion,
+    nextState
+}) {
+    let nextPreviousDocumentRef = previousDocumentRef;
+    let nextPreviousTerrainEditBoundsById = previousTerrainEditBoundsById;
+    let nextPreviousTerrainLabVersion = previousTerrainLabVersion;
+    const terrainPreviewState = nextState.ui.terrainLab;
+
+    if (nextState.document !== previousDocumentRef) {
+        nextPreviousTerrainEditBoundsById = invalidateChangedTerrainTiles(tileManager, previousTerrainEditBoundsById, nextState.document);
+        nextPreviousDocumentRef = nextState.document;
+    }
+
+    const nextTerrainLabVersion = terrainPreviewState.configVersion;
+    if (nextTerrainLabVersion !== previousTerrainLabVersion) {
+        nextPreviousTerrainLabVersion = nextTerrainLabVersion;
+        tileManager.invalidateAll();
+    }
+
+    return {
+        previousDocumentRef: nextPreviousDocumentRef,
+        previousTerrainEditBoundsById: nextPreviousTerrainEditBoundsById,
+        previousTerrainLabVersion: nextPreviousTerrainLabVersion
+    };
+}
+
 export function createEditorCanvasController({ canvas, coordsElement, store }) {
     const ctx = canvas.getContext('2d');
     let rafPending = false;
@@ -41,13 +109,15 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     let latestHoverSampleSerial = 0;
     let lastHoverId = null;
     let lastHoverWorldPos = null;
-    let previousTerrainLabKey = JSON.stringify(store.getState().ui.terrainLab.draftConfig);
+    let previousTerrainLabVersion = store.getState().ui.terrainLab.configVersion;
+    let previousTerrainEditBoundsById = getTerrainEditBoundsById(store.getState().document);
     const terrainPreviewWorker = createTerrainPreviewWorkerManager();
     const mapTileWorker = createEditorMapTileWorkerManager();
 
     function getTerrainSynthesizer() {
-        const draftConfig = store.getState().ui.terrainLab.draftConfig;
-        const nextKey = JSON.stringify(draftConfig);
+        const terrainLab = store.getState().ui.terrainLab;
+        const draftConfig = terrainLab.draftConfig;
+        const nextKey = terrainLab.configVersion;
         if (synthCache && synthCacheKey === nextKey) return synthCache;
         synthCacheKey = nextKey;
         synthCache = createTerrainSynthesizer({
@@ -77,13 +147,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const terrainLab = state.ui.terrainLab;
         if (!terrainLab.draftConfig.preview.enabled) return;
         const bounds = buildPreviewBounds();
-        const previewKey = JSON.stringify({
-            bounds: Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, Math.round(value)])),
-            overlay: terrainLab.selectedOverlay,
-            resolution: terrainLab.draftConfig.preview.resolution,
-            contours: terrainLab.draftConfig.preview.showContours,
-            config: terrainLab.draftConfig
-        });
+        const roundedBounds = Object.values(bounds).map(value => Math.round(value)).join(':');
+        const previewKey = [
+            terrainLab.configVersion,
+            roundedBounds,
+            terrainLab.selectedOverlay,
+            terrainLab.draftConfig.preview.resolution,
+            terrainLab.draftConfig.preview.showContours ? 1 : 0
+        ].join('|');
         if (!force && terrainLabPreviewKey === previewKey && terrainLab.previewDirty !== true) return;
 
         isUpdatingTerrainLabPreview = true;
@@ -133,6 +204,8 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     tileManager = new MapTileManager({
         sampleTerrainHeight,
         tileSize: 256,
+        lodDetailScale: 2,
+        maxConcurrentRenders: 2,
         useHillshading: true,
         renderTileAsync: ({ tx, tz, lod, canvasW, canvasH, tileSize, pixelRatio, useHillshading }) => mapTileWorker.renderTile({
             tx,
@@ -670,16 +743,16 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
     const unsubscribe = store.subscribe(() => {
         const nextState = store.getState();
-        const terrainPreviewState = nextState.ui.terrainLab;
-        if (nextState.document !== previousDocumentRef) {
-            previousDocumentRef = nextState.document;
-            tileManager.clearCache();
-        }
-        const nextTerrainLabKey = JSON.stringify(terrainPreviewState.draftConfig);
-        if (nextTerrainLabKey !== previousTerrainLabKey) {
-            previousTerrainLabKey = nextTerrainLabKey;
-            tileManager.clearCache();
-        }
+        const nextInvalidationState = reconcileTerrainTileInvalidation({
+            tileManager,
+            previousDocumentRef,
+            previousTerrainEditBoundsById,
+            previousTerrainLabVersion,
+            nextState
+        });
+        previousDocumentRef = nextInvalidationState.previousDocumentRef;
+        previousTerrainEditBoundsById = nextInvalidationState.previousTerrainEditBoundsById;
+        previousTerrainLabVersion = nextInvalidationState.previousTerrainLabVersion;
         scheduleRender();
     });
 

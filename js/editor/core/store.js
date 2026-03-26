@@ -8,6 +8,10 @@ function cloneSnapshot(state) {
     };
 }
 
+function bumpVersion(version) {
+    return (Number.isFinite(version) ? version : 0) + 1;
+}
+
 function createInitialState(document) {
     return {
         document,
@@ -48,6 +52,7 @@ function createInitialState(document) {
             showHelp: false,
             terrainLab: {
                 draftConfig: structuredClone(document.worldData.terrainGenerator),
+                configVersion: 1,
                 previewStatus: 'idle',
                 previewDirty: true,
                 previewSnapshot: null,
@@ -220,6 +225,7 @@ export function createEditorStore(initialDocument) {
                                     terrainLab: {
                                         ...current.ui.terrainLab,
                                         draftConfig: nextDraft,
+                                        configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                         selectedOverlay: action.value,
                                         previewDirty: true
                                     }
@@ -233,6 +239,7 @@ export function createEditorStore(initialDocument) {
                                 terrainLab: {
                                     ...current.ui.terrainLab,
                                     draftConfig: nextDraft,
+                                    configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     previewDirty: true
                                 }
                             }
@@ -297,6 +304,7 @@ export function createEditorStore(initialDocument) {
                                 terrainLab: {
                                     ...current.ui.terrainLab,
                                     draftConfig: structuredClone(nextDocument.worldData.terrainGenerator),
+                                    configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     pendingApply: false,
                                     previewDirty: true
                                 }
@@ -311,6 +319,7 @@ export function createEditorStore(initialDocument) {
                                 terrainLab: {
                                     ...current.ui.terrainLab,
                                     draftConfig: structuredClone(current.document.worldData.terrainGenerator),
+                                    configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     selectedOverlay: current.document.worldData.terrainGenerator.preview.overlay,
                                     previewDirty: true
                                 }
@@ -332,6 +341,7 @@ export function createEditorStore(initialDocument) {
                                 terrainLab: {
                                     ...current.ui.terrainLab,
                                     draftConfig: structuredClone(action.document.worldData.terrainGenerator),
+                                    configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     previewStatus: 'idle',
                                     previewDirty: true,
                                     previewSnapshot: null,
