@@ -21,6 +21,7 @@
     "screenshot:shader-pipeline": "node scripts/screenshot-batcher.mjs --config=config/shader_pipeline_vantage_points.json --filter=shader_",
     "screenshot:cleanup": "node scripts/screenshot-cleanup.mjs",
     "test:unit": "node --test tests/*.test.mjs",
+    "test:shaders": "playwright test tests/e2e/shaders/shader-validation.spec.js",
     "test:e2e": "playwright test",
     "test:e2e:perf": "playwright test tests/e2e/perf/fsim.perf.spec.js",
     "test:e2e:perf:terrain": "playwright test tests/e2e/perf/terrain.perf.spec.js",
@@ -30,7 +31,10 @@
     "perf:analyze": "node scripts/analyze-perf-report.mjs",
     "perf:terrain:suite": "node scripts/terrain-perf-suite.mjs",
     "perf:terrain:ab": "node scripts/terrain-perf-ab.mjs",
-    "test": "npm run test:unit && npm run smoke"
+    "world:assets:seed": "node tools/seed-world-asset-sources.mjs",
+    "world:assets:process": "node tools/process-world-asset.mjs --all",
+    "world:assets:check": "node tools/check-world-asset-budgets.mjs",
+    "test": "npm run test:unit && npm run smoke && npm run test:shaders"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.2.6",

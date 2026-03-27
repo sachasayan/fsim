@@ -148,6 +148,7 @@ Quick reference:
 - [`docs/graphics-improvements.md`](./docs/graphics-improvements.md)
 - [`docs/terrain-generation-plan.md`](./docs/terrain-generation-plan.md)
 - [`docs/terrain-cinematic-roadmap.md`](./docs/terrain-cinematic-roadmap.md)
+- [`docs/world-asset-pipeline.md`](./docs/world-asset-pipeline.md)
 
 ## License
 
