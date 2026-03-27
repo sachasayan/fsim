@@ -1,8 +1,17 @@
 import { test, expect } from 'playwright/test';
-import { clickCanvas, getEditorState, gotoEditor, hoverCanvas } from './helpers.js';
+import { attachEditorErrorWatch, clickCanvas, getEditorState, gotoEditor, hoverCanvas } from './helpers.js';
 
 test.describe('editor e2e', () => {
     test.describe.configure({ mode: 'serial' });
+
+    test.beforeEach(async ({ page }, testInfo) => {
+        testInfo.annotations.push({ type: 'editor-error-watch', description: 'Fails on browser console.error and pageerror' });
+        page.__editorErrorWatch = attachEditorErrorWatch(page);
+    });
+
+    test.afterEach(async ({ page }) => {
+        page.__editorErrorWatch?.assertNoErrors();
+    });
 
     test('loads the editor and exposes initial clean state', async ({ page }) => {
         await gotoEditor(page);
@@ -165,5 +174,109 @@ test.describe('editor e2e', () => {
         expect(after.currentTool).toBe('edit-poly');
         expect(after.selectedId).toBe(before.selectedId);
         expect(after.terrainCount).toBe(before.terrainCount);
+    });
+
+    test('migrated range controls keep slider and numeric inputs synchronized', async ({ page }) => {
+        await gotoEditor(page);
+
+        const roadId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.roads[0]);
+        await page.evaluate((entityId) => {
+            window.__EDITOR_TEST__.store.dispatch({ type: 'set-selection', selectedId: entityId });
+        }, roadId);
+
+        const widthNumber = page.getByTestId('field-width-number');
+        const widthSliderThumb = page.getByTestId('field-width-slider-thumb');
+
+        await expect(widthNumber).toHaveValue('24');
+
+        await widthNumber.fill('30');
+        await widthNumber.blur();
+        await expect(widthNumber).toHaveValue('30');
+
+        let state = await getEditorState(page);
+        expect(state.serialized.mapPayload.roads[0].width).toBe(30);
+
+        await widthSliderThumb.focus();
+        await page.keyboard.press('ArrowLeft');
+        await expect(widthNumber).toHaveValue('29');
+
+        state = await getEditorState(page);
+        expect(state.serialized.mapPayload.roads[0].width).toBe(29);
+    });
+
+    test('migrated select controls dispatch updates to editor state', async ({ page }) => {
+        await gotoEditor(page);
+
+        const districtId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.districts[0]);
+        await page.evaluate((entityId) => {
+            window.__EDITOR_TEST__.store.dispatch({ type: 'set-selection', selectedId: entityId });
+        }, districtId);
+
+        const districtType = page.getByTestId('field-district-type');
+        await districtType.click();
+        await page.getByRole('option', { name: 'windmill_farm' }).click();
+
+        const state = await getEditorState(page);
+        expect(state.serialized.mapPayload.districts[0].district_type).toBe('windmill_farm');
+    });
+
+    test('primary command buttons support keyboard activation', async ({ page }) => {
+        await gotoEditor(page);
+
+        const firstDistrictId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.districts[0]);
+        await page.evaluate((entityId) => {
+            window.__EDITOR_TEST__.store.dispatch({ type: 'set-selection', selectedId: entityId });
+        }, firstDistrictId);
+
+        await page.getByTestId('field-coord-z').fill('1110');
+        await page.getByTestId('field-coord-z').blur();
+
+        const saveButton = page.getByTestId('save-button');
+        await saveButton.focus();
+        await expect(saveButton).toBeFocused();
+        await page.keyboard.press('Enter');
+
+        await expect(page.getByTestId('save-button')).toHaveText('Saved');
+        await expect(page.getByTestId('dirty-state-chip')).toHaveText('Up to date');
+    });
+
+    test('toast and status feedback cover info and error flows', async ({ page }) => {
+        await gotoEditor(page);
+
+        await page.getByTestId('rebuild-world-button').click({ force: true });
+        await expect(page.getByTestId('toast')).toHaveText(/world rebuild requested/i);
+
+        const firstDistrictId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.districts[0]);
+        await page.evaluate((entityId) => {
+            window.__EDITOR_TEST__.store.dispatch({ type: 'set-selection', selectedId: entityId });
+        }, firstDistrictId);
+
+        await page.route('**/save', async (route, request) => {
+            const body = request.postDataJSON();
+            if (body?.path === 'tools/map.json') {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'text/plain',
+                    body: 'Simulated save failure'
+                });
+                return;
+            }
+            await route.continue();
+        });
+        page.__editorErrorWatch.allowConsoleError(/Failed to load resource: the server responded with a status of 500/);
+
+        await page.getByTestId('field-coord-z').fill('1120');
+        await page.getByTestId('field-coord-z').blur();
+        await expect(page.getByTestId('dirty-state-chip')).toHaveText('Unsaved changes');
+
+        await page.getByTestId('save-button').click({ force: true });
+
+        await expect(page.getByTestId('toast')).toHaveText(/save failed: simulated save failure/i);
+        await expect(page.getByTestId('dirty-state-chip')).toHaveText('Unsaved changes');
+
+        const state = await getEditorState(page);
+        expect(state.saveState).toBe('error');
+
+        await page.unroute('**/save');
     });
 });

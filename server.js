@@ -26,14 +26,21 @@ const MIME_TYPES = {
 };
 
 function injectRuntimeFlags(filePath, content) {
-  if (path.basename(filePath) !== 'fsim.html') return content;
-  const runtimeScript = '<script>window.__FSIM_RUNTIME__={mode:"serve",showDebugUi:false};</script>';
-  return content.replace('</head>', `    ${runtimeScript}\n</head>`);
+  const scripts = [];
+  if (path.basename(filePath) === 'fsim.html') {
+    scripts.push('<script>window.__FSIM_RUNTIME__={mode:"serve",showDebugUi:false};</script>');
+  }
+  if (scripts.length === 0) return content;
+  return content.replace('</head>', `    ${scripts.join('\n    ')}\n</head>`);
 }
 
 function safeResolve(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
-  if (decoded === '/editor.html' || decoded === '/editor.html/' || decoded === '/js/editor.js') return null;
+  if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
+    const builtEditorPath = path.resolve(ROOT, 'editor-dist', 'index.html');
+    if (existsSync(builtEditorPath)) return builtEditorPath;
+    return path.resolve(ROOT, 'editor.html');
+  }
   if (decoded === '/favicon.ico') {
     return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');
   }

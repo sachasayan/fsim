@@ -1,0 +1,246 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;600&display=swap');
+@import "tailwindcss";
+@source "../../js/editor/**/*.{js,jsx}";
+@source "../../src/editor-app/**/*.{html,js,jsx}";
+
+:root {
+    --bg: #030712;
+    --panel: rgba(17, 24, 39, 0.76);
+    --accent: #38bdf8;
+    --accent-glow: rgba(56, 189, 248, 0.4);
+    --accent-strong: #7dd3fc;
+    --accent-soft: rgba(56, 189, 248, 0.14);
+    --text: #f9fafb;
+    --text-dim: #9ca3af;
+    --border: rgba(255, 255, 255, 0.08);
+    --glass: rgba(255, 255, 255, 0.03);
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+}
+
+@theme {
+    --font-sans: "Outfit", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer base {
+    html, body, #editor-app {
+        @apply m-0 h-full w-full;
+    }
+
+    body {
+        @apply overflow-hidden bg-[radial-gradient(circle_at_top,#111827_0%,#030712_62%)] font-sans text-[color:var(--text)] antialiased;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+        margin: 0;
+    }
+}
+
+@layer components {
+    .editor-shell {
+        @apply grid h-full grid-rows-[auto_minmax(0,1fr)_auto];
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 16%),
+            radial-gradient(circle at top, #111827 0%, #030712 62%);
+    }
+
+    .editor-topbar {
+        @apply z-[3] grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-[18px] gap-y-[14px] border-b border-white/8 bg-[rgba(3,7,18,0.82)] px-[22px] py-[16px] backdrop-blur-[24px];
+        grid-template-areas:
+            "status commands";
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    }
+
+    .editor-topbar-title {
+        @apply flex min-w-0 flex-col gap-1;
+        grid-area: title;
+    }
+
+    .editor-topbar-status {
+        @apply flex flex-wrap justify-end gap-2;
+        grid-area: status;
+    }
+
+    .editor-topbar-commands {
+        grid-area: commands;
+    }
+
+    .editor-workspace {
+        @apply grid min-h-0 grid-cols-[132px_minmax(0,1fr)_340px];
+    }
+
+    .editor-dock {
+        @apply flex min-h-0 flex-col gap-3 overflow-y-auto bg-[rgba(8,13,24,0.92)] px-[14px] py-4 backdrop-blur-[24px];
+    }
+
+    .editor-left-dock {
+        @apply border-r border-white/8;
+        box-shadow: 18px 0 40px rgba(0, 0, 0, 0.22);
+    }
+
+    .editor-right-dock {
+        @apply border-l border-white/8;
+        box-shadow: -18px 0 40px rgba(0, 0, 0, 0.18);
+    }
+
+    .editor-canvas-stage {
+        @apply relative min-h-0 min-w-0 p-[14px];
+        background:
+            linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 28px 28px;
+        background-position: center;
+    }
+
+    .editor-canvas-stage::before {
+        content: "";
+        @apply pointer-events-none absolute inset-[14px] rounded-[20px] border border-white/6;
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+            0 20px 50px rgba(0, 0, 0, 0.28);
+    }
+
+    .editor-canvas-container {
+        @apply relative h-full min-h-0 w-full rounded-[18px] bg-[radial-gradient(circle_at_center,#111827_0%,#030712_100%)];
+    }
+
+    .editor-canvas-container canvas {
+        @apply rounded-[18px];
+    }
+
+    .editor-card {
+        @apply rounded-[1.35rem] border border-white/8 bg-[linear-gradient(180deg,rgba(17,24,39,0.82),rgba(8,13,24,0.94))] shadow-[0_20px_40px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.04)];
+    }
+
+    .editor-section-title {
+        @apply text-[11px] font-extrabold uppercase tracking-[0.2em] text-[color:var(--accent)];
+    }
+
+    .editor-panel-copy {
+        @apply m-0 text-sm text-[color:var(--text-dim)];
+    }
+
+    .editor-dock-intro {
+        @apply flex flex-col gap-2;
+    }
+
+    .editor-subsection-title {
+        @apply text-[10px] font-extrabold uppercase tracking-[0.18em] text-[color:var(--accent)];
+    }
+
+    .editor-hint-card {
+        @apply rounded-2xl border border-white/8 bg-black/20 p-3 text-sm text-[color:var(--text-dim)];
+    }
+
+    .editor-hint-card p {
+        @apply m-0 mb-2 last:mb-0;
+    }
+
+    .editor-toast {
+        @apply fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-white/10 px-4 py-2 text-sm font-semibold shadow-2xl backdrop-blur-xl;
+    }
+
+    .editor-statusbar {
+        @apply flex items-center justify-between gap-3 border-t border-white/8 bg-[rgba(3,7,18,0.88)] px-5 py-3 text-xs tracking-[0.18em] text-[color:var(--text-dim)] uppercase;
+    }
+
+    .editor-field {
+        @apply flex flex-col gap-2;
+    }
+
+    .editor-field-label {
+        @apply flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)];
+    }
+
+    .editor-value-pill {
+        @apply rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[10px] tracking-normal text-[color:var(--text)];
+    }
+
+    .editor-range-row {
+        @apply grid grid-cols-[minmax(0,1fr)_96px] gap-3 items-center;
+    }
+
+    .editor-grid-two {
+        @apply grid grid-cols-2 gap-3;
+    }
+
+    .editor-form-stack {
+        @apply flex flex-col gap-4;
+    }
+
+    .editor-checkbox-row {
+        @apply flex h-10 items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-[color:var(--text)];
+    }
+
+    .editor-inline-actions {
+        @apply grid grid-cols-1 gap-3 sm:grid-cols-2;
+    }
+
+    .editor-toolbar-strip {
+        @apply flex w-fit flex-col gap-2 rounded-[1.35rem] border border-white/8 bg-[linear-gradient(180deg,rgba(17,24,39,0.82),rgba(8,13,24,0.94))] p-2 shadow-[0_20px_40px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.04)];
+    }
+
+    .editor-layer-grid {
+        @apply flex flex-wrap gap-2;
+    }
+
+    .editor-tool-toggle {
+        @apply flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-[1.2rem] px-4 py-4 text-center;
+    }
+
+    .editor-tool-toggle-compact {
+        @apply flex size-12 items-center justify-center rounded-[1rem] p-0;
+    }
+
+    .editor-layer-toggle {
+        @apply flex min-h-[72px] min-w-[78px] flex-col items-center justify-center gap-2 rounded-[1.15rem] px-3 py-3;
+    }
+
+    .editor-icon-surface {
+        @apply rounded-2xl border border-white/10 bg-black/15 p-2.5 text-[color:var(--accent-strong)];
+    }
+
+    .editor-icon-surface-compact {
+        @apply rounded-xl border border-white/8 bg-black/15 p-2 text-[color:var(--accent-strong)];
+    }
+
+    .editor-layer-count {
+        @apply font-mono text-[11px] text-[color:var(--text-dim)];
+    }
+
+    .editor-status-chip {
+        @apply inline-flex items-center gap-2 rounded-full border border-[color:var(--accent-glow)] bg-[rgba(56,189,248,0.08)] px-3 py-1.5 text-xs font-semibold text-[color:var(--accent-strong)];
+    }
+
+    @media (max-width: 1080px) {
+        .editor-topbar {
+            @apply grid-cols-1;
+            grid-template-areas:
+                "status"
+                "commands";
+        }
+
+        .editor-workspace {
+            @apply grid-cols-1;
+            grid-template-rows: auto minmax(280px, 44vh) auto auto;
+        }
+
+        .editor-left-dock,
+        .editor-right-dock {
+            @apply border-0 shadow-none;
+        }
+    }
+}

@@ -5,7 +5,7 @@
 The project combines:
 
 - A Three.js-powered flight sim runtime with procedural terrain, weather, lighting, HUD systems, audio, crash handling, and adaptive LOD.
-- An authoring workflow built around `tools/map.json`, `config/vantage_points.json`, and a React-based map editor at `editor.html`.
+- An authoring workflow built around `tools/map.json`, `config/vantage_points.json`, and a React-based map editor at `/editor`.
 - Offline baking tools that compile authored + procedural world data into binary terrain and district chunk assets under [`world/`](./world).
 - A testing and performance harness for shader, terrain, editor, and runtime regression coverage.
 
@@ -31,7 +31,7 @@ The project combines:
 
 ### World editor and content pipeline
 
-- Dedicated editor entry point at [`editor.html`](./editor.html).
+- Dedicated editor entry point at `/editor` (served from [`editor.html`](./editor.html) in fallback mode).
 - React-based editor app in [`js/editor/`](./js/editor) with canvas controllers, document/store logic, and UI shell.
 - Save flow for map and vantage-point data through the dev server.
 - Live reload events for rebuilding and refreshing baked city/world content after edits.
@@ -52,7 +52,7 @@ The project combines:
 ```text
 fsim/
 ├── fsim.html              # main sim runtime entry
-├── editor.html            # browser world editor
+├── editor.html            # fallback browser world editor document, served at /editor
 ├── js/
 │   ├── modules/           # sim, physics, renderer, world, shaders, UI
 │   └── editor/            # editor canvas, state, commands, UI
@@ -92,7 +92,7 @@ npm run dev
 Then open:
 
 - Sim: [http://127.0.0.1:5173/](http://127.0.0.1:5173/)
-- Editor: [http://127.0.0.1:5173/editor.html](http://127.0.0.1:5173/editor.html)
+- Editor: [http://127.0.0.1:5173/editor](http://127.0.0.1:5173/editor)
 
 ### Run the static server
 

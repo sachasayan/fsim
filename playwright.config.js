@@ -35,8 +35,8 @@ export default defineConfig({
         }
     ],
     webServer: {
-        command: 'PORT=4173 FSIM_EDITOR_E2E=1 node tools/dev-server.mjs',
-        url: 'http://127.0.0.1:4173/editor.html',
+        command: 'npm run editor:build && PORT=4173 FSIM_EDITOR_E2E=1 node tools/dev-server.mjs',
+        url: 'http://127.0.0.1:4173/editor',
         reuseExistingServer: false,
         timeout: 30_000
     }

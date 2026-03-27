@@ -246,14 +246,23 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const terrainLab = state.ui.terrainLab;
         const selected = getEntityById(state.document, state.selection.selectedId);
         if (!isTerrainRegion(selected)) {
-            store.dispatch({
-                type: 'set-terrain-preview',
-                status: 'idle',
-                previewKey: null,
-                snapshot: null,
-                previewDirty: false,
-                metadata: null
-            });
+            const previewAlreadyReset = (
+                terrainLab.previewStatus === 'idle'
+                && terrainLab.previewKey === null
+                && terrainLab.previewSnapshot === null
+                && terrainLab.previewDirty === false
+                && terrainLab.lastMetadata === null
+            );
+            if (!previewAlreadyReset) {
+                store.dispatch({
+                    type: 'set-terrain-preview',
+                    status: 'idle',
+                    previewKey: null,
+                    snapshot: null,
+                    previewDirty: false,
+                    metadata: null
+                });
+            }
             return;
         }
         if (!terrainLab.draftConfig.preview.enabled) return;

@@ -1,9 +1,12 @@
-import { React, ReactDOM, ReactDOMClient } from '../vendor/react-loader.js';
+import * as React from 'react';
+import * as ReactDOM from 'react-dom';
+import * as ReactDOMClient from 'react-dom/client';
+
 import { normalizeMapData } from '../modules/world/MapDataUtils.js';
 import { createEditorCanvasController } from './canvas/controller.js';
-import { createEditorDocument, resolveSelectionAfterReload } from './core/document.js';
+import { createEditorDocument } from './core/document.js';
 import { createEditorStore } from './core/store.js';
-import { EditorApp } from './ui/app.js';
+import { EditorApp } from './ui/app.jsx';
 
 const isEditorE2e = window.__FSIM_EDITOR_E2E__ === true;
 
@@ -86,28 +89,26 @@ export async function initEditor() {
         }
     }
 
-    const app = React.createElement(EditorApp, {
-        store,
-        canvasRef: value => { canvasRef.current = value; },
-        coordsRef: value => { coordsRef.current = value; },
-        onSave: save,
-        onRebuild: rebuildWorld,
-        controller: {
-            frameSelection() {
-                controller?.frameSelection();
-            },
-            frameTerrainHydrology() {
-                controller?.frameTerrainHydrology();
-            },
-            resetView() {
-                controller?.resetView();
-            }
-        }
-    });
-
     const root = ReactDOMClient.createRoot(rootElement);
     ReactDOM.flushSync(() => {
-        root.render(app);
+        root.render(React.createElement(EditorApp, {
+            store,
+            canvasRef: (value) => { canvasRef.current = value; },
+            coordsRef: (value) => { coordsRef.current = value; },
+            onSave: save,
+            onRebuild: rebuildWorld,
+            controller: {
+                frameSelection() {
+                    controller?.frameSelection();
+                },
+                frameTerrainHydrology() {
+                    controller?.frameTerrainHydrology();
+                },
+                resetView() {
+                    controller?.resetView();
+                }
+            }
+        }));
     });
 
     controller = createEditorCanvasController({
@@ -117,26 +118,9 @@ export async function initEditor() {
     });
     await controller.init();
 
-    window.addEventListener('beforeunload', event => {
+    window.addEventListener('beforeunload', (event) => {
         if (!store.getState().history.dirty) return;
         event.preventDefault();
         event.returnValue = '';
     });
-
-    const source = new EventSource('/events');
-    source.addEventListener('reload-city', async () => {
-        try {
-            const previousDocument = store.getState().document;
-            await controller?.reloadStaticWorld?.();
-            const nextDocument = await loadInitialDocument();
-            const reindexedDocument = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, previousDocument);
-            const selectedId = resolveSelectionAfterReload(previousDocument, reindexedDocument, store.getState().selection.selectedId);
-            store.dispatch({ type: 'replace-document', document: reindexedDocument, selectedId });
-            store.dispatch({ type: 'set-toast', toast: { message: 'Reloaded baked world data', tone: 'info', timestamp: Date.now() } });
-        } catch (error) {
-            store.dispatch({ type: 'set-toast', toast: { message: `Reload failed: ${error.message}`, tone: 'error', timestamp: Date.now() } });
-        }
-    });
-
-    return { store, controller, root };
 }

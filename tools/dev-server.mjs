@@ -41,7 +41,11 @@ function injectRuntimeFlags(filePath, content) {
     if (path.basename(filePath) === 'fsim.html') {
         scripts.push('<script>window.__FSIM_RUNTIME__={mode:"dev",showDebugUi:true};</script>');
     }
-    if (IS_EDITOR_E2E && path.basename(filePath) === 'editor.html') {
+    if (IS_EDITOR_E2E && (
+        path.basename(filePath) === 'editor.html'
+        || path.basename(filePath) === 'editor'
+        || filePath === path.join(ROOT, 'editor-dist', 'index.html')
+    )) {
         scripts.push('<script>window.__FSIM_EDITOR_E2E__=true;</script>');
     }
     if (scripts.length === 0) return content;
@@ -50,6 +54,11 @@ function injectRuntimeFlags(filePath, content) {
 
 function safeResolve(urlPath) {
     const decoded = decodeURIComponent(urlPath.split('?')[0]);
+    if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
+        const builtEditorPath = path.resolve(ROOT, 'editor-dist', 'index.html');
+        if (existsSync(builtEditorPath)) return builtEditorPath;
+        return path.resolve(ROOT, 'editor.html');
+    }
     if (decoded === '/favicon.ico') {
         return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');
     }
@@ -246,5 +255,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
     console.log(`\n🚀 fsim Build Server running at http://127.0.0.1:${PORT}`);
-    console.log(`🗺️  Map Editor: http://127.0.0.1:${PORT}/editor.html\n`);
+    console.log(`🗺️  Map Editor: http://127.0.0.1:${PORT}/editor\n`);
 });

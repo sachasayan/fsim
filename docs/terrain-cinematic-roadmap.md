@@ -283,7 +283,7 @@ Bake integration:
 
 Editor controls:
 
-- [`js/editor/ui/app.js`](/Users/sacha/Projects/fsim/js/editor/ui/app.js)
+- [`js/editor/ui/app.jsx`](/Users/sacha/Projects/fsim/js/editor/ui/app.jsx)
 
 Runtime visual follow-through:
 
