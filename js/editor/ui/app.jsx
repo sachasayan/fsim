@@ -5,10 +5,9 @@ import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getEntityById } from '../core/document.js';
 import { AppHeader } from './AppHeader.jsx';
 import { FooterPanel } from './FooterPanel.jsx';
-import { HelpPanel } from './HelpPanel.jsx';
 import { Icon, TooltipProvider, useStore } from './common.jsx';
 import { InspectorPanel } from './InspectorPanel.jsx';
-import { LayersPanel } from './LayersPanel.jsx';
+import { ShortcutHelpModal } from './ShortcutHelpModal.jsx';
 import { StatusBar } from './StatusBar.jsx';
 import { TerrainBrushPanel } from './TerrainBrushPanel.jsx';
 import { TerrainLabPanel } from './TerrainLabPanel.jsx';
@@ -46,8 +45,6 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
                 <div className="editor-workspace">
                     <aside className="editor-dock editor-left-dock" id="sidebar" data-testid="sidebar">
                         <ToolPalette store={store} currentTool={currentTool} toolDefs={toolDefs} />
-                        <LayersPanel store={store} />
-                        <HelpPanel store={store} />
                     </aside>
 
                     <main className="editor-canvas-stage">
@@ -66,6 +63,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
 
                 <StatusBar coordsRef={coordsRef} />
             </div>
+            <ShortcutHelpModal store={store} />
             <Toast store={store} />
         </TooltipProvider>
     );

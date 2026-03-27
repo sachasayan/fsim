@@ -36,13 +36,24 @@ test.describe('editor e2e', () => {
         await page.keyboard.press('w');
         await expect(page.getByTestId('tool-add-road')).toHaveClass(/active/);
 
-        await page.keyboard.press('?');
+        await page.getByTestId('shortcut-help-button').click();
+        await expect(page.getByTestId('shortcut-help-modal')).toBeVisible();
         await expect(page.getByText(/tools: v select, d district/i)).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('shortcut-help-modal')).toBeHidden();
+
+        await page.keyboard.press('?');
+        await expect(page.getByTestId('shortcut-help-modal')).toBeVisible();
+        await expect(page.getByText(/tools: v select, d district/i)).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('shortcut-help-modal')).toBeHidden();
 
         await expect(page.getByTestId('grid-snap-chip')).toHaveText('Grid snap on');
         await page.keyboard.press('g');
         await expect(page.getByTestId('grid-snap-chip')).toHaveText('Grid snap off');
 
+        await page.getByTestId('layers-panel').click();
+        await expect(page.getByTestId('layers-dropdown-menu')).toBeVisible();
         await expect(page.getByTestId('layer-toggle-districts')).toHaveClass(/active/);
         await page.getByTestId('layer-toggle-districts').click({ force: true });
         await expect(page.getByTestId('layer-toggle-districts')).not.toHaveClass(/active/);

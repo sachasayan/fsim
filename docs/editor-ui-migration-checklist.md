@@ -61,6 +61,8 @@ Status key:
 - `[x]` Use those shared primitives across the left tool rail
 - `[x]` Convert the tool palette to a compact icon-first vertical strip with tooltip affordances
 - `[x]` Use those shared primitives across layer visibility controls
+- `[x]` Move layer visibility controls into a top-bar dropdown instead of a persistent left-dock panel
+- `[x]` Move shortcut help into the top bar and present it in a modal instead of a left-dock panel
 - `[x]` Use those shared primitives across inspector actions and basic form controls
 - `[x]` Use those shared primitives across terrain lab actions and controls
 - `[x]` Add tooltip primitives where appropriate for command and tool affordances
