@@ -703,7 +703,11 @@ function buildChunkProps(job) {
             if (c.districts.length > 0) {
                 for (const district of c.districts) {
                     if (district.points?.length >= 3 && isPointInPolygon(vx, vz, district.points)) return true;
-                    if (district.center && district.radius && Math.hypot(vx - district.center[0], vz - district.center[1]) <= district.radius) return true;
+                    if (district.center && district.radius) {
+                        const ddx = vx - district.center[0];
+                        const ddz = vz - district.center[1];
+                        if (ddx * ddx + ddz * ddz <= district.radius * district.radius) return true;
+                    }
                 }
                 continue;
             }
