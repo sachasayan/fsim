@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import path from 'node:path';
 import fs from 'node:fs';
-import { PNG } from 'pngjs';
 
 const ROOT = process.cwd();
 const PORT = 5190;
@@ -14,8 +13,7 @@ function parseArgs(argv) {
         filter: '',
         width: 1280,
         height: 720,
-        settle: 1000,
-        noContactSheet: false
+        settle: 1000
     };
 
     for (const arg of argv) {
@@ -24,7 +22,6 @@ function parseArgs(argv) {
         if (arg.startsWith('--width=')) options.width = parseInt(arg.slice('--width='.length), 10);
         if (arg.startsWith('--height=')) options.height = parseInt(arg.slice('--height='.length), 10);
         if (arg.startsWith('--settle=')) options.settle = parseInt(arg.slice('--settle='.length), 10);
-        if (arg === '--no-contact-sheet') options.noContactSheet = true;
     }
 
     return options;
@@ -95,8 +92,6 @@ async function main() {
         await page.waitForFunction(() => window.fsimWorld && window.fsimWorld.isReady(), null, { timeout: 120000 });
         console.log(`  [Init] Simulation ready. Entering sequential capture loop...`);
 
-        const capturedFiles = [];
-
         for (const [name, params] of filteredEntries) {
             console.log(`  [${name}] Teleporting...`);
 
@@ -163,65 +158,15 @@ async function main() {
 
             const imgPath = path.join(batchDir, `${name}.png`);
             await page.screenshot({ path: imgPath, timeout: 60000 });
-            capturedFiles.push({ name, path: imgPath });
             console.log(`  [${name}] Captured.`);
         }
 
         await browser.close();
-        if (!options.noContactSheet) {
-            console.log('Capture complete. Generating contact sheet...');
-            await generateContactSheet(capturedFiles, path.join(batchDir, 'contact_sheet.png'));
-        }
+        console.log(`Capture complete. Screenshots saved to ${batchDir}`);
 
     } finally {
         server.kill();
     }
-}
-
-async function generateContactSheet(files, outPath) {
-    const cols = 2;
-    const rows = Math.ceil(files.length / cols);
-    const thumbW = 400;
-    const thumbH = 225;
-    const margin = 10;
-    const padding = 20;
-
-    const sheetW = cols * thumbW + (cols + 1) * margin;
-    const sheetH = rows * thumbH + (rows + 1) * margin + padding;
-
-    const sheet = new PNG({ width: sheetW, height: sheetH });
-    for (let i = 0; i < sheet.data.length; i += 4) {
-        sheet.data[i] = 30; sheet.data[i + 1] = 30; sheet.data[i + 2] = 30; sheet.data[i + 3] = 255;
-    }
-
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!fs.existsSync(file.path)) continue;
-        const data = fs.readFileSync(file.path);
-        const png = PNG.sync.read(data);
-
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const startX = margin + col * (thumbW + margin);
-        const startY = margin + row * (thumbH + margin);
-
-        for (let y = 0; y < thumbH; y++) {
-            for (let x = 0; x < thumbW; x++) {
-                const srcX = Math.floor(x * (png.width / thumbW));
-                const srcY = Math.floor(y * (png.height / thumbH));
-                const srcIdx = (srcY * png.width + srcX) << 2;
-                const dstIdx = ((startY + y) * sheetW + (startX + x)) << 2;
-
-                sheet.data[dstIdx] = png.data[srcIdx];
-                sheet.data[dstIdx + 1] = png.data[srcIdx + 1];
-                sheet.data[dstIdx + 2] = png.data[srcIdx + 2];
-                sheet.data[dstIdx + 3] = 255;
-            }
-        }
-    }
-
-    fs.writeFileSync(outPath, PNG.sync.write(sheet));
-    console.log(`✅ Contact sheet saved to ${outPath}`);
 }
 
 main().catch(console.error);
