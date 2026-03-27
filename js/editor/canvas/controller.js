@@ -43,6 +43,12 @@ export function clampViewportToWorld(viewport, canvasSize, worldSize = DEFAULT_W
     };
 }
 
+export function shouldClearSelectionOnPointerRelease(state, pendingCanvasPan, isPanning) {
+    if (!pendingCanvasPan || isPanning || state?.tools?.currentTool !== 'select') return false;
+    const selected = getEntityById(state.document, state.selection.selectedId);
+    return isTerrainRegion(selected);
+}
+
 export function getTerrainEditBoundsById(document) {
     const boundsById = new Map();
     for (const edit of document?.worldData?.terrainEdits || []) {
@@ -798,6 +804,9 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         });
 
         function releasePointer(event) {
+            if (shouldClearSelectionOnPointerRelease(store.getState(), pendingCanvasPan, isPanning)) {
+                setSelection(null);
+            }
             if (dragMode === 'terrain-region' && activeTerrainRegionSelection) {
                 const draftRegion = createTerrainRegionFromTiles(
                     activeTerrainRegionSelection.startTile,

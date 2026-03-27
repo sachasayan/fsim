@@ -5,7 +5,8 @@ import {
     clampViewportToWorld,
     getTerrainEditBoundsById,
     invalidateChangedTerrainTiles,
-    reconcileTerrainTileInvalidation
+    reconcileTerrainTileInvalidation,
+    shouldClearSelectionOnPointerRelease
 } from '../js/editor/canvas/controller.js';
 import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import { createEditorDocument } from '../js/editor/core/document.js';
@@ -160,4 +161,71 @@ test('clampViewportToWorld keeps the camera center inside the visible world boun
     assert.equal(viewport.zoom, 0.02);
     assert.equal(viewport.x, 20000);
     assert.equal(viewport.z, -30000);
+});
+
+test('shouldClearSelectionOnPointerRelease clears selected terrain region after empty select click', () => {
+    const document = createEditorDocument({
+        districts: [],
+        roads: [],
+        terrainRegions: [{
+            tileX: 2,
+            tileZ: 3,
+            tileWidth: 4,
+            tileHeight: 5
+        }],
+        terrainEdits: [],
+        terrainGenerator: {
+            seed: 12345,
+            preview: {
+                overlay: 'height',
+                resolution: 96,
+                showContours: true,
+                enabled: true
+            }
+        }
+    }, {});
+    const [selectedId] = document.index.groupIds.terrainRegions;
+    const state = {
+        document,
+        selection: { selectedId },
+        tools: { currentTool: 'select' }
+    };
+
+    assert.equal(
+        shouldClearSelectionOnPointerRelease(state, { x: 100, y: 100 }, false),
+        true
+    );
+});
+
+test('shouldClearSelectionOnPointerRelease preserves selection while panning or for non-region selections', () => {
+    const document = createDocumentWithTerrainEdits([{
+        kind: 'raise',
+        x: 0,
+        z: 0,
+        radius: 100,
+        points: [[0, 0]],
+        bounds: { minX: -100, maxX: 100, minZ: -100, maxZ: 100 }
+    }]);
+    const [terrainEditId] = document.index.groupIds.terrain;
+    const state = {
+        document,
+        selection: { selectedId: terrainEditId },
+        tools: { currentTool: 'select' }
+    };
+
+    assert.equal(
+        shouldClearSelectionOnPointerRelease(state, { x: 100, y: 100 }, false),
+        false
+    );
+    assert.equal(
+        shouldClearSelectionOnPointerRelease({
+            ...state,
+            selection: { selectedId: null }
+        }, { x: 100, y: 100 }, false),
+        false
+    );
+    assert.equal(
+        shouldClearSelectionOnPointerRelease(state, { x: 100, y: 100 }, true),
+        false
+    );
 });
