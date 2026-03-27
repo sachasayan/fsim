@@ -11,8 +11,42 @@ import { Toggle } from './components/ui/toggle.jsx';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip.jsx';
 import { cn } from './utils.js';
 
-export function useStore(store, selector) {
-    return React.useSyncExternalStore(store.subscribe, () => selector(store.getState()), () => selector(store.getState()));
+export function shallowEqual(valueA, valueB) {
+    if (Object.is(valueA, valueB)) return true;
+    if (!valueA || !valueB || typeof valueA !== 'object' || typeof valueB !== 'object') return false;
+
+    const keysA = Object.keys(valueA);
+    const keysB = Object.keys(valueB);
+    if (keysA.length !== keysB.length) return false;
+
+    for (const key of keysA) {
+        if (!Object.prototype.hasOwnProperty.call(valueB, key) || !Object.is(valueA[key], valueB[key])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+export function useStore(store, selector, isEqual = Object.is) {
+    const selectorRef = React.useRef(selector);
+    const isEqualRef = React.useRef(isEqual);
+    const hasSnapshotRef = React.useRef(false);
+    const snapshotRef = React.useRef();
+
+    selectorRef.current = selector;
+    isEqualRef.current = isEqual;
+
+    const getSnapshot = React.useCallback(() => {
+        const nextValue = selectorRef.current(store.getState());
+        if (hasSnapshotRef.current && isEqualRef.current(snapshotRef.current, nextValue)) {
+            return snapshotRef.current;
+        }
+        hasSnapshotRef.current = true;
+        snapshotRef.current = nextValue;
+        return nextValue;
+    }, [store]);
+
+    return React.useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 }
 
 export function formatControlValue(value) {

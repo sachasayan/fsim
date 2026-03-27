@@ -21,6 +21,27 @@ function getTerrainRegionTileScreenSize(zoom) {
     return getTerrainRegionTileSize(DEFAULT_WORLD_SIZE) * zoom;
 }
 
+function buildPolylinePath(points, worldToScreen) {
+    if (!Array.isArray(points) || points.length === 0) return null;
+    const path = new Path2D();
+    const start = worldToScreen(points[0][0], points[0][1]);
+    path.moveTo(start.x, start.y);
+    for (let index = 1; index < points.length; index += 1) {
+        const point = worldToScreen(points[index][0], points[index][1]);
+        path.lineTo(point.x, point.y);
+    }
+    return path;
+}
+
+function getInteractionState(state, interactionState = {}) {
+    return {
+        hoverId: interactionState.hoverId ?? state.selection.hoverId ?? null,
+        hoverWorldPos: interactionState.hoverWorldPos ?? state.viewport.hoverWorldPos ?? null,
+        terrainRegionHover: interactionState.terrainRegionHover ?? state.ui?.terrainRegionHover ?? null,
+        terrainRegionSelection: interactionState.terrainRegionSelection ?? state.ui?.terrainRegionSelection ?? null
+    };
+}
+
 export function createCoordinateHelpers(canvas, camera) {
     return {
         worldToScreen(wx, wz) {
@@ -38,8 +59,9 @@ export function createCoordinateHelpers(canvas, camera) {
     };
 }
 
-export function renderEditorScene(ctx, canvas, tileManager, state) {
+export function renderEditorScene(ctx, canvas, tileManager, state, interactionState = null) {
     const { document, viewport, selection, tools } = state;
+    const interactions = getInteractionState(state, interactionState);
     const camera = viewport;
     const helpers = createCoordinateHelpers(canvas, camera);
     const { worldToScreen } = helpers;
@@ -59,12 +81,12 @@ export function renderEditorScene(ctx, canvas, tileManager, state) {
     drawGrid(ctx, canvas, camera);
     drawWorldBounds(ctx, state, worldToScreen);
     drawRunway(ctx, worldToScreen, zoom);
-    drawDistricts(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawRoads(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawTerrainRegions(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawTerrain(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawVantagePoints(ctx, state, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawOverlays(ctx, state, worldToScreen, selection, tools);
+    drawDistricts(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawRoads(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawTerrainRegions(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawTerrain(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawVantagePoints(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawOverlays(ctx, state, interactions, worldToScreen, selection, tools);
 }
 
 function drawWorldBounds(ctx, state, worldToScreen) {
@@ -179,36 +201,30 @@ function drawRunway(ctx, worldToScreen, zoom) {
     ctx.restore();
 }
 
-function drawDistricts(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
+function drawDistricts(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'districts')) return;
     for (const entityId of getGroupEntityIds(document, 'districts')) {
         if (!isObjectVisible(state, entityId, 'districts')) continue;
         const district = getEntityById(document, entityId);
         const isSelected = state.selection.selectedId === entityId;
-        const isHovered = state.selection.hoverId === entityId && !isSelected;
+        const isHovered = interactions.hoverId === entityId && !isSelected;
         if (!district) continue;
         if (district.center[0] < worldBounds.minX - 1000 || district.center[0] > worldBounds.maxX + 1000 || district.center[1] < worldBounds.minZ - 1000 || district.center[1] > worldBounds.maxZ + 1000) continue;
         const fillStyle = isSelected ? COLORS.districtSelected : isHovered ? 'rgba(255,255,140,0.35)' : COLORS.district;
         if (district.points?.length) {
-            ctx.beginPath();
-            const start = worldToScreen(district.points[0][0], district.points[0][1]);
-            ctx.moveTo(start.x, start.y);
-            for (let index = 1; index < district.points.length; index++) {
-                const point = worldToScreen(district.points[index][0], district.points[index][1]);
-                ctx.lineTo(point.x, point.y);
-            }
-            ctx.closePath();
+            const path = buildPolylinePath(district.points, worldToScreen);
+            path.closePath();
             ctx.fillStyle = fillStyle;
-            ctx.fill();
+            ctx.fill(path);
             ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.45)';
             ctx.lineWidth = isSelected ? 2.2 : 1;
-            ctx.stroke();
+            ctx.stroke(path);
             drawVertexHandles(ctx, state, entityId, district.points, worldToScreen, viewportRect, COLORS.accent);
         }
     }
 }
 
-function drawRoads(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
+function drawRoads(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'roads')) return;
     for (const entityId of getGroupEntityIds(document, 'roads')) {
         if (!isObjectVisible(state, entityId, 'roads')) continue;
@@ -216,33 +232,21 @@ function drawRoads(ctx, state, document, worldToScreen, viewportRect, worldBound
         if (!road?.points?.length) continue;
         if (road.center[0] < worldBounds.minX - 1500 || road.center[0] > worldBounds.maxX + 1500 || road.center[1] < worldBounds.minZ - 1500 || road.center[1] > worldBounds.maxZ + 1500) continue;
         const isSelected = state.selection.selectedId === entityId;
-        const isHovered = state.selection.hoverId === entityId && !isSelected;
+        const isHovered = interactions.hoverId === entityId && !isSelected;
         const halo = road.surface === 'asphalt' ? 'rgba(255, 159, 67, 0.18)' : road.surface === 'gravel' ? 'rgba(214,190,150,0.18)' : 'rgba(164,120,82,0.18)';
         const stroke = isSelected ? COLORS.roadSelected : isHovered ? '#ffe9c7' : road.surface === 'asphalt' ? COLORS.road : road.surface === 'gravel' ? '#d6be96' : '#a47852';
         const roadWidthPx = Math.max(3, road.width * state.viewport.zoom);
         const haloWidthPx = Math.max(roadWidthPx + 2, (road.width + road.feather * 2) * state.viewport.zoom);
 
-        ctx.beginPath();
-        road.points.forEach(([x, z], index) => {
-            const point = worldToScreen(x, z);
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
-        });
+        const path = buildPolylinePath(road.points, worldToScreen);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.lineWidth = haloWidthPx;
         ctx.strokeStyle = halo;
-        ctx.stroke();
-
-        ctx.beginPath();
-        road.points.forEach(([x, z], index) => {
-            const point = worldToScreen(x, z);
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
-        });
+        ctx.stroke(path);
         ctx.lineWidth = isSelected ? roadWidthPx + 2 : roadWidthPx;
         ctx.strokeStyle = stroke;
-        ctx.stroke();
+        ctx.stroke(path);
         ctx.lineCap = 'butt';
         ctx.lineJoin = 'miter';
 
@@ -250,10 +254,10 @@ function drawRoads(ctx, state, document, worldToScreen, viewportRect, worldBound
     }
 }
 
-function drawTerrainRegions(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
+function drawTerrainRegions(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'terrainRegions')) return;
     const tileScreenSize = getTerrainRegionTileScreenSize(state.viewport.zoom);
-    const showPerTileFill = tileScreenSize >= 10;
+    const showPerTileFill = tileScreenSize >= 16;
     for (const entityId of getGroupEntityIds(document, 'terrainRegions')) {
         if (!isObjectVisible(state, entityId, 'terrainRegions')) continue;
         const region = getEntityById(document, entityId);
@@ -264,8 +268,8 @@ function drawTerrainRegions(ctx, state, document, worldToScreen, viewportRect, w
         const bottomRight = worldToScreen(bounds.maxX, bounds.maxZ);
         if (!isScreenPointVisible(viewportRect, topLeft, 48) && !isScreenPointVisible(viewportRect, bottomRight, 48)) continue;
         const isSelected = state.selection.selectedId === entityId;
-        const isHovered = state.selection.hoverId === entityId && !isSelected;
-        if (showPerTileFill) {
+        const isHovered = interactions.hoverId === entityId && !isSelected;
+        if (showPerTileFill && (isSelected || isHovered)) {
             for (let tileZ = region.tileZ; tileZ < region.tileZ + region.tileHeight; tileZ += 1) {
                 for (let tileX = region.tileX; tileX < region.tileX + region.tileWidth; tileX += 1) {
                     drawTerrainRegionTile(
@@ -291,7 +295,7 @@ function drawTerrainRegions(ctx, state, document, worldToScreen, viewportRect, w
     }
 }
 
-function drawTerrain(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
+function drawTerrain(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'terrain')) return;
     for (const entityId of getGroupEntityIds(document, 'terrain')) {
         if (!isObjectVisible(state, entityId, 'terrain')) continue;
@@ -305,31 +309,19 @@ function drawTerrain(ctx, state, document, worldToScreen, viewportRect, worldBou
         };
         if (bounds.maxX < worldBounds.minX || bounds.minX > worldBounds.maxX || bounds.maxZ < worldBounds.minZ || bounds.minZ > worldBounds.maxZ) continue;
         const isSelected = state.selection.selectedId === entityId;
-        const isHovered = state.selection.hoverId === entityId && !isSelected;
+        const isHovered = interactions.hoverId === entityId && !isSelected;
         const fillStyle = edit.kind === 'lower' ? 'rgba(255,89,94,0.12)' : edit.kind === 'flatten' ? 'rgba(255,173,51,0.12)' : 'rgba(56,189,248,0.12)';
         const strokeStyle = isSelected ? '#fff' : isHovered ? '#cff5ff' : edit.kind === 'lower' ? '#ff595e' : edit.kind === 'flatten' ? '#ffad33' : '#38bdf8';
         if (Array.isArray(edit.points) && edit.points.length > 1) {
-            ctx.beginPath();
-            edit.points.forEach(([x, z], index) => {
-                const point = worldToScreen(x, z);
-                if (index === 0) ctx.moveTo(point.x, point.y);
-                else ctx.lineTo(point.x, point.y);
-            });
+            const path = buildPolylinePath(edit.points, worldToScreen);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.lineWidth = edit.radius * state.viewport.zoom * 2;
             ctx.strokeStyle = fillStyle;
-            ctx.stroke();
-
-            ctx.beginPath();
-            edit.points.forEach(([x, z], index) => {
-                const point = worldToScreen(x, z);
-                if (index === 0) ctx.moveTo(point.x, point.y);
-                else ctx.lineTo(point.x, point.y);
-            });
+            ctx.stroke(path);
             ctx.lineWidth = isSelected ? 3 : Math.max(2, Math.min(6, edit.radius * state.viewport.zoom * 0.18));
             ctx.strokeStyle = strokeStyle;
-            ctx.stroke();
+            ctx.stroke(path);
             ctx.lineCap = 'butt';
             ctx.lineJoin = 'miter';
             drawVertexHandles(ctx, state, entityId, edit.points, worldToScreen, viewportRect, strokeStyle);
@@ -346,7 +338,7 @@ function drawTerrain(ctx, state, document, worldToScreen, viewportRect, worldBou
     }
 }
 
-function drawVantagePoints(ctx, state, document, worldToScreen, viewportRect, worldBounds) {
+function drawVantagePoints(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'vantage')) return;
     for (const entityId of getGroupEntityIds(document, 'vantage')) {
         if (!isObjectVisible(state, entityId, 'vantage')) continue;
@@ -356,7 +348,7 @@ function drawVantagePoints(ctx, state, document, worldToScreen, viewportRect, wo
         const point = worldToScreen(vp.x, vp.z);
         if (!isScreenPointVisible(viewportRect, point, 40)) continue;
         const isSelected = state.selection.selectedId === entityId;
-        const isHovered = state.selection.hoverId === entityId && !isSelected;
+        const isHovered = interactions.hoverId === entityId && !isSelected;
         ctx.beginPath();
         ctx.arc(point.x, point.y, isSelected ? 9 : 8, 0, Math.PI * 2);
         ctx.fillStyle = isSelected ? COLORS.vantageSelected : isHovered ? '#d4ffc0' : COLORS.vantage;
@@ -383,21 +375,21 @@ function drawVertexHandles(ctx, state, entityId, points, worldToScreen, viewport
     }
 }
 
-function drawOverlays(ctx, state, worldToScreen) {
+function drawOverlays(ctx, state, interactions, worldToScreen) {
     const tileScreenSize = getTerrainRegionTileScreenSize(state.viewport.zoom);
-    if (state.tools.currentTool === 'terrain-region' && state.ui.terrainRegionHover) {
+    if (state.tools.currentTool === 'terrain-region' && interactions.terrainRegionHover) {
         drawTerrainRegionTile(
             ctx,
             worldToScreen,
-            state.ui.terrainRegionHover.tileX,
-            state.ui.terrainRegionHover.tileZ,
-            state.ui.terrainRegionHover.ownerId ? 'rgba(248, 113, 113, 0.16)' : 'rgba(74, 222, 128, 0.12)',
-            state.ui.terrainRegionHover.ownerId ? '#f87171' : '#86efac',
+            interactions.terrainRegionHover.tileX,
+            interactions.terrainRegionHover.tileZ,
+            interactions.terrainRegionHover.ownerId ? 'rgba(248, 113, 113, 0.16)' : 'rgba(74, 222, 128, 0.12)',
+            interactions.terrainRegionHover.ownerId ? '#f87171' : '#86efac',
             tileScreenSize >= 12 ? 1.6 : 2
         );
     }
 
-    const regionSelection = state.ui?.terrainRegionSelection;
+    const regionSelection = interactions.terrainRegionSelection;
     if (regionSelection?.bounds && Array.isArray(regionSelection.tiles)) {
         ctx.save();
         for (const tile of regionSelection.tiles) {
@@ -420,8 +412,8 @@ function drawOverlays(ctx, state, worldToScreen) {
         ctx.restore();
     }
 
-    if (state.viewport.hoverWorldPos && isTerrainBrushTool(state.tools.currentTool)) {
-        const point = worldToScreen(state.viewport.hoverWorldPos.x, state.viewport.hoverWorldPos.z);
+    if (interactions.hoverWorldPos && isTerrainBrushTool(state.tools.currentTool)) {
+        const point = worldToScreen(interactions.hoverWorldPos.x, interactions.hoverWorldPos.z);
         const previewColor = state.tools.currentTool === 'terrain-lower'
             ? 'rgba(255, 89, 94, 0.85)'
             : state.tools.currentTool === 'terrain-flatten'
@@ -443,6 +435,68 @@ function isObjectLocked(state, entityId, groupId) {
     return state.layers.groupLocked[groupId] === true || state.layers.itemLocked[entityId] === true;
 }
 
+function getCachedPointBounds(entity, points, pad = 0) {
+    if (entity.__editorHitBounds && entity.__editorHitBoundsPad === pad) {
+        return entity.__editorHitBounds;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const [x, z] of points || []) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+    }
+    const bounds = {
+        minX: minX - pad,
+        maxX: maxX + pad,
+        minZ: minZ - pad,
+        maxZ: maxZ + pad
+    };
+    entity.__editorHitBounds = bounds;
+    entity.__editorHitBoundsPad = pad;
+    return bounds;
+}
+
+function mayContainWorldPos(groupId, entity, worldPos, zoom) {
+    if (groupId === 'vantage') {
+        return Math.abs(worldPos.x - entity.x) <= 500 && Math.abs(worldPos.z - entity.z) <= 500;
+    }
+    if (groupId === 'terrainRegions') {
+        const bounds = entity?.bounds;
+        return bounds
+            ? worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ
+            : true;
+    }
+    if (groupId === 'terrain') {
+        const bounds = entity?.bounds;
+        if (bounds) {
+            return worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ;
+        }
+        const radius = entity?.radius || 0;
+        return Math.abs(worldPos.x - entity.x) <= radius && Math.abs(worldPos.z - entity.z) <= radius;
+    }
+    if (groupId === 'roads') {
+        const bounds = Array.isArray(entity?.points) && entity.points.length > 0
+            ? getCachedPointBounds(entity, entity.points, (entity?.width || 0) * 0.5 + (entity?.feather || 0) + 6 / zoom)
+            : null;
+        return bounds
+            ? worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ
+            : true;
+    }
+    if (groupId === 'districts') {
+        const bounds = Array.isArray(entity?.points) && entity.points.length > 0
+            ? getCachedPointBounds(entity, entity.points)
+            : null;
+        return bounds
+            ? worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ
+            : true;
+    }
+    return true;
+}
+
 export function findObjectsAtWorldPos(state, worldPos) {
     const found = [];
     const document = state.document;
@@ -462,6 +516,7 @@ export function findObjectsAtWorldPos(state, worldPos) {
             if (!isObjectVisible(state, entityId, groupId)) continue;
             if (isObjectLocked(state, entityId, groupId)) continue;
             const entity = getEntityById(document, entityId);
+            if (!entity || !mayContainWorldPos(groupId, entity, worldPos, state.viewport.zoom)) continue;
             if (entity && predicate(entity)) found.push(entityId);
         }
     }

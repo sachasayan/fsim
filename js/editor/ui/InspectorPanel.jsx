@@ -3,11 +3,28 @@ import * as React from 'react';
 import { isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
 import { getEntityById, getEntityLabel } from '../core/document.js';
-import { Badge, Button, FieldRow, HintCard, Input, NumberInputField, Panel, RangeNumberField, SelectField, Separator, useStore } from './common.jsx';
+import { Badge, Button, FieldRow, HintCard, Input, NumberInputField, Panel, RangeNumberField, SelectField, Separator, shallowEqual, useStore } from './common.jsx';
 
 export function InspectorPanel({ store, controller }) {
-    const state = useStore(store, (value) => value);
-    const selected = getEntityById(state.document, state.selection.selectedId);
+    const { document, selectedId, selected, groupLocked, itemLocked } = useStore(store, (state) => {
+        const selectedEntity = getEntityById(state.document, state.selection.selectedId);
+        const groupId = isDistrict(selectedEntity)
+            ? 'districts'
+            : isRoad(selectedEntity)
+                ? 'roads'
+                : isTerrainRegion(selectedEntity)
+                    ? 'terrainRegions'
+                    : isTerrainEdit(selectedEntity)
+                        ? 'terrain'
+                        : 'vantage';
+        return {
+            document: state.document,
+            selectedId: state.selection.selectedId,
+            selected: selectedEntity,
+            groupLocked: state.layers.groupLocked[groupId] === true,
+            itemLocked: state.layers.itemLocked[state.selection.selectedId] === true
+        };
+    }, shallowEqual);
 
     if (!selected) {
         return (
@@ -17,27 +34,23 @@ export function InspectorPanel({ store, controller }) {
         );
     }
 
-    const groupLocked = state.layers.groupLocked[
-        isDistrict(selected) ? 'districts' : isRoad(selected) ? 'roads' : isTerrainRegion(selected) ? 'terrainRegions' : isTerrainEdit(selected) ? 'terrain' : 'vantage'
-    ] === true;
-    const itemLocked = state.layers.itemLocked[state.selection.selectedId] === true;
     const locked = groupLocked || itemLocked;
 
     function updateProperty(key, value) {
-        store.runCommand({ type: 'change-property', entityId: state.selection.selectedId, key, value });
+        store.runCommand({ type: 'change-property', entityId: selectedId, key, value });
     }
 
     function updateCenter(axis, value) {
         if (selected.center) {
             const next = [...selected.center];
             next[axis] = value;
-            store.runCommand({ type: 'move-entity', entityId: state.selection.selectedId, nextCenter: next });
+            store.runCommand({ type: 'move-entity', entityId: selectedId, nextCenter: next });
             return;
         }
         const point = { x: selected.x, z: selected.z };
         if (axis === 0) point.x = value;
         else point.z = value;
-        store.runCommand({ type: 'move-entity', entityId: state.selection.selectedId, nextPoint: point });
+        store.runCommand({ type: 'move-entity', entityId: selectedId, nextPoint: point });
     }
 
     const typeLabel = isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE';
@@ -51,7 +64,7 @@ export function InspectorPanel({ store, controller }) {
         >
             <div className="editor-form-stack">
                 <FieldRow label="ID">
-                    <Input type="text" readOnly value={getEntityLabel(state.document, state.selection.selectedId)} data-testid="field-id" />
+                    <Input type="text" readOnly value={getEntityLabel(document, selectedId)} data-testid="field-id" />
                 </FieldRow>
 
                 {isTerrainRegion(selected) ? (
@@ -165,7 +178,7 @@ export function InspectorPanel({ store, controller }) {
                         type="button"
                         variant="danger"
                         disabled={locked}
-                        onClick={() => store.runCommand({ type: 'delete-entity', entityId: state.selection.selectedId })}
+                        onClick={() => store.runCommand({ type: 'delete-entity', entityId: selectedId })}
                     >
                         Delete Selected
                     </Button>

@@ -147,7 +147,9 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     let tileManager = null;
     let synthCacheKey = null;
     let synthCache = null;
-    let regionalSynthCacheKey = null;
+    let regionalSynthCacheDocumentRef = null;
+    let regionalSynthCacheConfigVersion = null;
+    let regionalSynthCacheSelectedId = null;
     let regionalSynthCache = null;
     let terrainLabPreviewKey = null;
     let isUpdatingTerrainLabPreview = false;
@@ -159,11 +161,32 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     let latestHoverSampleSerial = 0;
     let lastHoverId = null;
     let lastHoverWorldPos = null;
+    let hoverWorldPos = null;
+    let terrainRegionHover = null;
+    let terrainRegionSelection = null;
     let previousTerrainLabVersion = store.getState().ui.terrainLab.configVersion;
     let previousTerrainEditBoundsById = getTerrainAffectingBoundsById(store.getState().document);
     let activeTerrainRegionSelection = null;
+    let cachedCanvasRect = null;
+    let normalizedPreviewRegionsDocumentRef = null;
+    let normalizedPreviewRegions = null;
+    let previewRegionsSourceDocumentRef = null;
+    let previewRegionsSourceConfigVersion = null;
+    let previewRegionsSourceSelectedId = null;
+    let previewRegions = null;
     const terrainPreviewWorker = createTerrainPreviewWorkerManager();
     const mapTileWorker = createEditorMapTileWorkerManager();
+
+    function invalidateCanvasRect() {
+        cachedCanvasRect = null;
+    }
+
+    function getCanvasRect(forceRefresh = false) {
+        if (forceRefresh || !cachedCanvasRect) {
+            cachedCanvasRect = canvas.getBoundingClientRect();
+        }
+        return cachedCanvasRect;
+    }
 
     function getClampedViewport(viewportPatch = {}) {
         return clampViewportToWorld(
@@ -197,10 +220,28 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
     function getPreviewRegions() {
         const state = store.getState();
-        const savedRegions = normalizeTerrainRegions(state.document.worldData.terrainRegions || []);
+        if (normalizedPreviewRegionsDocumentRef !== state.document) {
+            normalizedPreviewRegionsDocumentRef = state.document;
+            normalizedPreviewRegions = normalizeTerrainRegions(state.document.worldData.terrainRegions || []);
+        }
         const selected = getEntityById(state.document, state.selection.selectedId);
-        if (!isTerrainRegion(selected)) return savedRegions;
-        return savedRegions.map(region => (
+        if (
+            previewRegions
+            && previewRegionsSourceDocumentRef === state.document
+            && previewRegionsSourceConfigVersion === state.ui.terrainLab.configVersion
+            && previewRegionsSourceSelectedId === state.selection.selectedId
+        ) {
+            return previewRegions;
+        }
+        const savedRegions = normalizedPreviewRegions;
+        if (!isTerrainRegion(selected)) {
+            previewRegions = savedRegions;
+            previewRegionsSourceDocumentRef = state.document;
+            previewRegionsSourceConfigVersion = state.ui.terrainLab.configVersion;
+            previewRegionsSourceSelectedId = state.selection.selectedId;
+            return previewRegions;
+        }
+        previewRegions = savedRegions.map(region => (
             region.__editorId === selected.__editorId
                 ? {
                     ...region,
@@ -208,17 +249,30 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 }
                 : region
         ));
+        previewRegionsSourceDocumentRef = state.document;
+        previewRegionsSourceConfigVersion = state.ui.terrainLab.configVersion;
+        previewRegionsSourceSelectedId = state.selection.selectedId;
+        return previewRegions;
     }
 
     function getRegionalTerrainSampler() {
-        const previewRegions = getPreviewRegions();
-        const nextKey = JSON.stringify(previewRegions);
-        if (regionalSynthCache && regionalSynthCacheKey === nextKey) return regionalSynthCache;
-        regionalSynthCacheKey = nextKey;
+        const state = store.getState();
+        const nextPreviewRegions = getPreviewRegions();
+        if (
+            regionalSynthCache
+            && regionalSynthCacheDocumentRef === state.document
+            && regionalSynthCacheConfigVersion === state.ui.terrainLab.configVersion
+            && regionalSynthCacheSelectedId === state.selection.selectedId
+        ) {
+            return regionalSynthCache;
+        }
+        regionalSynthCacheDocumentRef = state.document;
+        regionalSynthCacheConfigVersion = state.ui.terrainLab.configVersion;
+        regionalSynthCacheSelectedId = state.selection.selectedId;
         regionalSynthCache = createRegionalTerrainSampler({
             Noise,
             worldSize: DEFAULT_WORLD_SIZE,
-            regions: previewRegions
+            regions: nextPreviewRegions
         });
         return regionalSynthCache;
     }
@@ -422,18 +476,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
         lastHoverId = nextHoverId;
         lastHoverWorldPos = nextHoverWorldPos ? { x: nextHoverWorldPos.x, z: nextHoverWorldPos.z } : null;
-        store.dispatch({
-            type: 'set-hover',
-            hoverId: nextHoverId,
-            hoverWorldPos: nextHoverWorldPos
-        });
+        hoverWorldPos = nextHoverWorldPos ? { x: nextHoverWorldPos.x, z: nextHoverWorldPos.z } : null;
         return true;
     }
 
     function syncTerrainRegionHover(point, world, state) {
         if (state.tools.currentTool !== 'terrain-region' || !point.inside) {
-            if (state.ui.terrainRegionHover !== null) {
-                store.dispatch({ type: 'set-terrain-region-hover', hover: null });
+            if (terrainRegionHover !== null) {
+                terrainRegionHover = null;
                 return true;
             }
             return false;
@@ -444,7 +494,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             ? getTerrainRegionAtWorldPos(state.document.worldData.terrainRegions || [], world.x, world.z, DEFAULT_WORLD_SIZE)
             : null;
         const nextHover = tile ? { ...tile, ownerId: owner?.__editorId || null } : null;
-        const currentHover = state.ui.terrainRegionHover;
+        const currentHover = terrainRegionHover;
         const unchanged = (
             currentHover === null && nextHover === null
         ) || (
@@ -455,7 +505,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             && currentHover.ownerId === nextHover.ownerId
         );
         if (unchanged) return false;
-        store.dispatch({ type: 'set-terrain-region-hover', hover: nextHover });
+        terrainRegionHover = nextHover;
         return true;
     }
 
@@ -463,12 +513,13 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const parent = canvas.parentElement;
         canvas.width = parent.clientWidth;
         canvas.height = parent.clientHeight;
+        invalidateCanvasRect();
         setClampedCamera();
         scheduleRender();
     }
 
     function getWorldPoint(event) {
-        const rect = canvas.getBoundingClientRect();
+        const rect = getCanvasRect();
         const point = {
             x: event.clientX - rect.left,
             y: event.clientY - rect.top,
@@ -507,7 +558,12 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     }
 
     function render() {
-        renderEditorScene(ctx, canvas, tileManager, store.getState());
+        renderEditorScene(ctx, canvas, tileManager, store.getState(), {
+            hoverId: lastHoverId,
+            hoverWorldPos,
+            terrainRegionHover,
+            terrainRegionSelection
+        });
     }
 
     async function reloadStaticWorld() {
@@ -553,6 +609,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
     function bindEvents() {
         window.addEventListener('resize', updateCanvasSize);
+        window.addEventListener('scroll', invalidateCanvasRect, true);
 
         canvas.addEventListener('contextmenu', event => {
             event.preventDefault();
@@ -591,6 +648,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         });
 
         canvas.addEventListener('pointerdown', event => {
+            getCanvasRect(true);
             const state = store.getState();
             const { point, world } = getWorldPoint(event);
             if (!point.inside) return;
@@ -633,16 +691,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 dragMode = 'terrain-region';
                 isDragging = true;
                 const draftRegion = createTerrainRegionFromTiles(startTile, startTile, {}, DEFAULT_WORLD_SIZE);
-                store.dispatch({
-                    type: 'set-terrain-region-selection',
-                    selection: {
-                        startTile,
-                        endTile: startTile,
-                        bounds: draftRegion.bounds,
-                        valid: findTerrainRegionOverlap(draftRegion, state.document.worldData.terrainRegions || []) === null,
-                        tiles: classifyTerrainRegionSelectionTiles(draftRegion, state.document.worldData.terrainRegions || [])
-                    }
-                });
+                terrainRegionSelection = {
+                    startTile,
+                    endTile: startTile,
+                    bounds: draftRegion.bounds,
+                    valid: findTerrainRegionOverlap(draftRegion, state.document.worldData.terrainRegions || []) === null,
+                    tiles: classifyTerrainRegionSelectionTiles(draftRegion, state.document.worldData.terrainRegions || [])
+                };
+                scheduleRender();
                 return;
             }
 
@@ -763,16 +819,13 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                     endTile: currentTile
                 };
                 const draftRegion = createTerrainRegionFromTiles(activeTerrainRegionSelection.startTile, currentTile, {}, DEFAULT_WORLD_SIZE);
-                store.dispatch({
-                    type: 'set-terrain-region-selection',
-                    selection: {
-                        startTile: activeTerrainRegionSelection.startTile,
-                        endTile: currentTile,
-                        bounds: draftRegion.bounds,
-                        valid: findTerrainRegionOverlap(draftRegion, store.getState().document.worldData.terrainRegions || []) === null,
-                        tiles: classifyTerrainRegionSelectionTiles(draftRegion, store.getState().document.worldData.terrainRegions || [])
-                    }
-                });
+                terrainRegionSelection = {
+                    startTile: activeTerrainRegionSelection.startTile,
+                    endTile: currentTile,
+                    bounds: draftRegion.bounds,
+                    valid: findTerrainRegionOverlap(draftRegion, store.getState().document.worldData.terrainRegions || []) === null,
+                    tiles: classifyTerrainRegionSelectionTiles(draftRegion, store.getState().document.worldData.terrainRegions || [])
+                };
                 scheduleRender();
                 return;
             }
@@ -840,8 +893,8 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                     }
                 }
                 activeTerrainRegionSelection = null;
-                store.dispatch({ type: 'clear-terrain-region-selection' });
-                store.dispatch({ type: 'set-terrain-region-hover', hover: null });
+                terrainRegionSelection = null;
+                terrainRegionHover = null;
             }
             if (activePointerId !== null && event.pointerId === activePointerId && canvas.hasPointerCapture(event.pointerId)) {
                 canvas.releasePointerCapture(event.pointerId);
@@ -859,17 +912,18 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         window.addEventListener('pointercancel', releasePointer);
 
         canvas.addEventListener('mouseleave', () => {
-            if (lastHoverId !== null || lastHoverWorldPos !== null) {
+            if (lastHoverId !== null || lastHoverWorldPos !== null || terrainRegionHover !== null) {
                 lastHoverId = null;
                 lastHoverWorldPos = null;
-                store.dispatch({ type: 'set-hover', hoverId: null, hoverWorldPos: null });
-                store.dispatch({ type: 'set-terrain-region-hover', hover: null });
+                hoverWorldPos = null;
+                terrainRegionHover = null;
                 scheduleRender();
             }
         });
 
         canvas.addEventListener('wheel', event => {
             event.preventDefault();
+            getCanvasRect(true);
             const { point } = getWorldPoint(event);
             const { screenToWorld } = createCoordinateHelpers(canvas, store.getState().viewport);
             const mouseWorldBefore = screenToWorld(point.x, point.y);
@@ -961,9 +1015,8 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
     const unsubscribe = store.subscribe(() => {
         const nextState = store.getState();
-        if (nextState.tools.currentTool !== 'terrain-region' && nextState.ui.terrainRegionHover !== null) {
-            store.dispatch({ type: 'set-terrain-region-hover', hover: null });
-            return;
+        if (nextState.tools.currentTool !== 'terrain-region' && terrainRegionHover !== null) {
+            terrainRegionHover = null;
         }
         const nextInvalidationState = reconcileTerrainTileInvalidation({
             tileManager,
@@ -987,6 +1040,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         },
         destroy() {
             unsubscribe();
+            window.removeEventListener('scroll', invalidateCanvasRect, true);
             tileManager.destroy();
             terrainPreviewWorker.destroy();
             mapTileWorker.destroy();

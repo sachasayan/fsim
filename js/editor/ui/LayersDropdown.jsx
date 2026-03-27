@@ -1,15 +1,17 @@
 import * as React from 'react';
 
-import { Button, Icon, useStore } from './common.jsx';
+import { Button, Icon, shallowEqual, useStore } from './common.jsx';
 import { LayerVisibilityControls } from './LayersPanel.jsx';
 
 export function LayersDropdown({ store }) {
     const [open, setOpen] = React.useState(false);
     const rootRef = React.useRef(null);
-    const state = useStore(store, (value) => value);
+    const { groupVisibility } = useStore(store, (state) => ({
+        groupVisibility: state.layers.groupVisibility
+    }), shallowEqual);
     const layerGroups = React.useMemo(
-        () => Object.values(state.layers.groupVisibility),
-        [state.layers.groupVisibility]
+        () => Object.values(groupVisibility),
+        [groupVisibility]
     );
     const hiddenCount = layerGroups.filter((visible) => visible === false).length;
 

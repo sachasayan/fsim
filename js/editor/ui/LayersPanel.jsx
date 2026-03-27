@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { Icon, Panel, SurfaceIcon, Toggle, Tooltip, TooltipContent, TooltipTrigger, cn, useStore } from './common.jsx';
+import { Icon, Panel, SurfaceIcon, Toggle, Tooltip, TooltipContent, TooltipTrigger, cn, shallowEqual, useStore } from './common.jsx';
 import { listLayerGroups } from '../core/document.js';
 
 export const LAYER_DEFS = {
@@ -12,14 +12,17 @@ export const LAYER_DEFS = {
 };
 
 export function LayerVisibilityControls({ store, variant = 'panel' }) {
-    const state = useStore(store, (value) => value);
-    const groups = listLayerGroups(state.document).filter((group) => LAYER_DEFS[group.id]);
+    const { document, groupVisibility } = useStore(store, (state) => ({
+        document: state.document,
+        groupVisibility: state.layers.groupVisibility
+    }), shallowEqual);
+    const groups = listLayerGroups(document).filter((group) => LAYER_DEFS[group.id]);
 
     if (variant === 'dropdown') {
         return (
             <div className="editor-layer-dropdown-list" id="layers-groups" data-testid="layers-groups">
                 {groups.map((group) => {
-                    const visible = state.layers.groupVisibility[group.id] !== false;
+                    const visible = groupVisibility[group.id] !== false;
                     const layer = LAYER_DEFS[group.id];
                     return (
                         <div key={group.id} className="editor-layer-dropdown-row">
@@ -52,7 +55,7 @@ export function LayerVisibilityControls({ store, variant = 'panel' }) {
     return (
         <div className="editor-layer-grid" id="layers-groups" data-testid="layers-groups">
             {groups.map((group) => {
-                const visible = state.layers.groupVisibility[group.id] !== false;
+                const visible = groupVisibility[group.id] !== false;
                 const layer = LAYER_DEFS[group.id];
                 return (
                     <Tooltip key={group.id}>

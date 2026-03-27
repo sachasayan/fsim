@@ -5,7 +5,7 @@ import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getEntityById } from '../core/document.js';
 import { AppHeader } from './AppHeader.jsx';
 import { FooterPanel } from './FooterPanel.jsx';
-import { Icon, TooltipProvider, useStore } from './common.jsx';
+import { Icon, TooltipProvider, shallowEqual, useStore } from './common.jsx';
 import { InspectorPanel } from './InspectorPanel.jsx';
 import { ShortcutHelpModal } from './ShortcutHelpModal.jsx';
 import { StatusBar } from './StatusBar.jsx';
@@ -15,9 +15,10 @@ import { Toast } from './Toast.jsx';
 import { ToolPalette } from './ToolPalette.jsx';
 
 export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onRebuild }) {
-    const state = useStore(store, (value) => value);
-    const currentTool = state.tools.currentTool;
-    const selectedEntity = getEntityById(state.document, state.selection.selectedId);
+    const { currentTool, selectedEntity } = useStore(store, (state) => ({
+        currentTool: state.tools.currentTool,
+        selectedEntity: getEntityById(state.document, state.selection.selectedId)
+    }), shallowEqual);
 
     const toolDefs = [
         ['select', 'Select', 'V', 'M5 3v18l5-6 4 6 5-2-4-6 6-4z', Icon],
