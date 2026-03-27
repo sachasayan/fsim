@@ -1,5 +1,5 @@
 export const Noise = {
-  permutation: new Uint8Array(512),
+  permutation: new Uint16Array(512),
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
@@ -23,68 +23,94 @@ export const Noise = {
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   },
   noise(x, y, z) {
-    let X = Math.floor(x) & 255;
-    let Y = Math.floor(y) & 255;
-    let Z = Math.floor(z) & 255;
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+    let X = Math.floor(x);
+    let Y = Math.floor(y);
+    let Z = Math.floor(z);
+    x -= X;
+    y -= Y;
+    z -= Z;
+    X &= 255;
+    Y &= 255;
+    Z &= 255;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    // Inline fade
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let p = this.permutation;
+    let A = p[X] + Y;
+    let AA = p[A] + Z;
+    let AB = p[A + 1] + Z;
+    let B = p[X + 1] + Y;
+    let BA = p[B] + Z;
+    let BB = p[B + 1] + Z;
+
+    // Inline grad and lerp to avoid function call overhead
+    let x1 = x - 1;
+    let y1 = y - 1;
+    let z1 = z - 1;
+
+    let h = p[AA] & 15;
+    let g1 = ((h & 1) === 0 ? (h < 8 ? x : y) : -(h < 8 ? x : y)) + ((h & 2) === 0 ? (h < 4 ? y : h === 12 || h === 14 ? x : z) : -(h < 4 ? y : h === 12 || h === 14 ? x : z));
+
+    h = p[BA] & 15;
+    let g2 = ((h & 1) === 0 ? (h < 8 ? x1 : y) : -(h < 8 ? x1 : y)) + ((h & 2) === 0 ? (h < 4 ? y : h === 12 || h === 14 ? x1 : z) : -(h < 4 ? y : h === 12 || h === 14 ? x1 : z));
+    let lerp1 = g1 + u * (g2 - g1);
+
+    h = p[AB] & 15;
+    g1 = ((h & 1) === 0 ? (h < 8 ? x : y1) : -(h < 8 ? x : y1)) + ((h & 2) === 0 ? (h < 4 ? y1 : h === 12 || h === 14 ? x : z) : -(h < 4 ? y1 : h === 12 || h === 14 ? x : z));
+
+    h = p[BB] & 15;
+    g2 = ((h & 1) === 0 ? (h < 8 ? x1 : y1) : -(h < 8 ? x1 : y1)) + ((h & 2) === 0 ? (h < 4 ? y1 : h === 12 || h === 14 ? x1 : z) : -(h < 4 ? y1 : h === 12 || h === 14 ? x1 : z));
+    let lerp2 = g1 + u * (g2 - g1);
+
+    let lerpBottom = lerp1 + v * (lerp2 - lerp1);
+
+    h = p[AA + 1] & 15;
+    g1 = ((h & 1) === 0 ? (h < 8 ? x : y) : -(h < 8 ? x : y)) + ((h & 2) === 0 ? (h < 4 ? y : h === 12 || h === 14 ? x : z1) : -(h < 4 ? y : h === 12 || h === 14 ? x : z1));
+
+    h = p[BA + 1] & 15;
+    g2 = ((h & 1) === 0 ? (h < 8 ? x1 : y) : -(h < 8 ? x1 : y)) + ((h & 2) === 0 ? (h < 4 ? y : h === 12 || h === 14 ? x1 : z1) : -(h < 4 ? y : h === 12 || h === 14 ? x1 : z1));
+    lerp1 = g1 + u * (g2 - g1);
+
+    h = p[AB + 1] & 15;
+    g1 = ((h & 1) === 0 ? (h < 8 ? x : y1) : -(h < 8 ? x : y1)) + ((h & 2) === 0 ? (h < 4 ? y1 : h === 12 || h === 14 ? x : z1) : -(h < 4 ? y1 : h === 12 || h === 14 ? x : z1));
+
+    h = p[BB + 1] & 15;
+    g2 = ((h & 1) === 0 ? (h < 8 ? x1 : y1) : -(h < 8 ? x1 : y1)) + ((h & 2) === 0 ? (h < 4 ? y1 : h === 12 || h === 14 ? x1 : z1) : -(h < 4 ? y1 : h === 12 || h === 14 ? x1 : z1));
+    lerp2 = g1 + u * (g2 - g1);
+
+    return lerpBottom + w * ((lerp1 + v * (lerp2 - lerp1)) - lerpBottom);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {
       let f = scale;
       if (octaves === 5) {
-        const n0 = this.noise(x * f, 0, z * f);
+        let total = this.noise(x * f, 0, z * f);
         f *= 2;
-        const n1 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.5;
         f *= 2;
-        const n2 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.25;
         f *= 2;
-        const n3 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.125;
         f *= 2;
-        const n4 = this.noise(x * f, 0, z * f);
-        return (n0 + n1 * 0.5 + n2 * 0.25 + n3 * 0.125 + n4 * 0.0625) / 1.9375;
+        total += this.noise(x * f, 0, z * f) * 0.0625;
+        return total * 0.5161290322580645;
       }
       if (octaves === 6) {
-        const n0 = this.noise(x * f, 0, z * f);
+        let total = this.noise(x * f, 0, z * f);
         f *= 2;
-        const n1 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.5;
         f *= 2;
-        const n2 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.25;
         f *= 2;
-        const n3 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.125;
         f *= 2;
-        const n4 = this.noise(x * f, 0, z * f);
+        total += this.noise(x * f, 0, z * f) * 0.0625;
         f *= 2;
-        const n5 = this.noise(x * f, 0, z * f);
-        return (n0 + n1 * 0.5 + n2 * 0.25 + n3 * 0.125 + n4 * 0.0625 + n5 * 0.03125) / 1.96875;
+        total += this.noise(x * f, 0, z * f) * 0.03125;
+        return total * 0.5079365079365079;
       }
     }
 
