@@ -1,6 +1,7 @@
 import bpy
 import json
 import math
+import mathutils
 import os
 import sys
 
@@ -71,6 +72,41 @@ def triangle_count(mesh_obj):
     return sum(max(0, len(poly.vertices) - 2) for poly in mesh_obj.data.polygons)
 
 
+def combined_world_bounds(mesh_objects):
+    min_x = float("inf")
+    min_y = float("inf")
+    min_z = float("inf")
+    max_x = float("-inf")
+    max_y = float("-inf")
+    max_z = float("-inf")
+
+    for mesh_obj in mesh_objects:
+        matrix = mesh_obj.matrix_world
+        for corner in mesh_obj.bound_box:
+            world_corner = matrix @ mathutils.Vector(corner)
+            min_x = min(min_x, world_corner.x)
+            min_y = min(min_y, world_corner.y)
+            min_z = min(min_z, world_corner.z)
+            max_x = max(max_x, world_corner.x)
+            max_y = max(max_y, world_corner.y)
+            max_z = max(max_z, world_corner.z)
+
+    if min_x == float("inf"):
+        return None
+
+    return {
+        "minX": min_x,
+        "minY": min_y,
+        "minZ": min_z,
+        "maxX": max_x,
+        "maxY": max_y,
+        "maxZ": max_z,
+        "width": max_x - min_x,
+        "length": max_y - min_y,
+        "height": max_z - min_z
+    }
+
+
 def cleanup_mesh(mesh_obj):
     deselect_all()
     mesh_obj.select_set(True)
@@ -97,6 +133,15 @@ def apply_transforms(mesh_obj):
     mesh_obj.select_set(True)
     set_active(mesh_obj)
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+
+
+def scale_scene_objects(objects, scale_factor):
+    if scale_factor == 1.0:
+        return
+    deselect_all()
+    for obj in objects:
+        obj.select_set(True)
+    bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))
 
 
 def join_meshes(mesh_objects):
@@ -132,16 +177,26 @@ def export_glb(filepath, mesh_objects):
         mesh_obj.select_set(True)
     if mesh_objects:
         set_active(mesh_objects[0])
-    bpy.ops.export_scene.gltf(
-        filepath=filepath,
-        export_format="GLB",
-        use_selection=True,
-        export_apply=True,
-        export_yup=True,
-        export_texcoords=True,
-        export_normals=True,
-        export_materials="EXPORT"
-    )
+    export_kwargs = {
+        "filepath": filepath,
+        "export_format": "GLB",
+        "use_selection": True,
+        "export_apply": True,
+        "export_yup": True,
+        "export_texcoords": True,
+        "export_normals": True,
+        "export_materials": "EXPORT",
+        "export_image_format": "WEBP",
+        "export_image_quality": 70,
+        "export_draco_mesh_compression_enable": True,
+        "export_draco_mesh_compression_level": 6,
+        "export_draco_position_quantization": 14,
+        "export_draco_normal_quantization": 10,
+        "export_draco_texcoord_quantization": 12,
+        "export_draco_color_quantization": 10,
+        "export_draco_generic_quantization": 12
+    }
+    bpy.ops.export_scene.gltf(**export_kwargs)
 
 
 def configure_decimate(modifier, ratio, decimate_method, preserve_uvs):
@@ -176,6 +231,7 @@ def main():
 
     target_triangles = to_int(args.get("targetTriangles"), 0)
     explicit_ratio = float(args.get("ratio", "0")) if args.get("ratio") else 0.0
+    target_height_meters = float(args.get("targetHeightMeters", "0")) if args.get("targetHeightMeters") else 0.0
     join_requested = to_bool(args.get("joinMeshes"), False)
     cleanup_requested = to_bool(args.get("cleanupLooseGeometry"), True)
     preserve_uvs = to_bool(args.get("preserveUVs"), True)
@@ -186,6 +242,14 @@ def main():
     mesh_objects = get_mesh_objects()
     if not mesh_objects:
         raise RuntimeError(f"No mesh objects found in '{input_path}'.")
+
+    source_bounds = combined_world_bounds(mesh_objects)
+    source_height = source_bounds["height"] if source_bounds else 0.0
+    applied_scale_factor = 1.0
+    if target_height_meters > 0.0 and source_height > 0.0:
+        applied_scale_factor = target_height_meters / source_height
+        scale_scene_objects(mesh_objects, applied_scale_factor)
+        mesh_objects = get_mesh_objects()
 
     for mesh_obj in mesh_objects:
         apply_transforms(mesh_obj)
@@ -218,6 +282,7 @@ def main():
 
     mesh_objects = get_mesh_objects()
     output_triangles = sum(triangle_count(mesh_obj) for mesh_obj in mesh_objects)
+    output_bounds = combined_world_bounds(mesh_objects)
     export_glb(output_path, mesh_objects)
 
     report = {
@@ -228,6 +293,14 @@ def main():
         "triangleRatio": 0 if source_triangles == 0 else round(output_triangles / float(source_triangles), 4),
         "requestedTargetTriangles": target_triangles,
         "appliedRatio": round(ratio, 4),
+        "requestedTargetHeightMeters": round(target_height_meters, 4) if target_height_meters > 0.0 else None,
+        "sourceHeightMeters": round(source_height, 4) if source_height > 0.0 else None,
+        "sourceWidthMeters": round(source_bounds["width"], 4) if source_bounds else None,
+        "sourceLengthMeters": round(source_bounds["length"], 4) if source_bounds else None,
+        "appliedScaleFactor": round(applied_scale_factor, 6),
+        "outputHeightMeters": round(output_bounds["height"], 4) if output_bounds else None,
+        "outputWidthMeters": round(output_bounds["width"], 4) if output_bounds else None,
+        "outputLengthMeters": round(output_bounds["length"], 4) if output_bounds else None,
         "joinMeshes": join_requested,
         "preserveUVs": preserve_uvs,
         "decimateMethod": decimate_method

@@ -1,4 +1,5 @@
 import { getDistrictType } from '../world/MapDataUtils.js';
+import { getAuthoredObjectLabel } from '../world/AuthoredObjectCatalog.js';
 
 export function isRoad(obj) {
     return Array.isArray(obj?.points) && obj.points.length >= 2 && Number.isFinite(obj?.width) && typeof obj?.surface === 'string';
@@ -22,7 +23,15 @@ export function isTerrainRegion(obj) {
         && !!obj.terrainGenerator;
 }
 
+export function isAuthoredObject(obj) {
+    return !!obj
+        && typeof obj.assetId === 'string'
+        && Number.isFinite(obj.x)
+        && Number.isFinite(obj.z);
+}
+
 export function getLayerGroupId(obj) {
+    if (isAuthoredObject(obj)) return 'objects';
     if (isRoad(obj)) return 'roads';
     if (isDistrict(obj)) return 'districts';
     if (isTerrainRegion(obj)) return 'terrainRegions';
@@ -39,6 +48,7 @@ export function objectLabel(obj, index = 0, fallback = 'Item') {
     if (isDistrict(obj)) {
         return `${getDistrictType(obj)}`;
     }
+    if (isAuthoredObject(obj)) return getAuthoredObjectLabel(obj.assetId);
     if (isTerrainRegion(obj)) return `region ${obj.tileWidth}x${obj.tileHeight} @ ${obj.tileX},${obj.tileZ}`;
     if (isTerrainEdit(obj)) return `${obj.kind} #${index + 1}`;
     return fallback;

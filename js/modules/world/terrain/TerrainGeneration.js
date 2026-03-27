@@ -89,12 +89,14 @@ export async function loadStaticWorld() {
         if (meta) {
             normalizeMapData(meta);
             Object.assign(window.fsimWorld || (window.fsimWorld = {}), meta);
+            window.dispatchEvent?.(new CustomEvent('fsim:world-metadata-updated', { detail: { source: 'world.bin' } }));
             debugLog("🌐 Initialized world from baked metadata");
         } else {
             const jsonResp = await fetch('/tools/map.json');
             const mapData = await jsonResp.json();
             normalizeMapData(mapData);
             Object.assign(window.fsimWorld || (window.fsimWorld = {}), mapData);
+            window.dispatchEvent?.(new CustomEvent('fsim:world-metadata-updated', { detail: { source: 'tools/map.json' } }));
             debugLog("⚠️ Baked metadata missing, fallbacked to map.json");
         }
 

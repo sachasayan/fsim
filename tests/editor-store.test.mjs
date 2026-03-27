@@ -14,7 +14,8 @@ function createFixture() {
             districts: [{ district_type: 'commercial', center: [0, 0], radius: 500, points: [[-500, -500], [500, -500], [500, 500], [-500, 500]] }],
             roads: [{ kind: 'road', surface: 'asphalt', width: 24, feather: 8, points: [[0, 0], [400, 0]] }],
             terrainRegions: [{ tileX: 4, tileZ: 5, tileWidth: 2, tileHeight: 3, terrainGenerator: { seed: 24680 } }],
-            terrainEdits: [{ kind: 'raise', x: 100, z: 100, radius: 150, delta: 40 }]
+            terrainEdits: [{ kind: 'raise', x: 100, z: 100, radius: 150, delta: 40 }],
+            authoredObjects: [{ assetId: 'lighthouse', x: -300, z: 800, y: 12, heightMode: 'terrain', yaw: 45, scale: 1.2 }]
         },
         {
             gateA: { x: 1000, y: 120, z: 2000, tilt: 45 }
@@ -47,6 +48,28 @@ test('commands can create and delete editable entities', () => {
     assert.equal(deleteResult.document.worldData.roads.length, 1);
 });
 
+test('commands can create authored objects with terrain and arbitrary height modes', () => {
+    const document = createFixture();
+    const createResult = applyEditorCommand(document, {
+        type: 'create-authored-object',
+        center: { x: 600, z: -900 },
+        assetId: 'oil-rig',
+        heightMode: 'absolute',
+        y: 240,
+        yaw: 90,
+        scale: 1.5
+    });
+
+    const created = createResult.document.worldData.authoredObjects.at(-1);
+    assert.equal(createResult.document.worldData.authoredObjects.length, 2);
+    assert.equal(created.assetId, 'oil-rig');
+    assert.equal(created.heightMode, 'absolute');
+    assert.equal(created.y, 240);
+    assert.equal(created.yaw, 90);
+    assert.equal(created.scale, 1.5);
+    assert.ok(createResult.selectionId);
+});
+
 test('commands can create terrain regions and block overlap', () => {
     const document = createFixture();
     const createResult = applyEditorCommand(document, {
@@ -77,6 +100,7 @@ test('serializeEditorDocument strips editor metadata from payloads', () => {
     assert.equal(Object.hasOwn(mapPayload.districts[0], '__editorId'), false);
     assert.equal(Object.hasOwn(mapPayload.terrainRegions[0], '__editorId'), false);
     assert.equal(Object.hasOwn(mapPayload.terrainRegions[0], 'bounds'), false);
+    assert.equal(Object.hasOwn(mapPayload.authoredObjects[0], '__editorId'), false);
     assert.equal(Object.hasOwn(vantagePayload.gateA, '__editorId'), false);
 });
 

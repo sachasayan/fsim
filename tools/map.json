@@ -246,8 +246,8 @@
             "feather": 27,
             "points": [
                 [
-                    -1428,
-                    -297
+                    -1800,
+                    -700
                 ],
                 [
                     -1173,
@@ -921,6 +921,26 @@
                     "enabled": true
                 }
             }
+        }
+    ],
+    "authoredObjects": [
+        {
+            "assetId": "lighthouse",
+            "x": -1800,
+            "z": -700,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "aircraft-carrier",
+            "x": -1700,
+            "z": -100,
+            "y": 50,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
         }
     ]
 }

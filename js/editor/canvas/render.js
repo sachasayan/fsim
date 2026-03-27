@@ -1,6 +1,7 @@
 import { COLORS, isTerrainBrushTool } from '../../modules/editor/constants.js';
 import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint, terrainRegionContainsPoint } from '../../modules/editor/geometry.js';
-import { isRoad, isDistrict, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { isAuthoredObject, isRoad, isDistrict, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { getAuthoredObjectAsset } from '../../modules/world/AuthoredObjectCatalog.js';
 import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
 import { TERRAIN_REGION_GRID_SIZE, getTerrainRegionTileSize, getTerrainRegionTileWorldBounds } from '../../modules/world/terrain/TerrainRegions.js';
@@ -84,6 +85,7 @@ export function renderEditorScene(ctx, canvas, tileManager, state, interactionSt
     drawDistricts(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawRoads(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrainRegions(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawAuthoredObjects(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrain(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawVantagePoints(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawOverlays(ctx, state, interactions, worldToScreen, selection, tools);
@@ -338,6 +340,39 @@ function drawTerrain(ctx, state, interactions, document, worldToScreen, viewport
     }
 }
 
+function drawAuthoredObjects(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
+    if (!isGroupVisible(state, 'objects')) return;
+    for (const entityId of getGroupEntityIds(document, 'objects')) {
+        if (!isObjectVisible(state, entityId, 'objects')) continue;
+        const authoredObject = getEntityById(document, entityId);
+        if (!isAuthoredObject(authoredObject)) continue;
+        if (authoredObject.x < worldBounds.minX - 1600 || authoredObject.x > worldBounds.maxX + 1600 || authoredObject.z < worldBounds.minZ - 1600 || authoredObject.z > worldBounds.maxZ + 1600) continue;
+        const point = worldToScreen(authoredObject.x, authoredObject.z);
+        if (!isScreenPointVisible(viewportRect, point, 40)) continue;
+        const asset = getAuthoredObjectAsset(authoredObject.assetId);
+        const isSelected = state.selection.selectedId === entityId;
+        const isHovered = interactions.hoverId === entityId && !isSelected;
+        const radius = isSelected ? 10 : 8;
+        const fillStyle = isSelected ? COLORS.objectSelected : isHovered ? '#d5fbff' : asset?.color || COLORS.object;
+
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.rotate((authoredObject.yaw || 0) * Math.PI / 180);
+        ctx.fillStyle = fillStyle;
+        ctx.strokeStyle = '#04131a';
+        ctx.lineWidth = isSelected ? 2.2 : 1.4;
+        ctx.beginPath();
+        ctx.moveTo(0, -radius - 4);
+        ctx.lineTo(radius, 0);
+        ctx.lineTo(0, radius + 4);
+        ctx.lineTo(-radius, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
 function drawVantagePoints(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'vantage')) return;
     for (const entityId of getGroupEntityIds(document, 'vantage')) {
@@ -470,6 +505,9 @@ function mayContainWorldPos(groupId, entity, worldPos, zoom) {
             ? worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ
             : true;
     }
+    if (groupId === 'objects') {
+        return Math.abs(worldPos.x - entity.x) <= 500 && Math.abs(worldPos.z - entity.z) <= 500;
+    }
     if (groupId === 'terrain') {
         const bounds = entity?.bounds;
         if (bounds) {
@@ -501,6 +539,7 @@ export function findObjectsAtWorldPos(state, worldPos) {
     const found = [];
     const document = state.document;
     const checkOrder = [
+        ['objects', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < Math.max(220, 14 / state.viewport.zoom)],
         ['vantage', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < 500],
         ['terrainRegions', entity => terrainRegionContainsPoint(entity, worldPos.x, worldPos.z)],
         ['terrain', entity => terrainEditContainsPoint(entity, worldPos.x, worldPos.z)],

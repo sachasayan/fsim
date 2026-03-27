@@ -1,5 +1,5 @@
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
-import { isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { findTerrainRegionOverlap, getTerrainRegionTileSize, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
 import {
     createTerrainStroke,
@@ -111,6 +111,10 @@ function removeEntityById(document, entityId) {
         document.worldData.terrainRegions = document.worldData.terrainRegions.filter(item => item.__editorId !== entityId);
         return true;
     }
+    if (group === 'objects') {
+        document.worldData.authoredObjects = document.worldData.authoredObjects.filter(item => item.__editorId !== entityId);
+        return true;
+    }
     if (group === 'terrain') {
         document.worldData.terrainEdits = document.worldData.terrainEdits.filter(item => item.__editorId !== entityId);
         return true;
@@ -179,6 +183,21 @@ export function applyEditorCommand(document, command, context = {}) {
             const created = finalized.worldData.terrainRegions[finalized.worldData.terrainRegions.length - 1];
             return { document: finalized, selectionId: created?.__editorId || null };
         }
+        case 'create-authored-object': {
+            const authoredObject = {
+                assetId: command.assetId,
+                x: command.center.x,
+                z: command.center.z,
+                y: Number.isFinite(command.y) ? command.y : 0,
+                yaw: Number.isFinite(command.yaw) ? command.yaw : 0,
+                scale: Number.isFinite(command.scale) ? command.scale : 1,
+                heightMode: command.heightMode === 'absolute' ? 'absolute' : 'terrain'
+            };
+            nextDocument.worldData.authoredObjects.push(authoredObject);
+            const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
+            const created = finalized.worldData.authoredObjects[finalized.worldData.authoredObjects.length - 1];
+            return { document: finalized, selectionId: created?.__editorId || null };
+        }
         case 'create-terrain-stroke': {
             if (!terrainStrokeDeps) {
                 throw new Error('Missing terrain stroke dependencies');
@@ -223,16 +242,22 @@ export function applyEditorCommand(document, command, context = {}) {
                 copy.z += 200;
                 refreshTerrainEditGeometry(copy);
             }
+            if (isAuthoredObject(copy)) {
+                copy.x += 200;
+                copy.z += 200;
+            }
             if (isDistrict(copy)) {
                 nextDocument.worldData.districts.push(copy);
             } else if (isRoad(copy)) {
                 normalizeRoad(copy);
                 nextDocument.worldData.roads.push(copy);
+            } else if (isAuthoredObject(copy)) {
+                nextDocument.worldData.authoredObjects.push(copy);
             } else if (isTerrainEdit(copy)) {
                 nextDocument.worldData.terrainEdits.push(copy);
             }
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
-            const groupId = isDistrict(copy) ? 'districts' : isRoad(copy) ? 'roads' : 'terrain';
+            const groupId = isDistrict(copy) ? 'districts' : isRoad(copy) ? 'roads' : isAuthoredObject(copy) ? 'objects' : 'terrain';
             const createdId = finalized.index.groupIds[groupId][finalized.index.groupIds[groupId].length - 1] || null;
             return { document: finalized, selectionId: createdId };
         }

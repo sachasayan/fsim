@@ -9,6 +9,7 @@ import { createCloudSystem } from './clouds.js';
 import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
 import { createTokenSystem } from './tokens.js';
+import { createAuthoredObjectSystem } from './authoredObjects.js';
 
 import { createWorldLodManager } from './WorldLodManager.js';
 import { createRuntimeLodSettings, normalizeLodSettings } from './LodSystem.js';
@@ -44,6 +45,10 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     getTerrainHeight: terrain.getTerrainHeight,
     spawnParticle: particles.spawnParticle,
     lodSettings
+  });
+  const authoredObjects = createAuthoredObjectSystem({
+    scene,
+    getTerrainHeight: terrain.getTerrainHeight
   });
   const shaderVariantRegistry = createShaderVariantRegistry();
   registerShaderVariants(shaderVariantRegistry, [
@@ -131,6 +136,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     hangar.refreshTerrainAlignment?.();
     radar.refreshTerrainAlignment?.();
     tokenSystem.refreshTerrainAlignment?.();
+    authoredObjects.refreshTerrainAlignment?.();
   }
 
   return {
@@ -145,6 +151,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...particles,
     ...aircraft,
     ...tokenSystem,
+    ...authoredObjects,
     terrainDebugSettings: terrain.terrainDebugSettings,
     applyTerrainDebugSettings: terrain.applyTerrainDebugSettings,
     validateShaders,

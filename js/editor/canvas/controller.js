@@ -800,6 +800,21 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 return;
             }
 
+            if (state.tools.currentTool === 'add-object') {
+                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
+                const placement = state.tools.objectPlacement;
+                store.runCommand({
+                    type: 'create-authored-object',
+                    center: pointSnapped,
+                    assetId: placement.assetId,
+                    heightMode: placement.heightMode,
+                    y: placement.y,
+                    yaw: placement.yaw,
+                    scale: placement.scale
+                });
+                return;
+            }
+
             if (state.tools.currentTool === 'add-road') {
                 const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
                 store.runCommand({

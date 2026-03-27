@@ -1,9 +1,20 @@
 import * as React from 'react';
 
-import { isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
+import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog.js';
 import { getEntityById, getEntityLabel } from '../core/document.js';
 import { Badge, Button, FieldRow, HintCard, Input, NumberInputField, Panel, RangeNumberField, SelectField, Separator, shallowEqual, useStore } from './common.jsx';
+
+const OBJECT_ASSET_OPTIONS = listAuthoredObjectAssets().map((asset) => ({
+    value: asset.id,
+    label: asset.label
+}));
+
+const OBJECT_HEIGHT_MODE_OPTIONS = [
+    { value: 'terrain', label: 'Terrain Height' },
+    { value: 'absolute', label: 'Arbitrary Height' }
+];
 
 export function InspectorPanel({ store, controller }) {
     const { document, selectedId, selected, groupLocked, itemLocked } = useStore(store, (state) => {
@@ -14,6 +25,8 @@ export function InspectorPanel({ store, controller }) {
                 ? 'roads'
                 : isTerrainRegion(selectedEntity)
                     ? 'terrainRegions'
+                    : isAuthoredObject(selectedEntity)
+                        ? 'objects'
                     : isTerrainEdit(selectedEntity)
                         ? 'terrain'
                         : 'vantage';
@@ -53,7 +66,7 @@ export function InspectorPanel({ store, controller }) {
         store.runCommand({ type: 'move-entity', entityId: selectedId, nextPoint: point });
     }
 
-    const typeLabel = isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE';
+    const typeLabel = isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isAuthoredObject(selected) ? 'OBJECT' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE';
 
     return (
         <Panel
@@ -151,7 +164,39 @@ export function InspectorPanel({ store, controller }) {
                     </>
                 ) : null}
 
-                {!isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) && !isTerrainRegion(selected) ? (
+                {isAuthoredObject(selected) ? (
+                    <>
+                        <SelectField
+                            label="Asset"
+                            disabled={locked}
+                            value={selected.assetId}
+                            onChange={(value) => updateProperty('assetId', value)}
+                            options={OBJECT_ASSET_OPTIONS}
+                            testId="field-object-asset"
+                        />
+                        <SelectField
+                            label="Height Mode"
+                            disabled={locked}
+                            value={selected.heightMode || 'terrain'}
+                            onChange={(value) => updateProperty('heightMode', value)}
+                            options={OBJECT_HEIGHT_MODE_OPTIONS}
+                            testId="field-object-height-mode"
+                        />
+                        <RangeNumberField
+                            label={selected.heightMode === 'absolute' ? 'Altitude (m)' : 'Terrain Offset (m)'}
+                            value={selected.y || 0}
+                            min={selected.heightMode === 'absolute' ? -200 : -100}
+                            max={selected.heightMode === 'absolute' ? 3000 : 1000}
+                            step={5}
+                            disabled={locked}
+                            onChange={(value) => updateProperty('y', value)}
+                        />
+                        <RangeNumberField label="Yaw (deg)" value={selected.yaw || 0} min={-180} max={180} step={1} disabled={locked} onChange={(value) => updateProperty('yaw', value)} />
+                        <RangeNumberField label="Scale" value={selected.scale || 1} min={0.1} max={5} step={0.05} disabled={locked} onChange={(value) => updateProperty('scale', value)} />
+                    </>
+                ) : null}
+
+                {!isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) && !isTerrainRegion(selected) && !isAuthoredObject(selected) ? (
                     <>
                         <RangeNumberField label="Altitude (m)" value={selected.y || 0} min={0} max={3000} step={10} disabled={locked} onChange={(value) => updateProperty('y', value)} />
                         <RangeNumberField label="Tilt (deg)" value={selected.tilt || 45} min={5} max={85} step={1} disabled={locked} onChange={(value) => updateProperty('tilt', value)} />

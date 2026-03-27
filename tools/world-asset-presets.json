@@ -2,8 +2,8 @@
   "defaults": {
     "sourceDir": "world/assets/source",
     "decimatedDir": "world/assets/decimated",
-    "gameReadyDir": "world/assets/game-ready",
-    "sizeBudgetBytes": 1048576,
+    "gameReadyDir": "world/objects",
+    "sizeBudgetBytes": 5242880,
     "decimateMethod": "COLLAPSE",
     "joinMeshes": false,
     "cleanupLooseGeometry": true,
@@ -12,27 +12,27 @@
   },
   "assets": {
     "aircraft-carrier": {
-      "targetTriangles": 22000,
+      "targetTriangles": 4500,
       "joinMeshes": true
     },
     "ancient-greek-ruins": {
-      "targetTriangles": 16000
+      "targetTriangles": 3500
     },
     "ancient-tribal-ruins": {
-      "targetTriangles": 16000
+      "targetTriangles": 3500
     },
     "balloon": {
-      "targetTriangles": 8000
+      "targetTriangles": 2000
     },
     "lighthouse": {
-      "targetTriangles": 10000,
+      "targetTriangles": 2500,
       "joinMeshes": true
     },
     "mountain-statue": {
-      "targetTriangles": 14000
+      "targetTriangles": 3000
     },
     "oil-rig": {
-      "targetTriangles": 22000,
+      "targetTriangles": 5000,
       "joinMeshes": true
     }
   }

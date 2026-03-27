@@ -1,7 +1,7 @@
 import { normalizeMapData, normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { objectLabel } from '../../modules/editor/objectTypes.js';
 
-const ENTITY_GROUPS = ['districts', 'roads', 'terrainRegions', 'terrain', 'vantage'];
+const ENTITY_GROUPS = ['districts', 'roads', 'terrainRegions', 'objects', 'terrain', 'vantage'];
 
 function clone(value) {
     return structuredClone(value);
@@ -14,6 +14,7 @@ function createEmptyIndex() {
             districts: [],
             roads: [],
             terrainRegions: [],
+            objects: [],
             terrain: [],
             vantage: []
         },
@@ -41,6 +42,9 @@ function computeStableKey(type, entity, aux = '') {
     }
     if (type === 'terrain-region') {
         return `terrain-region:${entity.tileX},${entity.tileZ},${entity.tileWidth},${entity.tileHeight}:${aux}`;
+    }
+    if (type === 'authored-object') {
+        return `authored-object:${entity.assetId}:${entity.x},${entity.z}:${entity.heightMode || 'terrain'}:${aux}`;
     }
     return `vantage:${aux}`;
 }
@@ -84,6 +88,7 @@ export function createEditorDocument(worldData, vantageData, prevDocument = null
     indexGroup(document, prevDocument, document.worldData.districts || [], 'district', 'districts', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.roads || [], 'road', 'roads', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.terrainRegions || [], 'terrain-region', 'terrainRegions', (_entity, index) => String(index));
+    indexGroup(document, prevDocument, document.worldData.authoredObjects || [], 'authored-object', 'objects', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.terrainEdits || [], 'terrain', 'terrain', (_entity, index) => String(index));
 
     const vantageEntries = Object.entries(document.vantageData || {});
@@ -115,6 +120,7 @@ export function findEntityGroup(document, entityId) {
     if (document.index.groupIds.districts.includes(entityId)) return 'districts';
     if (document.index.groupIds.roads.includes(entityId)) return 'roads';
     if (document.index.groupIds.terrainRegions.includes(entityId)) return 'terrainRegions';
+    if (document.index.groupIds.objects.includes(entityId)) return 'objects';
     if (document.index.groupIds.terrain.includes(entityId)) return 'terrain';
     if (document.index.groupIds.vantage.includes(entityId)) return 'vantage';
     return null;
@@ -159,6 +165,9 @@ export function serializeEditorDocument(document) {
     }));
     mapPayload.terrainRegions = (mapPayload.terrainRegions || []).map(({ bounds, center, ...region }) => ({
         ...region
+    }));
+    mapPayload.authoredObjects = (mapPayload.authoredObjects || []).map((object) => ({
+        ...object
     }));
 
     return { mapPayload, vantagePayload };
@@ -210,6 +219,14 @@ export function getEntityBounds(document, entityId) {
         if (entity.bounds) return entity.bounds;
         return null;
     }
+    if (group === 'objects') {
+        return {
+            minX: entity.x - 400,
+            maxX: entity.x + 400,
+            minZ: entity.z - 400,
+            maxZ: entity.z + 400
+        };
+    }
     if (group === 'terrain') {
         if (entity.bounds) return entity.bounds;
         return {
@@ -237,6 +254,8 @@ export function listLayerGroups(document) {
                 ? 'Terrain Edits'
                 : groupId === 'terrainRegions'
                     ? 'Terrain Regions'
+                    : groupId === 'objects'
+                        ? 'Objects'
                     : groupId[0].toUpperCase() + groupId.slice(1),
             items: ids.map(entityId => ({ id: entityId, label: getEntityLabel(document, entityId) }))
         });

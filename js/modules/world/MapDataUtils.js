@@ -1,5 +1,6 @@
 import { normalizeTerrainGeneratorConfig } from './terrain/TerrainSynthesis.js';
 import { normalizeTerrainRegions } from './terrain/TerrainRegions.js';
+import { normalizeAuthoredObject } from './AuthoredObjectCatalog.js';
 
 export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban', 'windmill_farm'];
 export const ROAD_KINDS = ['road', 'taxiway', 'service'];
@@ -178,6 +179,7 @@ export function normalizeMapData(data) {
     if (!data.roads) data.roads = [];
     if (!data.terrainEdits) data.terrainEdits = [];
     if (!data.terrainRegions) data.terrainRegions = [];
+    if (!data.authoredObjects) data.authoredObjects = [];
     data.terrainGenerator = normalizeTerrainGeneratorConfig(data.terrainGenerator);
 
     const flattenedDistricts = [...data.districts];
@@ -196,6 +198,7 @@ export function normalizeMapData(data) {
         .filter(road => Array.isArray(road.points) && road.points.length >= 2);
     data.terrainEdits = data.terrainEdits.map(edit => normalizeTerrainEdit(edit));
     data.terrainRegions = normalizeTerrainRegions(data.terrainRegions);
+    data.authoredObjects = data.authoredObjects.map(object => normalizeAuthoredObject(object));
     delete data.cities;
     return data;
 }

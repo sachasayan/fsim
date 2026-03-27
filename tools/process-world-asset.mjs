@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process';
 
 const repoRoot = process.cwd();
 const manifestPath = path.join(repoRoot, 'tools', 'world-asset-presets.json');
+const targetHeightsPath = path.join(repoRoot, 'tools', 'world-asset-target-heights.json');
 const blenderScriptPath = path.join(repoRoot, 'tools', 'blender', 'decimate_world_asset.py');
 
 function parseArgs(argv) {
@@ -47,6 +48,12 @@ function loadManifest(filePath) {
     throw new Error(`Invalid manifest: ${filePath}`);
   }
   return manifest;
+}
+
+function loadTargetHeights(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+  const targetHeights = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return targetHeights && typeof targetHeights === 'object' ? targetHeights : {};
 }
 
 function ensureDir(dirPath) {
@@ -91,6 +98,8 @@ function runBlenderPipeline(args, preset, resolved) {
     resolved.reportPath,
     '--targetTriangles',
     String(preset.targetTriangles),
+    '--targetHeightMeters',
+    String(Number.isFinite(preset.targetHeightMeters) ? preset.targetHeightMeters : 0),
     '--joinMeshes',
     String(Boolean(preset.joinMeshes)),
     '--cleanupLooseGeometry',
@@ -149,6 +158,7 @@ function stageGameReadyCopy(preset, resolved) {
 function main() {
   const args = parseArgs(process.argv);
   const manifest = loadManifest(args.manifestPath || manifestPath);
+  const targetHeights = loadTargetHeights(targetHeightsPath);
   const assetNames = args.all ? Object.keys(manifest.assets) : args.assetNames;
 
   if (assetNames.length === 0) {
@@ -161,7 +171,10 @@ function main() {
       throw new Error(`Unknown asset '${name}'. Add it to tools/world-asset-presets.json first.`);
     }
 
-    const preset = mergePreset(manifest.defaults || {}, name, assetConfig);
+    const preset = mergePreset(manifest.defaults || {}, name, {
+      ...assetConfig,
+      targetHeightMeters: Number(targetHeights[name] || assetConfig.targetHeightMeters || 0)
+    });
     const resolved = resolveAssetPaths(preset);
     ensureDir(resolved.decimatedDir);
     ensureDir(resolved.gameReadyDir);

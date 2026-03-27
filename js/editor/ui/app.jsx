@@ -7,6 +7,7 @@ import { AppHeader } from './AppHeader.jsx';
 import { FooterPanel } from './FooterPanel.jsx';
 import { Icon, TooltipProvider, shallowEqual, useStore } from './common.jsx';
 import { InspectorPanel } from './InspectorPanel.jsx';
+import { ObjectToolPanel } from './ObjectToolPanel.jsx';
 import { ShortcutHelpModal } from './ShortcutHelpModal.jsx';
 import { StatusBar } from './StatusBar.jsx';
 import { TerrainBrushPanel } from './TerrainBrushPanel.jsx';
@@ -23,6 +24,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
     const toolDefs = [
         ['select', 'Select', 'V', 'M5 3v18l5-6 4 6 5-2-4-6 6-4z', Icon],
         ['add-district', 'District', 'D', 'M4 6h16v12H4z', Icon],
+        ['add-object', 'Object', 'O', 'M5 8l7-4 7 4v8l-7 4-7-4z', Icon],
         ['add-road', 'Road', 'W', 'M8 3l2 7-2 11M16 3l-2 7 2 11', Icon],
         ['terrain-region', 'Region', 'T', 'M4 4h16v16H4z', Icon],
         ['edit-poly', 'Edit', 'E', 'M5 6l7-3 7 4v9l-7 5-7-4z', Icon],
@@ -55,6 +57,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
 
                     <aside className="editor-dock editor-right-dock" id="inspector-dock">
                         <InspectorPanel store={store} controller={controller} />
+                        {currentTool === 'add-object' ? <ObjectToolPanel store={store} /> : null}
                         {isTerrainBrushTool(currentTool) ? <TerrainBrushPanel store={store} /> : null}
                         {isTerrainRegion(selectedEntity) ? <TerrainLabPanel store={store} controller={controller} /> : null}
                         <FooterPanel store={store} />

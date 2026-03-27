@@ -1,6 +1,7 @@
 import { applyEditorCommand } from './commands.js';
 import { createEditorDocument, getEntityById, serializeEditorDocument } from './document.js';
 import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { getDefaultAuthoredObjectAssetId } from '../../modules/world/AuthoredObjectCatalog.js';
 
 function getTerrainLabSourceConfig(document, selectedId = null) {
     const selected = getEntityById(document, selectedId);
@@ -38,7 +39,14 @@ function createInitialState(document) {
         tools: {
             currentTool: 'select',
             snappingEnabled: true,
-            terrainBrush: { radius: 300, strength: 40 }
+            terrainBrush: { radius: 300, strength: 40 },
+            objectPlacement: {
+                assetId: getDefaultAuthoredObjectAssetId(),
+                heightMode: 'terrain',
+                y: 0,
+                yaw: 0,
+                scale: 1
+            }
         },
         history: {
             undoStack: [],
@@ -233,6 +241,17 @@ export function createEditorStore(initialDocument) {
                         return { ...current, tools: { ...current.tools, snappingEnabled: action.value } };
                     case 'set-terrain-brush':
                         return { ...current, tools: { ...current.tools, terrainBrush: { ...current.tools.terrainBrush, ...action.patch } } };
+                    case 'set-object-placement':
+                        return {
+                            ...current,
+                            tools: {
+                                ...current.tools,
+                                objectPlacement: {
+                                    ...current.tools.objectPlacement,
+                                    ...action.patch
+                                }
+                            }
+                        };
                     case 'set-save-state':
                         return {
                             ...current,
