@@ -12,6 +12,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const MAP_PATH = path.join(ROOT, 'tools', 'map.json');
 
+function emitProgress(step, total, label) {
+    console.log(`[FSIM_PROGRESS] ${JSON.stringify({ step, total, label })}`);
+}
+
 async function runNodeScript(scriptPath, extraEnv = {}) {
     const { stdout, stderr } = await execFileAsync(process.execPath, [scriptPath], {
         cwd: ROOT,
@@ -22,6 +26,7 @@ async function runNodeScript(scriptPath, extraEnv = {}) {
 }
 
 async function main() {
+    emitProgress(1, 4, 'Preparing rebuild');
     const mapData = normalizeMapData(JSON.parse(await readFile(MAP_PATH, 'utf8')));
     const hadTerrainEdits = (mapData.terrainEdits || []).length > 0;
     const forceClean = process.env.FSIM_CLEAN_REBUILD === '1';
@@ -33,17 +38,20 @@ async function main() {
 
     console.log(`🛠️ Mode: ${useExistingMap ? 'Surgical (Additive)' : 'Clean-Slate (Full Rebuild)'}`);
 
+    emitProgress(2, 4, 'Baking terrain');
     await runNodeScript(path.join(ROOT, 'tools', 'bake-map.mjs'), {
         FSIM_USE_EXISTING_TERRAIN: useExistingMap ? '1' : '0',
         FSIM_CLEAR_TERRAIN_EDITS: useExistingMap ? '1' : '0'
     });
 
+    emitProgress(3, 4, hadTerrainEdits && useExistingMap ? 'Clearing committed terrain edits' : 'Finalizing terrain inputs');
     if (hadTerrainEdits && useExistingMap) {
         const cleanedMap = { ...mapData, terrainEdits: [] };
         await writeFile(MAP_PATH, JSON.stringify(cleanedMap, null, 4));
         console.log('🧹 Cleared committed terrain edits from tools/map.json');
     }
 
+    emitProgress(4, 4, 'Building world chunks');
     await runNodeScript(path.join(ROOT, 'tools', 'build-world.mjs'), {
         FSIM_USE_EXISTING_TERRAIN: '1' // build-world always needs the latest world.bin
     });

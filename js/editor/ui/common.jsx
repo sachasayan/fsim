@@ -67,6 +67,15 @@ export function Icon({ path, className }) {
     );
 }
 
+export function SpinnerIcon({ className }) {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className={cn('size-4 shrink-0 animate-spin', className)}>
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.2" />
+            <path d="M12 4a8 8 0 0 1 8 8" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
 export function StatusChip({ testId, tone = 'default', iconPath, children }) {
     return (
         <span
@@ -257,18 +266,19 @@ export function ToolButton({ active, id, label, shortcut, onClick, compact = fal
     );
 }
 
-export function CommandButton({ testId, title, onClick, iconPath, children, variant = 'secondary', className }) {
+export function CommandButton({ testId, title, onClick, iconPath, children, variant = 'secondary', className, disabled = false, busy = false }) {
     return (
         <Tooltip>
             <TooltipTrigger>
                 <Button
                     type="button"
                     onClick={onClick}
+                    disabled={disabled}
                     data-testid={testId}
                     variant={variant}
                     className={cn('h-11 rounded-2xl px-4', className)}
                 >
-                    {iconPath ? <Icon path={iconPath} /> : null}
+                    {busy ? <SpinnerIcon /> : iconPath ? <Icon path={iconPath} /> : null}
                     <span>{children}</span>
                 </Button>
             </TooltipTrigger>

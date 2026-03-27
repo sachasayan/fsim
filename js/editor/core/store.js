@@ -57,6 +57,12 @@ function createInitialState(document) {
         ui: {
             saveState: 'idle',
             saveError: '',
+            saveProgress: null,
+            rebuildState: 'idle',
+            rebuildError: '',
+            rebuildProgress: null,
+            rebuildJobId: null,
+            rebuildRequestId: null,
             toast: null,
             showHelp: false,
             terrainLab: {
@@ -118,7 +124,8 @@ export function createEditorStore(initialDocument) {
             },
             ui: {
                 ...current.ui,
-                saveState: current.ui.saveState === 'saving' ? 'saving' : 'dirty'
+                saveState: current.ui.saveState === 'saving' ? 'saving' : 'dirty',
+                saveProgress: current.ui.saveState === 'saving' ? current.ui.saveProgress : null
             }
         }));
         return result;
@@ -227,7 +234,63 @@ export function createEditorStore(initialDocument) {
                     case 'set-terrain-brush':
                         return { ...current, tools: { ...current.tools, terrainBrush: { ...current.tools.terrainBrush, ...action.patch } } };
                     case 'set-save-state':
-                        return { ...current, ui: { ...current.ui, saveState: action.value, saveError: action.error || '' } };
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                saveState: action.value,
+                                saveError: action.error || '',
+                                saveProgress: action.progress ?? (action.value === 'saving' ? current.ui.saveProgress : null)
+                            }
+                        };
+                    case 'set-save-progress':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                saveProgress: action.progress
+                            }
+                        };
+                    case 'track-rebuild-job':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                rebuildState: action.value ?? current.ui.rebuildState,
+                                rebuildError: action.error || '',
+                                rebuildProgress: action.progress ?? current.ui.rebuildProgress,
+                                rebuildJobId: action.jobId ?? current.ui.rebuildJobId,
+                                rebuildRequestId: action.requestId ?? current.ui.rebuildRequestId
+                            }
+                        };
+                    case 'set-rebuild-state':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                rebuildState: action.value,
+                                rebuildError: action.error || '',
+                                rebuildProgress: action.progress ?? (
+                                    action.value === 'queued' || action.value === 'running'
+                                        ? current.ui.rebuildProgress
+                                        : null
+                                ),
+                                rebuildJobId: action.jobId ?? (
+                                    action.value === 'idle' ? null : current.ui.rebuildJobId
+                                ),
+                                rebuildRequestId: action.requestId ?? (
+                                    action.value === 'idle' ? null : current.ui.rebuildRequestId
+                                )
+                            }
+                        };
+                    case 'set-rebuild-progress':
+                        return {
+                            ...current,
+                            ui: {
+                                ...current.ui,
+                                rebuildProgress: action.progress
+                            }
+                        };
                     case 'set-toast':
                         return { ...current, ui: { ...current.ui, toast: action.toast } };
                     case 'set-terrain-region-hover':
@@ -339,6 +402,7 @@ export function createEditorStore(initialDocument) {
                             ui: {
                                 ...current.ui,
                                 saveState: current.ui.saveState === 'saving' ? 'saving' : 'dirty',
+                                saveProgress: current.ui.saveState === 'saving' ? current.ui.saveProgress : null,
                                 terrainLab: {
                                     ...current.ui.terrainLab,
                                     draftConfig: getTerrainLabSourceConfig(nextDocument, current.selection.selectedId),
@@ -365,7 +429,11 @@ export function createEditorStore(initialDocument) {
                             }
                         };
                     case 'mark-saved':
-                        return { ...current, history: { ...current.history, dirty: false, lastCoalesceKey: null }, ui: { ...current.ui, saveState: 'saved', saveError: '' } };
+                        return {
+                            ...current,
+                            history: { ...current.history, dirty: false, lastCoalesceKey: null },
+                            ui: { ...current.ui, saveState: 'saved', saveError: '', saveProgress: null }
+                        };
                     case 'replace-document':
                         return {
                             ...current,

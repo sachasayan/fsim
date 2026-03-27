@@ -2,11 +2,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { readFile, watch, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-
-const execAsync = promisify(exec);
 
 // Path to project root
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,46 +85,145 @@ function sendJson(res, payload, statusCode = 200) {
 }
 
 const MAP_FILE = path.join(ROOT, 'tools', 'map.json');
-let buildLock = false;
-let rebuildQueued = false;
 let rebuildDebounce = null;
 let suppressWatcherUntil = 0;
+let currentBuildJob = null;
+let queuedBuildJob = null;
+let nextBuildJobId = 1;
 
-async function rebuildWorld(reason, forceClean = false) {
-    if (buildLock) {
-        rebuildQueued = rebuildQueued || forceClean;
-        return;
-    }
+function createBuildJob(reason, { forceClean = false, requestId = null, source = 'auto' } = {}) {
+    return {
+        id: `build_${nextBuildJobId++}`,
+        reason,
+        forceClean,
+        requestIds: requestId ? new Set([requestId]) : new Set(),
+        source
+    };
+}
 
-    buildLock = true;
-    console.log(`\n🔄 ${reason}, rebuilding world (${forceClean ? 'CLEAN' : 'AUTO'})...`);
+function emitBuildProgress(job, payload) {
+    broadcast('editor-build-progress', {
+        jobId: job.id,
+        requestIds: [...job.requestIds],
+        forceClean: job.forceClean,
+        source: job.source,
+        timestamp: Date.now(),
+        ...payload
+    });
+}
+
+function mirrorStreamLines(stream, onLine) {
+    let buffer = '';
+    stream.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+            onLine(line);
+        }
+    });
+    stream.on('end', () => {
+        if (buffer) onLine(buffer);
+    });
+}
+
+async function runBuildJob(job) {
+    currentBuildJob = job;
     try {
-        const env = { ...process.env };
-        if (forceClean) env.FSIM_CLEAN_REBUILD = '1';
+        console.log(`\n🔄 ${job.reason}, rebuilding world (${job.forceClean ? 'CLEAN' : 'AUTO'})...`);
+        emitBuildProgress(job, { status: 'running', step: 1, total: 4, label: 'Preparing rebuild' });
 
-        const { stdout, stderr } = await execAsync(`${process.execPath} tools/commit-map-save.mjs`, { env });
-        if (stdout) console.log(stdout);
-        if (stderr) console.error(stderr);
-        broadcast('reload-city', { timestamp: Date.now() });
-    } catch (err) {
-        console.error(`❌ Build failed:`, err.message);
-    } finally {
-        setTimeout(() => {
-            const wasQueued = rebuildQueued;
-            buildLock = false;
-            rebuildQueued = false;
-            if (wasQueued) {
-                rebuildWorld('Queued map change', wasQueued);
+        const env = { ...process.env };
+        if (job.forceClean) env.FSIM_CLEAN_REBUILD = '1';
+
+        const child = spawn(process.execPath, ['tools/commit-map-save.mjs'], {
+            cwd: ROOT,
+            env,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        mirrorStreamLines(child.stdout, (line) => {
+            if (!line) return;
+            if (line.startsWith('[FSIM_PROGRESS] ')) {
+                try {
+                    const payload = JSON.parse(line.slice('[FSIM_PROGRESS] '.length));
+                    emitBuildProgress(job, { status: 'running', ...payload });
+                } catch (error) {
+                    console.error('Failed to parse build progress line:', error);
+                }
+                return;
             }
-        }, 1000);
+            console.log(line);
+        });
+        mirrorStreamLines(child.stderr, (line) => {
+            if (!line) return;
+            console.error(line);
+        });
+
+        const exitCode = await new Promise((resolve, reject) => {
+            child.on('error', reject);
+            child.on('close', resolve);
+        });
+
+        if (exitCode === 0) {
+            emitBuildProgress(job, { status: 'completed', step: 4, total: 4, label: 'Rebuild complete' });
+            broadcast('reload-city', { timestamp: Date.now() });
+        } else {
+            emitBuildProgress(job, {
+                status: 'failed',
+                step: 4,
+                total: 4,
+                label: 'Rebuild failed',
+                error: `commit-map-save exited with code ${exitCode}`
+            });
+            console.error(`❌ Build failed with exit code ${exitCode}`);
+        }
+    } catch (error) {
+        emitBuildProgress(job, {
+            status: 'failed',
+            step: 4,
+            total: 4,
+            label: 'Rebuild failed',
+            error: error.message
+        });
+        console.error(`❌ Build failed: ${error.message}`);
+    } finally {
+        currentBuildJob = null;
+        if (queuedBuildJob) {
+            const nextJob = queuedBuildJob;
+            queuedBuildJob = null;
+            void runBuildJob(nextJob);
+        }
     }
+}
+
+function queueWorldRebuild(reason, options = {}) {
+    const { forceClean = false, requestId = null, source = 'auto' } = options;
+
+    if (currentBuildJob) {
+        if (!queuedBuildJob) {
+            queuedBuildJob = createBuildJob(reason, { forceClean, requestId, source });
+        } else {
+            queuedBuildJob.forceClean = queuedBuildJob.forceClean || forceClean;
+            queuedBuildJob.reason = reason;
+            queuedBuildJob.source = source;
+            if (requestId) queuedBuildJob.requestIds.add(requestId);
+        }
+        emitBuildProgress(queuedBuildJob, { status: 'queued', step: 0, total: 4, label: 'Queued rebuild' });
+        return { jobId: queuedBuildJob.id, queued: true };
+    }
+
+    const job = createBuildJob(reason, { forceClean, requestId, source });
+    emitBuildProgress(job, { status: 'queued', step: 0, total: 4, label: 'Queued rebuild' });
+    void runBuildJob(job);
+    return { jobId: job.id, queued: false };
 }
 
 function scheduleWorldRebuild(reason) {
     if (rebuildDebounce) clearTimeout(rebuildDebounce);
     rebuildDebounce = setTimeout(() => {
         rebuildDebounce = null;
-        rebuildWorld(reason);
+        queueWorldRebuild(reason, { source: 'watcher' });
     }, 150);
 }
 
@@ -192,18 +288,41 @@ const server = http.createServer(async (req, res) => {
                             return;
                         }
                         console.log(`💾 Saving ${data.path}...`);
+                        const nextSerialized = JSON.stringify(data.content, null, 4);
+                        let changed = true;
                         if (IS_EDITOR_E2E) {
-                            editorE2eData.set(data.path, structuredClone(data.content));
-                            console.log(`✅ Saved ${data.path} to in-memory E2E fixture store`);
+                            const previousSerialized = JSON.stringify(editorE2eData.get(data.path) ?? null, null, 4);
+                            changed = previousSerialized !== nextSerialized;
+                            if (changed) {
+                                editorE2eData.set(data.path, structuredClone(data.content));
+                                console.log(`✅ Saved ${data.path} to in-memory E2E fixture store`);
+                            } else {
+                                console.log(`⏭️ Skipped unchanged save for ${data.path}`);
+                            }
                         } else {
-                            await writeFile(targetPath, JSON.stringify(data.content, null, 4));
-                            console.log(`✅ Saved ${data.path}`);
-                            if (targetPath === MAP_FILE) {
+                            const previousSerialized = existsSync(targetPath)
+                                ? await readFile(targetPath, 'utf8')
+                                : null;
+                            changed = previousSerialized !== nextSerialized;
+                            if (changed) {
+                                await writeFile(targetPath, nextSerialized);
+                                console.log(`✅ Saved ${data.path}`);
+                            } else {
+                                console.log(`⏭️ Skipped unchanged save for ${data.path}`);
+                            }
+                            if (changed && targetPath === MAP_FILE) {
                                 suppressWatcherUntil = Date.now() + 2000;
-                                await rebuildWorld('map.json saved via API');
                             }
                         }
-                        sendJson(res, { success: true });
+                        const rebuild = (!IS_EDITOR_E2E && changed && targetPath === MAP_FILE)
+                            ? queueWorldRebuild('map.json saved via API', { requestId: data.requestId || null, source: 'save' })
+                            : null;
+                        sendJson(res, {
+                            success: true,
+                            changed,
+                            rebuildQueued: rebuild?.queued === true,
+                            rebuildJobId: rebuild?.jobId || null
+                        });
                     } else {
                         res.writeHead(400); res.end('Bad Request');
                     }
@@ -221,13 +340,9 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             const forceClean = url.searchParams.get('clean') === '1';
-            rebuildWorld('manual rebuild requested', forceClean).then(() => {
-                sendJson(res, { success: true });
-            }).catch((err) => {
-                console.error(`❌ Manual rebuild failed:`, err.message);
-                res.writeHead(500);
-                res.end(err.message);
-            });
+            const requestId = url.searchParams.get('requestId') || null;
+            const rebuild = queueWorldRebuild('manual rebuild requested', { forceClean, requestId, source: 'manual' });
+            sendJson(res, { success: true, queued: rebuild.queued, rebuildJobId: rebuild.jobId });
             return;
         }
 
