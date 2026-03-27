@@ -43,11 +43,10 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
                 />
 
                 <div className="editor-workspace">
-                    <aside className="editor-dock editor-left-dock" id="sidebar" data-testid="sidebar">
-                        <ToolPalette store={store} currentTool={currentTool} toolDefs={toolDefs} />
-                    </aside>
-
                     <main className="editor-canvas-stage">
+                        <div className="editor-floating-tools">
+                            <ToolPalette store={store} currentTool={currentTool} toolDefs={toolDefs} />
+                        </div>
                         <div id="canvas-container" className={`editor-canvas-container tool-${currentTool}`}>
                             <canvas id="map-canvas" ref={canvasRef} data-testid="map-canvas" />
                         </div>

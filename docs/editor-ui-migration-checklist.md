@@ -60,6 +60,7 @@ Status key:
 - `[x]` Use those shared primitives across the top command area
 - `[x]` Use those shared primitives across the left tool rail
 - `[x]` Convert the tool palette to a compact icon-first vertical strip with tooltip affordances
+- `[x]` Remove the persistent left dock and float the tool palette over the canvas instead
 - `[x]` Use those shared primitives across layer visibility controls
 - `[x]` Move layer visibility controls into a top-bar dropdown instead of a persistent left-dock panel
 - `[x]` Move shortcut help into the top bar and present it in a modal instead of a left-dock panel

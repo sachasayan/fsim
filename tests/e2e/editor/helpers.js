@@ -59,7 +59,6 @@ export async function gotoEditor(page) {
     await expect(page.getByTestId('command-strip')).toBeVisible();
     await expect(page.getByTestId('map-canvas')).toBeVisible();
     await expect(page.getByTestId('toolbar')).toBeVisible();
-    await expect(page.getByTestId('sidebar')).toBeVisible();
     await page.waitForFunction(() => window.__EDITOR_TEST__?.store != null);
 }
 
