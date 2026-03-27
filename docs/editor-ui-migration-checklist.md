@@ -59,6 +59,7 @@ Status key:
   - separator
 - `[x]` Use those shared primitives across the top command area
 - `[x]` Use those shared primitives across the left tool rail
+- `[x]` Convert the tool palette to a compact icon-first vertical strip with tooltip affordances
 - `[x]` Use those shared primitives across layer visibility controls
 - `[x]` Use those shared primitives across inspector actions and basic form controls
 - `[x]` Use those shared primitives across terrain lab actions and controls
