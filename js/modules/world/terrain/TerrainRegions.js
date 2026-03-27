@@ -3,6 +3,7 @@ import { normalizeTerrainGeneratorConfig, createSeededNoise, createTerrainSynthe
 import { SEA_LEVEL } from './TerrainPalette.js';
 
 export const TERRAIN_REGION_GRID_SIZE = 64;
+const UNASSIGNED_REGION_OCEAN_HEIGHT = SEA_LEVEL - 140;
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -225,7 +226,7 @@ export function createRegionalTerrainSampler({
         regions: normalizedRegions,
         sampleHeight(x, z) {
             const region = findRegion(x, z);
-            if (!region) return SEA_LEVEL;
+            if (!region) return UNASSIGNED_REGION_OCEAN_HEIGHT;
             return getSynthesizer(region).sampleHeight(x, z);
         },
         sampleMasks(x, z) {
@@ -237,7 +238,7 @@ export function createRegionalTerrainSampler({
             const region = findRegion(x, z);
             if (!region) {
                 if (overlayKind === 'height') {
-                    return Math.max(0, Math.min(1, (SEA_LEVEL + 160) / 1450));
+                    return Math.max(0, Math.min(1, (UNASSIGNED_REGION_OCEAN_HEIGHT + 160) / 1450));
                 }
                 return 0;
             }

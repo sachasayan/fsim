@@ -70,7 +70,7 @@ test('regional sampler falls back to ocean when a region is removed', () => {
     const waterHeight = withoutRegion.sampleHeight(10, 10);
 
     assert.notEqual(landHeight, SEA_LEVEL);
-    assert.equal(waterHeight, SEA_LEVEL);
+    assert.ok(waterHeight < SEA_LEVEL);
 });
 
 test('regional sampler is invariant to world placement for identical region configs', () => {
@@ -160,7 +160,7 @@ test('edge-touching regions remain self-contained islands with oceanized boundar
 
     assert.ok(centerHeight > edgeHeight);
     assert.ok(edgeHeight <= SEA_LEVEL);
-    assert.equal(outsideHeight, SEA_LEVEL);
+    assert.ok(outsideHeight < SEA_LEVEL);
 });
 
 test('regional sampler matches preview synthesizer output for the same region config', () => {
