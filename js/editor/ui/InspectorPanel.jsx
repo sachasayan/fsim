@@ -13,6 +13,7 @@ const OBJECT_ASSET_OPTIONS = listAuthoredObjectAssets().map((asset) => ({
 
 const OBJECT_HEIGHT_MODE_OPTIONS = [
     { value: 'terrain', label: 'Terrain Height' },
+    { value: 'sea-level', label: 'Sea Level' },
     { value: 'absolute', label: 'Arbitrary Height' }
 ];
 
@@ -183,10 +184,10 @@ export function InspectorPanel({ store, controller }) {
                             testId="field-object-height-mode"
                         />
                         <RangeNumberField
-                            label={selected.heightMode === 'absolute' ? 'Altitude (m)' : 'Terrain Offset (m)'}
+                            label={selected.heightMode === 'absolute' ? 'Altitude (m)' : selected.heightMode === 'sea-level' ? 'Sea Level Offset (m)' : 'Terrain Offset (m)'}
                             value={selected.y || 0}
-                            min={selected.heightMode === 'absolute' ? -200 : -100}
-                            max={selected.heightMode === 'absolute' ? 3000 : 1000}
+                            min={selected.heightMode === 'terrain' ? -100 : -200}
+                            max={selected.heightMode === 'terrain' ? 1000 : 3000}
                             step={5}
                             disabled={locked}
                             onChange={(value) => updateProperty('y', value)}

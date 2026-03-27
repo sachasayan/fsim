@@ -935,9 +935,54 @@
         },
         {
             "assetId": "aircraft-carrier",
-            "x": -1700,
-            "z": -100,
-            "y": 50,
+            "x": -2500,
+            "z": -1000,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "sea-level"
+        },
+        {
+            "assetId": "ancient-greek-ruins",
+            "x": -400,
+            "z": 800,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "mountain-statue",
+            "x": -500,
+            "z": 1100,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "balloon",
+            "x": -300,
+            "z": 1100,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "aircraft-carrier",
+            "x": -400,
+            "z": 1300,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "oil-rig",
+            "x": -600,
+            "z": 1300,
+            "y": 0,
             "yaw": 0,
             "scale": 1,
             "heightMode": "terrain"

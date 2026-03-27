@@ -1,5 +1,6 @@
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { normalizeAuthoredObjectHeightMode } from '../../modules/world/AuthoredObjectCatalog.js';
 import { findTerrainRegionOverlap, getTerrainRegionTileSize, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
 import {
     createTerrainStroke,
@@ -191,7 +192,7 @@ export function applyEditorCommand(document, command, context = {}) {
                 y: Number.isFinite(command.y) ? command.y : 0,
                 yaw: Number.isFinite(command.yaw) ? command.yaw : 0,
                 scale: Number.isFinite(command.scale) ? command.scale : 1,
-                heightMode: command.heightMode === 'absolute' ? 'absolute' : 'terrain'
+                heightMode: normalizeAuthoredObjectHeightMode(command.heightMode)
             };
             nextDocument.worldData.authoredObjects.push(authoredObject);
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);

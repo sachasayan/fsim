@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { getAuthoredObjectAsset, listAuthoredObjectAssets } from './AuthoredObjectCatalog.js';
+import { SEA_LEVEL } from './terrain/TerrainPalette.js';
 
 const DRACO_DECODER_PATH = '/node_modules/three/examples/jsm/libs/draco/gltf/';
 
@@ -63,9 +64,11 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
         const terrainHeight = typeof getTerrainHeight === 'function'
             ? getTerrainHeight(placement.x, placement.z)
             : 0;
-        const y = placement.heightMode === 'absolute'
-            ? placement.y
-            : terrainHeight + placement.y;
+        const y = placement.heightMode === 'terrain'
+            ? terrainHeight + placement.y
+            : placement.heightMode === 'sea-level'
+                ? SEA_LEVEL + placement.y
+                : placement.y;
         instance.position.set(placement.x, y, placement.z);
         instance.rotation.set(0, THREE.MathUtils.degToRad(placement.yaw || 0), 0);
         instance.scale.setScalar(placement.scale || 1);

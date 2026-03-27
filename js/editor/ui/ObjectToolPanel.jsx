@@ -5,6 +5,7 @@ import { Panel, RangeNumberField, SelectField, shallowEqual, useStore } from './
 
 const OBJECT_HEIGHT_MODE_OPTIONS = [
     { value: 'terrain', label: 'Terrain Height' },
+    { value: 'sea-level', label: 'Sea Level' },
     { value: 'absolute', label: 'Arbitrary Height' }
 ];
 
@@ -15,7 +16,13 @@ const OBJECT_ASSET_OPTIONS = listAuthoredObjectAssets().map((asset) => ({
 
 export function ObjectToolPanel({ store }) {
     const objectPlacement = useStore(store, (state) => state.tools.objectPlacement, shallowEqual);
-    const heightLabel = objectPlacement.heightMode === 'absolute' ? 'Altitude (m)' : 'Terrain Offset (m)';
+    const heightLabel = objectPlacement.heightMode === 'absolute'
+        ? 'Altitude (m)'
+        : objectPlacement.heightMode === 'sea-level'
+            ? 'Sea Level Offset (m)'
+            : 'Terrain Offset (m)';
+    const heightMin = objectPlacement.heightMode === 'terrain' ? -100 : -200;
+    const heightMax = objectPlacement.heightMode === 'terrain' ? 1000 : 3000;
 
     function patchObjectPlacement(patch) {
         store.dispatch({ type: 'set-object-placement', patch });
@@ -24,7 +31,7 @@ export function ObjectToolPanel({ store }) {
     return (
         <Panel
             title="Object Tool"
-            copy="Stamp authored assets onto the map. Terrain mode hugs the ground and applies an offset; arbitrary mode uses the entered world altitude."
+            copy="Stamp authored assets onto the map. Terrain mode hugs the ground, sea level anchors to the water plane, and arbitrary mode uses the entered world altitude."
             testId="object-tool-panel"
         >
             <div className="editor-form-stack">
@@ -45,8 +52,8 @@ export function ObjectToolPanel({ store }) {
                 <RangeNumberField
                     label={heightLabel}
                     value={objectPlacement.y}
-                    min={objectPlacement.heightMode === 'absolute' ? -200 : -100}
-                    max={objectPlacement.heightMode === 'absolute' ? 3000 : 1000}
+                    min={heightMin}
+                    max={heightMax}
                     step={5}
                     onChange={(value) => patchObjectPlacement({ y: value })}
                 />

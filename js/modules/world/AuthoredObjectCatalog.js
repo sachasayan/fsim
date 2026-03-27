@@ -52,6 +52,12 @@ function clampNumber(value, min, max, fallback) {
     return Math.min(max, Math.max(min, value));
 }
 
+export function normalizeAuthoredObjectHeightMode(heightMode) {
+    if (heightMode === 'absolute') return 'absolute';
+    if (heightMode === 'sea-level') return 'sea-level';
+    return 'terrain';
+}
+
 export function listAuthoredObjectAssets() {
     return AUTHORED_OBJECT_ASSETS.map((asset) => ({ ...asset }));
 }
@@ -79,7 +85,7 @@ export function normalizeAuthoredObject(rawObject) {
         : getDefaultAuthoredObjectAssetId();
     authoredObject.x = Math.round(Number.isFinite(authoredObject.x) ? authoredObject.x : 0);
     authoredObject.z = Math.round(Number.isFinite(authoredObject.z) ? authoredObject.z : 0);
-    authoredObject.heightMode = authoredObject.heightMode === 'absolute' ? 'absolute' : 'terrain';
+    authoredObject.heightMode = normalizeAuthoredObjectHeightMode(authoredObject.heightMode);
     authoredObject.y = Number.isFinite(authoredObject.y) ? authoredObject.y : 0;
     authoredObject.yaw = clampNumber(Number(authoredObject.yaw), -180, 180, 0);
     authoredObject.scale = clampNumber(Number(authoredObject.scale), 0.1, 20, 1);
