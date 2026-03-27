@@ -1,6 +1,6 @@
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
-import { findTerrainRegionOverlap, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
+import { findTerrainRegionOverlap, getTerrainRegionTileSize, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
 import {
     createTerrainStroke,
     refreshTerrainEditGeometry
@@ -69,6 +69,24 @@ function translateRoad(road, dx, dz) {
         road.center[1] += dz;
     }
     normalizeRoad(road);
+}
+
+function moveTerrainRegion(region, nextTileX, nextTileZ, regions) {
+    const movedRegion = normalizeTerrainRegion({
+        ...region,
+        tileX: nextTileX,
+        tileZ: nextTileZ
+    });
+    const overlap = findTerrainRegionOverlap(movedRegion, regions, region);
+    if (overlap) return false;
+
+    region.tileX = movedRegion.tileX;
+    region.tileZ = movedRegion.tileZ;
+    region.tileWidth = movedRegion.tileWidth;
+    region.tileHeight = movedRegion.tileHeight;
+    region.bounds = movedRegion.bounds;
+    region.center = movedRegion.center;
+    return true;
 }
 
 function duplicateEntity(entity) {
@@ -221,7 +239,16 @@ export function applyEditorCommand(document, command, context = {}) {
         case 'move-entity': {
             const entity = getEntityById(nextDocument, command.entityId);
             if (!entity) return { document };
-            if (isTerrainRegion(entity)) return { document };
+            if (isTerrainRegion(entity)) {
+                const moved = moveTerrainRegion(
+                    entity,
+                    command.nextTileX ?? entity.tileX,
+                    command.nextTileZ ?? entity.tileZ,
+                    nextDocument.worldData.terrainRegions || []
+                );
+                if (!moved) return { document };
+                return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
+            }
             if (entity.center) {
                 const dx = command.nextCenter[0] - entity.center[0];
                 const dz = command.nextCenter[1] - entity.center[1];
@@ -294,7 +321,15 @@ export function applyEditorCommand(document, command, context = {}) {
 export function nudgeEntityCommand(document, entityId, delta, activeVertex = null) {
     const entity = getEntityById(document, entityId);
     if (!entity) return null;
-    if (isTerrainRegion(entity)) return null;
+    if (isTerrainRegion(entity)) {
+        const tileSize = getTerrainRegionTileSize();
+        return {
+            type: 'move-entity',
+            entityId,
+            nextTileX: entity.tileX + Math.round(delta.x / tileSize),
+            nextTileZ: entity.tileZ + Math.round(delta.z / tileSize)
+        };
+    }
     if (activeVertex && entity.points?.[activeVertex.index]) {
         return {
             type: 'move-vertex',
