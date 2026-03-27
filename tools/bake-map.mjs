@@ -98,7 +98,8 @@ const terrainSynthesizer = createTerrainSynthesizer({
 const terrainRegionSampler = createRegionalTerrainSampler({
     Noise,
     worldSize: DEFAULT_WORLD_SIZE,
-    regions: mapData?.terrainRegions || []
+    regions: mapData?.terrainRegions || [],
+    applyRunwayFlattening: true
 });
 const terrainMetadata = (mapData?.terrainRegions?.length || 0) > 0
     ? terrainRegionSampler.getMetadata()

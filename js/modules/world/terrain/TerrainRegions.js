@@ -196,7 +196,8 @@ export function getTerrainRegionAtWorldPos(regions, x, z, worldSize = DEFAULT_WO
 export function createRegionalTerrainSampler({
     Noise,
     worldSize = DEFAULT_WORLD_SIZE,
-    regions = []
+    regions = [],
+    applyRunwayFlattening = false
 }) {
     const normalizedRegions = normalizeTerrainRegions(regions, worldSize);
     const synthesizerCache = new Map();
@@ -212,7 +213,7 @@ export function createRegionalTerrainSampler({
                 worldSize,
                 config: region.terrainGenerator,
                 authoredBounds: region.bounds,
-                applyRunwayFlattening: false
+                applyRunwayFlattening
             }));
         }
         return synthesizerCache.get(key);

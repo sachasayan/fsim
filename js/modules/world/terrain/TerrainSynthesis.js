@@ -1461,8 +1461,7 @@ export function createTerrainSynthesizer({
         const wetlandSoftening = masks.wetland * 3;
         const height = stage.baseHeight - riverCarve - gorgeCarve - floodplainCarve - wetlandSoftening;
         if (!shouldApplyRunwayFlattening) return height;
-        const local = toLocalCoordinates(x, z);
-        return applyRunwayFlattening(height, local.x, local.z);
+        return applyRunwayFlattening(height, x, z);
     }
 
     function sampleOverlay(x, z, overlayKind = resolvedConfig.preview.overlay) {

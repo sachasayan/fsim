@@ -208,6 +208,37 @@ test('regional sampler matches preview synthesizer output for the same region co
     }
 });
 
+test('regional sampler can preserve the runway flattening corridor when enabled', () => {
+    const region = createTerrainRegionFromTiles(
+        { tileX: 30, tileZ: 30 },
+        { tileX: 34, tileZ: 34 },
+        {
+            terrainGenerator: {
+                seed: 13579,
+                preset: 'coastal'
+            }
+        }
+    );
+
+    const flattenedSampler = createRegionalTerrainSampler({
+        Noise,
+        worldSize: DEFAULT_WORLD_SIZE,
+        regions: [region],
+        applyRunwayFlattening: true
+    });
+    const unflattenedSampler = createRegionalTerrainSampler({
+        Noise,
+        worldSize: DEFAULT_WORLD_SIZE,
+        regions: [region],
+        applyRunwayFlattening: false
+    });
+
+    assert.equal(flattenedSampler.sampleHeight(0, 0), 0);
+    assert.equal(flattenedSampler.sampleHeight(100, 1200), 0);
+    assert.ok(unflattenedSampler.sampleHeight(0, 0) !== 0);
+    assert.ok(flattenedSampler.sampleHeight(420, 100) > 0);
+});
+
 test('preview snapshots stay finite and bounded for extreme rectangular regions', () => {
     const regions = [
         createTerrainRegionFromTiles(
