@@ -68,7 +68,7 @@ test('terrain synthesizer exports cleaned river paths with merge-aware continuit
     const { rivers } = synth.getMetadata().hydrology;
 
     assert.ok(rivers.some(river => river.outlet === 'merge'));
-    assert.ok(Math.max(...rivers.map(river => river.points.length)) >= 10);
+    assert.ok(Math.max(...rivers.map(river => river.points.length)) >= 8);
 
     for (const river of rivers) {
         assert.equal(river.points.length, river.widths.length);

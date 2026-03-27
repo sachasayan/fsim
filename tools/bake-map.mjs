@@ -100,6 +100,9 @@ const terrainRegionSampler = createRegionalTerrainSampler({
     worldSize: DEFAULT_WORLD_SIZE,
     regions: mapData?.terrainRegions || []
 });
+const terrainMetadata = (mapData?.terrainRegions?.length || 0) > 0
+    ? terrainRegionSampler.getMetadata()
+    : terrainSynthesizer.getMetadata();
 
 function getTerrainHeight(x, z) {
     if (existingTerrainSampler) {
@@ -232,7 +235,7 @@ function serializeQuadtree(root) {
         ? {
             ...mapData,
             worldSize: WORLD_SIZE,
-            ...terrainSynthesizer.getMetadata(),
+            ...terrainMetadata,
             terrainEdits: clearTerrainEdits ? [] : (mapData.terrainEdits || []),
             terrainRegions: mapData.terrainRegions || [],
             districts: mapData.districts,
@@ -240,7 +243,7 @@ function serializeQuadtree(root) {
         }
         : {
             worldSize: WORLD_SIZE,
-            ...terrainSynthesizer.getMetadata(),
+            ...terrainMetadata,
             terrainEdits: [],
             terrainRegions: [],
             districts: [],

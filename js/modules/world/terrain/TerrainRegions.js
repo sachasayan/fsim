@@ -1,5 +1,5 @@
 import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
-import { normalizeTerrainGeneratorConfig, createTerrainSynthesizer } from './TerrainSynthesis.js';
+import { normalizeTerrainGeneratorConfig, createSeededNoise, createTerrainSynthesizer } from './TerrainSynthesis.js';
 import { SEA_LEVEL } from './TerrainPalette.js';
 
 export const TERRAIN_REGION_GRID_SIZE = 64;
@@ -201,12 +201,17 @@ export function createRegionalTerrainSampler({
     const synthesizerCache = new Map();
 
     function getSynthesizer(region) {
-        const key = JSON.stringify(region.terrainGenerator);
+        const key = JSON.stringify({
+            bounds: region.bounds,
+            terrainGenerator: region.terrainGenerator
+        });
         if (!synthesizerCache.has(key)) {
             synthesizerCache.set(key, createTerrainSynthesizer({
-                Noise,
+                Noise: createSeededNoise(region.terrainGenerator.seed),
                 worldSize,
-                config: region.terrainGenerator
+                config: region.terrainGenerator,
+                authoredBounds: region.bounds,
+                applyRunwayFlattening: false
             }));
         }
         return synthesizerCache.get(key);
@@ -246,6 +251,37 @@ export function createRegionalTerrainSampler({
         },
         getRegionAtWorldPos(x, z) {
             return findRegion(x, z);
+        },
+        getMetadata() {
+            const regionMetadata = normalizedRegions.map(region => {
+                const metadata = getSynthesizer(region).getMetadata();
+                return {
+                    tileX: region.tileX,
+                    tileZ: region.tileZ,
+                    tileWidth: region.tileWidth,
+                    tileHeight: region.tileHeight,
+                    bounds: { ...region.bounds },
+                    center: Array.isArray(region.center) ? [...region.center] : null,
+                    terrainModel: metadata.terrainModel,
+                    terrainExtent: metadata.terrainExtent,
+                    hydrology: metadata.hydrology
+                };
+            });
+            const hydrologySummary = regionMetadata.reduce((summary, region) => {
+                summary.riverCount += region.hydrology?.riverCount || 0;
+                summary.lakeCount += region.hydrology?.lakeCount || 0;
+                return summary;
+            }, { riverCount: 0, lakeCount: 0 });
+            return {
+                worldSize,
+                terrainModel: {
+                    version: 2,
+                    kind: 'regional-offline-synth-v2',
+                    regionCount: regionMetadata.length
+                },
+                terrainRegionMetadata: regionMetadata,
+                hydrology: hydrologySummary
+            };
         }
     };
 }

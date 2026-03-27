@@ -62,24 +62,43 @@ function seeded01(seed, a, b = 0) {
     return n - Math.floor(n);
 }
 
-function createRasterCoordinates(index, resolution, worldSize) {
-    const x = index % resolution;
-    const z = Math.floor(index / resolution);
-    const step = worldSize / (resolution - 1);
+function normalizeTerrainExtent(worldSize, authoredBounds = null) {
+    const width = authoredBounds
+        ? Math.max(1, authoredBounds.maxX - authoredBounds.minX)
+        : Math.max(1, worldSize);
+    const height = authoredBounds
+        ? Math.max(1, authoredBounds.maxZ - authoredBounds.minZ)
+        : Math.max(1, worldSize);
     return {
-        gx: x,
-        gz: z,
-        wx: -worldSize * 0.5 + x * step,
-        wz: -worldSize * 0.5 + z * step,
-        step
+        width,
+        height,
+        halfWidth: width * 0.5,
+        halfHeight: height * 0.5,
+        maxDimension: Math.max(width, height),
+        minDimension: Math.min(width, height)
     };
 }
 
-function sampleRasterBilinear(field, worldSize, resolution, x, z) {
-    const half = worldSize * 0.5;
-    if (x < -half || x > half || z < -half || z > half) return 0;
-    const nx = inverseLerp(-half, half, x) * (resolution - 1);
-    const nz = inverseLerp(-half, half, z) * (resolution - 1);
+function createRasterCoordinates(index, resolution, terrainExtent) {
+    const x = index % resolution;
+    const z = Math.floor(index / resolution);
+    const stepX = terrainExtent.width / (resolution - 1);
+    const stepZ = terrainExtent.height / (resolution - 1);
+    return {
+        gx: x,
+        gz: z,
+        wx: -terrainExtent.halfWidth + x * stepX,
+        wz: -terrainExtent.halfHeight + z * stepZ,
+        stepX,
+        stepZ,
+        step: Math.max(stepX, stepZ)
+    };
+}
+
+function sampleRasterBilinear(field, terrainExtent, resolution, x, z) {
+    if (x < -terrainExtent.halfWidth || x > terrainExtent.halfWidth || z < -terrainExtent.halfHeight || z > terrainExtent.halfHeight) return 0;
+    const nx = inverseLerp(-terrainExtent.halfWidth, terrainExtent.halfWidth, x) * (resolution - 1);
+    const nz = inverseLerp(-terrainExtent.halfHeight, terrainExtent.halfHeight, z) * (resolution - 1);
     const x0 = Math.max(0, Math.floor(nx));
     const z0 = Math.max(0, Math.floor(nz));
     const x1 = Math.min(resolution - 1, x0 + 1);
@@ -95,6 +114,80 @@ function sampleRasterBilinear(field, worldSize, resolution, x, z) {
     const a = lerp(field[i00], field[i10], fx);
     const b = lerp(field[i01], field[i11], fx);
     return lerp(a, b, fz);
+}
+
+export function createSeededNoise(seed = 12345) {
+    const localNoise = {
+        permutation: new Uint8Array(512),
+        init(initSeed = 12345) {
+            const p = new Uint8Array(256);
+            for (let i = 0; i < 256; i += 1) p[i] = i;
+
+            let s = initSeed;
+            for (let i = 255; i > 0; i -= 1) {
+                s = Math.imul(1664525, s) + 1013904223 | 0;
+                const rand = Math.floor((((s >>> 8) & 0xfffff) / 0x100000) * (i + 1));
+                const temp = p[i];
+                p[i] = p[rand];
+                p[rand] = temp;
+            }
+            for (let i = 0; i < 512; i += 1) this.permutation[i] = p[i & 255];
+        },
+        fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
+        lerp: (t, a, b) => a + t * (b - a),
+        grad(hash, x, y, z) {
+            const h = hash & 15;
+            const u = h < 8 ? x : y;
+            const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+            return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+        },
+        noise(x, y, z) {
+            let X = Math.floor(x) & 255;
+            let Y = Math.floor(y) & 255;
+            let Z = Math.floor(z) & 255;
+            x -= Math.floor(x);
+            y -= Math.floor(y);
+            z -= Math.floor(z);
+            const u = this.fade(x);
+            const v = this.fade(y);
+            const w = this.fade(z);
+            const A = this.permutation[X] + Y;
+            const AA = this.permutation[A] + Z;
+            const AB = this.permutation[A + 1] + Z;
+            const B = this.permutation[X + 1] + Y;
+            const BA = this.permutation[B] + Z;
+            const BB = this.permutation[B + 1] + Z;
+
+            return this.lerp(
+                w,
+                this.lerp(
+                    v,
+                    this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
+                    this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
+                ),
+                this.lerp(
+                    v,
+                    this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
+                    this.lerp(u, this.grad(this.permutation[AB + 1], x, y - 1, z - 1), this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1))
+                )
+            );
+        },
+        fractal(x, z, octaves, persistence, scale) {
+            let total = 0;
+            let frequency = scale;
+            let amplitude = 1;
+            let maxValue = 0;
+            for (let i = 0; i < octaves; i += 1) {
+                total += this.noise(x * frequency, 0, z * frequency) * amplitude;
+                maxValue += amplitude;
+                amplitude *= persistence;
+                frequency *= 2;
+            }
+            return maxValue > 0 ? total / maxValue : 0;
+        }
+    };
+    localNoise.init(seed);
+    return localNoise;
 }
 
 function paintDisc(field, resolution, cx, cz, radiusCells, value) {
@@ -494,18 +587,20 @@ function createSeedOffsets(seed = 0) {
     };
 }
 
-function createRangeDefinitions(config, worldSize) {
+function createRangeDefinitions(config, terrainExtent) {
     const ranges = [];
     const count = config.macro.rangeCount;
-    const worldRadius = worldSize * 0.5;
+    const radialX = terrainExtent.halfWidth * 0.72;
+    const radialZ = terrainExtent.halfHeight * 0.72;
+    const maxDimension = terrainExtent.maxDimension;
     for (let index = 0; index < count; index += 1) {
         const angle = seeded01(config.seed, index, 1) * Math.PI * 2;
-        const radial = (seeded01(config.seed, index, 2) * 0.55 + 0.12) * worldRadius;
-        const cx = Math.cos(angle) * radial * 0.78;
-        const cz = Math.sin(angle) * radial * 0.78;
+        const radial = seeded01(config.seed, index, 2) * 0.55 + 0.12;
+        const cx = Math.cos(angle) * radialX * radial * 0.78;
+        const cz = Math.sin(angle) * radialZ * radial * 0.78;
         const orientation = angle + (seeded01(config.seed, index, 3) - 0.5) * Math.PI * 0.75;
-        const halfLength = (worldSize * 0.16) + config.macro.rangeLength * worldSize * (0.14 + seeded01(config.seed, index, 4) * 0.08);
-        const width = (worldSize * 0.02) + config.macro.rangeWidth * worldSize * (0.025 + seeded01(config.seed, index, 5) * 0.02);
+        const halfLength = (maxDimension * 0.16) + config.macro.rangeLength * maxDimension * (0.14 + seeded01(config.seed, index, 4) * 0.08);
+        const width = (maxDimension * 0.02) + config.macro.rangeWidth * maxDimension * (0.025 + seeded01(config.seed, index, 5) * 0.02);
         const uplift = (0.6 + seeded01(config.seed, index, 6) * 0.7) * config.macro.upliftStrength;
         const massifCount = 1 + Math.floor(seeded01(config.seed, index, 7) * 3);
         const massifs = [];
@@ -532,6 +627,54 @@ function createRangeDefinitions(config, worldSize) {
         });
     }
     return ranges;
+}
+
+function createIslandProfile(config, terrainExtent) {
+    const seed = config.seed;
+    const centerX = (seeded01(seed, 700, 1) - 0.5) * terrainExtent.width * 0.26;
+    const centerZ = (seeded01(seed, 700, 2) - 0.5) * terrainExtent.height * 0.26;
+    const rotation = seeded01(seed, 700, 3) * Math.PI * 2;
+    const axisX = 0.84 + seeded01(seed, 700, 4) * 0.42;
+    const axisZ = 0.84 + seeded01(seed, 700, 5) * 0.42;
+    const innerRadius = 0.56 + seeded01(seed, 700, 6) * 0.14;
+    const outerRadius = innerRadius + 0.3 + seeded01(seed, 700, 7) * 0.12;
+    const coastScale = 1 / Math.max(terrainExtent.maxDimension * 0.85, 1);
+    return {
+        centerX,
+        centerZ,
+        rotation,
+        axisX,
+        axisZ,
+        innerRadius,
+        outerRadius,
+        coastScale
+    };
+}
+
+function sampleIslandMask(x, z, Noise, offsets, terrainExtent, islandProfile) {
+    if (!islandProfile) return 1;
+    const dx = (x - islandProfile.centerX) / Math.max(1, terrainExtent.halfWidth);
+    const dz = (z - islandProfile.centerZ) / Math.max(1, terrainExtent.halfHeight);
+    const cosR = Math.cos(islandProfile.rotation);
+    const sinR = Math.sin(islandProfile.rotation);
+    const rx = dx * cosR - dz * sinR;
+    const rz = dx * sinR + dz * cosR;
+    const px = rx / islandProfile.axisX;
+    const pz = rz / islandProfile.axisZ;
+    const radial = Math.hypot(px, pz);
+    const coastNoise = Noise.fractal(
+        x + offsets.continentalX * 0.11,
+        z + offsets.continentalZ * 0.11,
+        3,
+        0.5,
+        islandProfile.coastScale
+    );
+    const coastBias = coastNoise * 0.16;
+    return clamp01(1 - smoothstep(
+        islandProfile.innerRadius + coastBias * 0.35,
+        islandProfile.outerRadius + coastBias * 0.55,
+        radial
+    ));
 }
 
 function sampleRangeComposer(x, z, Noise, config, offsets, ranges) {
@@ -592,7 +735,7 @@ function sampleStructuralFields(x, z, Noise, config, offsets, continentalShelf, 
     };
 }
 
-function sampleTerrainStage(x, z, Noise, config, offsets, ranges) {
+function sampleTerrainStage(x, z, Noise, config, offsets, ranges, terrainExtent, islandProfile = null) {
     const continental = (Noise.fractal(x + offsets.continentalX, z + offsets.continentalZ, 4, 0.5, 0.000045) + 1) * 0.5;
     const continentalShelf = smoothstep(0.16, 0.84, continental);
 
@@ -659,10 +802,16 @@ function sampleTerrainStage(x, z, Noise, config, offsets, ranges) {
         - basinCarve
         - cirqueCarve;
 
+    const islandMask = sampleIslandMask(x, z, Noise, offsets, terrainExtent, islandProfile);
+    const oceanFloor = SEA_LEVEL - 140 + continentalShelf * 24 - basinMask * 16;
+    const shapedBaseHeight = islandProfile
+        ? lerp(oceanFloor, baseHeight, islandMask)
+        : baseHeight;
+
     const exposure = (Noise.fractal(wx + offsets.exposureX, wz + offsets.exposureZ, 3, 0.5, 0.0002) + 1) * 0.5;
 
     return {
-        baseHeight,
+        baseHeight: shapedBaseHeight,
         continentalShelf,
         rangeMask: clamp01(range.rangeMask),
         massifMask: clamp01(range.massifMask),
@@ -775,7 +924,7 @@ function cleanupRiverPath(points, widths, step) {
     return { points: cleanedPoints, widths: cleanedWidths };
 }
 
-function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
+function buildHydrologyModel({ Noise, terrainExtent, config, ranges, offsets, islandProfile = null }) {
     const resolution = config.hydrology.resolution;
     const cellCount = resolution * resolution;
     const heights = new Float32Array(cellCount);
@@ -789,8 +938,8 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
     const exposureField = new Float32Array(cellCount);
 
     for (let index = 0; index < cellCount; index += 1) {
-        const { wx, wz } = createRasterCoordinates(index, resolution, worldSize);
-        const stage = sampleTerrainStage(wx, wz, Noise, config, offsets, ranges);
+        const { wx, wz } = createRasterCoordinates(index, resolution, terrainExtent);
+        const stage = sampleTerrainStage(wx, wz, Noise, config, offsets, ranges, terrainExtent, islandProfile);
         heights[index] = stage.baseHeight;
         rangeMaskField[index] = stage.rangeMask;
         glacialField[index] = stage.glacialMask;
@@ -802,7 +951,7 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
         exposureField[index] = stage.exposure;
     }
 
-    const step = worldSize / (resolution - 1);
+    const step = terrainExtent.maxDimension / (resolution - 1);
     const { slope, relief } = computeSlopeAndRelief(heights, resolution, step);
     const { effective, sinkMask } = fillDepressions(heights, resolution);
 
@@ -903,7 +1052,7 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
             }
             visited.add(current);
 
-            const { gx, gz, wx, wz } = createRasterCoordinates(current, resolution, worldSize);
+            const { gx, gz, wx, wz } = createRasterCoordinates(current, resolution, terrainExtent);
             const flow = clamp01(accumulation[current] / peakAccumulation);
             const width = Math.round(10 + Math.sqrt(accumulation[current]) * 2.6 * config.hydrology.riverStrength + flow * 20);
             points.push([wx, wz]);
@@ -939,7 +1088,7 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
             }
 
             if (acceptedRiverByCell[next] >= 0) {
-                const { wx: nx, wz: nz } = createRasterCoordinates(next, resolution, worldSize);
+                const { wx: nx, wz: nz } = createRasterCoordinates(next, resolution, terrainExtent);
                 const nextFlow = clamp01(accumulation[next] / peakAccumulation);
                 const nextWidth = Math.round(10 + Math.sqrt(accumulation[next]) * 2.6 * config.hydrology.riverStrength + nextFlow * 20);
                 points.push([nx, nz]);
@@ -970,7 +1119,7 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
         if (cleaned.points.length >= minRiverPoints) {
             const riverIndex = rivers.length;
             for (const cell of pathCells) {
-                const { gx, gz } = createRasterCoordinates(cell, resolution, worldSize);
+                const { gx, gz } = createRasterCoordinates(cell, resolution, terrainExtent);
                 const flow = clamp01(accumulation[cell] / peakAccumulation);
                 const localSlope = slope[cell];
                 const gorgeBias = clamp01(flow * smoothstep(0.08, 0.42, localSlope) * config.hydrology.gorgeStrength);
@@ -991,8 +1140,8 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
             const river = rivers[riverIndex];
             for (let pointIndex = 0; pointIndex < river.points.length; pointIndex += 1) {
                 const point = river.points[pointIndex];
-                const gridX = Math.round((point[0] + worldSize * 0.5) / step);
-                const gridZ = Math.round((point[1] + worldSize * 0.5) / step);
+                const gridX = Math.round((point[0] + terrainExtent.halfWidth) / Math.max(terrainExtent.width / (resolution - 1), 1e-6));
+                const gridZ = Math.round((point[1] + terrainExtent.halfHeight) / Math.max(terrainExtent.height / (resolution - 1), 1e-6));
                 if (gridX < 0 || gridX >= resolution || gridZ < 0 || gridZ >= resolution) continue;
                 const cellIndex = gridZ * resolution + gridX;
                 acceptedRiverByCell[cellIndex] = riverIndex;
@@ -1005,7 +1154,7 @@ function buildHydrologyModel({ Noise, worldSize, config, ranges, offsets }) {
         if (lakes.length >= maxLakeCount) break;
         if (!sinkMask[index]) continue;
         if (accumulation[index] < minLakeAccumulation) continue;
-        const { gx, gz, wx, wz, step: cellStep } = createRasterCoordinates(index, resolution, worldSize);
+        const { gx, gz, wx, wz, step: cellStep } = createRasterCoordinates(index, resolution, terrainExtent);
         const radiusMeters = Math.round(cellStep * (1.3 + Math.sqrt(accumulation[index] / minLakeAccumulation)) * Math.max(0.35, config.hydrology.lakeStrength));
         const intensity = clamp01(accumulation[index] / peakAccumulation) * config.hydrology.lakeStrength;
         const filledLevel = Math.max(heights[index] + 1.5, effective[index] + 0.75 + intensity * 2.5);
@@ -1218,26 +1367,51 @@ function getOverlayColor(overlayKind, value, heightValue, showContours) {
 export function createTerrainSynthesizer({
     Noise,
     worldSize = DEFAULT_WORLD_SIZE,
-    config = {}
+    config = {},
+    authoredBounds = null,
+    applyRunwayFlattening: shouldApplyRunwayFlattening = true
 } = {}) {
     if (!Noise) {
         throw new Error('createTerrainSynthesizer requires a Noise implementation');
     }
 
     const resolvedConfig = normalizeTerrainGeneratorConfig({ ...config, preview: config.preview });
+    const terrainExtent = normalizeTerrainExtent(worldSize, authoredBounds);
     const offsets = createSeedOffsets(resolvedConfig.seed);
-    const ranges = createRangeDefinitions(resolvedConfig, worldSize);
-    const hydrology = buildHydrologyModel({ Noise, worldSize, config: resolvedConfig, ranges, offsets });
-    const worldHalfSize = worldSize * 0.5;
+    const islandProfile = authoredBounds ? createIslandProfile(resolvedConfig, terrainExtent) : null;
+    const ranges = createRangeDefinitions(resolvedConfig, terrainExtent);
+    const hydrology = buildHydrologyModel({
+        Noise,
+        terrainExtent,
+        config: resolvedConfig,
+        ranges,
+        offsets,
+        islandProfile
+    });
 
-    function isWithinWorldBounds(x, z) {
-        return x >= -worldHalfSize && x <= worldHalfSize && z >= -worldHalfSize && z <= worldHalfSize;
+    const authoredCenterX = authoredBounds ? (authoredBounds.minX + authoredBounds.maxX) * 0.5 : 0;
+    const authoredCenterZ = authoredBounds ? (authoredBounds.minZ + authoredBounds.maxZ) * 0.5 : 0;
+
+    function toLocalCoordinates(x, z) {
+        if (!authoredBounds) return { x, z };
+        return {
+            x: x - authoredCenterX,
+            z: z - authoredCenterZ
+        };
+    }
+
+    function isWithinWorldBounds(localX, localZ) {
+        return localX >= -terrainExtent.halfWidth
+            && localX <= terrainExtent.halfWidth
+            && localZ >= -terrainExtent.halfHeight
+            && localZ <= terrainExtent.halfHeight;
     }
 
     function sampleMask(fieldName, x, z) {
         const field = hydrology[fieldName];
         if (!field) return 0;
-        return sampleRasterBilinear(field, worldSize, hydrology.resolution, x, z);
+        const local = toLocalCoordinates(x, z);
+        return sampleRasterBilinear(field, terrainExtent, hydrology.resolution, local.x, local.z);
     }
 
     function sampleMasks(x, z) {
@@ -1258,7 +1432,8 @@ export function createTerrainSynthesizer({
     }
 
     function sampleBaseTerrain(x, z) {
-        if (!isWithinWorldBounds(x, z)) {
+        const local = toLocalCoordinates(x, z);
+        if (!isWithinWorldBounds(local.x, local.z)) {
             return {
                 baseHeight: -100,
                 continentalShelf: 0,
@@ -1274,7 +1449,7 @@ export function createTerrainSynthesizer({
                 exposure: 0
             };
         }
-        return sampleTerrainStage(x, z, Noise, resolvedConfig, offsets, ranges);
+        return sampleTerrainStage(local.x, local.z, Noise, resolvedConfig, offsets, ranges, terrainExtent, islandProfile);
     }
 
     function sampleHeight(x, z) {
@@ -1284,7 +1459,10 @@ export function createTerrainSynthesizer({
         const gorgeCarve = masks.gorge * (18 + 54 * resolvedConfig.hydrology.gorgeStrength) * (0.65 + resolvedConfig.hydrology.incisionBias * 0.55);
         const floodplainCarve = masks.floodplain * 10 * (0.45 + resolvedConfig.hydrology.floodplainWidth);
         const wetlandSoftening = masks.wetland * 3;
-        return applyRunwayFlattening(stage.baseHeight - riverCarve - gorgeCarve - floodplainCarve - wetlandSoftening, x, z);
+        const height = stage.baseHeight - riverCarve - gorgeCarve - floodplainCarve - wetlandSoftening;
+        if (!shouldApplyRunwayFlattening) return height;
+        const local = toLocalCoordinates(x, z);
+        return applyRunwayFlattening(height, local.x, local.z);
     }
 
     function sampleOverlay(x, z, overlayKind = resolvedConfig.preview.overlay) {
@@ -1358,6 +1536,10 @@ export function createTerrainSynthesizer({
     function getMetadata() {
         return {
             worldSize,
+            terrainExtent: {
+                width: Math.round(terrainExtent.width),
+                height: Math.round(terrainExtent.height)
+            },
             terrainModel: {
                 version: 2,
                 kind: 'offline-synth-v2',

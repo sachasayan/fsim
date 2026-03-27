@@ -270,6 +270,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             store.dispatch({ type: 'set-terrain-preview-status', status: 'generating' });
             const { snapshot, metadata } = await terrainPreviewWorker.buildPreview({
                 bounds,
+                authoredBounds: selected.bounds ? { ...selected.bounds } : bounds,
                 config: terrainLab.draftConfig,
                 overlayKind: terrainLab.selectedOverlay,
                 resolution: terrainLab.draftConfig.preview.resolution,

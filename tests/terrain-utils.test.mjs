@@ -7,9 +7,12 @@ import {
     cityHubInfluence,
     getDistrictProfile,
     getTerrainHeight,
+    getTerrainMaskSet,
     getLodForRingDistance,
     setStaticSampler
 } from '../js/modules/world/terrain/TerrainUtils.js';
+import { createTerrainRegionFromTiles } from '../js/modules/world/terrain/TerrainRegions.js';
+import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 
 // getForestProfile signature: getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise)
 
@@ -255,6 +258,47 @@ test('getTerrainHeight still applies terrain edits when using the static sampler
     } finally {
         setStaticSampler(null);
         global.window = previousWindow;
+    }
+});
+
+test('getTerrainMaskSet follows baked terrain region metadata in static sampler mode', () => {
+    const regionA = createTerrainRegionFromTiles(
+        { tileX: 8, tileZ: 10 },
+        { tileX: 11, tileZ: 14 },
+        { terrainGenerator: { seed: 24680, preset: 'cinematic' } },
+        DEFAULT_WORLD_SIZE
+    );
+    const regionB = createTerrainRegionFromTiles(
+        { tileX: 40, tileZ: 42 },
+        { tileX: 43, tileZ: 46 },
+        { terrainGenerator: { seed: 24680, preset: 'cinematic' } },
+        DEFAULT_WORLD_SIZE
+    );
+
+    setStaticSampler({
+        getAltitudeAt() {
+            return 0;
+        },
+        getMetadata() {
+            return {
+                worldSize: DEFAULT_WORLD_SIZE,
+                terrainRegions: [regionA, regionB]
+            };
+        }
+    });
+
+    try {
+        const sampleA = {
+            x: regionA.bounds.minX + (regionA.bounds.maxX - regionA.bounds.minX) * 0.6,
+            z: regionA.bounds.minZ + (regionA.bounds.maxZ - regionA.bounds.minZ) * 0.45
+        };
+        const sampleB = {
+            x: regionB.bounds.minX + (regionB.bounds.maxX - regionB.bounds.minX) * 0.6,
+            z: regionB.bounds.minZ + (regionB.bounds.maxZ - regionB.bounds.minZ) * 0.45
+        };
+        assert.deepEqual(getTerrainMaskSet(sampleA.x, sampleA.z), getTerrainMaskSet(sampleB.x, sampleB.z));
+    } finally {
+        setStaticSampler(null);
     }
 });
 
