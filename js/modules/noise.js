@@ -39,23 +39,22 @@ export const Noise = {
     let BA = this.permutation[B] + Z;
     let BB = this.permutation[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    const g000 = this.grad(this.permutation[AA], x, y, z);
+    const g100 = this.grad(this.permutation[BA], x - 1, y, z);
+    const g010 = this.grad(this.permutation[AB], x, y - 1, z);
+    const g110 = this.grad(this.permutation[BB], x - 1, y - 1, z);
+    const g001 = this.grad(this.permutation[AA + 1], x, y, z - 1);
+    const g101 = this.grad(this.permutation[BA + 1], x - 1, y, z - 1);
+    const g011 = this.grad(this.permutation[AB + 1], x, y - 1, z - 1);
+    const g111 = this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1);
+
+    const nx00 = g000 + u * (g100 - g000);
+    const nx01 = g010 + u * (g110 - g010);
+    const nx10 = g001 + u * (g101 - g001);
+    const nx11 = g011 + u * (g111 - g011);
+
+    const nxy0 = nx00 + v * (nx01 - nx00);
+    return nxy0 + w * ((nx10 + v * (nx11 - nx10)) - nxy0);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {
