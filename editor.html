@@ -303,6 +303,13 @@
             text-transform: uppercase;
         }
 
+        .tool-meta {
+            font-size: 9px;
+            color: currentColor;
+            opacity: 0.75;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
         h2 {
             margin: 0;
             display: flex;
@@ -539,6 +546,10 @@
             background: rgba(5, 10, 20, 0.35);
         }
 
+        .layers-toolbar {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
         .layers-group-header {
             display: grid;
             grid-template-columns: auto 1fr auto auto;
@@ -685,6 +696,10 @@
             }
 
             .toolbar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .layers-toolbar {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }

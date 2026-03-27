@@ -388,86 +388,53 @@ function InspectorPanel({ store, controller }) {
 
 function LayersPanel({ store }) {
     const state = useStore(store, value => value);
-    const groups = listLayerGroups(state.document).map(group => ({
-        ...group,
-        items: group.items.filter(item => {
-            const query = state.layers.filterText.trim().toLowerCase();
-            if (!query) return true;
-            return item.label.toLowerCase().includes(query) || item.id.toLowerCase().includes(query);
-        })
-    }));
+    const layerDefs = {
+        districts: {
+            label: 'Districts',
+            shortcut: 'On',
+            path: 'M4 6h16v12H4zM8 6v12M16 6v12M4 12h16'
+        },
+        roads: {
+            label: 'Roads',
+            shortcut: 'On',
+            path: 'M8 3l2 7-2 11M16 3l-2 7 2 11M10 10h4M9 15h6'
+        },
+        terrainRegions: {
+            label: 'Regions',
+            shortcut: 'On',
+            path: 'M4 4h16v16H4zM8 8h8v8H8z'
+        },
+        terrain: {
+            label: 'Terrain',
+            shortcut: 'On',
+            path: 'M3 16l5-5 4 3 4-6 5 8M3 19h18'
+        },
+        vantage: {
+            label: 'Views',
+            shortcut: 'On',
+            path: 'M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12zm10 3a3 3 0 100-6 3 3 0 000 6z'
+        }
+    };
+    const groups = listLayerGroups(state.document)
+        .filter(group => layerDefs[group.id]);
 
     return h('div', { className: 'property-panel', id: 'layers-panel', 'data-testid': 'layers-panel' }, [
         h('div', { className: 'section-title', key: 'title' }, 'Layers'),
-        h('input', {
-            key: 'filter',
-            type: 'search',
-            placeholder: 'Filter layers',
-            value: state.layers.filterText,
-            onChange: event => store.dispatch({ type: 'set-layer-filter', value: event.target.value }),
-            'data-testid': 'layers-filter'
-        }),
-        h('div', { id: 'layers-groups', key: 'groups', 'data-testid': 'layers-groups' }, groups.map(group => {
-            const collapsed = state.layers.collapsed[group.id] === true;
+        h('div', { className: 'toolbar layers-toolbar', id: 'layers-groups', key: 'groups', 'data-testid': 'layers-groups' }, groups.map(group => {
             const visible = state.layers.groupVisibility[group.id] !== false;
-            const locked = state.layers.groupLocked[group.id] === true;
-            return h('div', { className: 'layers-group', key: group.id, 'data-testid': `layer-group-${group.id}` }, [
-                h('div', { className: 'layers-group-header', key: 'header' }, [
-                    h('button', {
-                        key: 'collapse',
-                        className: 'layer-toggle',
-                        type: 'button',
-                        onClick: () => store.dispatch({ type: 'toggle-group-collapse', groupId: group.id })
-                    }, collapsed ? '+' : '-'),
-                    h('button', {
-                        key: 'name',
-                        className: 'layer-group-name',
-                        type: 'button',
-                        onClick: () => store.dispatch({ type: 'toggle-group-collapse', groupId: group.id })
-                    }, group.label),
-                    h('span', { className: 'layer-count', key: 'count' }, String(group.items.length)),
-                    h('span', { className: 'layer-controls', key: 'controls' }, [
-                        h('button', {
-                            key: 'visible',
-                            className: 'layer-toggle',
-                            type: 'button',
-                            onClick: () => store.dispatch({ type: 'toggle-group-visible', groupId: group.id }),
-                            title: visible ? 'Hide group' : 'Show group'
-                        }, visible ? 'Show' : 'Hide'),
-                        h('button', {
-                            key: 'lock',
-                            className: 'layer-toggle',
-                            type: 'button',
-                            onClick: () => store.dispatch({ type: 'toggle-group-lock', groupId: group.id }),
-                            title: locked ? 'Unlock group' : 'Lock group'
-                        }, locked ? 'Unlock' : 'Lock')
-                    ])
-                ]),
-                collapsed ? null : h('div', { className: 'layers-items', key: 'items' }, group.items.map(item => {
-                    const itemVisible = state.layers.itemVisibility[item.id] !== false;
-                    const itemLocked = state.layers.itemLocked[item.id] === true;
-                    return h('div', { className: `layer-item${state.selection.selectedId === item.id ? ' selected' : ''}`, key: item.id, 'data-testid': `layer-item-${item.id}` }, [
-                        h('button', {
-                            key: 'visible',
-                            className: 'layer-toggle',
-                            type: 'button',
-                            onClick: () => store.dispatch({ type: 'toggle-item-visible', itemId: item.id })
-                        }, itemVisible ? 'Show' : 'Hide'),
-                        h('button', {
-                            key: 'lock',
-                            className: 'layer-toggle',
-                            type: 'button',
-                            onClick: () => store.dispatch({ type: 'toggle-item-lock', itemId: item.id })
-                        }, itemLocked ? 'Unlock' : 'Lock'),
-                        h('button', {
-                            key: 'select',
-                            className: 'layer-item-select',
-                            type: 'button',
-                            onClick: () => store.dispatch({ type: 'set-selection', selectedId: item.id }),
-                            'data-testid': `layer-select-${item.id}`
-                        }, h('span', { className: 'layer-item-name' }, item.label))
-                    ]);
-                }))
+            const layer = layerDefs[group.id];
+            return h('button', {
+                key: group.id,
+                className: `tool-btn tool-icon${visible ? ' active' : ''}`,
+                type: 'button',
+                onClick: () => store.dispatch({ type: 'toggle-group-visible', groupId: group.id }),
+                title: `${layer.label} (${visible ? 'On' : 'Off'})`,
+                'aria-pressed': visible ? 'true' : 'false',
+                'data-testid': `layer-toggle-${group.id}`
+            }, [
+                h(Icon, { key: 'icon', path: layer.path }),
+                h('span', { className: 'tool-label', key: 'label' }, layer.label),
+                h('span', { className: 'tool-meta', key: 'count' }, String(group.items.length))
             ]);
         }))
     ]);

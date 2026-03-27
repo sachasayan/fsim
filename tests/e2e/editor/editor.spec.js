@@ -34,6 +34,12 @@ test.describe('editor e2e', () => {
         await page.keyboard.press('g');
         await expect(page.getByTestId('grid-snap-chip')).toHaveText('Grid snap off');
 
+        await expect(page.getByTestId('layer-toggle-districts')).toHaveClass(/active/);
+        await page.getByTestId('layer-toggle-districts').click({ force: true });
+        await expect(page.getByTestId('layer-toggle-districts')).not.toHaveClass(/active/);
+        const layersAfterToggle = await getEditorState(page);
+        expect(layersAfterToggle.groupVisibility.districts).toBe(false);
+
         await hoverCanvas(page, 480, 300);
         await page.mouse.wheel(0, -400);
         const beforeReset = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().viewport);
@@ -59,11 +65,7 @@ test.describe('editor e2e', () => {
         expect(createdState.dirty).toBe(true);
         expect(createdState.selectedId).toBeTruthy();
         expect(createdState.serialized.mapPayload.districts).toHaveLength(2);
-
         const createdId = createdState.selectedId;
-        await expect(page.getByTestId(`layer-item-${createdId}`)).toBeVisible();
-
-        await page.getByTestId(`layer-select-${createdId}`).click({ force: true });
         await page.getByTestId('field-coord-x').fill('1500');
         await page.getByTestId('field-coord-x').blur();
 
@@ -88,7 +90,9 @@ test.describe('editor e2e', () => {
         await gotoEditor(page);
 
         const firstDistrictId = await page.evaluate(() => window.__EDITOR_TEST__.store.getState().document.index.groupIds.districts[0]);
-        await page.getByTestId(`layer-select-${firstDistrictId}`).click({ force: true });
+        await page.evaluate((entityId) => {
+            window.__EDITOR_TEST__.store.dispatch({ type: 'set-selection', selectedId: entityId });
+        }, firstDistrictId);
         await expect(page.getByTestId('inspector-panel')).toBeVisible();
 
         await page.getByTestId('field-coord-z').fill('1100');

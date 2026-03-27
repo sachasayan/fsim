@@ -21,6 +21,7 @@ export async function getEditorState(page) {
             dirty: state.history.dirty,
             saveState: state.ui.saveState,
             undoCount: state.history.undoStack.length,
+            groupVisibility: state.layers.groupVisibility,
             serialized
         };
     });
