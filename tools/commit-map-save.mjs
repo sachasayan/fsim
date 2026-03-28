@@ -5,12 +5,20 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeMapData } from '../js/modules/world/MapDataUtils.js';
+import { createTerrainFingerprint } from './lib/TerrainFingerprint.mjs';
+import {
+    buildWorldMetadata,
+    extractTerrainMetadata,
+    readWorldBinMetadata,
+    replaceWorldBinMetadata
+} from './lib/WorldBinMetadata.mjs';
 
 const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const MAP_PATH = path.join(ROOT, 'tools', 'map.json');
+const WORLD_BIN_PATH = path.join(ROOT, 'world', 'world.bin');
 
 function emitProgress(step, total, label) {
     console.log(`[FSIM_PROGRESS] ${JSON.stringify({ step, total, label })}`);
@@ -30,19 +38,46 @@ async function main() {
     const mapData = normalizeMapData(JSON.parse(await readFile(MAP_PATH, 'utf8')));
     const hadTerrainEdits = (mapData.terrainEdits || []).length > 0;
     const forceClean = process.env.FSIM_CLEAN_REBUILD === '1';
+    const terrainFingerprint = createTerrainFingerprint(mapData);
+    let existingWorldMetadata = null;
+
+    try {
+        existingWorldMetadata = readWorldBinMetadata(WORLD_BIN_PATH);
+    } catch (error) {
+        if (error.code !== 'ENOENT') {
+            console.warn(`⚠️ Failed to read existing world metadata: ${error.message}`);
+        }
+    }
 
     // If we have no edits to commit and aren't forcing a clean rebuild, 
     // we should still probably do a clean rebuild to ensure generator changes are picked up.
     // We only strictly NEED existing terrain if we are baking surgical edits into the base.
     const useExistingMap = !forceClean && hadTerrainEdits;
+    const canReuseTerrain = !forceClean
+        && !hadTerrainEdits
+        && existingWorldMetadata?.terrainFingerprint === terrainFingerprint;
+    const shouldBakeTerrain = !canReuseTerrain;
 
-    console.log(`🛠️ Mode: ${useExistingMap ? 'Surgical (Additive)' : 'Clean-Slate (Full Rebuild)'}`);
+    console.log(`🛠️ Mode: ${useExistingMap ? 'Surgical (Additive)' : canReuseTerrain ? 'Incremental (Reuse Terrain)' : 'Clean-Slate (Full Rebuild)'}`);
 
-    emitProgress(2, 4, 'Baking terrain');
-    await runNodeScript(path.join(ROOT, 'tools', 'bake-map.mjs'), {
-        FSIM_USE_EXISTING_TERRAIN: useExistingMap ? '1' : '0',
-        FSIM_CLEAR_TERRAIN_EDITS: useExistingMap ? '1' : '0'
-    });
+    if (shouldBakeTerrain) {
+        emitProgress(2, 4, 'Baking terrain');
+        await runNodeScript(path.join(ROOT, 'tools', 'bake-map.mjs'), {
+            FSIM_USE_EXISTING_TERRAIN: useExistingMap ? '1' : '0',
+            FSIM_CLEAR_TERRAIN_EDITS: useExistingMap ? '1' : '0'
+        });
+    } else {
+        emitProgress(2, 4, 'Reusing baked terrain');
+        const nextWorldMetadata = buildWorldMetadata({
+            mapData,
+            terrainMetadata: extractTerrainMetadata(existingWorldMetadata),
+            worldSize: existingWorldMetadata?.worldSize,
+            clearTerrainEdits: false,
+            terrainFingerprint
+        });
+        replaceWorldBinMetadata(WORLD_BIN_PATH, nextWorldMetadata);
+        console.log('♻️ Reused existing terrain and refreshed world metadata');
+    }
 
     emitProgress(3, 4, hadTerrainEdits && useExistingMap ? 'Clearing committed terrain edits' : 'Finalizing terrain inputs');
     if (hadTerrainEdits && useExistingMap) {

@@ -19,8 +19,10 @@ import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
 import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from '../js/modules/world/terrain/TerrainSynthesis.js';
 import { createRegionalTerrainSampler } from '../js/modules/world/terrain/TerrainRegions.js';
-import { buildDistrictRecords, normalizeMapData } from '../js/modules/world/MapDataUtils.js';
+import { normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
+import { createTerrainFingerprint } from './lib/TerrainFingerprint.mjs';
+import { buildWorldMetadata } from './lib/WorldBinMetadata.mjs';
 let mapData = null;
 try {
     mapData = normalizeMapData(JSON.parse(readFileSyncSync(MAP_JSON_PATH, 'utf8')));
@@ -106,6 +108,7 @@ const terrainRegionSampler = createRegionalTerrainSampler({
 const terrainMetadata = (mapData?.terrainRegions?.length || 0) > 0
     ? terrainRegionSampler.getMetadata()
     : terrainSynthesizer.getMetadata();
+const terrainFingerprint = createTerrainFingerprint(mapData);
 
 function getTerrainHeight(x, z) {
     if (existingTerrainSampler) {
@@ -234,24 +237,13 @@ function buildTreeRecursive(node) {
 function serializeQuadtree(root) {
     const totalNodes = allNodes.length;
     // Serialization of Map JSON (Metadata)
-    const metadataMap = mapData
-        ? {
-            ...mapData,
-            worldSize: WORLD_SIZE,
-            ...terrainMetadata,
-            terrainEdits: clearTerrainEdits ? [] : (mapData.terrainEdits || []),
-            terrainRegions: mapData.terrainRegions || [],
-            districts: mapData.districts,
-            districtRecords: buildDistrictRecords(mapData)
-        }
-        : {
-            worldSize: WORLD_SIZE,
-            ...terrainMetadata,
-            terrainEdits: [],
-            terrainRegions: [],
-            districts: [],
-            districtRecords: []
-        };
+    const metadataMap = buildWorldMetadata({
+        mapData,
+        terrainMetadata,
+        worldSize: WORLD_SIZE,
+        clearTerrainEdits,
+        terrainFingerprint
+    });
     const metaStr = JSON.stringify(metadataMap);
     const metaBuffer = Buffer.from(metaStr, 'utf8');
 
