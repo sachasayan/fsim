@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { createOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 import {
+    finalizeOwnedShaderSource,
+    makePlaceholderUniformMap
+} from '../shaders/OwnedShaderSourceBuilder.js';
+import {
     applyTerrainDetailShaderPatch,
     createTerrainDetailUniformBindings
 } from './TerrainShaderPatches.js';
@@ -30,21 +34,7 @@ const TERRAIN_DETAIL_UNIFORM_KEYS = [
     'uTerrainSnowColor'
 ];
 
-const ATMOSPHERE_UNIFORM_KEYS = [
-    'uAtmosCameraPos',
-    'uAtmosColor',
-    'uAtmosNear',
-    'uAtmosFar',
-    'uSurfaceShadowDistance',
-    'uSurfaceShadowFadeStart',
-    'uShadowCoverageCenter',
-    'uShadowCoverageExtent',
-    'uShadowCoverageFadeStart'
-];
-
-function makePlaceholderUniformMap(keys) {
-    return Object.fromEntries(keys.map((key) => [key, { value: null }]));
-}
+const ATMOSPHERE_UNIFORM_KEYS = ['uAtmosCameraPos', 'uAtmosColor', 'uAtmosNear', 'uAtmosFar'];
 
 function buildTerrainOwnedShaderSource({ isFarLOD = false, shadowContrast = 0.0 } = {}) {
     const shader = {
@@ -62,11 +52,19 @@ function buildTerrainOwnedShaderSource({ isFarLOD = false, shadowContrast = 0.0 
         shadowContrast
     });
 
-    return {
-        vertexShader: shader.vertexShader,
-        fragmentShader: shader.fragmentShader,
-        defines: shader.defines || {}
-    };
+    return finalizeOwnedShaderSource({
+        label: `terrain ${isFarLOD ? 'far' : 'near'} owned source`,
+        shader,
+        requiredVertex: [
+            { pattern: 'attribute vec4 surfaceWeights;', description: 'surfaceWeights attribute injection' },
+            { pattern: 'varying vec3 vTerrainWorldPos;', description: 'terrain world position varying' }
+        ],
+        requiredFragment: [
+            { pattern: 'uniform sampler2D uTerrainDetailTex;', description: 'terrain detail texture uniform' },
+            { pattern: 'diffuseColor.rgb = baseTerrainColor;', description: 'terrain base color assignment' },
+            { pattern: 'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;', description: 'standard lighting output' }
+        ]
+    });
 }
 
 export function getTerrainOwnedShaderSource({ isFarLOD = false, shadowContrast = 0.0 } = {}) {

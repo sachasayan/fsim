@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { createOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
+import {
+    finalizeOwnedShaderSource,
+    makePlaceholderUniformMap
+} from '../shaders/OwnedShaderSourceBuilder.js';
 
 import {
     applyWaterSurfaceColorShaderPatch,
@@ -10,17 +14,7 @@ import {
 const SOURCE_CACHE = new Map();
 const DESCRIPTOR_CACHE = new Map();
 
-const ATMOSPHERE_UNIFORM_KEYS = [
-    'uAtmosCameraPos',
-    'uAtmosColor',
-    'uAtmosNear',
-    'uAtmosFar',
-    'uSurfaceShadowDistance',
-    'uSurfaceShadowFadeStart',
-    'uShadowCoverageCenter',
-    'uShadowCoverageExtent',
-    'uShadowCoverageFadeStart'
-];
+const ATMOSPHERE_UNIFORM_KEYS = ['uAtmosCameraPos', 'uAtmosColor', 'uAtmosNear', 'uAtmosFar'];
 
 const WATER_SURFACE_UNIFORM_KEYS = [
     'uWaterDepthTex',
@@ -35,10 +29,6 @@ const WATER_SURFACE_UNIFORM_KEYS = [
     'uWaterShallowColor',
     'uWaterDeepColor'
 ];
-
-function makePlaceholderUniformMap(keys) {
-    return Object.fromEntries(keys.map((key) => [key, { value: null }]));
-}
 
 function buildWaterOwnedShaderSource({
     isFarLOD = false,
@@ -70,11 +60,26 @@ function buildWaterOwnedShaderSource({
         });
     }
 
-    return {
-        vertexShader: shader.vertexShader,
-        fragmentShader: shader.fragmentShader,
-        defines: shader.defines || {}
-    };
+    return finalizeOwnedShaderSource({
+        label: `water ${isFarLOD ? 'far' : 'near'} owned source`,
+        shader,
+        requiredVertex: [
+            { pattern: 'varying vec3 vWaterWorldPos;', description: 'water world position varying' }
+        ],
+        requiredFragment: [
+            { pattern: 'uniform sampler2D uWaterDepthTex;', description: 'water depth texture uniform' },
+            { pattern: 'vec2 waterUv = clamp((vWaterWorldPos.xz - uWaterBoundsMin)', description: 'water world-space UV lookup' }
+        ],
+        forbiddenFragment: isFarLOD
+            ? [
+                { pattern: 'getShadowMask()', description: 'lit-water shadow code in far water shader' },
+                { pattern: 'waterProceduralHeight', description: 'near-water procedural normal code in far water shader' }
+            ]
+            : [
+                { pattern: 'vNormalMapUv', description: 'legacy normal map UV dependency in near water shader' },
+                { pattern: 'uniform float uTime;', description: 'legacy animated time uniform in near water shader' }
+            ]
+    });
 }
 
 export function getWaterOwnedShaderSource({
