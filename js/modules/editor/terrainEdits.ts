@@ -1,12 +1,20 @@
-// @ts-check
-
-/**
- * @typedef {[number, number]} Point2
- * @typedef {{ minX: number, maxX: number, minZ: number, maxZ: number }} Bounds
- * @typedef {{ x: number, z: number, radius?: number, kind: string, bounds?: Bounds, points?: Point2[] | number[][], delta?: number, opacity?: number, target_height?: number }} TerrainEditLike
- * @typedef {{ x: number, z: number }} WorldPointLike
- * @typedef {{ invalidateWorldRect: (minX: number, minZ: number, maxX: number, maxZ: number) => void }} TileManagerLike
- */
+export type Point2 = [number, number];
+export type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number };
+export type TerrainEditLike = {
+    x: number;
+    z: number;
+    radius?: number;
+    kind: string;
+    bounds?: Bounds;
+    points?: Point2[] | number[][];
+    delta?: number;
+    opacity?: number;
+    target_height?: number;
+};
+export type WorldPointLike = { x: number; z: number };
+export type TileManagerLike = {
+    invalidateWorldRect: (minX: number, minZ: number, maxX: number, maxZ: number) => void;
+};
 
 /**
  * @param {unknown} point
@@ -195,7 +203,7 @@ export function createTerrainStroke(worldPos, deps) {
     } = deps;
     const baseHeight = sampleTerrainHeight(worldPos.x, worldPos.z);
     /** @type {TerrainEditLike} */
-    const edit = {
+    const edit: TerrainEditLike = {
         kind: currentTool.replace('terrain-', ''),
         x: Math.round(worldPos.x),
         z: Math.round(worldPos.z),

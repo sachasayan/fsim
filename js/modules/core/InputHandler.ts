@@ -32,7 +32,7 @@ export function createInputHandler({ keys, PHYSICS, cameraController }) {
         if (key === 'c' && cameraController) cameraController.cycleMode();
         if (!e.repeat && cameraController) cameraController.recenterBehindAircraft();
         if (key === 'g') {
-            const gui = /** @type {HTMLElement | null} */ (document.querySelector('.lil-gui'));
+            const gui = document.querySelector<HTMLElement>('.lil-gui');
             if (gui) {
                 gui.style.display = gui.style.display === 'none' ? '' : 'none';
             }

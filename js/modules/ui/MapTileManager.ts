@@ -1,59 +1,108 @@
-// @ts-check
-
 import { MAP_COLORS } from './MapColors.js';
 
-/**
- * @typedef TileEntry
- * @property {HTMLCanvasElement} canvas
- * @property {'ready' | 'pending' | 'stale'} status
- * @property {number} lastUsed
- * @property {number} version
- * @property {boolean} hasPixels
- * @property {HTMLCanvasElement | null} transitionCanvas
- * @property {number} transitionStartAt
- * @property {number} transitionEndAt
- */
+export type TileEntry = {
+    canvas: HTMLCanvasElement;
+    status: 'ready' | 'pending' | 'stale';
+    lastUsed: number;
+    version: number;
+    hasPixels: boolean;
+    transitionCanvas: HTMLCanvasElement | null;
+    transitionStartAt: number;
+    transitionEndAt: number;
+};
 
-/**
- * @typedef TileJob
- * @property {number} tx
- * @property {number} tz
- * @property {number} lod
- * @property {string} key
- * @property {number} version
- * @property {number} priorityBand
- */
+type TileJob = {
+    tx: number;
+    tz: number;
+    lod: number;
+    key: string;
+    version: number;
+    priorityBand: number;
+};
 
-/**
- * @typedef TileImageResult
- * @property {Uint8ClampedArray} pixels
- * @property {number} width
- * @property {number} height
- */
+export type TileImageResult = {
+    pixels: Uint8ClampedArray;
+    width: number;
+    height: number;
+};
+
+type RenderTileOptions = {
+    tx: number;
+    tz: number;
+    lod: number;
+    canvasW: number;
+    canvasH: number;
+    tileSize: number;
+    pixelRatio: number;
+    useHillshading: boolean;
+};
+
+type RenderTileAsync = (options: RenderTileOptions) => Promise<TileImageResult>;
+
+type MapTileManagerOptions = {
+    sampleTerrainHeight?: ((x: number, z: number) => number) | null;
+    getTerrainHeight?: ((x: number, z: number, Noise?: unknown) => number) | null;
+    tileSize?: number;
+    pixelRatio?: number;
+    useHillshading?: boolean;
+    Noise?: unknown;
+    onTileReady?: (() => void) | null;
+    renderTileAsync?: RenderTileAsync | null;
+    lodLevels?: number[] | null;
+    lodHysteresisRatio?: number;
+    tileFadeDurationMs?: number;
+    lodDetailScale?: number;
+    maxConcurrentRenders?: number;
+};
+
+type TileStats = {
+    created: number;
+    enqueued: number;
+    rerendered: number;
+    invalidated: number;
+    lastVisible: number;
+    lastFrameLod: number | null;
+};
+
+type PlaceholderTile = {
+    canvas: HTMLCanvasElement;
+    srcX: number;
+    srcZ: number;
+    scale: number;
+};
 
 /**
  * Manages map tiles for the minimap and editor.
  * Uses async tile rendering with placeholder fallback so zoom/pan never stutter.
  */
 export class MapTileManager {
-    /**
-     * @param {{
-     *   sampleTerrainHeight?: ((x: number, z: number) => number) | null,
-     *   getTerrainHeight?: ((x: number, z: number, Noise?: unknown) => number) | null,
-     *   tileSize?: number,
-     *   pixelRatio?: number,
-     *   useHillshading?: boolean,
-     *   Noise?: unknown,
-     *   onTileReady?: (() => void) | null,
-     *   renderTileAsync?: ((options: { tx: number, tz: number, lod: number, canvasW: number, canvasH: number, tileSize: number, pixelRatio: number, useHillshading: boolean }) => Promise<TileImageResult>) | null,
-     *   lodLevels?: number[] | null,
-     *   lodHysteresisRatio?: number,
-     *   tileFadeDurationMs?: number,
-     *   lodDetailScale?: number,
-     *   maxConcurrentRenders?: number
-     * }} [options]
-     */
-    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null, renderTileAsync = null, lodLevels = null, lodHysteresisRatio = 0.15, tileFadeDurationMs = 120, lodDetailScale = 1, maxConcurrentRenders = 1 } = {}) {
+    sampleTerrainHeight: (x: number, z: number) => number;
+    tileSize: number;
+    pixelRatio: number;
+    useHillshading: boolean;
+    Noise: unknown;
+    onTileReady: (() => void) | null;
+    renderTileAsync: RenderTileAsync | null;
+    lodLevels: number[];
+    lodHysteresisRatio: number;
+    tileFadeDurationMs: number;
+    lodDetailScale: number;
+    maxConcurrentRenders: number;
+    tiles: Map<string, TileEntry>;
+    renderQueue: TileJob[];
+    queuedKeys: Set<string>;
+    isProcessingQueue: boolean;
+    activeRenderCount: number;
+    collectingFrameRequests: boolean;
+    maxCacheSize: number;
+    queuePriorityDirty: boolean;
+    lastPriorityKey: string | null;
+    canvasPool: HTMLCanvasElement[];
+    tileVersionSerial: number;
+    currentLod: number | null;
+    stats: TileStats;
+
+    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null, renderTileAsync = null, lodLevels = null, lodHysteresisRatio = 0.15, tileFadeDurationMs = 120, lodDetailScale = 1, maxConcurrentRenders = 1 }: MapTileManagerOptions = {}) {
         this.sampleTerrainHeight = this.resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise });
         this.tileSize = tileSize;
         this.pixelRatio = pixelRatio;
@@ -67,9 +116,7 @@ export class MapTileManager {
         this.lodDetailScale = Math.max(0.25, Number.isFinite(lodDetailScale) ? lodDetailScale : 1);
         this.maxConcurrentRenders = Math.max(1, Math.floor(Number.isFinite(maxConcurrentRenders) ? maxConcurrentRenders : 1));
 
-        /** @type {Map<string, TileEntry>} */
         this.tiles = new Map();       // key -> { canvas, status: 'ready'|'pending' }
-        /** @type {TileJob[]} */
         this.renderQueue = [];        // tiles waiting to render
         this.queuedKeys = new Set();
         this.isProcessingQueue = false;
@@ -91,11 +138,7 @@ export class MapTileManager {
         };
     }
 
-    /**
-     * @param {{ sampleTerrainHeight: ((x: number, z: number) => number) | null, getTerrainHeight: ((x: number, z: number, Noise?: unknown) => number) | null, Noise: unknown }} options
-     * @returns {(x: number, z: number) => number}
-     */
-    resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise }) {
+    resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise }: { sampleTerrainHeight: ((x: number, z: number) => number) | null; getTerrainHeight: ((x: number, z: number, Noise?: unknown) => number) | null; Noise: unknown; }) {
         if (typeof sampleTerrainHeight === 'function') return sampleTerrainHeight;
         if (typeof getTerrainHeight !== 'function') {
             throw new Error('MapTileManager requires a terrain height sampler');
@@ -108,8 +151,7 @@ export class MapTileManager {
         return (x, z) => getTerrainHeight(x, z);
     }
 
-    /** @param {number[] | null} levels */
-    normalizeLodLevels(levels) {
+    normalizeLodLevels(levels: number[] | null) {
         // Tuned around the editor's practical zoom bands:
         // close inspection (~0.4 zoom), normal editing (~0.1-0.2),
         // reset/overview (~0.05), and wide framing (~0.01).
@@ -131,25 +173,19 @@ export class MapTileManager {
         return canvas;
     }
 
-    /** @param {HTMLCanvasElement | null | undefined} canvas */
-    releaseCanvas(canvas) {
+    releaseCanvas(canvas: HTMLCanvasElement | null | undefined) {
         if (!canvas) return;
         this.canvasPool.push(canvas);
     }
 
-    /** @param {TileEntry | undefined | null} entry */
-    releaseTileEntry(entry) {
+    releaseTileEntry(entry: TileEntry | undefined | null) {
         if (!entry) return;
         if (entry.canvas) this.releaseCanvas(entry.canvas);
         if (entry.transitionCanvas) this.releaseCanvas(entry.transitionCanvas);
         entry.transitionCanvas = null;
     }
 
-    /**
-     * @param {TileEntry} entry
-     * @param {HTMLCanvasElement} nextCanvas
-     */
-    beginTileTransition(entry, nextCanvas) {
+    beginTileTransition(entry: TileEntry, nextCanvas: HTMLCanvasElement) {
         if (!entry) return;
         if (entry.transitionCanvas) {
             this.releaseCanvas(entry.transitionCanvas);
@@ -168,8 +204,7 @@ export class MapTileManager {
         entry.transitionEndAt = now + this.tileFadeDurationMs;
     }
 
-    /** @param {TileEntry | undefined | null} entry */
-    finalizeTileTransition(entry) {
+    finalizeTileTransition(entry: TileEntry | undefined | null) {
         if (!entry?.transitionCanvas) return;
         this.releaseCanvas(entry.transitionCanvas);
         entry.transitionCanvas = null;
@@ -183,16 +218,11 @@ export class MapTileManager {
         return this.tileVersionSerial;
     }
 
-    /** @param {'active' | 'warm'} priority */
-    getJobPriorityBand(priority) {
+    getJobPriorityBand(priority: 'active' | 'warm') {
         return priority === 'warm' ? 1 : 0;
     }
 
-    /**
-     * @param {string} key
-     * @param {'active' | 'warm'} priority
-     */
-    updateQueuedJobPriority(key, priority) {
+    updateQueuedJobPriority(key: string, priority: 'active' | 'warm') {
         if (!this.queuedKeys.has(key)) return;
         const nextBand = this.getJobPriorityBand(priority);
         for (const job of this.renderQueue) {
@@ -205,15 +235,7 @@ export class MapTileManager {
         }
     }
 
-    /**
-     * @param {number} tx
-     * @param {number} tz
-     * @param {number} lod
-     * @param {string} key
-     * @param {number} version
-     * @param {'active' | 'warm'} [priority]
-     */
-    enqueueTileRender(tx, tz, lod, key, version, priority = 'active') {
+    enqueueTileRender(tx: number, tz: number, lod: number, key: string, version: number, priority: 'active' | 'warm' = 'active') {
         if (this.queuedKeys.has(key)) {
             this.updateQueuedJobPriority(key, priority);
             return;
@@ -238,12 +260,7 @@ export class MapTileManager {
         }
     }
 
-    /**
-     * @param {string} key
-     * @param {TileEntry | undefined} entry
-     * @param {number} version
-     */
-    markTileStale(key, entry, version) {
+    markTileStale(key: string, entry: TileEntry | undefined, version: number) {
         if (!entry) return;
         entry.version = version;
         entry.status = entry.hasPixels ? 'stale' : 'pending';
@@ -262,7 +279,7 @@ export class MapTileManager {
      * @param {'active' | 'warm'} [priority]
      * @returns {HTMLCanvasElement | null}
      */
-    getTile(tx, tz, lod, priority = 'active') {
+    getTile(tx: number, tz: number, lod: number, priority: 'active' | 'warm' = 'active') {
         const key = `${lod}_${tx}_${tz}`;
         const entry = this.tiles.get(key);
 
@@ -279,8 +296,7 @@ export class MapTileManager {
         // Create placeholder and schedule render
         const canvas = this.acquireCanvas();
 
-        /** @type {TileEntry} */
-        const newEntry = {
+        const newEntry: TileEntry = {
             canvas,
             status: 'pending',
             lastUsed: performance.now(),
@@ -309,7 +325,11 @@ export class MapTileManager {
         this.isProcessingQueue = true;
 
         while (this.activeRenderCount < this.maxConcurrentRenders && this.renderQueue.length > 0) {
-            const { tx, tz, lod, key, version } = this.renderQueue.shift();
+            const nextJob = this.renderQueue.shift();
+            if (!nextJob) {
+                continue;
+            }
+            const { tx, tz, lod, key, version } = nextJob;
             this.queuedKeys.delete(key);
             const entry = this.tiles.get(key);
             if (!entry || entry.version !== version || (entry.status !== 'pending' && entry.status !== 'stale')) {
@@ -329,10 +349,7 @@ export class MapTileManager {
         }
     }
 
-    /**
-     * @param {{ tx: number, tz: number, lod: number, key: string, version: number, entry: TileEntry }} job
-     */
-    async renderTileJob({ tx, tz, lod, key, version, entry }) {
+    async renderTileJob({ tx, tz, lod, key, version, entry }: { tx: number; tz: number; lod: number; key: string; version: number; entry: TileEntry; }) {
         try {
             if (this.renderTileAsync) {
                 const tileImage = await this.renderTileAsync({
@@ -349,10 +366,12 @@ export class MapTileManager {
                     if (entry.hasPixels) {
                         const nextCanvas = this.acquireCanvas();
                         const ctx = nextCanvas.getContext('2d');
+                        if (!ctx) return;
                         this.paintTileImage(ctx, tileImage.pixels, tileImage.width, tileImage.height);
                         this.beginTileTransition(entry, nextCanvas);
                     } else {
                         const ctx = entry.canvas.getContext('2d');
+                        if (!ctx) return;
                         this.paintTileImage(ctx, tileImage.pixels, tileImage.width, tileImage.height);
                     }
                     entry.status = 'ready';
@@ -363,10 +382,12 @@ export class MapTileManager {
                 if (entry.hasPixels) {
                     const nextCanvas = this.acquireCanvas();
                     const ctx = nextCanvas.getContext('2d');
+                    if (!ctx) return;
                     this.renderTile(ctx, tx, tz, lod, nextCanvas.width, nextCanvas.height);
                     this.beginTileTransition(entry, nextCanvas);
                 } else {
                     const ctx = entry.canvas.getContext('2d');
+                    if (!ctx) return;
                     this.renderTile(ctx, tx, tz, lod, entry.canvas.width, entry.canvas.height);
                 }
                 entry.status = 'ready';
@@ -386,15 +407,7 @@ export class MapTileManager {
         }
     }
 
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {number} tx
-     * @param {number} tz
-     * @param {number} lod
-     * @param {number} canvasW
-     * @param {number} canvasH
-     */
-    renderTile(ctx, tx, tz, lod, canvasW, canvasH) {
+    renderTile(ctx: CanvasRenderingContext2D, tx: number, tz: number, lod: number, canvasW: number, canvasH: number) {
         const worldTileSize = this.tileSize * lod;
         const startX = tx * worldTileSize;
         const startZ = tz * worldTileSize;
@@ -430,13 +443,7 @@ export class MapTileManager {
         ctx.putImageData(imgData, 0, 0);
     }
 
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {Uint8ClampedArray} pixels
-     * @param {number} width
-     * @param {number} height
-     */
-    paintTileImage(ctx, pixels, width, height) {
+    paintTileImage(ctx: CanvasRenderingContext2D, pixels: Uint8ClampedArray, width: number, height: number) {
         const imgData = ctx.createImageData(width, height);
         imgData.data.set(pixels);
         ctx.putImageData(imgData, 0, 0);
@@ -446,8 +453,7 @@ export class MapTileManager {
      * Find the best available placeholder for a tile that isn't ready yet.
      * Tries one LOD coarser first (scales up a 2x smaller tile), then uses nothing.
      */
-    /** @param {number} tx @param {number} tz @param {number} lod */
-    getPlaceholderTile(tx, tz, lod) {
+    getPlaceholderTile(tx: number, tz: number, lod: number): PlaceholderTile | null {
         const coarseLod = this.getAdjacentLod(lod, 1);
         if (coarseLod != null) {
             const scale = lod / coarseLod;

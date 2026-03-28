@@ -16,6 +16,8 @@ import { getEntityById, getEntityBounds } from '../core/document.js';
 import { createCoordinateHelpers, findObjectsAtWorldPos, renderEditorScene } from './render.js';
 import { createTerrainPreviewWorkerManager } from './TerrainPreviewWorkerManager';
 import { createEditorMapTileWorkerManager } from './EditorMapTileWorkerManager';
+import type { TileImageResult } from '../../modules/ui/MapTileManager.js';
+import type { EditorBounds } from '../core/types.js';
 
 /** @typedef {import('../core/types.js').EditorBounds} EditorBounds */
 /** @typedef {import('../core/types.js').EditorDocument} EditorDocument */
@@ -191,16 +193,15 @@ export function reconcileTerrainTileInvalidation({
     };
 }
 
-/**
- * @typedef EditorCanvasController
- * @property {() => Promise<void>} init
- * @property {() => void} destroy
- * @property {() => void} frameSelection
- * @property {() => void} frameTerrainHydrology
- * @property {() => Promise<boolean>} reloadStaticWorld
- * @property {() => void} resetView
- * @property {() => void} scheduleRender
- */
+export type EditorCanvasController = {
+    init: () => Promise<void>;
+    destroy: () => void;
+    frameSelection: () => void;
+    frameTerrainHydrology: () => void;
+    reloadStaticWorld: () => Promise<boolean>;
+    resetView: () => void;
+    scheduleRender: () => void;
+};
 
 /**
  * @typedef TerrainSynthesizerLike
@@ -367,7 +368,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         return regionalSynthCache;
     }
 
-    function buildPreviewBounds() {
+    function buildPreviewBounds(): EditorBounds {
         const state = store.getState();
         const selected = getEntityById(state.document, state.selection.selectedId);
         if (isTerrainRegion(selected) && selected.bounds) {
@@ -411,7 +412,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         }
         if (!terrainLab.draftConfig.preview.enabled) return;
         const bounds = buildPreviewBounds();
-        const roundedBounds = Object.values(bounds).map(value => Math.round(value)).join(':');
+        const roundedBounds = Object.values(bounds).map((value: number) => Math.round(value)).join(':');
         const previewKey = [
             selected.__editorId,
             terrainLab.configVersion,
@@ -427,14 +428,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const jobSerial = ++terrainPreviewJobSerial;
         try {
             store.dispatch({ type: 'set-terrain-preview-status', status: 'generating' });
-            const { snapshot, metadata } = /** @type {{ snapshot: EditorStoreState['ui']['terrainLab']['previewSnapshot']; metadata: EditorTerrainLabMetadata | null }} */ (await terrainPreviewWorker.buildPreview({
+            const { snapshot, metadata } = await terrainPreviewWorker.buildPreview({
                 bounds,
                 authoredBounds: selected.bounds ? { ...selected.bounds } : bounds,
                 config: terrainLab.draftConfig,
                 overlayKind: terrainLab.selectedOverlay,
                 resolution: terrainLab.draftConfig.preview.resolution,
                 showContours: terrainLab.draftConfig.preview.showContours
-            }));
+            });
             if (jobSerial !== terrainPreviewJobSerial) return;
             terrainLabPreviewKey = previewKey;
             store.dispatch({
@@ -471,7 +472,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         lodDetailScale: 2,
         maxConcurrentRenders: 2,
         useHillshading: true,
-        renderTileAsync: ({ tx, tz, lod, canvasW, canvasH, tileSize, pixelRatio, useHillshading }) => /** @type {Promise<import('../../modules/ui/MapTileManager.js').TileImageResult>} */ (mapTileWorker.renderTile({
+        renderTileAsync: ({ tx, tz, lod, canvasW, canvasH, tileSize, pixelRatio, useHillshading }) => mapTileWorker.renderTile({
             tx,
             tz,
             lod,
@@ -483,7 +484,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             config: store.getState().ui.terrainLab.draftConfig,
             terrainRegions: getPreviewRegions(),
             terrainEdits: store.getState().document.worldData.terrainEdits || []
-        })),
+        }) as Promise<TileImageResult>,
         onTileReady: scheduleRender
     });
 

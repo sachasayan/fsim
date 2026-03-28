@@ -9,21 +9,7 @@ import { airportContainsWorldPoint, transformAirportPoint } from '../../modules/
 import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
 import { TERRAIN_REGION_GRID_SIZE, getTerrainRegionTileSize, getTerrainRegionTileWorldBounds } from '../../modules/world/terrain/TerrainRegions.js';
-
-/** @typedef {import('../core/types.js').EditorAirport} EditorAirport */
-/** @typedef {import('../core/types.js').EditorAuthoredObject} EditorAuthoredObject */
-/** @typedef {import('../core/types.js').EditorBounds} EditorBounds */
-/** @typedef {import('../core/types.js').EditorDocument} EditorDocument */
-/** @typedef {import('../core/types.js').EditorEntity} EditorEntity */
-/** @typedef {import('../core/types.js').EditorEntityId} EditorEntityId */
-/** @typedef {import('../core/types.js').EditorGroupId} EditorGroupId */
-/** @typedef {import('../core/types.js').EditorPoint2} EditorPoint2 */
-/** @typedef {import('../core/types.js').EditorStoreState} EditorStoreState */
-/** @typedef {import('../core/types.js').EditorTerrainEdit} EditorTerrainEdit */
-/** @typedef {import('../core/types.js').EditorVantageEntity} EditorVantageEntity */
-/** @typedef {import('../core/types.js').EditorTool} EditorTool */
-/** @typedef {import('../core/types.js').EditorViewport} EditorViewport */
-/** @typedef {import('../core/types.js').EditorWorldPoint} EditorWorldPoint */
+import type { EditorEntity, EditorEntityId, EditorGroupId, EditorStoreState, EditorTerrainPreviewSnapshot, EditorViewport, EditorWorldPoint, EditorBounds, EditorPoint2, EditorAirport, EditorAuthoredObject, EditorTerrainEdit, EditorVantageEntity, EditorTool, EditorDocument } from '../core/types.js';
 
 /**
  * @typedef ScreenPoint
@@ -45,22 +31,14 @@ import { TERRAIN_REGION_GRID_SIZE, getTerrainRegionTileSize, getTerrainRegionTil
  * @property {number} maxZ
  */
 
-/**
- * @typedef InteractionState
- * @property {EditorEntityId | null} hoverId
- * @property {EditorWorldPoint | null} hoverWorldPos
- * @property {{ tileX: number, tileZ: number, ownerId?: string | null } | null} terrainRegionHover
- * @property {{ bounds: EditorBounds, tiles: Array<{ tileX: number, tileZ: number, blocked?: boolean }>, valid?: boolean } | null} terrainRegionSelection
- */
+type InteractionState = {
+    hoverId: EditorEntityId | null;
+    hoverWorldPos: EditorWorldPoint | null;
+    terrainRegionHover: { tileX: number; tileZ: number; ownerId?: string | null } | null;
+    terrainRegionSelection: { bounds: EditorBounds; tiles: Array<{ tileX: number; tileZ: number; blocked?: boolean }>; valid?: boolean } | null;
+};
 
-/**
- * @typedef TerrainPreviewSnapshot
- * @property {Uint8ClampedArray} pixels
- * @property {number} width
- * @property {number} height
- * @property {EditorBounds} bounds
- * @property {HTMLCanvasElement | undefined} [__canvas]
- */
+type TerrainPreviewSnapshot = EditorTerrainPreviewSnapshot;
 
 /**
  * @typedef CoordinateHelpers
@@ -125,7 +103,7 @@ function buildPolylinePath(points, worldToScreen) {
  * @param {Partial<InteractionState>} [interactionState]
  * @returns {InteractionState}
  */
-function getInteractionState(state, interactionState = {}) {
+function getInteractionState(state, interactionState: Partial<InteractionState> = {}) {
     return {
         hoverId: interactionState.hoverId ?? state.selection.hoverId ?? null,
         hoverWorldPos: interactionState.hoverWorldPos ?? state.viewport.hoverWorldPos ?? null,
@@ -722,11 +700,13 @@ function mayContainWorldPos(groupId, entity, worldPos, zoom) {
 export function findObjectsAtWorldPos(state, worldPos) {
     const found = [];
     const document = state.document;
-    /** @type {Array<[EditorGroupId, (entity: EditorEntity) => boolean]>} */
-    const checkOrder = [
+    const checkOrder: Array<[EditorGroupId, (entity: EditorEntity) => boolean]> = [
         ['airports', entity => isAirport(entity) && airportContainsWorldPoint(entity, worldPos.x, worldPos.z, Math.max(120, 24 / state.viewport.zoom))],
         ['objects', entity => isAuthoredObject(entity) && Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < Math.max(220, 14 / state.viewport.zoom)],
-        ['vantage', entity => Math.hypot(worldPos.x - /** @type {EditorVantageEntity} */ (entity).x, worldPos.z - /** @type {EditorVantageEntity} */ (entity).z) < 500],
+        ['vantage', entity => {
+            const vantage = entity as EditorVantageEntity;
+            return Math.hypot(worldPos.x - vantage.x, worldPos.z - vantage.z) < 500;
+        }],
         ['terrainRegions', entity => isTerrainRegion(entity) && terrainRegionContainsPoint(entity, worldPos.x, worldPos.z)],
         ['terrain', entity => isTerrainEdit(entity) && terrainEditContainsPoint(entity, worldPos.x, worldPos.z)],
         ['roads', entity => isRoad(entity) && roadContainsPoint(entity, worldPos.x, worldPos.z, 6 / state.viewport.zoom)],

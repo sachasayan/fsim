@@ -1,13 +1,127 @@
-// @ts-check
-
 import * as THREE from 'three';
 import { LIGHTING_PRESETS, pickLightingPresetId } from './lighting.js';
+
+type SimulationAircraft = {
+  mass: number;
+  wingArea: number;
+  maxThrust: number;
+  cdBase: number;
+  clSlope: number;
+  stallAngle: number;
+  gearHeight: number;
+  movableSurfaces?: unknown;
+};
+
+type SimulationPhysics = {
+  gravity: number;
+  rho: number;
+  dt: number;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  angularVelocity: THREE.Vector3;
+  externalForce: THREE.Vector3;
+  externalTorque: THREE.Vector3;
+  throttle: number;
+  elevator: number;
+  aileron: number;
+  rudder: number;
+  flaps: number;
+  targetFlaps: number;
+  gearDown: boolean;
+  gearTransition: number;
+  spoilers: boolean;
+  brakes: boolean;
+  airspeed: number;
+  aoa: number;
+  slip: number;
+  gForce: number;
+  heightAgl: number;
+  isStalling: boolean;
+  onGround: boolean;
+  crashed: boolean;
+  crashState: string;
+  crashTimer: number;
+  crashReason: string;
+  impactSpeed: number;
+  impactVerticalSpeed: number;
+  impactAngularSpeed: number;
+  resetDelaySeconds: number;
+  heading: number;
+};
+
+type SimulationWeather = {
+  mode: number;
+  modeName: string;
+  targetFog: number;
+  currentFog: number;
+  transition: number;
+  targetTransition: number;
+  lightingPresetId: string;
+  clearColor: number;
+  stormColor: number;
+  lightAmbientBase: number;
+  lightDirectBase: number;
+  hemiSkyColor: number;
+  hemiGroundColor: number;
+  dirColor: number;
+  sunPhiDeg: number;
+  sunThetaDeg: number;
+  skyTurbidity: number;
+  skyRayleigh: number;
+  skyMieCoefficient: number;
+  skyMieDirectionalG: number;
+  hazeColor: number;
+  hazeOpacity: number;
+  starOpacity: number;
+  exposure: number;
+  bloomThreshold: number;
+  bloomStrength: number;
+  bloomRadius: number;
+  cloudColorClear: number;
+  cloudColorStorm: number;
+  cloudOpacityBase: number;
+  cloudOpacityStorm: number;
+  cloudEmissiveBase: number;
+  cloudEmissiveStorm: number;
+  windX: number;
+  windZ: number;
+};
+
+type SimulationKeys = {
+  ArrowUp: boolean;
+  ArrowDown: boolean;
+  ArrowLeft: boolean;
+  ArrowRight: boolean;
+  a: boolean;
+  z: boolean;
+  q: boolean;
+  e: boolean;
+  m: boolean;
+};
+
+type SimulationRuntime = {
+  wasOnGround: boolean;
+  lastTime: number;
+  strobeTimer: number;
+  rainPhase: number;
+  physicsAccumulator: number;
+  frameCount: number;
+};
+
+export type SimulationState = {
+  AIRCRAFT: SimulationAircraft;
+  PHYSICS: SimulationPhysics;
+  WEATHER: SimulationWeather;
+  keys: SimulationKeys;
+  runtime: SimulationRuntime;
+};
 
 /**
  * @param {{ scene: import('three').Scene }} _options
  */
 export function createSimulationState({ scene }) {
-  const AIRCRAFT = {
+  const AIRCRAFT: SimulationAircraft = {
     mass: 50000,
     wingArea: 180,
     maxThrust: 800000,
@@ -17,7 +131,7 @@ export function createSimulationState({ scene }) {
     gearHeight: 3.5
   };
 
-  const PHYSICS = {
+  const PHYSICS: SimulationPhysics = {
     gravity: 9.81,
     rho: 1.225,
     dt: 0.016,
@@ -51,13 +165,14 @@ export function createSimulationState({ scene }) {
     impactSpeed: 0,
     impactVerticalSpeed: 0,
     impactAngularSpeed: 0,
-    resetDelaySeconds: 5
+    resetDelaySeconds: 5,
+    heading: 0
   };
 
   const presetId = pickLightingPresetId();
   const preset = LIGHTING_PRESETS[presetId];
 
-  const WEATHER = {
+  const WEATHER: SimulationWeather = {
     mode: 0,
     modeName: 'clear',
     targetFog: 0.0002,
@@ -98,7 +213,7 @@ export function createSimulationState({ scene }) {
 
 
 
-  const keys = {
+  const keys: SimulationKeys = {
     ArrowUp: false,
     ArrowDown: false,
     ArrowLeft: false,
@@ -110,7 +225,7 @@ export function createSimulationState({ scene }) {
     m: false
   };
 
-  const runtime = {
+  const runtime: SimulationRuntime = {
     wasOnGround: true,
     lastTime: performance.now(),
     strobeTimer: 0,
@@ -119,5 +234,5 @@ export function createSimulationState({ scene }) {
     frameCount: 0
   };
 
-  return { AIRCRAFT, PHYSICS, WEATHER, keys, runtime };
+  return { AIRCRAFT, PHYSICS, WEATHER, keys, runtime } satisfies SimulationState;
 }

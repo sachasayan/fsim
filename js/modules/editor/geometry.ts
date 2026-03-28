@@ -1,13 +1,9 @@
-// @ts-check
-
-/**
- * @typedef {[number, number]} Point2
- * @typedef {{ x: number, z: number }} WorldPointLike
- * @typedef {{ center: Point2, radius?: number, points?: Point2[] | number[][] }} DistrictLike
- * @typedef {{ x: number, z: number, radius?: number, points?: Point2[] | number[][] }} TerrainEditLike
- * @typedef {{ points?: Point2[] | number[][], width?: number, feather?: number }} RoadLike
- * @typedef {{ bounds?: { minX: number, maxX: number, minZ: number, maxZ: number } }} TerrainRegionLike
- */
+export type Point2 = [number, number];
+export type WorldPointLike = { x: number; z: number };
+export type DistrictLike = { center: Point2; radius?: number; points?: Point2[] | number[][] };
+export type TerrainEditLike = { x: number; z: number; radius?: number; points?: Point2[] | number[][] };
+export type RoadLike = { points?: Point2[] | number[][]; width?: number; feather?: number };
+export type TerrainRegionLike = { bounds?: { minX: number; maxX: number; minZ: number; maxZ: number } };
 
 /**
  * @param {unknown} point

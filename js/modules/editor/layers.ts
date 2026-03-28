@@ -1,23 +1,13 @@
-// @ts-check
+export type LayerState = {
+    groupVisibility: Map<string, boolean>;
+    groupLocked: Map<string, boolean>;
+    collapsed: Map<string, boolean>;
+    itemVisibility: Map<string, boolean>;
+    itemLocked: Map<string, boolean>;
+};
 
-/**
- * @typedef LayerState
- * @property {Map<string, boolean>} groupVisibility
- * @property {Map<string, boolean>} groupLocked
- * @property {Map<string, boolean>} collapsed
- * @property {Map<string, boolean>} itemVisibility
- * @property {Map<string, boolean>} itemLocked
- */
-
-/**
- * @template T
- * @typedef {{ obj: T, label: string, id?: string }} LayerItem
- */
-
-/**
- * @template T
- * @typedef {{ id: string, label: string, items: LayerItem<T>[] }} LayerGroup
- */
+export type LayerItem<T> = { obj: T; label: string; id?: string };
+export type LayerGroup<T> = { id: string; label: string; items: LayerItem<T>[] };
 
 /** @returns {LayerState} */
 export function createLayerState() {

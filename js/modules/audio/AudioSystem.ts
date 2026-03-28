@@ -1,10 +1,8 @@
-// @ts-check
-
-/**
- * @typedef AudioWindowLike
- * @property {typeof AudioContext | undefined} [AudioContext]
- * @property {typeof AudioContext | undefined} [webkitAudioContext]
- */
+type AudioWindowLike = Window &
+    typeof globalThis &
+    {
+        webkitAudioContext?: typeof AudioContext;
+    };
 
 export const ProceduralAudio = {
     /** @type {AudioContext | null} */
@@ -64,7 +62,8 @@ export const ProceduralAudio = {
         if (this.initialized || this.ctx) return;
 
         try {
-            const AudioContextCtor = /** @type {AudioWindowLike} */ (window).AudioContext || /** @type {AudioWindowLike} */ (window).webkitAudioContext;
+            const audioWindow = window as AudioWindowLike;
+            const AudioContextCtor = audioWindow.AudioContext || audioWindow.webkitAudioContext;
             if (!AudioContextCtor) return;
             this.ctx = new AudioContextCtor();
 

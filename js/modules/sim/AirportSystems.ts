@@ -1,10 +1,5 @@
-// @ts-check
-
 import * as THREE from 'three';
-
-/**
- * @typedef {{ dist: number, mesh: import('three').InstancedMesh, index: number, lastState?: boolean }} AlsStrobe
- */
+type AlsStrobe = { dist: number; mesh: THREE.InstancedMesh; index: number; lastState?: boolean };
 
 /**
  * @param {{
@@ -34,7 +29,7 @@ export function createAirportSystems({ alsStrobes, strobeColorOn, strobeColorOff
         const rabbitCycle = (now / 1000) % 1.0; // Loops every 1.0s
         const targetDist = 900 - (rabbitCycle * 600); // Sequence runs from 900m down to 300m
 
-        const meshesToUpdate = new Set();
+        const meshesToUpdate = new Set<THREE.InstancedMesh>();
         for (let i = 0; i < alsStrobes.length; i++) {
             const s = alsStrobes[i];
             const shouldBeOn = Math.abs(s.dist - targetDist) < 45;
@@ -47,7 +42,9 @@ export function createAirportSystems({ alsStrobes, strobeColorOn, strobeColorOff
         }
 
         meshesToUpdate.forEach(mesh => {
-            mesh.instanceColor.needsUpdate = true;
+            if (mesh.instanceColor) {
+                mesh.instanceColor.needsUpdate = true;
+            }
         });
     }
 

@@ -1,5 +1,3 @@
-// @ts-check
-
 import * as THREE from 'three';
 import { fetchDistrictIndex } from '../world/terrain/CityChunkLoader.js';
 import { MapTileManager } from './MapTileManager.js';
@@ -54,7 +52,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         tokenBurst: document.querySelector('#token-counter .token-counter-burst')
     };
 
-    const minimapCanvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('minimap'));
+    const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement | null;
     if (!minimapCanvas) {
         return {
             updateHUD: () => { },
@@ -137,10 +135,13 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     }
     initHUD();
 
-    function showTokenPickup(countOrOptions) {
-        const count = typeof countOrOptions === 'object' && countOrOptions !== null
-            ? countOrOptions.count
-            : countOrOptions;
+    function showTokenPickup(countOrOptions: number | { count: number; [key: string]: unknown }) {
+        let count = 0;
+        if (typeof countOrOptions === 'number') {
+            count = countOrOptions;
+        } else if (countOrOptions && typeof countOrOptions === 'object') {
+            count = countOrOptions.count;
+        }
         tokenState.count = count;
         tokenState.visibleUntil = performance.now() + 3600;
         tokenState.pulseUntil = performance.now() + 550;

@@ -1,28 +1,28 @@
-// @ts-check
-
 import { getDistrictType } from '../world/MapDataUtils.js';
 import { getAuthoredObjectLabel } from '../world/AuthoredObjectCatalog.js';
+import type {
+    EditorAirport,
+    EditorAuthoredObject,
+    EditorDistrict,
+    EditorEntity,
+    EditorGroupId,
+    EditorRoad,
+    EditorTerrainEdit,
+    EditorTerrainRegion
+} from '../../editor/core/types.js';
 
-/** @typedef {{ template: string, x: number, z: number, yaw: number }} AirportEntity */
-/** @typedef {{ points: number[][], width: number, surface: string, feather?: number, kind?: string, id?: string }} RoadEntity */
-/** @typedef {{ center?: number[], district_type?: string, type?: string, points?: number[][], radius?: number }} DistrictEntity */
-/** @typedef {{ kind: string, x: number, z: number, radius?: number }} TerrainEditEntity */
-/** @typedef {{ tileX: number, tileZ: number, tileWidth: number, tileHeight: number, terrainGenerator: unknown }} TerrainRegionEntity */
-/** @typedef {{ assetId: string, x: number, z: number }} AuthoredObjectEntity */
+type AirportEntity = EditorAirport;
+type RoadEntity = EditorRoad;
+type DistrictEntity = EditorDistrict;
+type TerrainEditEntity = EditorTerrainEdit;
+type TerrainRegionEntity = EditorTerrainRegion;
+type AuthoredObjectEntity = EditorAuthoredObject;
 
-/**
- * @param {unknown} obj
- * @returns {obj is Record<string, any>}
- */
-function isObjectRecord(obj) {
+function isObjectRecord(obj: unknown): obj is Record<string, any> {
     return !!obj && typeof obj === 'object';
 }
 
-/**
- * @param {unknown} obj
- * @returns {obj is AirportEntity}
- */
-export function isAirport(obj) {
+export function isAirport(obj: unknown): obj is AirportEntity {
     if (!isObjectRecord(obj)) return false;
     return obj.template === 'default'
         && Number.isFinite(obj.x)
@@ -30,39 +30,23 @@ export function isAirport(obj) {
         && Number.isFinite(obj.yaw);
 }
 
-/**
- * @param {unknown} obj
- * @returns {obj is RoadEntity}
- */
-export function isRoad(obj) {
+export function isRoad(obj: unknown): obj is RoadEntity {
     if (!isObjectRecord(obj)) return false;
     return Array.isArray(obj.points) && obj.points.length >= 2 && Number.isFinite(obj.width) && typeof obj.surface === 'string';
 }
 
-/**
- * @param {unknown} obj
- * @returns {obj is DistrictEntity}
- */
-export function isDistrict(obj) {
+export function isDistrict(obj: unknown): obj is DistrictEntity {
     if (!isObjectRecord(obj)) return false;
     if (isRoad(obj)) return false;
     return !!obj.center && (!!obj.district_type || !!obj.type || Array.isArray(obj.points));
 }
 
-/**
- * @param {unknown} obj
- * @returns {obj is TerrainEditEntity}
- */
-export function isTerrainEdit(obj) {
+export function isTerrainEdit(obj: unknown): obj is TerrainEditEntity {
     if (!isObjectRecord(obj)) return false;
     return typeof obj.kind === 'string' && Number.isFinite(obj.x) && Number.isFinite(obj.z);
 }
 
-/**
- * @param {unknown} obj
- * @returns {obj is TerrainRegionEntity}
- */
-export function isTerrainRegion(obj) {
+export function isTerrainRegion(obj: unknown): obj is TerrainRegionEntity {
     if (!isObjectRecord(obj)) return false;
     return Number.isFinite(obj.tileX)
         && Number.isFinite(obj.tileZ)
@@ -71,11 +55,7 @@ export function isTerrainRegion(obj) {
         && !!obj.terrainGenerator;
 }
 
-/**
- * @param {unknown} obj
- * @returns {obj is AuthoredObjectEntity}
- */
-export function isAuthoredObject(obj) {
+export function isAuthoredObject(obj: unknown): obj is AuthoredObjectEntity {
     if (!isObjectRecord(obj)) return false;
     return typeof obj.assetId === 'string'
         && Number.isFinite(obj.x)
@@ -86,7 +66,7 @@ export function isAuthoredObject(obj) {
  * @param {unknown} obj
  * @returns {string}
  */
-export function getLayerGroupId(obj) {
+export function getLayerGroupId(obj: unknown): EditorGroupId {
     if (isAirport(obj)) return 'airports';
     if (isAuthoredObject(obj)) return 'objects';
     if (isRoad(obj)) return 'roads';
@@ -102,14 +82,14 @@ export function getLayerGroupId(obj) {
  * @param {string} [fallback]
  * @returns {string}
  */
-export function objectLabel(obj, index = 0, fallback = 'Item') {
+export function objectLabel(obj: EditorEntity | unknown, index = 0, fallback = 'Item') {
     if (isRoad(obj)) {
         if (obj.id) return obj.id;
         const pointCount = Array.isArray(obj.points) ? obj.points.length : 0;
         return `${obj.kind || 'road'} · ${obj.surface || 'surface'} · ${pointCount} pts`;
     }
     if (isDistrict(obj)) {
-        return `${getDistrictType(/** @type {any} */ (obj))}`;
+        return `${getDistrictType(obj)}`;
     }
     if (isAirport(obj)) return 'Airport';
     if (isAuthoredObject(obj)) return getAuthoredObjectLabel(obj.assetId);

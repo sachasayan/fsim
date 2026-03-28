@@ -198,6 +198,8 @@
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/canvas/render.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added shared terrain-preview, terrain-region hover/selection, and terrain metadata types to `js/editor/core/types.ts` so the canvas controller and UI can stop depending on `unknown` for those editor-owned state seams.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/canvas/controller.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the next editor-canvas rename batch by moving `js/editor/canvas/controller.js` to `js/editor/canvas/controller.ts`, `js/editor/canvas/render.js` to `js/editor/canvas/render.ts`, and the remaining `js/editor/canvas/TerrainPreviewWorkerManager.js` source to `js/editor/canvas/TerrainPreviewWorkerManager.ts`, then removed the temporary `js/editor/canvas/controller.d.ts` bridge.
+- [x] Verified the editor-canvas rename batch with `npm run typecheck`, `npm run editor:build`, and targeted unit coverage around `MapTileManager` concurrency plus the renamed controller/render helpers.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainRegions.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainUtils.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainGeneration.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
@@ -236,10 +238,18 @@
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/aircraft.js`, typing the GLTF-loading, hinge-group, marker-light, and breakup-piece boundaries locally, and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/world/shaders/` folder, covering `OwnedShaderSourceBuilder.js`, `ShaderPatchUtils.js`, `MaterialShaderPipeline.js`, `ShaderDescriptor.js`, `RunwayShaderPatches.js`, `CloudShaderPatches.js`, `RunwayOwnedShaderSource.js`, and `CloudOwnedShaderSource.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/core/` folder runtime surface, covering `InputHandler.js`, `LiveReload.js`, `PostProcessingStack.js`, `RendererManager.js`, `WeatherManager.js`, and `PerformanceCollector.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the `js/modules/core/` rename batch by moving `InputHandler.js`, `LiveReload.js`, `PostProcessingStack.js`, `RendererManager.js`, `WeatherManager.js`, and `PerformanceCollector.js` to `.ts`, while intentionally leaving `js/modules/core/logging.js` in place as the native-browser companion entrypoint for the already-converted `logging.ts`.
+- [x] Verified the renamed `js/modules/core/` batch with `npm run typecheck`, `npm run editor:build`, and focused unit coverage for `WeatherManager`, `PostProcessingStack`, and the async `MapTileManager` concurrency path.
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/physics/` folder, covering `PhysicsUtils.js`, `AeroSolver.js`, `GroundPhysics.js`, `rapierWorld.js`, `physicsAdapter.js`, and `updatePhysics.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/editor/` folder, covering `constants.js`, `geometry.js`, `layers.js`, `objectTypes.js`, and `terrainEdits.js`, then aligned the remaining controller call sites with the broader helper contracts, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the `js/modules/editor/` rename batch by moving `constants.js`, `geometry.js`, `layers.js`, `objectTypes.js`, and `terrainEdits.js` to `.ts`, then removed the temporary `js/modules/editor/objectTypes.d.ts` bridge once the module owned real TS type guards and exports directly.
+- [x] Verified the renamed `js/modules/editor/` folder end-to-end with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Added JSDoc-first `@ts-check` passes across the app-shell support slice around the bootstrap, covering `js/modules/ui/LoaderTips.js`, `js/modules/ui/MapTileManager.js`, `js/modules/ui/hud.js`, `js/modules/camera/updateCamera.js`, `js/modules/state.js`, and `js/modules/lighting.js`, then aligned the remaining async tile-render and DOM/canvas boundary call sites, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the app-shell support rename batch by moving `js/modules/ui/LoaderTips.js`, `js/modules/ui/MapTileManager.js`, `js/modules/ui/hud.js`, `js/modules/camera/updateCamera.js`, `js/modules/state.js`, and `js/modules/lighting.js` to `.ts`, while intentionally leaving `js/modules/ui/MapColors.js` in place as the native-browser companion entrypoint for `MapColors.ts`.
+- [x] Verified the renamed app-shell support batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Added JSDoc-first `@ts-check` passes across the remaining pre-bootstrap support slice, covering `js/modules/sim/AirportSystems.js`, `js/modules/audio/AudioSystem.js`, and `js/modules/crash/CrashSystem.js`, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the remaining pre-bootstrap support rename batch by moving `js/modules/sim/AirportSystems.js`, `js/modules/audio/AudioSystem.js`, and `js/modules/crash/CrashSystem.js` to `.ts`.
+- [x] Verified the renamed pre-bootstrap support batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Restored native-browser runtime compatibility for shared converted helpers by adding `.js` companion modules for `logging`, `LodSystem`, `config`, `AirportLayout`, `AuthoredObjectCatalog`, `WorldConfig`, and `MapColors`, and by updating direct-runtime JS imports to use explicit `.js` specifiers.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/sim.js`, typed the owned browser-global/runtime-window seam plus loader and warmup diagnostics, then tightened a small set of compatibility casts at legacy physics, HUD, crash, and live-reload boundaries, and verified the bootstrap with both `npm run typecheck` and `npm run editor:build`.
 
@@ -252,16 +262,25 @@
 - [x] Keep strictness changes incremental and tied to real cleanup progress.
 - [ ] Make the remaining execution boundaries TypeScript-aware so the last large `.js` modules can actually be renamed instead of staying as checked JS.
 
+### Phase 7 Notes
+
+- [x] When renaming class-heavy JS modules like `MapTileManager`, plan to convert JSDoc-only instance state into explicit class fields and exported TS aliases first; otherwise the rename mostly turns into member-inference errors.
+- [x] When renaming shared runtime state modules like `state.ts`, widen the owned runtime contracts up front for real integration writes such as `AIRCRAFT.movableSurfaces` and `PHYSICS.heading` instead of letting downstream bootstraps patch around narrow inferred shapes.
+- [x] Browser-API compatibility shims like Safari's `webkitAudioContext` usually need a real local window subtype once renamed to TS; JSDoc casts that were tolerated in `.js` stop being enough.
+- [x] Small rendering/system helpers like `AirportSystems.ts` often need explicit generic collections after rename, otherwise inferred `Set` contents fall back to `unknown` and hide valid instance-level fields like `instanceColor`.
+
 ### Strictness Strategy
 
 - [ ] Avoid enabling full strict mode globally at the start.
 - [ ] Tighten settings in response to progress, not aspiration.
 - [ ] Prefer eliminating recurring categories of type holes over chasing one-off warnings.
-- [x] Added the first strictness-adjacent batch by bringing `server.js`, `playwright.config.js`, the editor Playwright helpers/specs, the perf Playwright specs, `js/vendor/react-loader.js`, and `js/editor/canvas/TerrainPreviewWorkerManager.js` under `@ts-check`, then added Node ambient types so those files could stay checked without being rewritten first.
+- [x] Added the first strictness-adjacent batch by bringing `server.js`, `playwright.config.js`, the editor Playwright helpers/specs, the perf Playwright specs, `js/vendor/react-loader.js`, and the remaining editor-canvas JS helpers under `@ts-check`, then added Node ambient types so those files could stay checked without being rewritten first.
 - [x] Declared the final migration intent explicitly: checked JS is now only a staging step, and future phases should optimize for removing `.js`/`.jsx` files rather than treating `@ts-check` coverage as the finish line.
 - [x] Started the first execution-boundary upgrade for full conversion by switching the unit-test runner from `node --test` to `tsx --test`, so future `.ts` module renames are not blocked by direct Node imports in the unit tests.
 - [x] Verified the upgraded unit-test boundary end-to-end: `npm run test:unit` now passes under `tsx --test` (269 passing tests), which means direct Node test imports are no longer a hard blocker for future editor/runtime `.ts` renames.
 - [x] Completed the first post-upgrade rename batch by moving `js/editor/core/document.js`, `js/editor/core/store.js`, and `js/editor/core/commands.js` to real `.ts` modules, then removing their temporary `.d.ts` bridge files after the batch went green under `typecheck`, `editor:build`, and `test:unit`.
+- [x] Completed the next editor-helper rename batch by moving the full `js/modules/editor/` helper folder to `.ts` modules and deleting the leftover `objectTypes.d.ts` bridge after the renamed helpers exposed real TS type guards and exported aliases.
+- [x] Completed the next runtime-helper rename batch by moving the non-companion `js/modules/core/` helpers to `.ts` modules, while explicitly keeping `js/modules/core/logging.js` as a compatibility seam until the direct browser runtime no longer depends on `.js` companion entrypoints.
 
 ## Batch Workflow
 
@@ -355,3 +374,6 @@
 - [x] Fifty-sixth migration pattern: once the app/runtime code is largely covered, the next best large batch is often the editor/tooling tail; converting the last small TSX stragglers and bringing server/test harness files under `@ts-check` together creates a much cleaner handoff into real compiler-tightening work than leaving those areas as permanent exceptions.
 - [x] Fifty-seventh migration pattern: when you make a Node-side execution boundary TypeScript-aware, expect it to expose browser-only global assumptions that were previously hidden; fixing those with `globalThis`-style APIs is usually a real portability improvement, not just test-runner cleanup.
 - [x] Fifty-eighth migration pattern: once a staged JS module reaches a TS-aware execution boundary, the real rename usually needs one cleanup pass converting JSDoc-heavy exports into explicit TypeScript signatures, but after that it is cleaner to delete the temporary `.d.ts` bridge immediately than to maintain duplicate type surfaces.
+- [x] Fifty-ninth migration pattern: big JS-to-TS canvas renames often fail first on “types that only existed in JSDoc,” so the fastest cleanup is usually to replace those comment-only aliases with real `import type` statements and TS `type` aliases at the same time that the file is renamed.
+- [x] Sixtieth migration pattern: when a renamed helper module is supposed to narrow unions for the rest of the app, convert its predicate signatures to explicit TypeScript type guards right away; leaving them as JSDoc-era comments can make downstream TS files look broken even though runtime behavior never changed.
+- [x] Sixty-first migration pattern: observer/reporting modules are good rename candidates once their dependencies are stable, but they usually need one “broad snapshot types” pass after the rename; it is faster to name the external snapshot shapes explicitly than to let TypeScript infer a maze of `{}` objects from default callbacks.

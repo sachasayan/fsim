@@ -1,6 +1,14 @@
-// @ts-check
-
-/** @typedef {'select' | 'add-airport' | 'add-district' | 'add-object' | 'add-road' | 'terrain-region' | 'edit-poly' | 'terrain-raise' | 'terrain-lower' | 'terrain-flatten'} EditorToolId */
+export type EditorToolId =
+    | 'select'
+    | 'add-airport'
+    | 'add-district'
+    | 'add-object'
+    | 'add-road'
+    | 'terrain-region'
+    | 'edit-poly'
+    | 'terrain-raise'
+    | 'terrain-lower'
+    | 'terrain-flatten';
 
 export const TOOL_SHORTCUTS = {
     v: 'select',

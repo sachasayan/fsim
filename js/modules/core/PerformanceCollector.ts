@@ -1,37 +1,115 @@
-// @ts-check
+type NumericSummary = {
+    count: number;
+    avg: number | null;
+    min: number | null;
+    p50: number | null;
+    p95: number | null;
+    max: number | null;
+};
 
-/**
- * @typedef NumericSummary
- * @property {number} count
- * @property {number | null} avg
- * @property {number | null} min
- * @property {number | null} p50
- * @property {number | null} p95
- * @property {number | null} max
- */
+type TerrainSelectionSnapshot = {
+    mode?: string | null;
+    selectedLeafCount?: number | null;
+    blockingLeafCount?: number | null;
+    pendingBlockingLeafCount?: number | null;
+    activeChunkCount?: number | null;
+    blockingChunkCount?: number | null;
+    selectedNodeCount?: number | null;
+    blockingLeafStates?: unknown;
+    quadtreeSelectionRegion?: unknown;
+    queueDepths?: {
+        pendingBaseChunkJobs?: number;
+        pendingPropJobs?: number;
+        pendingLeafBuilds?: number;
+    } | null;
+    leafResponsiveness?: {
+        readyWaitMs?: { p95Ms?: number | null } | null;
+        blockingReadyWaitMs?: { p95Ms?: number | null } | null;
+        pendingAgeMs?: { p95Ms?: number | null } | null;
+        pendingBlockingAgeMs?: { p95Ms?: number | null } | null;
+    } | null;
+    leafBuildBreakdown?: unknown;
+    chunkBaseRole?: {
+        currentVisibleChunkCount?: number | null;
+        currentHiddenByReadyLeafCount?: number | null;
+        hideByLeafReadyCount?: number | null;
+        visibleDwellMs?: { p95Ms?: number | null } | null;
+        buildStarts?: number | null;
+        buildCompletes?: number | null;
+    } | null;
+    chunkStates?: unknown;
+    worker?: {
+        inFlightJobs?: number | null;
+    } | null;
+    generation?: unknown;
+    timings?: unknown;
+};
 
-/**
- * @typedef CollectorFrameRecord
- * @property {number} frameIndex
- * @property {number | null} now
- * @property {number | null} dt
- * @property {number | null} frameMs
- * @property {number | null} fps
- * @property {number} physicsSteps
- * @property {boolean} terrainUpdated
- * @property {boolean} worldLodUpdated
- * @property {boolean} hudUpdated
- * @property {Record<string, unknown>} renderer
- * @property {Record<string, unknown>} adaptive
- * @property {Record<string, unknown>} profiling
- * @property {Record<string, unknown>} renderPasses
- * @property {Record<string, unknown>} phases
- */
+type AdaptiveQualitySnapshot = {
+    enabled?: boolean | null;
+    pixelRatio?: number | null;
+    frameTimeEmaMs?: number | null;
+};
 
-/**
- * @typedef PerformanceWithMemory
- * @property {{ usedJSHeapSize?: number } | undefined} [memory]
- */
+type ProfilingSnapshot = {
+    bootstrapComplete?: boolean | null;
+    loaderHidden?: boolean | null;
+    worldReady?: boolean | null;
+    profilingReady?: boolean | null;
+    profilingReadinessReason?: string | null;
+    lastProgramsChangeMsAgo?: number | null;
+    lastTexturesChangeMsAgo?: number | null;
+    lastGeometriesChangeMsAgo?: number | null;
+    quietWindowMs?: number | null;
+    profilingReadyAtMs?: number | null;
+    firstStableAtMs?: number | null;
+    timeBlockedByProgramsMs?: number | null;
+    timeBlockedByTexturesMs?: number | null;
+    timeBlockedByGeometriesMs?: number | null;
+    startupTimeline?: Record<string, number> | null;
+    terrainSelection?: TerrainSelectionSnapshot | null;
+};
+
+type RenderPassTimingSnapshot = {
+    renderScene?: number | null;
+    smaa?: number | null;
+    bloom?: number | null;
+    total?: number | null;
+};
+
+type CollectorFrameRecord = {
+    frameIndex: number;
+    now: number | null;
+    dt: number | null;
+    frameMs: number | null;
+    fps: number | null;
+    physicsSteps: number;
+    terrainUpdated: boolean;
+    worldLodUpdated: boolean;
+    hudUpdated: boolean;
+    renderer: Record<string, unknown>;
+    adaptive: Record<string, unknown>;
+    profiling: Record<string, unknown>;
+    renderPasses: Record<string, unknown>;
+    phases: Record<string, number | null>;
+};
+
+type PerformanceWithMemory = Performance & {
+    memory?: { usedJSHeapSize?: number };
+};
+
+type EndFrameOptions = {
+    now?: number;
+    physicsSteps?: number;
+    terrainUpdated?: boolean;
+    worldLodUpdated?: boolean;
+    hudUpdated?: boolean;
+};
+
+type BeginFrameOptions = {
+    now: number;
+    dt: number;
+};
 
 /**
  * @param {number[]} sortedValues
@@ -106,16 +184,16 @@ function formatBytesToMb(bytes) {
 /**
  * @param {{
  *   renderer: import('three').WebGLRenderer,
- *   getAdaptiveQualitySnapshot?: () => Record<string, any>,
- *   getProfilingSnapshot?: () => Record<string, any>,
- *   getRenderPassTimings?: () => Record<string, any>
+ *   getAdaptiveQualitySnapshot?: () => AdaptiveQualitySnapshot,
+ *   getProfilingSnapshot?: () => ProfilingSnapshot,
+ *   getRenderPassTimings?: () => RenderPassTimingSnapshot
  * }} options
  */
 export function createPerformanceCollector({
     renderer,
-    getAdaptiveQualitySnapshot = () => ({}),
-    getProfilingSnapshot = () => ({}),
-    getRenderPassTimings = () => ({})
+    getAdaptiveQualitySnapshot = (): AdaptiveQualitySnapshot => ({}),
+    getProfilingSnapshot = (): ProfilingSnapshot => ({}),
+    getRenderPassTimings = (): RenderPassTimingSnapshot => ({})
 }) {
     const MAX_RECENT_FRAMES = 24;
     const MAX_WORST_FRAMES = 8;
@@ -170,8 +248,7 @@ export function createPerformanceCollector({
     let verySlowFrames = 0;
     /** @type {CollectorFrameRecord | null} */
     let lastFrame = null;
-    /** @type {PerformanceWithMemory} */
-    const performanceWithMemory = /** @type {PerformanceWithMemory} */ (performance);
+    const performanceWithMemory = performance as PerformanceWithMemory;
 
     renderer.info.autoReset = false;
 
@@ -237,7 +314,7 @@ export function createPerformanceCollector({
     }
 
     /** @param {{ now: number, dt: number }} options */
-    function beginFrame({ now, dt }) {
+    function beginFrame({ now, dt }: BeginFrameOptions) {
         if (!collection?.active) return;
         renderer.info.reset();
         currentFrame = {
@@ -282,7 +359,7 @@ export function createPerformanceCollector({
         terrainUpdated = false,
         worldLodUpdated = false,
         hudUpdated = false
-    } = {}) {
+    }: EndFrameOptions = {}) {
         if (!collection?.active || !currentFrame) return;
 
         const frameMs = performance.now() - currentFrame.cpuStartMs;
@@ -291,7 +368,7 @@ export function createPerformanceCollector({
         const adaptive = getAdaptiveQualitySnapshot() || {};
         const profiling = getProfilingSnapshot() || {};
         const renderPassTimings = getRenderPassTimings() || {};
-        const memory = typeof performance !== 'undefined' && performanceWithMemory.memory
+        const memory = performanceWithMemory.memory
             ? performanceWithMemory.memory
             : null;
 
@@ -437,12 +514,12 @@ export function createPerformanceCollector({
             };
         }
 
-        const metrics = {};
+        const metrics: Record<string, NumericSummary | null> = {};
         for (const name of metricNames) {
             metrics[name] = roundSummary(summarizeValues(metricSamples.get(name) || []));
         }
 
-        const phases = {};
+        const phases: Record<string, NumericSummary | null> = {};
         for (const [name, values] of phaseSamples.entries()) {
             phases[name] = roundSummary(summarizeValues(values));
         }
@@ -530,7 +607,7 @@ export function createPerformanceCollector({
             },
             memory: {
                 usedJsHeapMb: formatBytesToMb(
-                    typeof performance !== 'undefined' && performanceWithMemory.memory
+                    performanceWithMemory.memory
                         ? performanceWithMemory.memory?.usedJSHeapSize
                         : Number.NaN
                 )
@@ -555,7 +632,7 @@ export function createPerformanceCollector({
         reset({ scenario, metadata });
 
         if (warmupFrames > 0) {
-            await new Promise((resolve) => {
+            await new Promise<void>((resolve) => {
                 let remaining = warmupFrames;
                 function tick() {
                     remaining -= 1;
@@ -570,7 +647,7 @@ export function createPerformanceCollector({
             });
         }
 
-        await new Promise((resolve) => {
+        await new Promise<void>((resolve) => {
             let remaining = sampleFrames;
             function tick() {
                 remaining -= 1;
