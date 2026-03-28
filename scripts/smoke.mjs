@@ -133,20 +133,11 @@ async function main() {
         throw new Error('GET / did not return HTML content');
       }
 
-      const app = await request('/js/modules/sim.js');
-      if (app.statusCode !== 200) {
-        throw new Error(`GET /js/modules/sim.js failed with status ${app.statusCode}`);
+      if (!root.body.includes('window.__FSIM_RUNTIME__')) {
+        throw new Error('GET / did not include injected runtime flags');
       }
-      if (!app.body.includes("import * as THREE from 'three';")) {
-        throw new Error('sim.js content check failed');
-      }
-
-      const css = await request('/styles/app.css');
-      if (css.statusCode !== 200) {
-        throw new Error(`GET /styles/app.css failed with status ${css.statusCode}`);
-      }
-      if (!String(css.headers['content-type'] || '').includes('text/css')) {
-        throw new Error('GET /styles/app.css did not return CSS content');
+      if (!root.body.includes('<script type="module"')) {
+        throw new Error('GET / did not include a module entrypoint');
       }
     }
   } finally {

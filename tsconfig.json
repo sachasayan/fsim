@@ -30,10 +30,12 @@
     "tests/**/*.jsx",
     "server.js",
     "playwright.config.js",
-    "vite.editor.config.mjs"
+    "vite.editor.config.mjs",
+    "vite.sim.config.mjs"
   ],
   "exclude": [
     "node_modules",
-    "editor-dist"
+    "editor-dist",
+    "sim-dist"
   ]
 }

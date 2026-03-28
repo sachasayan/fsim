@@ -235,7 +235,10 @@ test('MapTileManager can dispatch multiple tile renders concurrently', async () 
         manager.getTile(0, 0, 8);
         manager.getTile(1, 0, 8);
         manager.getTile(2, 0, 8);
-        await new Promise(resolve => setTimeout(resolve, 40));
+        const deadline = Date.now() + 250;
+        while (releases.length < 3 && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
 
         assert.equal(peak, 2);
         assert.equal(releases.length, 3);

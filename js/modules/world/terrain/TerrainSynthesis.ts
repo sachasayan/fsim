@@ -3,22 +3,24 @@
 import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
 import { applyAirportRunwayFlattening } from '../AirportLayout.js';
 import { SEA_LEVEL } from './TerrainPalette.js';
+import type { EditorBounds, EditorTerrainGenerator } from '../../../editor/core/types';
 
-/**
- * @typedef {import('../../../editor/core/types').EditorBounds} TerrainSynthesizerBounds
- * @typedef {import('../../../editor/core/types').EditorTerrainGenerator} TerrainGeneratorConfigInput
- * @typedef {Parameters<typeof applyAirportRunwayFlattening>[3]} TerrainSynthesizerWorldData
- */
+type TerrainSynthesizerBounds = EditorBounds;
+type TerrainGeneratorConfigInput = EditorTerrainGenerator;
+type TerrainSynthesizerWorldData = Parameters<typeof applyAirportRunwayFlattening>[3];
+type TerrainNoiseLike = {
+    noise(x: number, y: number, z: number): number;
+    fractal(x: number, z: number, octaves: number, persistence: number, scale: number): number;
+};
 
-/**
- * @typedef TerrainSynthesizerOptions
- * @property {{ noise(x: number, y: number, z: number): number, fractal(x: number, z: number, octaves: number, persistence: number, scale: number): number }} [Noise]
- * @property {number} [worldSize]
- * @property {TerrainGeneratorConfigInput} [config]
- * @property {TerrainSynthesizerBounds | null} [authoredBounds]
- * @property {TerrainSynthesizerWorldData | null} [worldData]
- * @property {boolean} [applyRunwayFlattening]
- */
+export type TerrainSynthesizerOptions = {
+    Noise?: TerrainNoiseLike;
+    worldSize?: number;
+    config?: TerrainGeneratorConfigInput;
+    authoredBounds?: TerrainSynthesizerBounds | null;
+    worldData?: TerrainSynthesizerWorldData | null;
+    applyRunwayFlattening?: boolean;
+};
 
 function clamp01(value) {
     return Math.max(0, Math.min(1, value));
@@ -1367,9 +1369,6 @@ function getOverlayColor(overlayKind, value, heightValue, showContours) {
     return [rgb[0], rgb[1], rgb[2], 170];
 }
 
-/**
- * @param {TerrainSynthesizerOptions} [options]
- */
 export function createTerrainSynthesizer({
     Noise,
     worldSize = DEFAULT_WORLD_SIZE,
@@ -1377,7 +1376,7 @@ export function createTerrainSynthesizer({
     authoredBounds = null,
     worldData = null,
     applyRunwayFlattening: shouldApplyRunwayFlattening = true
-} = {}) {
+}: TerrainSynthesizerOptions = {}) {
     if (!Noise) {
         throw new Error('createTerrainSynthesizer requires a Noise implementation');
     }

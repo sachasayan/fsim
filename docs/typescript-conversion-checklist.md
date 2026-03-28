@@ -149,7 +149,7 @@
 - [x] `js/modules/ui/MapColors.js`
 - [x] `js/modules/world/config.js`
 - [x] `js/modules/world/WorldConfig.js`
-- [ ] `js/modules/physics/PhysicsUtils.js`
+- [x] `js/modules/physics/PhysicsUtils.js`
 - [ ] Other small utility or config-style modules with minimal browser-global coupling
 
 ### Phase 4 Notes
@@ -208,8 +208,15 @@
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain.js`, typed its public terrain-system contract first, then tightened local browser-global, physics-state, and generation-context adapters until both `npm run typecheck` and `npm run editor:build` passed again.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/CloudWorker.js` and a matching helper pass to `js/modules/world/cloudNoise.js`, typing the cloud worker request/result payloads and transfer-ready tile arrays, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the terrain shader/material support slice, covering `ShaderLibrary.js`, `TerrainMaterials.js`, `TerrainOwnedShaderSource.js`, `TerrainPalette.js`, `TerrainPropOwnedShaderSource.js`, `TerrainShaderPatches.js`, `TerrainSurfaceWeights.js`, `TerrainTextures.js`, and `WaterOwnedShaderSource.js`, then aligned the shared option-object contracts between the owned-source builders and shader-patch helpers, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the terrain shader/material support rename batch by moving `ShaderLibrary.js`, `TerrainMaterials.js`, `TerrainOwnedShaderSource.js`, `TerrainPalette.js`, `TerrainPropOwnedShaderSource.js`, `TerrainShaderPatches.js`, `TerrainSurfaceWeights.js`, `TerrainTextures.js`, and `WaterOwnedShaderSource.js` to `.ts`.
+- [x] Verified the renamed terrain shader/material support batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Added JSDoc-first `@ts-check` passes across the next terrain support folder slice, covering `BuildingSpawner.js`, `CityChunkLoader.js`, `QuadtreeSelectionController.js`, `RoadMarkingOverlay.js`, `RoadNetworkGeometry.js`, and `TerrainEdits.js`, then typed the loader's browser-global runtime window seam directly instead of widening the rest of the batch, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the terrain support rename batch by moving `BuildingSpawner.js`, `CityChunkLoader.js`, `QuadtreeSelectionController.js`, `RoadMarkingOverlay.js`, `RoadNetworkGeometry.js`, and `TerrainEdits.js` to `.ts`.
+- [x] Verified the renamed terrain support batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainSynthesis.js`, then formalized the top-level synthesizer options contract around the real runtime runway-flattening world-data shape instead of forcing it through the narrower editor-world type, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the terrain core/runtime rename batch by moving `TerrainRegions.js`, `TerrainUtils.js`, `TerrainGeneration.js`, `TerrainSynthesis.js`, `TerrainWorker.js`, and `TerrainWorkerManager.js` to `.ts`.
+- [x] Verified the renamed terrain core/runtime batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
+- [x] Captured the main rename lesson from the terrain core batch: large JSDoc-heavy runtime files usually need their comment-only option/resource typedefs promoted into real TS aliases, plus explicit class fields for stateful helpers like quadtree samplers, before the final `.ts` rename will settle cleanly.
 - [x] Fixed a newly exposed execution-boundary bug in `js/editor/canvas/EditorMapTileWorkerManager.ts` by replacing `window.setTimeout` with `globalThis.setTimeout`, so the manager works under both browser execution and the new TS-aware Node unit-test runner.
 - [ ] Decide when to extract shared worker request/response types instead of keeping local worker-message shapes inside each manager.
 
@@ -237,10 +244,14 @@
 - [x] Added JSDoc-first `@ts-check` passes to `js/modules/world/particles.js` and `js/modules/world/environment.js` together and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/aircraft.js`, typing the GLTF-loading, hinge-group, marker-light, and breakup-piece boundaries locally, and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/world/shaders/` folder, covering `OwnedShaderSourceBuilder.js`, `ShaderPatchUtils.js`, `MaterialShaderPipeline.js`, `ShaderDescriptor.js`, `RunwayShaderPatches.js`, `CloudShaderPatches.js`, `RunwayOwnedShaderSource.js`, and `CloudOwnedShaderSource.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the `js/modules/world/shaders/` rename batch by moving `OwnedShaderSourceBuilder.js`, `ShaderPatchUtils.js`, `MaterialShaderPipeline.js`, `ShaderDescriptor.js`, `RunwayShaderPatches.js`, `CloudShaderPatches.js`, `RunwayOwnedShaderSource.js`, and `CloudOwnedShaderSource.js` to `.ts`.
+- [x] Verified the renamed `js/modules/world/shaders/` batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/core/` folder runtime surface, covering `InputHandler.js`, `LiveReload.js`, `PostProcessingStack.js`, `RendererManager.js`, `WeatherManager.js`, and `PerformanceCollector.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Completed the `js/modules/core/` rename batch by moving `InputHandler.js`, `LiveReload.js`, `PostProcessingStack.js`, `RendererManager.js`, `WeatherManager.js`, and `PerformanceCollector.js` to `.ts`, while intentionally leaving `js/modules/core/logging.js` in place as the native-browser companion entrypoint for the already-converted `logging.ts`.
 - [x] Verified the renamed `js/modules/core/` batch with `npm run typecheck`, `npm run editor:build`, and focused unit coverage for `WeatherManager`, `PostProcessingStack`, and the async `MapTileManager` concurrency path.
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/physics/` folder, covering `PhysicsUtils.js`, `AeroSolver.js`, `GroundPhysics.js`, `rapierWorld.js`, `physicsAdapter.js`, and `updatePhysics.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Completed the `js/modules/physics/` rename batch by moving `PhysicsUtils.js`, `AeroSolver.js`, `GroundPhysics.js`, `rapierWorld.js`, `physicsAdapter.js`, and `updatePhysics.js` to `.ts`.
+- [x] Verified the renamed `js/modules/physics/` batch with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 - [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/editor/` folder, covering `constants.js`, `geometry.js`, `layers.js`, `objectTypes.js`, and `terrainEdits.js`, then aligned the remaining controller call sites with the broader helper contracts, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Completed the `js/modules/editor/` rename batch by moving `constants.js`, `geometry.js`, `layers.js`, `objectTypes.js`, and `terrainEdits.js` to `.ts`, then removed the temporary `js/modules/editor/objectTypes.d.ts` bridge once the module owned real TS type guards and exports directly.
 - [x] Verified the renamed `js/modules/editor/` folder end-to-end with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
@@ -260,7 +271,7 @@
 - [ ] Evaluate enabling `noImplicitAny`.
 - [ ] Evaluate stronger nullability checks where practical.
 - [x] Keep strictness changes incremental and tied to real cleanup progress.
-- [ ] Make the remaining execution boundaries TypeScript-aware so the last large `.js` modules can actually be renamed instead of staying as checked JS.
+- [x] Make the remaining execution boundaries TypeScript-aware so the last large `.js` modules can actually be renamed instead of staying as checked JS.
 
 ### Phase 7 Notes
 
@@ -268,6 +279,13 @@
 - [x] When renaming shared runtime state modules like `state.ts`, widen the owned runtime contracts up front for real integration writes such as `AIRCRAFT.movableSurfaces` and `PHYSICS.heading` instead of letting downstream bootstraps patch around narrow inferred shapes.
 - [x] Browser-API compatibility shims like Safari's `webkitAudioContext` usually need a real local window subtype once renamed to TS; JSDoc casts that were tolerated in `.js` stop being enough.
 - [x] Small rendering/system helpers like `AirportSystems.ts` often need explicit generic collections after rename, otherwise inferred `Set` contents fall back to `unknown` and hide valid instance-level fields like `instanceColor`.
+- [x] Once a JSDoc-heavy folder is renamed for real, the last compile errors are often just “phantom typedef” fallout: local `@typedef` names and window adapters that worked in checked JS need to become actual TS aliases before the folder settles.
+- [x] Large rename batches can surface unrelated timing-sensitive tests; when the product code is green under `typecheck` and build, prefer hardening the flaky test to wait for the real completion condition instead of baking in scheduler assumptions.
+- [x] Folder batches get cheaper once the shared pipeline they depend on is already renamed; after `world/shaders/` moved to TS, the terrain-owned shader/material slice crossed over with almost no implementation churn.
+- [x] Terrain support batches tend to expose two repeatable rename chores: browser-global adapters like `window.fsimWorld` need to become real TS aliases, and stateful overlay/helper classes need explicit field declarations once they stop relying on JSDoc property inference.
+- [x] The sim runtime now has a matching Vite boundary alongside the editor: `src/sim-app/`, `vite.sim.config.mjs`, `npm run sim:build`, and `npm run sim:vite` give the main runtime a TS-aware build lane without removing the legacy `fsim.html` fallback in the same step.
+- [x] Updated `server.js` and `tools/dev-server.mjs` to prefer `sim-dist/index.html` for `/` and `/fsim.html` when a built sim exists, while still falling back to the legacy root `fsim.html` so the migration can stay incremental.
+- [x] New build-boundary pattern: once a direct-browser runtime gets a Vite entrypoint, keep the old HTML entry as a temporary fallback until the first built path has passed `typecheck`, a real build, and the local smoke flow.
 
 ### Strictness Strategy
 
@@ -281,6 +299,12 @@
 - [x] Completed the first post-upgrade rename batch by moving `js/editor/core/document.js`, `js/editor/core/store.js`, and `js/editor/core/commands.js` to real `.ts` modules, then removing their temporary `.d.ts` bridge files after the batch went green under `typecheck`, `editor:build`, and `test:unit`.
 - [x] Completed the next editor-helper rename batch by moving the full `js/modules/editor/` helper folder to `.ts` modules and deleting the leftover `objectTypes.d.ts` bridge after the renamed helpers exposed real TS type guards and exported aliases.
 - [x] Completed the next runtime-helper rename batch by moving the non-companion `js/modules/core/` helpers to `.ts` modules, while explicitly keeping `js/modules/core/logging.js` as a compatibility seam until the direct browser runtime no longer depends on `.js` companion entrypoints.
+- [x] Added the first TypeScript-aware sim execution boundary by creating `src/sim-app/index.html` and `src/sim-app/main.ts`, wiring `vite.sim.config.mjs`, and adding `sim:build` / `sim:vite` scripts so the runtime can be built and served without native browser support for `.ts` entrypoints.
+- [x] Verified the new sim build boundary with `npm run typecheck`, `npm run sim:build`, and `npm run smoke` (smoke server checks were skipped by the sandbox, but the script still passed).
+- [x] Renamed the main sim bootstrap from `js/modules/sim.js` to `js/modules/sim.ts`, then promoted its comment-only runtime-window, loader, terrain-diagnostics, and warmup-progress contracts into real TS aliases so the bootstrap could settle cleanly under the new sim build boundary.
+- [x] Updated `src/sim-app/main.ts` and the smoke checks to stop depending on the legacy raw `/js/modules/sim.js` URL and instead validate the built sim entry flow.
+- [x] Verified the renamed sim bootstrap with `npm run typecheck`, `npm run sim:build`, `npm run smoke`, and `npm run test:unit` (269 passing tests).
+- [x] New bootstrap-rename pattern: once the main runtime entry moves to TS, the remaining work is usually not domain logic but “phantom JSDoc” cleanup around owned globals, loader state, and progress callbacks that already had stable shapes in practice.
 
 ## Batch Workflow
 

@@ -15,79 +15,85 @@ const LEAF_RESOLUTION = 64;
 const MIN_ALTITUDE = -200;
 const ALTITUDE_RANGE = 2000;
 
-/**
- * @typedef {{
- *   minX: number,
- *   minZ: number,
- *   maxX: number,
- *   maxZ: number
- * }} TerrainAabbBounds
- */
+type TerrainAabbBounds = {
+    minX: number;
+    minZ: number;
+    maxX: number;
+    maxZ: number;
+};
 
-/**
- * @typedef {{
- *   river: number,
- *   lake: number,
- *   moisture: number,
- *   flow: number,
- *   erosion: number,
- *   gorge: number,
- *   floodplain: number,
- *   cliff: number,
- *   talus: number,
- *   alpine: number,
- *   wetland: number,
- *   terrace: number
- * }} TerrainMaskSet
- */
+type TerrainMaskSet = {
+    river: number;
+    lake: number;
+    moisture: number;
+    flow: number;
+    erosion: number;
+    gorge: number;
+    floodplain: number;
+    cliff: number;
+    talus: number;
+    alpine: number;
+    wetland: number;
+    terrace: number;
+};
 
-/**
- * @typedef {{
- *   id: number,
- *   rawType: number,
- *   type: 'branch' | 'leaf' | 'empty',
- *   depth: number | null,
- *   minX: number,
- *   minZ: number,
- *   maxX: number,
- *   maxZ: number,
- *   size: number,
- *   centerX: number,
- *   centerZ: number,
- *   childIds: number[],
- *   payloadOffset: number | null,
- *   avgHeight: number | null
- * }} QuadtreeNode
- */
+type QuadtreeNode = {
+    id: number;
+    rawType: number;
+    type: 'branch' | 'leaf' | 'empty';
+    depth: number | null;
+    minX: number;
+    minZ: number;
+    maxX: number;
+    maxZ: number;
+    size: number;
+    centerX: number;
+    centerZ: number;
+    childIds: number[];
+    payloadOffset: number | null;
+    avgHeight: number | null;
+};
 
-/**
- * @typedef {{
- *   worldSize?: number,
- *   terrainGenerator?: unknown,
- *   terrainRegions?: unknown[],
- *   airports?: unknown[],
- *   authoredObjects?: unknown[],
- *   terrainEdits?: unknown[]
- * }} TerrainRuntimeWorldMetadata
- */
+type TerrainRuntimeWorldMetadata = {
+    worldSize?: number;
+    terrainGenerator?: unknown;
+    terrainRegions?: unknown[];
+    airports?: unknown[];
+    authoredObjects?: unknown[];
+    terrainEdits?: unknown[];
+};
 
-/**
- * @typedef {{
- *   fractal: (x: number, z: number, octaves: number, persistence: number, scale: number) => number,
- *   fade?: (t: number) => number,
- *   lerp?: (t: number, a: number, b: number) => number,
- *   grad?: (hash: number, x: number, y: number, z: number) => number
- * }} TerrainNoiseLike
- */
+type TerrainNoiseLike = {
+    fractal: (x: number, z: number, octaves: number, persistence: number, scale: number) => number;
+    fade?: (t: number) => number;
+    lerp?: (t: number, a: number, b: number) => number;
+    grad?: (hash: number, x: number, y: number, z: number) => number;
+};
 
-/**
- * @typedef {{
- *   sampleHeight: (x: number, z: number) => number,
- *   sampleMasks?: (x: number, z: number) => TerrainMaskSet
- * }} TerrainModelSampler
- */
+type TerrainModelSampler = {
+    sampleHeight: (x: number, z: number) => number;
+    sampleMasks?: (x: number, z: number) => TerrainMaskSet;
+};
 
-function decodeNodeType(type) {
+type WeightedMap = Record<string, number>;
+type QuadtreeVisitor = (node: QuadtreeNode, context: { depth: number }) => boolean | void;
+type VisitNodesOptions = {
+    startNodeId?: number;
+    maxDepth?: number;
+    intersectsAabb?: TerrainAabbBounds | null;
+    containsPoint?: { x: number; z: number } | null;
+    leavesOnly?: boolean;
+};
+type VisitLeavesOptions = {
+    maxDepth?: number;
+    minNodeSize?: number;
+    startNodeId?: number;
+};
+type RuntimeWindow = Window & typeof globalThis & {
+    fsimWorld?: TerrainRuntimeWorldMetadata;
+};
+
+function decodeNodeType(type: number): QuadtreeNode['type'] {
     if (type === NODE_BRANCH) return 'branch';
     if (type === NODE_LEAF) return 'leaf';
     return 'empty';
@@ -111,7 +117,7 @@ export function hash2Local(seed, k, p) {
     return n - Math.floor(n);
 }
 
-export function pickWeighted(value01, weights) {
+export function pickWeighted(value01: number, weights: WeightedMap) {
     let sum = 0;
     for (const w of Object.values(weights)) sum += w;
     if (sum <= 0) return Object.keys(weights)[0];
@@ -252,6 +258,18 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise,
  * Sampler for the Adaptive Quadtree Map (world.bin)
  */
 export class QuadtreeMapSampler {
+    buffer: ArrayBuffer;
+    view: DataView;
+    magic: number;
+    version: number;
+    worldSize: number;
+    numNodes: number;
+    metaOff: number;
+    metaSize: number;
+    HEADER_SIZE: number;
+    NODE_SIZE: number;
+    _nodeCache: Map<number, QuadtreeNode>;
+
     /**
      * @param {ArrayBuffer} buffer
      */
@@ -317,7 +335,7 @@ export class QuadtreeMapSampler {
         const size = this.view.getFloat32(off + 12, true);
         const half = size * 0.5;
         /** @type {QuadtreeNode} */
-        const node = {
+        const node: QuadtreeNode = {
             id: nodeIdx,
             rawType,
             type: decodeNodeType(rawType),
@@ -370,7 +388,7 @@ export class QuadtreeMapSampler {
         return intersectsAabbBounds(node, { minX, minZ, maxX, maxZ });
     }
 
-    visitNodes(visitor, options = {}) {
+    visitNodes(visitor: QuadtreeVisitor, options: VisitNodesOptions = {}) {
         if (typeof visitor !== 'function') return;
 
         const {
@@ -413,7 +431,7 @@ export class QuadtreeMapSampler {
         }
     }
 
-    visitLeavesInRegion(region, visitor, options = {}) {
+    visitLeavesInRegion(region: TerrainAabbBounds, visitor: QuadtreeVisitor, options: VisitLeavesOptions = {}) {
         if (!region || typeof visitor !== 'function') return;
 
         const {
@@ -629,7 +647,7 @@ function createSeededNoise(seed = 12345) {
 function getRuntimeWorldMetadata() {
     if (_staticWorldMetadata) return _staticWorldMetadata;
     if (typeof window === 'undefined') return null;
-    const worldWindow = /** @type {Window & { fsimWorld?: TerrainRuntimeWorldMetadata }} */ (window);
+    const worldWindow = window as RuntimeWindow;
     return worldWindow.fsimWorld || null;
 }
 
@@ -667,12 +685,12 @@ function getTerrainModelSampler() {
         return _terrainModelSampler;
     }
     const seededNoise = createSeededNoise(config.seed);
-    _terrainModelSampler = /** @type {TerrainModelSampler} */ (createTerrainSynthesizer(/** @type {Parameters<typeof createTerrainSynthesizer>[0]} */ ({
+    _terrainModelSampler = /** @type {TerrainModelSampler} */ (createTerrainSynthesizer({
         Noise: seededNoise,
         worldSize,
         config,
         worldData: metadata
-    })));
+    }));
     _terrainModelSamplerKey = key;
     return _terrainModelSampler;
 }

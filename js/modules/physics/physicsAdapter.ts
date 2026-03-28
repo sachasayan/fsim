@@ -1,31 +1,26 @@
-// @ts-check
-
 import { createRapierWorld } from './rapierWorld.js';
 import { debugInfo } from '../core/logging.js';
 import { listRuntimeAirports } from '../world/AirportLayout.js';
 
-/**
- * @typedef AdapterPhysicsLike
- * @property {number} gravity
- * @property {import('three').Vector3} position
- * @property {import('three').Quaternion} quaternion
- * @property {import('three').Vector3} velocity
- * @property {import('three').Vector3} angularVelocity
- * @property {import('three').Vector3} externalForce
- * @property {import('three').Vector3} externalTorque
- */
+type AdapterPhysicsLike = {
+  gravity: number;
+  position: import('three').Vector3;
+  quaternion: import('three').Quaternion;
+  velocity: import('three').Vector3;
+  angularVelocity: import('three').Vector3;
+  externalForce: import('three').Vector3;
+  externalTorque: import('three').Vector3;
+};
 
-/**
- * @typedef AdapterAircraftLike
- * @property {number} mass
- */
+type AdapterAircraftLike = {
+  mass: number;
+};
 
-/** @typedef {Parameters<typeof listRuntimeAirports>[0]} RuntimeAirportWorldData */
+type RuntimeAirportWorldData = Parameters<typeof listRuntimeAirports>[0];
 
-/**
- * @typedef PhysicsWindowLike
- * @property {RuntimeAirportWorldData | undefined} [fsimWorld]
- */
+type PhysicsWindowLike = Window & typeof globalThis & {
+  fsimWorld?: RuntimeAirportWorldData;
+};
 
 /**
  * @param {{
@@ -52,9 +47,8 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
     }
     runwayColliders = [];
 
-    const worldData = /** @type {RuntimeAirportWorldData} */ (
-      /** @type {PhysicsWindowLike | null} */ (typeof window !== 'undefined' ? window : null)?.fsimWorld || { airports: [] }
-    );
+    const runtimeWindow = (typeof window !== 'undefined' ? window : null) as PhysicsWindowLike | null;
+    const worldData: RuntimeAirportWorldData = runtimeWindow?.fsimWorld || { airports: [] };
     for (const airport of listRuntimeAirports(worldData)) {
       const yawRad = (airport.yaw || 0) * Math.PI / 180;
       const halfYaw = yawRad * 0.5;

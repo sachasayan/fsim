@@ -11,6 +11,8 @@
     "editor:build": "vite build --config vite.editor.config.mjs",
     "editor:dev": "concurrently -k -n editor-api,editor-ui -c cyan,magenta \"npm run editor:backend\" \"npm run editor:vite\"",
     "editor:vite": "vite --config vite.editor.config.mjs",
+    "sim:build": "vite build --config vite.sim.config.mjs",
+    "sim:vite": "vite --config vite.sim.config.mjs",
     "typecheck": "tsc --project tsconfig.json",
     "start": "node server.js",
     "serve": "node server.js",

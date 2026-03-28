@@ -25,52 +25,47 @@ import { startLoaderTips } from './ui/LoaderTips.js';
 import { debugLog } from './core/logging.js';
 import { createCrashSystem, evaluateCrashImpact } from './crash/CrashSystem.js';
 
-/**
- * @typedef {Window & typeof globalThis & {
- *   __FSIM_RUNTIME__?: { showDebugUi?: boolean },
- *   fsimWorld?: Record<string, any>,
- *   fsimPerf?: Record<string, unknown>,
- *   triggerCrash?: (reason?: string) => void,
- *   resetFlight?: () => void
- * }} FsimRuntimeWindow
- */
+type FsimRuntimeWindow = Window & typeof globalThis & {
+  __FSIM_RUNTIME__?: { showDebugUi?: boolean };
+  fsimWorld: Record<string, any>;
+  fsimPerf?: Record<string, unknown>;
+  triggerCrash?: (reason?: string) => void;
+  resetFlight?: () => void;
+};
 
-/**
- * @typedef LoaderElements
- * @property {HTMLElement | null} phaseText
- * @property {HTMLElement | null} phaseDetailText
- * @property {HTMLElement | null} terrainBar
- * @property {HTMLElement | null} terrainText
- * @property {HTMLElement | null} assetsBar
- * @property {HTMLElement | null} assetsText
- */
+type LoaderElements = {
+  phaseText: HTMLElement | null;
+  phaseDetailText: HTMLElement | null;
+  terrainBar: HTMLElement | null;
+  terrainText: HTMLElement | null;
+  assetsBar: HTMLElement | null;
+  assetsText: HTMLElement | null;
+};
 
-/**
- * @typedef TerrainSelectionDiagnostics
- * @property {number | undefined} [blockingLeafCount]
- * @property {number | undefined} [pendingBlockingLeafCount]
- * @property {{
- *   selectionBuildMs?: number,
- *   queueSchedulingMs?: number,
- *   queuePruneMs?: number,
- *   leafBuildMs?: number,
- *   leafBuildDispatchMs?: number,
- *   leafBuildApplyMs?: number,
- *   chunkBuildQueueMs?: number,
- *   propBuildQueueMs?: number
- * } | undefined} [timings]
- */
+type TerrainSelectionDiagnostics = {
+  blockingLeafCount?: number;
+  pendingBlockingLeafCount?: number;
+  timings?: {
+    selectionBuildMs?: number;
+    queueSchedulingMs?: number;
+    queuePruneMs?: number;
+    leafBuildMs?: number;
+    leafBuildDispatchMs?: number;
+    leafBuildApplyMs?: number;
+    chunkBuildQueueMs?: number;
+    propBuildQueueMs?: number;
+  };
+};
 
-/**
- * @typedef WarmupProgress
- * @property {number | undefined} [ratio]
- * @property {'building' | 'compiling' | 'complete' | 'skipped' | undefined} [stage]
- * @property {number | undefined} [completed]
- * @property {number | undefined} [total]
- */
+type WarmupProgress = {
+  ratio?: number;
+  stage?: 'building' | 'compiling' | 'complete' | 'skipped';
+  completed?: number;
+  total?: number;
+};
 
-/** @type {FsimRuntimeWindow} */
-const runtimeWindow = /** @type {FsimRuntimeWindow} */ (window);
+const runtimeWindow = window as FsimRuntimeWindow;
+runtimeWindow.fsimWorld ??= {};
 
 // Initialize audio nodes early (will be suspended until gesture)
 ProceduralAudio.init();
@@ -432,8 +427,7 @@ runtimeWindow.fsimWorld = {
 };
 runtimeWindow.fsimPerf = perfCollector;
 
-/** @type {LoaderElements} */
-const loaderElements = {
+const loaderElements: LoaderElements = {
   phaseText: document.getElementById('loader-phase'),
   phaseDetailText: document.getElementById('loader-phase-detail'),
   terrainBar: document.getElementById('loader-terrain-progress-bar'),
@@ -461,8 +455,7 @@ function setLoaderPhaseText(phaseText, detailText) {
 }
 
 function updateLoaderProgress() {
-  /** @type {TerrainSelectionDiagnostics | null} */
-  const terrainSelection = /** @type {TerrainSelectionDiagnostics | null} */ (getTerrainSelectionDiagnostics?.() || null);
+  const terrainSelection = (getTerrainSelectionDiagnostics?.() || null) as TerrainSelectionDiagnostics | null;
   const blockingLeafCount = terrainSelection?.blockingLeafCount ?? 0;
   const pendingBlockingLeafCount = terrainSelection?.pendingBlockingLeafCount ?? 0;
   const readyBlockingLeafCount = Math.max(0, blockingLeafCount - pendingBlockingLeafCount);
@@ -1008,8 +1001,7 @@ function animate() {
   let terrainUpdated = false;
   let worldLodUpdated = false;
   if (shouldUpdateTerrain) {
-    /** @type {TerrainSelectionDiagnostics | null} */
-    const terrainDiagnostics = /** @type {TerrainSelectionDiagnostics | null} */ (updateTerrain());
+    const terrainDiagnostics = updateTerrain() as TerrainSelectionDiagnostics | null;
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
@@ -1099,7 +1091,7 @@ function hideLoader() {
 updateLoaderProgress();
 
 function waitForStartupReady({ warmupPromise }) {
-  return Promise.resolve(warmupPromise).then(() => new Promise((resolve) => {
+  return Promise.resolve(warmupPromise).then(() => new Promise<void>((resolve) => {
     function tick() {
       const terrainReady = isReady();
       updateLoaderProgress();
@@ -1164,8 +1156,7 @@ setTimeout(() => {
 
   startupTimeline.shaderWarmupStartedAtMs ??= performance.now();
   const warmupPromise = warmupShaders(camera, {
-    /** @param {WarmupProgress} progress */
-    onProgress: (progress) => {
+    onProgress: (progress: WarmupProgress) => {
       const ratio = Number.isFinite(progress?.ratio) ? progress.ratio : 0;
       let text = 'Preparing asset warmup...';
       if (progress?.stage === 'building') {

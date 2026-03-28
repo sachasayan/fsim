@@ -7,6 +7,7 @@ import { normalizeMapData } from '../MapDataUtils.js';
 import { spawnCityBuildingsForChunk, spawnDistrictPropsForChunk, classConfigs } from './BuildingSpawner.js';
 import { initWorkerManager } from './TerrainWorkerManager.js';
 import { debugLog } from '../../core/logging.js';
+import type { EditorDistrict } from '../../../editor/core/types';
 
 export const CHUNK_SIZE = 4000;
 export const TREE_DENSITY_MULTIPLIER = 8.0;
@@ -40,55 +41,48 @@ export const TREE_DENSITY_MULTIPLIER = 8.0;
  * }} GenerationPerfState
  */
 
-/**
- * @typedef {{
- *   terrainRes: number,
- *   waterRes: number,
- *   enableBoats?: boolean,
- *   enableTrees?: boolean,
- *   enableTreeContactShadows?: boolean,
- *   treeRenderMode?: string
- * }} TerrainGenerationLodConfig
- */
+type TerrainGenerationLodConfig = {
+    terrainRes: number;
+    waterRes: number;
+    enableBoats?: boolean;
+    enableTrees?: boolean;
+    enableTreeContactShadows?: boolean;
+    treeRenderMode?: string;
+};
 
-/**
- * @typedef {{
- *   showTrees?: boolean,
- *   showBuildings?: boolean
- * }} TerrainGenerationDebugSettings
- */
+type TerrainGenerationDebugSettings = {
+    showTrees?: boolean;
+    showBuildings?: boolean;
+};
 
-/**
- * @typedef {(geometry: THREE.BufferGeometry, material: THREE.Material, count: number, options?: { colorable?: boolean }) => THREE.InstancedMesh} PooledInstancedMeshFactory
- */
+type PooledInstancedMeshFactory = (
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    count: number,
+    options?: { colorable?: boolean }
+) => THREE.InstancedMesh;
 
-/**
- * @typedef {{
- *   near: THREE.Material,
- *   mid: THREE.Material
- * }} TreeGroundMaterialSet
- */
+type TreeGroundMaterialSet = {
+    near: THREE.Material;
+    mid: THREE.Material;
+};
 
-/**
- * @typedef {{
- *   canopyMat: THREE.Material,
- *   baseTint: THREE.Color,
- *   depthMat: THREE.Material | null
- * }} TreeTypeConfig
- */
+type TreeTypeConfig = {
+    canopyMat: THREE.Material;
+    baseTint: THREE.Color;
+    depthMat: THREE.Material | null;
+};
 
-/**
- * @typedef {{
- *   treeBillboardGeo: THREE.BufferGeometry,
- *   treeGroundGeo: THREE.BufferGeometry,
- *   treeTrunkGeo: THREE.BufferGeometry,
- *   treeTrunkMat: THREE.Material,
- *   treeGroundMats: TreeGroundMaterialSet,
- *   treeTypeConfigs: Record<string, TreeTypeConfig>,
- *   terrainDebugSettings?: TerrainGenerationDebugSettings,
- *   getPooledInstancedMesh?: PooledInstancedMeshFactory
- * }} TerrainTreeResources
- */
+type TerrainTreeResources = {
+    treeBillboardGeo: THREE.BufferGeometry;
+    treeGroundGeo: THREE.BufferGeometry;
+    treeTrunkGeo: THREE.BufferGeometry;
+    treeTrunkMat: THREE.Material;
+    treeGroundMats: TreeGroundMaterialSet;
+    treeTypeConfigs: Record<string, TreeTypeConfig>;
+    terrainDebugSettings?: TerrainGenerationDebugSettings;
+    getPooledInstancedMesh?: PooledInstancedMeshFactory;
+};
 
 /**
  * @typedef {{
@@ -100,6 +94,33 @@ export const TREE_DENSITY_MULTIPLIER = 8.0;
  *   waterFarMaterial: THREE.Material
  * }} TerrainChunkBaseContext
  */
+
+type RuntimeWindow = Window & typeof globalThis & {
+    fsimWorld?: Record<string, unknown>;
+};
+
+type BoatPlacement = { x: number; z: number; rot: number };
+type BuildingPlacement = {
+    x: number;
+    y: number;
+    z: number;
+    angle: number;
+    seed: number;
+    seed2: number;
+    seed3: number;
+};
+type ChunkPropsResult = {
+    treeInstances: Record<string, Float32Array>;
+    buildingPositions: Record<string, BuildingPlacement[]>;
+    boatPositions: BoatPlacement[];
+};
+type DistrictIndexZone = {
+    id: string;
+    cx: number;
+    cz: number;
+    radius: number;
+    districts?: EditorDistrict[];
+};
 
 // Lazily fetched district index (array of {id, cx, cz, radius})
 let _districtIndex = null;
@@ -190,7 +211,7 @@ export async function loadStaticWorld() {
         const meta = sampler.getMetadata();
 
         if (meta) {
-            const worldWindow = /** @type {Window & { fsimWorld?: Record<string, unknown> }} */ (window);
+            const worldWindow = window as RuntimeWindow;
             normalizeMapData(meta);
             Object.assign(worldWindow.fsimWorld || (worldWindow.fsimWorld = {}), meta);
             window.dispatchEvent?.(new CustomEvent('fsim:world-metadata-updated', { detail: { source: 'world.bin' } }));
@@ -198,7 +219,7 @@ export async function loadStaticWorld() {
         } else {
             const jsonResp = await fetch('/tools/map.json');
             const mapData = await jsonResp.json();
-            const worldWindow = /** @type {Window & { fsimWorld?: Record<string, unknown> }} */ (window);
+            const worldWindow = window as RuntimeWindow;
             normalizeMapData(mapData);
             Object.assign(worldWindow.fsimWorld || (worldWindow.fsimWorld = {}), mapData);
             window.dispatchEvent?.(new CustomEvent('fsim:world-metadata-updated', { detail: { source: 'tools/map.json' } }));
@@ -465,12 +486,11 @@ function applyTreeInstanceColors(mesh, instances, baseTint) {
     mesh.instanceColor.needsUpdate = true;
 }
 
-/**
- * @param {Record<string, number[]>} treeInstances
- * @param {TerrainGenerationLodConfig} lodCfg
- * @param {TerrainTreeResources} resources
- */
-export function buildTreeMeshesForLod(treeInstances, lodCfg, resources) {
+export function buildTreeMeshesForLod(
+    treeInstances: Record<string, Float32Array>,
+    lodCfg: TerrainGenerationLodConfig,
+    resources: TerrainTreeResources
+) {
     const {
         treeBillboardGeo,
         treeGroundGeo,
@@ -664,13 +684,13 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
     const payload = {
         cx, cz, lod, lodCfg,
         positions: positions.slice(),
-        cityZones: districtIndex || []
+        cityZones: (districtIndex || []) as DistrictIndexZone[]
     };
     const transferables = [payload.positions.buffer];
 
     const overlappingDistricts = await getOverlappingDistricts(cx, cz);
     const workerStartMs = performance.now();
-    const result = await dispatchWorker('chunkProps', payload, transferables);
+    const result = await dispatchWorker('chunkProps', payload, transferables) as ChunkPropsResult;
     const workerMs = performance.now() - workerStartMs;
 
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) {

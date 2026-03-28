@@ -29,7 +29,10 @@ const MIME_TYPES = {
 
 function injectRuntimeFlags(filePath, content) {
   const scripts = [];
-  if (path.basename(filePath) === 'fsim.html') {
+  if (
+    path.basename(filePath) === 'fsim.html'
+    || filePath === path.join(ROOT, 'sim-dist', 'index.html')
+  ) {
     scripts.push('<script>window.__FSIM_RUNTIME__={mode:"serve",showDebugUi:false};</script>');
   }
   if (scripts.length === 0) return content;
@@ -38,6 +41,11 @@ function injectRuntimeFlags(filePath, content) {
 
 function safeResolve(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
+  if (decoded === '/' || decoded === '/fsim.html' || decoded === '/fsim.html/') {
+    const builtSimPath = path.resolve(ROOT, 'sim-dist', 'index.html');
+    if (existsSync(builtSimPath)) return builtSimPath;
+    return path.resolve(ROOT, 'fsim.html');
+  }
   if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
     const builtEditorPath = path.resolve(ROOT, 'editor-dist', 'index.html');
     if (existsSync(builtEditorPath)) return builtEditorPath;
@@ -46,7 +54,7 @@ function safeResolve(urlPath) {
   if (decoded === '/favicon.ico') {
     return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');
   }
-  let requestPath = decoded === '/' ? '/fsim.html' : decoded;
+  let requestPath = decoded;
   const absolutePath = path.resolve(ROOT, `.${requestPath}`);
   if (!absolutePath.startsWith(ROOT)) return null;
   return absolutePath;

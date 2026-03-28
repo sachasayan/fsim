@@ -1,5 +1,3 @@
-// @ts-check
-
 import * as THREE from 'three';
 
 const DEFAULT_OVERLAY_WORLD_SIZE = 2048;
@@ -105,6 +103,19 @@ function clamp(value, min, max) {
 }
 
 export class RoadMarkingOverlay {
+    worldSize: number;
+    textureSize: number;
+    recenterDistance: number;
+    styleDefaults: {
+        road: { width: number; dashLength: number; gapLength: number; color: string };
+        taxiway: { width: number; dashLength: number; gapLength: number; color: string };
+    };
+    center: { x: number; z: number } | null;
+    lastRoadsRef: Array<unknown> | null;
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D;
+    texture: THREE.CanvasTexture;
+
     constructor({
         worldSize = DEFAULT_OVERLAY_WORLD_SIZE,
         textureSize = DEFAULT_TEXTURE_SIZE,
@@ -120,7 +131,11 @@ export class RoadMarkingOverlay {
         this.canvas = document.createElement('canvas');
         this.canvas.width = textureSize;
         this.canvas.height = textureSize;
-        this.ctx = this.canvas.getContext('2d', { alpha: true });
+        const ctx = this.canvas.getContext('2d', { alpha: true });
+        if (!ctx) {
+            throw new Error('RoadMarkingOverlay requires a 2D canvas context');
+        }
+        this.ctx = ctx;
         this.texture = new THREE.CanvasTexture(this.canvas);
         this.texture.wrapS = THREE.ClampToEdgeWrapping;
         this.texture.wrapT = THREE.ClampToEdgeWrapping;
