@@ -18,53 +18,45 @@ const tmpBoundsSphere = new THREE.Sphere();
 const tmpShadowOffset = new THREE.Vector3();
 const tmpShadowCenter = new THREE.Vector3();
 
-/**
- * @typedef {{
- *   assetId: string,
- *   x: number,
- *   z: number,
- *   y?: number,
- *   yaw?: number,
- *   scale?: number,
- *   heightMode?: string
- * }} AuthoredObjectPlacement
- */
+type AuthoredObjectPlacement = {
+    assetId: string;
+    x: number;
+    z: number;
+    y?: number;
+    yaw?: number;
+    scale?: number;
+    heightMode?: string;
+};
 
-/**
- * @typedef {{
- *   builtin?: boolean,
- *   x: number,
- *   z: number,
- *   yaw?: number
- * }} RuntimeAirport
- */
+type RuntimeAirport = {
+    builtin?: boolean;
+    x: number;
+    z: number;
+    yaw?: number;
+};
 
-/**
- * @typedef {{
- *   authoredObjects?: AuthoredObjectPlacement[]
- * }} RuntimeWorldData
- */
+type RuntimeWorldData = {
+    authoredObjects?: AuthoredObjectPlacement[];
+};
 
-/**
- * @typedef {{
- *   group: THREE.Object3D,
- *   placement: AuthoredObjectPlacement
- * }} AuthoredObjectInstanceEntry
- */
+type AuthoredObjectInstanceEntry = {
+    group: THREE.Object3D;
+    placement: AuthoredObjectPlacement;
+};
 
-/**
- * @typedef {{
- *   center?: THREE.Vector3
- * }} ShadowContributorTarget
- */
+type ShadowContributorTarget = {
+    center?: THREE.Vector3;
+};
 
-/**
- * @typedef {{
- *   center: THREE.Vector3,
- *   radius: number,
- *   distance: number
- * } | null} ShadowContributor
- */
+type ShadowContributor = {
+    center: THREE.Vector3;
+    radius: number;
+    distance: number;
+} | null;
+
+type RuntimeWorldWindow = Window & typeof globalThis & {
+    fsimWorld?: RuntimeWorldData;
+};
 
 /**
  * @param {THREE.Object3D} root
@@ -86,7 +78,7 @@ function captureTemplateShadowBounds(root) {
  */
 function getRuntimeWorldData() {
     if (typeof window === 'undefined') return null;
-    const worldWindow = /** @type {Window & { fsimWorld?: RuntimeWorldData }} */ (window);
+    const worldWindow = window as RuntimeWorldWindow;
     return worldWindow.fsimWorld || null;
 }
 
@@ -291,7 +283,7 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
      * @param {ShadowContributorTarget} [target]
      * @returns {ShadowContributor}
      */
-    function getNearestShadowContributor(referencePosition, maxDistance = 1600, target = {}) {
+    function getNearestShadowContributor(referencePosition, maxDistance = 1600, target: ShadowContributorTarget = {}) {
         let best = null;
         let bestDistanceSq = maxDistance * maxDistance;
         for (const { group } of instances.values()) {

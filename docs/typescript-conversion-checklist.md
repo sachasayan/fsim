@@ -305,6 +305,12 @@
 - [x] Updated `src/sim-app/main.ts` and the smoke checks to stop depending on the legacy raw `/js/modules/sim.js` URL and instead validate the built sim entry flow.
 - [x] Verified the renamed sim bootstrap with `npm run typecheck`, `npm run sim:build`, `npm run smoke`, and `npm run test:unit` (269 passing tests).
 - [x] New bootstrap-rename pattern: once the main runtime entry moves to TS, the remaining work is usually not domain logic but “phantom JSDoc” cleanup around owned globals, loader state, and progress callbacks that already had stable shapes in practice.
+- [x] Renamed the next sim-adjacent world assembly pair from `js/modules/world/objects.js` and `js/modules/world/terrain.js` to `.ts`, turning their comment-only assembly, lake-geometry, browser-window, terrain-selection, and leaf-build-breakdown contracts into real TS aliases so the compiler could follow the same integration seams the runtime was already using.
+- [x] Verified the renamed world assembly batch with `npm run typecheck`, `npm run sim:build`, `npm run editor:build`, `npm run smoke`, and `npm run test:unit` (269 passing tests).
+- [x] New world-assembly rename pattern: once the top-level sim bootstrap is already on TS, renaming the next integration layer mostly flushes out local diagnostic-state and browser-window aliases, not deep subsystem logic changes.
+- [x] Completed the next large world-systems rename batch by moving `js/modules/world/environment.js`, `js/modules/world/airports.js`, `js/modules/world/clouds.js`, `js/modules/world/CloudWorker.js`, `js/modules/world/cloudNoise.js`, `js/modules/world/particles.js`, `js/modules/world/aircraft.js`, `js/modules/world/tokens.js`, `js/modules/world/authoredObjects.js`, `js/modules/world/WorldLodManager.js`, `js/modules/world/ShaderWarmup.js`, and `js/modules/world/ShaderVariantRegistry.js` to `.ts`.
+- [x] Verified the renamed world-systems batch with `npm run typecheck`, `npm run sim:build`, `npm run editor:build`, `npm run smoke`, and `npm run test:unit` (269 passing tests; smoke server checks were skipped by the sandbox, but the script still passed).
+- [x] New world-systems rename pattern: when a checked-JS reporting or warmup module moves to TS, preserve its runtime object shape by explicitly typing the report object literal instead of materializing optional fields as `undefined`, otherwise unit tests can catch an avoidable serialization regression even though the static types look cleaner.
 
 ## Batch Workflow
 
@@ -401,3 +407,19 @@
 - [x] Fifty-ninth migration pattern: big JS-to-TS canvas renames often fail first on “types that only existed in JSDoc,” so the fastest cleanup is usually to replace those comment-only aliases with real `import type` statements and TS `type` aliases at the same time that the file is renamed.
 - [x] Sixtieth migration pattern: when a renamed helper module is supposed to narrow unions for the rest of the app, convert its predicate signatures to explicit TypeScript type guards right away; leaving them as JSDoc-era comments can make downstream TS files look broken even though runtime behavior never changed.
 - [x] Sixty-first migration pattern: observer/reporting modules are good rename candidates once their dependencies are stable, but they usually need one “broad snapshot types” pass after the rename; it is faster to name the external snapshot shapes explicitly than to let TypeScript infer a maze of `{}` objects from default callbacks.
+
+## Remaining High-Priority JS Holdouts
+
+- [x] Convert the remaining sim/runtime source JS files that were still part of the app code: `js/modules/noise.js`, `js/modules/world/MapDataUtils.js`, `js/modules/world/runway.js`, and `js/modules/world/aircraft_breakup.js`.
+- [ ] Retire the legacy browser-companion JS seams now that the sim runtime has a Vite boundary: `js/modules/core/logging.js`, `js/modules/ui/MapColors.js`, `js/modules/world/AirportLayout.js`, `js/modules/world/AuthoredObjectCatalog.js`, `js/modules/world/LodSystem.js`, `js/modules/world/WorldConfig.js`, and `js/modules/world/config.js`.
+- [ ] Decide whether `js/vendor/react-loader.js` stays as a small checked-JS shim or moves to `.ts` as part of the final cleanup.
+- [ ] Convert the remaining Playwright E2E/perf JS files once we decide whether to keep the Playwright config in JS or move the whole harness to TS together.
+
+### Remaining Holdout Notes
+
+- [x] After the large world-systems batch, the remaining application `.js` files are now mostly deliberate compatibility seams or a short tail of world/runtime helpers, not broad untyped subsystem folders.
+- [x] The next ambitious batch targeted the real source holdouts first (`noise`, `MapDataUtils`, `runway`, `aircraft_breakup`) before deleting the now-temporary companion JS entrypoints.
+- [x] The final browser-companion cleanup should happen only after the Vite sim path is treated as the default runtime path in practice, because those `.js` files exist mainly to preserve the old native-browser loading route during migration.
+- [x] Completed the next source-holdout rename batch by moving `js/modules/noise.js`, `js/modules/world/MapDataUtils.js`, `js/modules/world/runway.js`, and `js/modules/world/aircraft_breakup.js` to `.ts`.
+- [x] Verified the renamed source-holdout batch with `npm run typecheck`, `npm run sim:build`, `npm run editor:build`, `npm run smoke`, and `npm run test:unit` (269 passing tests; smoke server checks were skipped by the sandbox, but the script still passed).
+- [x] New holdout-batch pattern: once a runtime execution path is fully TS-aware, some late-stage utility and data modules can rename cleanly without any implementation edits at all; at that point the migration work shifts from “fixing types” to “retiring compatibility seams.”

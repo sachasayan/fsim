@@ -5,7 +5,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 import GUI from 'lil-gui';
 import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
-import { createWorldObjects } from './world/objects.js';
+import { createWorldObjects } from './world/objects';
 import { mergeShadowCoverage } from './world/authoredObjects.js';
 import { createRuntimeLodSettings, normalizeLodSettings } from './world/LodSystem.js';
 import { calculateAerodynamics } from './physics/updatePhysics.js';

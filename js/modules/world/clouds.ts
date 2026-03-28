@@ -9,53 +9,41 @@ import {
 import { configureMaterialShaderPipeline } from './shaders/MaterialShaderPipeline.js';
 import { applyOwnedShaderDescriptor } from './shaders/ShaderDescriptor.js';
 
-/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantEntry} ShaderVariantEntry */
+type CloudTuning = {
+  nearFadeStart: number;
+  nearFadeEnd: number;
+  minLight: number;
+  farFadeStart: number;
+  farFadeEnd: number;
+  farOpacityScale: number;
+};
 
-/**
- * @typedef {{
- *   nearFadeStart: number,
- *   nearFadeEnd: number,
- *   minLight: number,
- *   farFadeStart: number,
- *   farFadeEnd: number,
- *   farOpacityScale: number
- * }} CloudTuning
- */
+type CloudWeatherState = {
+  cloudColorClear: THREE.ColorRepresentation;
+  cloudColorStorm: THREE.ColorRepresentation;
+  cloudOpacityBase: number;
+  cloudOpacityStorm: number;
+  transition: number;
+};
 
-/**
- * @typedef {{
- *   cloudColorClear: THREE.ColorRepresentation,
- *   cloudColorStorm: THREE.ColorRepresentation,
- *   cloudOpacityBase: number,
- *   cloudOpacityStorm: number,
- *   transition: number
- * }} CloudWeatherState
- */
+type CloudWorkerTile = {
+  count: number;
+  positions: ArrayLike<number>;
+  scales: ArrayLike<number>;
+  rotations: ArrayLike<number>;
+  colors: ArrayLike<number>;
+  ox: number;
+  oz: number;
+};
 
-/**
- * @typedef {{
- *   count: number,
- *   positions: ArrayLike<number>,
- *   scales: ArrayLike<number>,
- *   rotations: ArrayLike<number>,
- *   colors: ArrayLike<number>,
- *   ox: number,
- *   oz: number
- * }} CloudWorkerTile
- */
+type CloudWorkerGeneratedMessage = {
+  type: 'CLOUDS_GENERATED';
+  tiles: CloudWorkerTile[];
+};
 
-/**
- * @typedef {{
- *   type: 'CLOUDS_GENERATED',
- *   tiles: CloudWorkerTile[]
- * }} CloudWorkerGeneratedMessage
- */
-
-/**
- * @typedef {{
- *   scene: THREE.Scene
- * }} CloudSystemArgs
- */
+type CloudSystemArgs = {
+  scene: THREE.Scene;
+};
 
 /**
  * @param {CloudSystemArgs} args
@@ -127,7 +115,7 @@ export function createCloudSystem({ scene }) {
   scene.add(clouds);
 
   // Initialize Web Worker
-  const cloudWorker = new Worker(new URL('./CloudWorker.js', import.meta.url), { type: 'module' });
+  const cloudWorker = new Worker(new URL('./CloudWorker', import.meta.url), { type: 'module' });
 
   /**
    * @param {MessageEvent<CloudWorkerGeneratedMessage>} e
@@ -307,7 +295,7 @@ export function createCloudSystem({ scene }) {
   /**
    * @param {Partial<CloudTuning>} [partial]
    */
-  function setCloudTuning(partial = {}) {
+  function setCloudTuning(partial: Partial<CloudTuning> = {}) {
     if (typeof partial.nearFadeStart === 'number') cloudTuning.nearFadeStart = partial.nearFadeStart;
     if (typeof partial.nearFadeEnd === 'number') cloudTuning.nearFadeEnd = partial.nearFadeEnd;
     if (typeof partial.minLight === 'number') cloudTuning.minLight = partial.minLight;

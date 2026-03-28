@@ -30,7 +30,7 @@ import { configureMaterialShaderPipeline, createOwnedShaderSourcePatch } from '.
 
 function getRuntimeWorldData() {
     if (typeof window === 'undefined') return null;
-    return /** @type {{ fsimWorld?: unknown }} */ (window).fsimWorld || null;
+    return (window as AirportRuntimeWindow).fsimWorld || null;
 }
 
 function buildRuntimeAirportDescriptors() {
@@ -497,3 +497,6 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
         getShaderValidationVariants
     };
 }
+type AirportRuntimeWindow = Window & typeof globalThis & {
+    fsimWorld?: unknown;
+};

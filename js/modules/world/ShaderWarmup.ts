@@ -2,29 +2,21 @@
 
 import * as THREE from 'three';
 import { listShaderVariants } from './ShaderVariantRegistry.js';
+type ShaderVariantBuilder = ((...args: unknown[]) => unknown) & {
+    shaderVariantId?: string | null;
+    shaderProviderId?: string | null;
+};
+type ShaderVariantEntry = {
+    id?: string | null;
+    shaderVariantId?: string | null;
+    shaderProviderId?: string | null;
+    metadata?: unknown;
+    build: (...args: unknown[]) => unknown;
+};
+type ShaderVariantRegistry = {
+    variants: Map<string, ShaderVariantEntry>;
+};
 
-/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantBuilder} ShaderVariantBuilder */
-/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantEntry} ShaderVariantEntry */
-/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantRegistry} ShaderVariantRegistry */
-
-/**
- * @typedef {{
- *   type: string,
- *   baseCacheKey: unknown,
- *   patches: string[],
- *   descriptorId?: unknown
- * }} ShaderWarmupMaterialReport
- */
-
-/**
- * @typedef {{
- *   id: string,
- *   system: string,
- *   objectCount: number,
- *   materials: ShaderWarmupMaterialReport[],
- *   metadata?: unknown
- * }} ShaderWarmupVariantReport
- */
 
 /**
  * @typedef {{
@@ -152,8 +144,7 @@ function describeWarmupMaterials(objects) {
             const key = `${pipeline.baseCacheKey || 'none'}::${patches.join('+')}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            /** @type {ShaderWarmupMaterialReport} */
-            const materialReport = {
+            const materialReport: ShaderWarmupMaterialReport = {
                 type: materialEntry.type || 'Material',
                 baseCacheKey: pipeline.baseCacheKey,
                 patches: [...patches]
@@ -334,8 +325,7 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
         if (!spec) continue;
 
         const system = getVariantSystem(spec.metadata);
-        /** @type {ShaderWarmupVariantReport} */
-        const entryReport = {
+        const entryReport: ShaderWarmupVariantReport = {
             id: spec.id,
             system,
             objectCount: spec.objects.length,
@@ -412,3 +402,17 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
 export async function warmupShaderPrograms(options) {
     return validateShaderPrograms(options);
 }
+type ShaderWarmupMaterialReport = {
+    type: string;
+    baseCacheKey: unknown;
+    patches: string[];
+    descriptorId?: unknown;
+};
+
+type ShaderWarmupVariantReport = {
+    id: string;
+    system: string;
+    objectCount: number;
+    materials: ShaderWarmupMaterialReport[];
+    metadata?: unknown;
+};

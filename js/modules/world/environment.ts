@@ -116,7 +116,7 @@ export function createEnvironment({ scene, renderer, WEATHER, shadowsEnabled = t
    * @param {EnvironmentWeatherState | null | undefined} weather
    * @param {{ refreshEnvironmentMap?: boolean }} [options]
    */
-  function applyEnvironmentFromWeather(weather, options = {}) {
+  function applyEnvironmentFromWeather(weather, options: EnvironmentRefreshOptions = {}) {
     const { refreshEnvironmentMap = false } = options;
     hemiLight.color.setHex(weather?.hemiSkyColor ?? 0x444455);
     hemiLight.groundColor.setHex(weather?.hemiGroundColor ?? 0x111118);
@@ -152,3 +152,6 @@ export function createEnvironment({ scene, renderer, WEATHER, shadowsEnabled = t
 
   return { hemiLight, dirLight, applyEnvironmentFromWeather };
 }
+type EnvironmentRefreshOptions = {
+  refreshEnvironmentMap?: boolean;
+};

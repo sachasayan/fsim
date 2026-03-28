@@ -4,48 +4,37 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { AIRCRAFT_BREAKUP_PIECES } from './aircraft_breakup.js';
 
-/**
- * @typedef AircraftPhysicsLike
- * @property {number} flaps
- * @property {number} aileron
- * @property {number} elevator
- * @property {number} rudder
- * @property {boolean} spoilers
- */
+type AircraftPhysicsLike = {
+  flaps: number;
+  aileron: number;
+  elevator: number;
+  rudder: number;
+  spoilers: boolean;
+};
 
-/**
- * @typedef {THREE.Object3D & { intensity?: number, userData: Record<string, any> & { baseIntensity?: number } }} MarkerObject
- */
-
-/**
- * @typedef {THREE.Object3D & { userData: Record<string, any> & { hingeAxis?: THREE.Vector3, currentRot?: number } }} HingedObject
- */
-
-/**
- * @typedef AircraftSystemArgs
- * @property {THREE.Scene} scene
- */
-
-/**
- * @typedef AircraftSystem
- * @property {THREE.Group} planeGroup
- * @property {THREE.Object3D[]} engineExhausts
- * @property {{
- *   flaps: HingedObject[],
- *   aileronsL: HingedObject[],
- *   aileronsR: HingedObject[],
- *   elevators: HingedObject[],
- *   rudder: HingedObject[],
- *   spoilers: HingedObject[],
- *   gears: Array<{ animGroup: HingedObject, type: string }>
- * }} movableSurfaces
- * @property {THREE.Group} gearGroup
- * @property {MarkerObject[]} strobes
- * @property {MarkerObject[]} beacons
- * @property {() => Array<(typeof AIRCRAFT_BREAKUP_PIECES)[number] & { sourceObjects: THREE.Object3D[], localPosition: THREE.Vector3, localQuaternion: THREE.Quaternion }>} getBreakupPieceSpecs
- * @property {(camera?: THREE.Camera | null) => void} updateAircraftLOD
- * @property {(PHYSICS: AircraftPhysicsLike, dt: number) => void} updateControlSurfaces
- */
+type MarkerObject = THREE.Object3D & { intensity?: number; userData: Record<string, any> & { baseIntensity?: number } };
+type HingedObject = THREE.Object3D & { userData: Record<string, any> & { hingeAxis?: THREE.Vector3; currentRot?: number } };
+type AircraftSystemArgs = { scene: THREE.Scene };
+type LoadedGltf = Awaited<ReturnType<typeof GLTFLoader.prototype.loadAsync>>;
+type AircraftSystem = {
+  planeGroup: THREE.Group;
+  engineExhausts: THREE.Object3D[];
+  movableSurfaces: {
+    flaps: HingedObject[];
+    aileronsL: HingedObject[];
+    aileronsR: HingedObject[];
+    elevators: HingedObject[];
+    rudder: HingedObject[];
+    spoilers: HingedObject[];
+    gears: Array<{ animGroup: HingedObject; type: string }>;
+  };
+  gearGroup: THREE.Group;
+  strobes: MarkerObject[];
+  beacons: MarkerObject[];
+  getBreakupPieceSpecs: () => Array<(typeof AIRCRAFT_BREAKUP_PIECES)[number] & { sourceObjects: THREE.Object3D[]; localPosition: THREE.Vector3; localQuaternion: THREE.Quaternion }>;
+  updateAircraftLOD: (camera?: THREE.Camera | null) => void;
+  updateControlSurfaces: (PHYSICS: AircraftPhysicsLike, dt: number) => void;
+};
 
 /**
  * @param {AircraftSystemArgs} args
@@ -87,7 +76,11 @@ export function createAircraftSystem({ scene }) {
     loadGltf('./models/rwing.glb'),
     fetch('./js/modules/world/aircraft_config.json').then(r => r.json())
   ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf, AIRCRAFT_CONFIG]) => {
-    const model = mainGltf.scene;
+    const mainScene = (mainGltf as LoadedGltf).scene;
+    const noseScene = (noseGltf as LoadedGltf).scene;
+    const lwingScene = (lwingGltf as LoadedGltf).scene;
+    const rwingScene = (rwingGltf as LoadedGltf).scene;
+    const model = mainScene;
 
     /**
      * @param {string | null | undefined} name
@@ -154,27 +147,27 @@ export function createAircraftSystem({ scene }) {
     };
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(noseGltf.scene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar'], [-15.5, 0, -1.22], [0, 1, 0], 'gear_nose'),
+      animGroup: extractGearCluster(noseScene, ['ngrim', 'ngtyre', 'nlink', 'nlower', 'noseaxle', 'nouter', 'steercyl', 'collar'], [-15.5, 0, -1.22], [0, 1, 0], 'gear_nose'),
       type: 'nose'
     });
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(noseGltf.scene, ['lhngdoor'], [-16.55, -0.53, -1.09], [1, 0, -0.09]),
+      animGroup: extractGearCluster(noseScene, ['lhngdoor'], [-16.55, -0.53, -1.09], [1, 0, -0.09]),
       type: 'doorLH'
     });
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(noseGltf.scene, ['rhngdoor'], [-16.55, 0.48, -1.09], [1, 0, -0.1]),
+      animGroup: extractGearCluster(noseScene, ['rhngdoor'], [-16.55, 0.48, -1.09], [1, 0, -0.1]),
       type: 'doorRH'
     });
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(lwingGltf.scene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag'], [-7.2, -2.88, -0.6], [1, 0, 0], 'gear_main_lh'),
+      animGroup: extractGearCluster(lwingScene, ['mglh', 'sidestrutl', 'sidestrutu', 'mgouterstrut', 'geardoor', 'lhgd', 'lhdrag'], [-7.2, -2.88, -0.6], [1, 0, 0], 'gear_main_lh'),
       type: 'mainLH'
     });
 
     movableSurfaces.gears.push({
-      animGroup: extractGearCluster(rwingGltf.scene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag'], [-7.2, 2.88, -0.6], [1, 0, 0], 'gear_main_rh'),
+      animGroup: extractGearCluster(rwingScene, ['mgrh', 'rhsidestrut', 'geardoorrh', 'rhgd', 'rhdrag'], [-7.2, 2.88, -0.6], [1, 0, 0], 'gear_main_rh'),
       type: 'mainRH'
     });
 

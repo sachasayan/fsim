@@ -18,24 +18,19 @@ import {
   registerShaderVariants
 } from './ShaderVariantRegistry.js';
 
-/**
- * @typedef WorldObjectsArgs
- * @property {import('three').Scene} scene
- * @property {import('three').WebGLRenderer} renderer
- * @property {Parameters<typeof createTerrainSystem>[0]['Noise']} Noise
- * @property {unknown} PHYSICS
- * @property {unknown} AIRCRAFT
- * @property {unknown} WEATHER
- * @property {ReturnType<typeof createRuntimeLodSettings> | null | undefined} [lodSettings]
- */
+type WorldObjectsArgs = {
+  scene: import('three').Scene;
+  renderer: import('three').WebGLRenderer;
+  Noise: Parameters<typeof createTerrainSystem>[0]['Noise'];
+  PHYSICS: unknown;
+  AIRCRAFT: unknown;
+  WEATHER: unknown;
+  lodSettings?: ReturnType<typeof createRuntimeLodSettings> | null | undefined;
+};
 
-/**
- * @typedef AircraftSystemArgs
- * @property {import('three').Scene} scene
- * @property {import('three').WebGLRenderer} [renderer]
- */
-
-/** @typedef {Awaited<ReturnType<typeof warmupShaderPrograms>>} ShaderValidationSnapshot */
+type ShaderValidationSnapshot = Awaited<ReturnType<typeof warmupShaderPrograms>>;
+type ShaderVariantMetadata = { system?: string } | null | undefined;
+type ShaderVariantListEntry = { id: string; metadata?: ShaderVariantMetadata };
 
 /**
  * @param {WorldObjectsArgs} args
@@ -55,7 +50,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const airportSystem = createAirportSystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
-  const aircraft = createAircraftSystem(/** @type {AircraftSystemArgs} */ ({ scene, renderer }));
+  const aircraft = createAircraftSystem({ scene });
   const tokenSystem = createTokenSystem({
     scene,
     getTerrainHeight: terrain.getTerrainHeight,
@@ -72,9 +67,9 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     airportSystem.getShaderValidationVariants?.(),
     cloudSystem.getShaderValidationVariants?.()
   ]);
-  const shaderVariants = listShaderVariants(shaderVariantRegistry);
+  const shaderVariants = listShaderVariants(shaderVariantRegistry) as ShaderVariantListEntry[];
   const shaderVariantManifest = shaderVariants.map((variant) => {
-    const variantMetadata = /** @type {{ system?: string } | null | undefined } */ (variant.metadata);
+    const variantMetadata = variant.metadata as ShaderVariantMetadata;
     return {
       id: variant.id,
       system: variantMetadata?.system || 'unknown',

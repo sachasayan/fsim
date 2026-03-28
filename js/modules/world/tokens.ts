@@ -448,7 +448,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
    *   cameraQuaternion?: THREE.Quaternion | null
    * }} [options]
    */
-  function updateTokenSystem(options = {}) {
+  function updateTokenSystem(options: UpdateTokenSystemOptions = {}) {
     const {
       timeMs = 0,
       aircraftPosition,
@@ -552,3 +552,9 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     getCollectedTokenCount
   };
 }
+type UpdateTokenSystemOptions = {
+  timeMs?: number;
+  aircraftPosition?: THREE.Vector3 | null;
+  cameraPosition?: THREE.Vector3 | null;
+  cameraQuaternion?: THREE.Quaternion | null;
+};

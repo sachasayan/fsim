@@ -45,29 +45,60 @@ import { createRuntimeLodSettings } from './LodSystem.js';
 
 /** @typedef {ReturnType<typeof createRuntimeLodSettings>} RuntimeLodSettings */
 /** @typedef {Parameters<typeof getTerrainHeight>[2]} TerrainNoiseLike */
+type RuntimeLodSettings = ReturnType<typeof createRuntimeLodSettings>;
+type TerrainNoiseLike = Parameters<typeof getTerrainHeight>[2];
 
-/**
- * @typedef PhysicsLike
- * @property {{ x: number, z: number }} position
- * @property {{ x?: number, z?: number }} [velocity]
- */
+type PhysicsLike = {
+  position: { x: number; z: number };
+  velocity?: { x?: number; z?: number };
+};
 
-/**
- * @typedef {Window & typeof globalThis & {
- *   fsimWorld?: unknown,
- *   _isReadyLogCounter?: number
- * }} TerrainBrowserWindow
- */
+type TerrainBrowserWindow = Window & typeof globalThis & {
+  fsimWorld?: unknown;
+  _isReadyLogCounter?: number;
+};
 
-/**
- * @typedef TerrainSystemOptions
- * @property {THREE.Scene} scene
- * @property {THREE.WebGLRenderer} renderer
- * @property {TerrainNoiseLike} Noise
- * @property {unknown} [PHYSICS]
- * @property {RuntimeLodSettings | null} [lodSettings]
- * @property {typeof loadStaticWorld} [loadStaticWorldFn]
- */
+type TerrainSystemOptions = {
+  scene: THREE.Scene;
+  renderer: THREE.WebGLRenderer;
+  Noise: TerrainNoiseLike;
+  PHYSICS?: unknown;
+  lodSettings?: RuntimeLodSettings | null;
+  loadStaticWorldFn?: typeof loadStaticWorld;
+};
+
+type LakeSurfaceGeometryOptions = {
+  segments?: number;
+  radialSteps?: number;
+  shorelinePadding?: number;
+  minRenderableRadius?: number;
+};
+
+type LeafBuildBreakdown = {
+  count: number;
+  sampleHeightMs: number;
+  terrainGeometryMs: number;
+  waterGeometryMs: number;
+  waterDepthTextureMs: number;
+  materialSetupMs: number;
+  sceneAttachMs: number;
+  totalMs: number;
+  maxTotalMs: number;
+  workerComputeMs: number;
+};
+
+type TerrainSelectionSnapshot = {
+  mode: string;
+  selectedLeafCount: number;
+  blockingLeafCount: number;
+  pendingBlockingLeafCount: number;
+  activeChunkCount: number;
+  blockingChunkCount: number;
+  selectedNodeCount: number;
+  blockingLeafStates: any[];
+  quadtreeSelectionRegion: any;
+  leafResponsiveness?: unknown;
+};
 
 /**
  * @typedef TerrainSystem
@@ -301,7 +332,7 @@ function createRoadAwareSampler(baseSampler, roads, settings, Noise) {
   return baseSampler;
 }
 
-export function createLakeSurfaceGeometry(lake, sampler, options = {}) {
+export function createLakeSurfaceGeometry(lake, sampler, options: LakeSurfaceGeometryOptions = {}) {
   if (!lake || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
   const centerX = Number(lake.x);
   const centerZ = Number(lake.z);
@@ -379,8 +410,7 @@ export function createTerrainSystem({
   loadStaticWorldFn = loadStaticWorld
 }) {
   const hasWindow = typeof window !== 'undefined';
-  /** @type {TerrainBrowserWindow | null} */
-  const windowRef = hasWindow ? window : null;
+  const windowRef = (hasWindow ? window : null) as TerrainBrowserWindow | null;
   const locationSearch = windowRef?.location?.search || '';
   lodSettings = lodSettings || createRuntimeLodSettings({ urlSearch: locationSearch });
   /** @type {PhysicsLike} */
@@ -856,7 +886,7 @@ export function createTerrainSystem({
     showTrees: true,
     showBuildings: true
   };
-  let lastTerrainSelection = {
+  let lastTerrainSelection: TerrainSelectionSnapshot = {
     mode: 'grid_fallback',
     selectedLeafCount: 0,
     blockingLeafCount: 0,
@@ -912,6 +942,7 @@ export function createTerrainSystem({
       waterDepthTextureMs: 0,
       materialSetupMs: 0,
       sceneAttachMs: 0,
+      workerComputeMs: 0,
       totalMs: 0,
       maxTotalMs: 0
     }
@@ -926,9 +957,10 @@ export function createTerrainSystem({
       waterDepthTextureMs: 0,
       materialSetupMs: 0,
       sceneAttachMs: 0,
+      workerComputeMs: 0,
       totalMs: 0,
       maxTotalMs: 0
-    };
+    } as LeafBuildBreakdown;
   }
 
   function recordLeafBuildBreakdown(sample) {
@@ -2287,7 +2319,8 @@ export function createTerrainSystem({
     }
 
     for (const [chunkKey, state] of terrainChunks.entries()) {
-      const chunkBounds = state?.bounds || createChunkBounds(...chunkKey.split(',').map((value) => Number(value.trim())));
+      const [rawChunkX, rawChunkZ] = chunkKey.split(',');
+      const chunkBounds = state?.bounds || createChunkBounds(Number(rawChunkX.trim()), Number(rawChunkZ.trim()));
       const terrainMesh = state?.group?.userData?.chunkBaseTerrainMesh || null;
       const waterMesh = state?.group?.userData?.chunkBaseWaterMesh || null;
       if (terrainMesh) terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(chunkBounds);

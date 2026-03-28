@@ -2,25 +2,20 @@
 
 import * as THREE from 'three';
 
-/**
- * @typedef {{
- *   position?: import('three').Vector3 | null,
- *   updateLOD: (cameraPos: import('three').Vector3, dist: number) => void
- * }} WorldLodRegistrable
- */
+type WorldLodRegistrable = {
+    position?: import('three').Vector3 | null;
+    updateLOD: (cameraPos: import('three').Vector3, dist: number) => void;
+};
 
-/**
- * @typedef {{
- *   lodSettings?: ReturnType<import('./LodSystem').createRuntimeLodSettings> | null
- * }} WorldLodManagerArgs
- */
+type WorldLodManagerArgs = {
+    lodSettings?: { world?: { cameraMoveThreshold?: number } } | null;
+};
 
 /**
  * @param {WorldLodManagerArgs} args
  */
 export function createWorldLodManager({ lodSettings }) {
-    /** @type {Set<WorldLodRegistrable>} */
-    const registeredObjects = new Set();
+    const registeredObjects = new Set<WorldLodRegistrable>();
     const lastUpdatePos = new THREE.Vector3(Infinity, Infinity, Infinity);
     const fallbackPosition = new THREE.Vector3();
 
