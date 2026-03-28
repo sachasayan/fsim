@@ -75,8 +75,9 @@
 - [x] `world.bin` metadata currently includes broad normalized map data, not just terrain-only state.
 - [x] Runtime terrain mesh rebuilds consume `roads` from static world metadata for road surface and marking overlays.
 - [x] Runtime terrain mesh rebuilds consume `hydrology` from static world metadata for lake and river surfaces.
-- [ ] Confirm whether any other systems still read non-terrain metadata from `world.bin` instead of `window.fsimWorld` or chunk outputs.
+- [x] Confirm whether any other systems still read non-terrain metadata from `world.bin` instead of `window.fsimWorld` or chunk outputs.
 - [x] Short-term implementation choice: patch the metadata section in-place and carry the terrain fingerprint inside `world.bin` metadata.
+- [x] Code-level live reload path clears cached static world data, reloads `world.bin`, dispatches `fsim:world-metadata-updated`, and rebuilds baked terrain meshes from the refreshed metadata.
 
 ## Phase 5: Validation
 
@@ -94,6 +95,7 @@
 - [x] Confirmed the incremental path still ran `build-world`.
 - [x] Verify the same behavior through the editor UI save flow and SSE progress stream.
 - [ ] Verify runtime live reload updates road overlays and hydrology correctly after a reuse-terrain save.
+- [x] Verify the code path used by runtime live reload reloads `world.bin` metadata before rebuilding baked terrain meshes.
 
 ### UI/SSE Validation Notes
 
@@ -103,6 +105,15 @@
 - [x] Confirmed both rebuilds reported step 2 as `Reusing baked terrain`, not `Baking terrain`.
 - [x] Confirmed both rebuilds emitted `reload-city` after completion.
 - [x] Confirmed the temporary validation field was removed and `tools/map.json` returned to its original content.
+
+### Runtime Reload Wiring Notes
+
+- [x] `reload-city` handling clears static world caches and reloads `world/world.bin` through `loadStaticWorld()`.
+- [x] `loadStaticWorld()` assigns the reloaded baked metadata into `window.fsimWorld` and dispatches `fsim:world-metadata-updated`.
+- [x] `refreshBakedTerrain()` rebuilds hydrology meshes immediately after the static world reload.
+- [x] Road surface and marking rebuilds read from `getStaticWorldMetadata()` during hydrology/overlay rebuild.
+- [x] Airport and authored-object systems listen for `fsim:world-metadata-updated`, so their world-data sync path also runs after live reload.
+- [ ] Browser-level visual confirmation is still pending for road overlays and hydrology after a reuse-terrain save.
 
 ### Bug Fixes Discovered During Validation
 
