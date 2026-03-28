@@ -402,7 +402,12 @@ export function createTerrainSystem({
     uAtmosCameraPos: { value: atmosphereCameraPos },
     uAtmosColor: { value: atmosphereColor },
     uAtmosNear: { value: 9000.0 },
-    uAtmosFar: { value: 68000.0 }
+    uAtmosFar: { value: 68000.0 },
+    uSurfaceShadowDistance: { value: 20000.0 },
+    uSurfaceShadowFadeStart: { value: 12000.0 },
+    uShadowCoverageCenter: { value: new THREE.Vector3() },
+    uShadowCoverageExtent: { value: 2200.0 },
+    uShadowCoverageFadeStart: { value: 1760.0 }
   };
   const waterSurfaceUniforms = {
     uWaterDepthTex: { value: null },
@@ -781,7 +786,7 @@ export function createTerrainSystem({
     resolution8MaxNodeSize: CHUNK_SIZE * 2,
     resolution4MaxNodeSize: CHUNK_SIZE * 4,
     showTerrainWireframe: false,
-    surfaceShadowDistance: 10000,
+    surfaceShadowDistance: 20000,
     terrainShadowContrast: 0.3,
     showWaterWireframe: false,
     waterShadowMode: 'auto',
@@ -1245,6 +1250,9 @@ export function createTerrainSystem({
       terrainDebugSettings.waterShadowMode = 'auto';
     }
     terrainDebugSettings.surfaceShadowDistance = Math.max(0, terrainDebugSettings.surfaceShadowDistance);
+    const shadowFadeRatio = 0.6;
+    atmosphereUniforms.uSurfaceShadowDistance.value = terrainDebugSettings.surfaceShadowDistance;
+    atmosphereUniforms.uSurfaceShadowFadeStart.value = terrainDebugSettings.surfaceShadowDistance * shadowFadeRatio;
     terrainDebugSettings.terrainShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.terrainShadowContrast));
     terrainDebugSettings.waterRoughness = Math.max(0, Math.min(1, terrainDebugSettings.waterRoughness));
     terrainDebugSettings.waterMetalness = Math.max(0, Math.min(1, terrainDebugSettings.waterMetalness));
@@ -2308,6 +2316,9 @@ export function createTerrainSystem({
       },
       settings: {
         surfaceShadowDistance: terrainDebugSettings.surfaceShadowDistance,
+        surfaceShadowFadeStart: atmosphereUniforms.uSurfaceShadowFadeStart.value,
+        shadowCoverageExtent: atmosphereUniforms.uShadowCoverageExtent.value,
+        shadowCoverageFadeStart: atmosphereUniforms.uShadowCoverageFadeStart.value,
         waterShadowMode: terrainDebugSettings.waterShadowMode,
         terrainShadowContrast: terrainDebugSettings.terrainShadowContrast,
         waterShadowContrast: terrainDebugSettings.waterShadowContrast
@@ -3349,6 +3360,13 @@ export function createTerrainSystem({
 
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
 
+  function updateSurfaceShadowCoverage(center, extent) {
+    if (!center || !Number.isFinite(extent) || extent <= 0) return;
+    atmosphereUniforms.uShadowCoverageCenter.value.copy(center);
+    atmosphereUniforms.uShadowCoverageExtent.value = extent;
+    atmosphereUniforms.uShadowCoverageFadeStart.value = extent * 0.8;
+  }
+
   function createTerrainWarmupGeometry() {
     const terrainGeo = new THREE.PlaneGeometry(256, 256, 1, 1);
     terrainGeo.rotateX(-Math.PI / 2);
@@ -3661,6 +3679,7 @@ export function createTerrainSystem({
     getTerrainHeight: getTerrainHeightWithNoise,
     updateTerrain,
     updateTerrainAtmosphere,
+    updateSurfaceShadowCoverage,
     getTerrainSelectionDiagnostics,
     getSurfaceShadowDiagnostics,
     consumeLeafBuildApplyTiming,

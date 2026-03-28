@@ -26,7 +26,8 @@ test('getTerrainOwnedShaderSource caches and returns owned terrain shader varian
     assert.match(nearSourceA.vertexShader, /attribute vec4 surfaceWeights;/);
     assert.match(nearSourceA.fragmentShader, /baseTerrainColor \*= naturalTerrainVertexTint;/);
     assert.match(nearSourceA.fragmentShader, /diffuseColor\.rgb = baseTerrainColor;/);
-    assert.match(nearSourceA.fragmentShader, /float terrainShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3000\);/);
+    assert.match(nearSourceA.fragmentShader, /float terrainShadowFade = resolveTerrainShadowFade\(vTerrainWorldPos\.xz\);/);
+    assert.match(nearSourceA.fragmentShader, /float terrainShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3000 \* terrainShadowFade\);/);
     assert.doesNotMatch(nearSourceA.fragmentShader, /#include <color_fragment>/);
     assert.match(farSource.fragmentShader, /#define IS_FAR_LOD/);
 });
@@ -57,7 +58,12 @@ test('getTerrainOwnedUniformBindings returns live uniform references', () => {
         uAtmosCameraPos: { value: 'camera' },
         uAtmosColor: { value: 'color' },
         uAtmosNear: { value: 1 },
-        uAtmosFar: { value: 2 }
+        uAtmosFar: { value: 2 },
+        uSurfaceShadowDistance: { value: 20000 },
+        uSurfaceShadowFadeStart: { value: 12000 },
+        uShadowCoverageCenter: { value: 'shadow-center' },
+        uShadowCoverageExtent: { value: 2200 },
+        uShadowCoverageFadeStart: { value: 1760 }
     };
     const timeUniform = { value: 42 };
 
@@ -69,6 +75,8 @@ test('getTerrainOwnedUniformBindings returns live uniform references', () => {
 
     assert.equal(bindings.uTerrainDetailTex, terrainDetailUniforms.uTerrainDetailTex);
     assert.equal(bindings.uAtmosColor, atmosphereUniforms.uAtmosColor);
+    assert.equal(bindings.uSurfaceShadowDistance, atmosphereUniforms.uSurfaceShadowDistance);
+    assert.equal(bindings.uShadowCoverageExtent, atmosphereUniforms.uShadowCoverageExtent);
     assert.equal(bindings.uTime, timeUniform);
 });
 
@@ -132,7 +140,12 @@ test('terrain owned shader templates match the legacy terrain patch output', () 
         'uAtmosCameraPos',
         'uAtmosColor',
         'uAtmosNear',
-        'uAtmosFar'
+        'uAtmosFar',
+        'uSurfaceShadowDistance',
+        'uSurfaceShadowFadeStart',
+        'uShadowCoverageCenter',
+        'uShadowCoverageExtent',
+        'uShadowCoverageFadeStart'
     ].map((key) => [key, { value: null }]));
 
     function buildLegacyTerrainSource(isFarLOD) {

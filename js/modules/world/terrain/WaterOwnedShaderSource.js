@@ -14,7 +14,12 @@ const ATMOSPHERE_UNIFORM_KEYS = [
     'uAtmosCameraPos',
     'uAtmosColor',
     'uAtmosNear',
-    'uAtmosFar'
+    'uAtmosFar',
+    'uSurfaceShadowDistance',
+    'uSurfaceShadowFadeStart',
+    'uShadowCoverageCenter',
+    'uShadowCoverageExtent',
+    'uShadowCoverageFadeStart'
 ];
 
 const WATER_SURFACE_UNIFORM_KEYS = [

@@ -277,6 +277,21 @@ test('terrain tests', async (t) => {
         assert.equal(system.terrainDebugSettings.waterShadowContrast, 1);
     });
 
+    await t.test('terrain shadow distance defaults to doubled range with fade start', () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const diagnostics = system.getSurfaceShadowDiagnostics();
+
+        assert.equal(system.terrainDebugSettings.surfaceShadowDistance, 20000);
+        assert.equal(diagnostics.settings.surfaceShadowDistance, 20000);
+        assert.equal(diagnostics.settings.surfaceShadowFadeStart, 12000);
+        assert.equal(diagnostics.settings.shadowCoverageExtent, 2200);
+        assert.equal(diagnostics.settings.shadowCoverageFadeStart, 1760);
+    });
+
     await t.test('surface shadow diagnostics expose nearest surface state', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };
@@ -289,6 +304,9 @@ test('terrain tests', async (t) => {
 
         assert.deepEqual(diagnostics.focus, { x: 120, y: 300, z: 240 });
         assert.equal(diagnostics.settings.surfaceShadowDistance, system.terrainDebugSettings.surfaceShadowDistance);
+        assert.equal(diagnostics.settings.surfaceShadowFadeStart, system.terrainDebugSettings.surfaceShadowDistance * 0.6);
+        assert.equal(diagnostics.settings.shadowCoverageExtent, 2200);
+        assert.equal(diagnostics.settings.shadowCoverageFadeStart, 1760);
         assert.equal(diagnostics.settings.waterShadowMode, system.terrainDebugSettings.waterShadowMode);
         assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestTerrain'), true);
         assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestWater'), true);

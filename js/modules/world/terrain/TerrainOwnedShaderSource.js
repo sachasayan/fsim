@@ -34,7 +34,12 @@ const ATMOSPHERE_UNIFORM_KEYS = [
     'uAtmosCameraPos',
     'uAtmosColor',
     'uAtmosNear',
-    'uAtmosFar'
+    'uAtmosFar',
+    'uSurfaceShadowDistance',
+    'uSurfaceShadowFadeStart',
+    'uShadowCoverageCenter',
+    'uShadowCoverageExtent',
+    'uShadowCoverageFadeStart'
 ];
 
 function makePlaceholderUniformMap(keys) {

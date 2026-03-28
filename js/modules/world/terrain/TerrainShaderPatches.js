@@ -12,7 +12,12 @@ export function createDistanceAtmosphereUniformBindings(atmosphereUniforms) {
         uAtmosCameraPos: atmosphereUniforms.uAtmosCameraPos,
         uAtmosColor: atmosphereUniforms.uAtmosColor,
         uAtmosNear: atmosphereUniforms.uAtmosNear,
-        uAtmosFar: atmosphereUniforms.uAtmosFar
+        uAtmosFar: atmosphereUniforms.uAtmosFar,
+        uSurfaceShadowDistance: atmosphereUniforms.uSurfaceShadowDistance,
+        uSurfaceShadowFadeStart: atmosphereUniforms.uSurfaceShadowFadeStart,
+        uShadowCoverageCenter: atmosphereUniforms.uShadowCoverageCenter,
+        uShadowCoverageExtent: atmosphereUniforms.uShadowCoverageExtent,
+        uShadowCoverageFadeStart: atmosphereUniforms.uShadowCoverageFadeStart
     };
 }
 
@@ -31,6 +36,11 @@ export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosp
         uAtmosColor: atmosphereUniforms.uAtmosColor,
         uAtmosNear: atmosphereUniforms.uAtmosNear,
         uAtmosFar: atmosphereUniforms.uAtmosFar,
+        uSurfaceShadowDistance: atmosphereUniforms.uSurfaceShadowDistance,
+        uSurfaceShadowFadeStart: atmosphereUniforms.uSurfaceShadowFadeStart,
+        uShadowCoverageCenter: atmosphereUniforms.uShadowCoverageCenter,
+        uShadowCoverageExtent: atmosphereUniforms.uShadowCoverageExtent,
+        uShadowCoverageFadeStart: atmosphereUniforms.uShadowCoverageFadeStart,
         uTerrainAtmosStrength: terrainDetailUniforms.uTerrainAtmosStrength,
         uTerrainGrassTexScale: terrainDetailUniforms.uTerrainGrassTexScale,
         uTerrainGrassTexStrength: terrainDetailUniforms.uTerrainGrassTexStrength,
@@ -51,6 +61,11 @@ export function createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfa
         uAtmosColor: atmosphereUniforms.uAtmosColor,
         uAtmosNear: atmosphereUniforms.uAtmosNear,
         uAtmosFar: atmosphereUniforms.uAtmosFar,
+        uSurfaceShadowDistance: atmosphereUniforms.uSurfaceShadowDistance,
+        uSurfaceShadowFadeStart: atmosphereUniforms.uSurfaceShadowFadeStart,
+        uShadowCoverageCenter: atmosphereUniforms.uShadowCoverageCenter,
+        uShadowCoverageExtent: atmosphereUniforms.uShadowCoverageExtent,
+        uShadowCoverageFadeStart: atmosphereUniforms.uShadowCoverageFadeStart,
         uWaterDepthTex: waterSurfaceUniforms.uWaterDepthTex,
         uWaterBoundsMin: waterSurfaceUniforms.uWaterBoundsMin,
         uWaterBoundsSize: waterSurfaceUniforms.uWaterBoundsSize,
@@ -155,6 +170,11 @@ uniform vec3 uAtmosCameraPos;
 uniform vec3 uAtmosColor;
 uniform float uAtmosNear;
 uniform float uAtmosFar;
+uniform float uSurfaceShadowDistance;
+uniform float uSurfaceShadowFadeStart;
+uniform vec3 uShadowCoverageCenter;
+uniform float uShadowCoverageExtent;
+uniform float uShadowCoverageFadeStart;
 uniform sampler2D uWaterDepthTex;
 uniform vec2 uWaterBoundsMin;
 uniform vec2 uWaterBoundsSize;
@@ -176,6 +196,17 @@ vec3 resolveWaterColor(float depth) {
     if (depth < uWaterShallowEnd) return uWaterShallowColor;
     float t = smoothstep(uWaterShallowEnd, uWaterDeepEnd, depth);
     return mix(uWaterShallowColor, uWaterDeepColor, t);
+}
+
+float resolveSurfaceShadowFade(vec2 worldXZ) {
+    float receiverShadowDist = distance(worldXZ, uAtmosCameraPos.xz);
+    float receiverFadeEnd = max(uSurfaceShadowDistance, uSurfaceShadowFadeStart + 0.0001);
+    float receiverFade = 1.0 - smoothstep(uSurfaceShadowFadeStart, receiverFadeEnd, receiverShadowDist);
+    vec2 shadowOffset = abs(worldXZ - uShadowCoverageCenter.xz);
+    float shadowCoverageDist = max(shadowOffset.x, shadowOffset.y);
+    float coverageFadeEnd = max(uShadowCoverageExtent, uShadowCoverageFadeStart + 0.0001);
+    float coverageFade = 1.0 - smoothstep(uShadowCoverageFadeStart, coverageFadeEnd, shadowCoverageDist);
+    return min(receiverFade, coverageFade);
 }`
     );
     shader.fragmentShader = replaceShaderSnippet(
@@ -204,7 +235,8 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`,
             shader.fragmentShader,
             'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
             `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
-float waterShadowVisibility = mix(1.0, getShadowMask(), ${shadowContrast.toFixed(4)});
+float waterShadowFade = resolveSurfaceShadowFade(vWaterWorldPos.xz);
+float waterShadowVisibility = mix(1.0, getShadowMask(), ${shadowContrast.toFixed(4)} * waterShadowFade);
 outgoingLight *= waterShadowVisibility;`,
             'water shadow contrast adjustment'
         );
@@ -727,6 +759,11 @@ uniform vec3 uAtmosCameraPos;
 uniform vec3 uAtmosColor;
 uniform float uAtmosNear;
 uniform float uAtmosFar;
+uniform float uSurfaceShadowDistance;
+uniform float uSurfaceShadowFadeStart;
+uniform vec3 uShadowCoverageCenter;
+uniform float uShadowCoverageExtent;
+uniform float uShadowCoverageFadeStart;
 uniform float uTerrainAtmosStrength;
 uniform float uTerrainGrassTexScale;
 uniform float uTerrainGrassTexStrength;
@@ -740,6 +777,17 @@ uniform vec3 uTerrainGrassColor;
 uniform vec3 uTerrainRockColor;
 uniform vec3 uTerrainSnowColor;
 varying vec4 vTerrainSurfaceWeights;
+
+float resolveTerrainShadowFade(vec2 worldXZ) {
+    float receiverShadowDist = distance(worldXZ, uAtmosCameraPos.xz);
+    float receiverFadeEnd = max(uSurfaceShadowDistance, uSurfaceShadowFadeStart + 0.0001);
+    float receiverFade = 1.0 - smoothstep(uSurfaceShadowFadeStart, receiverFadeEnd, receiverShadowDist);
+    vec2 shadowOffset = abs(worldXZ - uShadowCoverageCenter.xz);
+    float shadowCoverageDist = max(shadowOffset.x, shadowOffset.y);
+    float coverageFadeEnd = max(uShadowCoverageExtent, uShadowCoverageFadeStart + 0.0001);
+    float coverageFade = 1.0 - smoothstep(uShadowCoverageFadeStart, coverageFadeEnd, shadowCoverageDist);
+    return min(receiverFade, coverageFade);
+}
 
 ${ShaderLibrary.terrain_city_pars_fragment}
 `
@@ -822,7 +870,8 @@ ${ShaderLibrary.terrain_city_pavement_fragment}
             shader.fragmentShader,
             'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
             `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
-float terrainShadowVisibility = mix(1.0, getShadowMask(), ${shadowContrast.toFixed(4)});
+float terrainShadowFade = resolveTerrainShadowFade(vTerrainWorldPos.xz);
+float terrainShadowVisibility = mix(1.0, getShadowMask(), ${shadowContrast.toFixed(4)} * terrainShadowFade);
 outgoingLight *= terrainShadowVisibility;`,
             'terrain shadow contrast adjustment'
         );

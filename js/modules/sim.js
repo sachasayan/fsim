@@ -153,6 +153,7 @@ const {
   getTerrainHeight,
   updateTerrain,
   updateTerrainAtmosphere,
+  updateSurfaceShadowCoverage,
   getTerrainSelectionDiagnostics,
   getSurfaceShadowDiagnostics,
   consumeLeafBuildApplyTiming,
@@ -234,7 +235,7 @@ if (debugGui) {
     nativeFolder.add(terrainDebugSettings, 'showTerrainWireframe')
       .name('Wireframe')
       .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    nativeFolder.add(terrainDebugSettings, 'surfaceShadowDistance', 0, 20000, 100)
+    nativeFolder.add(terrainDebugSettings, 'surfaceShadowDistance', 0, 40000, 100)
       .name('Shadow Distance')
       .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
     nativeFolder.add(terrainDebugSettings, 'terrainShadowContrast', 0, 1, 0.01)
@@ -898,7 +899,10 @@ function animate() {
     tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
     const shadowCenter = crashSystem.getFocusPosition(tmpFocusPos);
     let shadowTarget = shadowCenter;
-    let shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
+    let shadowExtent = Math.max(
+      2200,
+      (260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16)) * 3.0
+    );
     const shadowContributor = getNearestShadowContributor?.(shadowCenter, 1800);
     if (shadowContributor) {
       const mergedShadowFit = mergeShadowCoverage(
@@ -915,6 +919,7 @@ function animate() {
     dirLight.target.position.copy(shadowTarget);
     dirLight.target.updateMatrixWorld();
     dirLight.position.copy(shadowTarget).addScaledVector(tmpShadowSunDir, 2000);
+    updateSurfaceShadowCoverage?.(shadowTarget, shadowExtent);
 
     const shadowMoved = Math.abs(shadowTarget.x - prevShadowCenter.x) > 20 || Math.abs(shadowTarget.y - prevShadowCenter.y) > 20 || Math.abs(shadowTarget.z - prevShadowCenter.z) > 20;
     const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 15;

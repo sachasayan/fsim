@@ -37,7 +37,12 @@ test('applyDistanceAtmosphereShaderPatch injects atmosphere uniforms and blend c
         uAtmosCameraPos: { value: 'camera' },
         uAtmosColor: { value: 'color' },
         uAtmosNear: { value: 1 },
-        uAtmosFar: { value: 2 }
+        uAtmosFar: { value: 2 },
+        uSurfaceShadowDistance: { value: 20000 },
+        uSurfaceShadowFadeStart: { value: 12000 },
+        uShadowCoverageCenter: { value: 'shadow-center' },
+        uShadowCoverageExtent: { value: 2200 },
+        uShadowCoverageFadeStart: { value: 1760 }
     };
 
     applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength: 0.74, desat: 0.08 });
@@ -60,6 +65,8 @@ test('distance atmosphere helper returns live uniform references', () => {
 
     assert.equal(atmosphereBindings.uAtmosCameraPos, atmosphereUniforms.uAtmosCameraPos);
     assert.equal(atmosphereBindings.uAtmosFar, atmosphereUniforms.uAtmosFar);
+    assert.equal(atmosphereBindings.uSurfaceShadowDistance, atmosphereUniforms.uSurfaceShadowDistance);
+    assert.equal(atmosphereBindings.uShadowCoverageFadeStart, atmosphereUniforms.uShadowCoverageFadeStart);
 });
 
 test('building pop-in and tree depth helpers expose expected uniform bindings', () => {
@@ -147,7 +154,12 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
         uAtmosCameraPos: { value: 'camera' },
         uAtmosColor: { value: 'color' },
         uAtmosNear: { value: 1 },
-        uAtmosFar: { value: 2 }
+        uAtmosFar: { value: 2 },
+        uSurfaceShadowDistance: { value: 20000 },
+        uSurfaceShadowFadeStart: { value: 12000 },
+        uShadowCoverageCenter: { value: 'shadow-center' },
+        uShadowCoverageExtent: { value: 2200 },
+        uShadowCoverageFadeStart: { value: 1760 }
     };
     const timeUniform = { value: 42 };
 

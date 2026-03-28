@@ -32,7 +32,8 @@ test('water owned shader sources are cached and expose expected near/far behavio
     assert.match(nearSourceA.fragmentShader, /uniform sampler2D uWaterDepthTex;/);
     assert.match(nearSourceA.fragmentShader, /float waterDepth = texture2D\(uWaterDepthTex, waterUv\)\.r \* uWaterDepthScale;/);
     assert.match(nearSourceA.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
-    assert.match(nearSourceA.fragmentShader, /float waterShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3500\);/);
+    assert.match(nearSourceA.fragmentShader, /float waterShadowFade = resolveSurfaceShadowFade\(vWaterWorldPos\.xz\);/);
+    assert.match(nearSourceA.fragmentShader, /float waterShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3500 \* waterShadowFade\);/);
     assert.match(farSource.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
     assert.doesNotMatch(farSource.fragmentShader, /getShadowMask/);
     assert.doesNotMatch(farSource.fragmentShader, /waterProceduralHeight/);
@@ -43,7 +44,12 @@ test('water owned uniform bindings expose live references for near and far water
         uAtmosCameraPos: { value: 'camera' },
         uAtmosColor: { value: 'color' },
         uAtmosNear: { value: 1 },
-        uAtmosFar: { value: 2 }
+        uAtmosFar: { value: 2 },
+        uSurfaceShadowDistance: { value: 20000 },
+        uSurfaceShadowFadeStart: { value: 12000 },
+        uShadowCoverageCenter: { value: 'shadow-center' },
+        uShadowCoverageExtent: { value: 2200 },
+        uShadowCoverageFadeStart: { value: 1760 }
     };
     const waterSurfaceUniforms = {
         uWaterDepthTex: { value: 'depth' },
@@ -71,6 +77,8 @@ test('water owned uniform bindings expose live references for near and far water
     });
 
     assert.equal(nearBindings.uAtmosColor, atmosphereUniforms.uAtmosColor);
+    assert.equal(nearBindings.uSurfaceShadowFadeStart, atmosphereUniforms.uSurfaceShadowFadeStart);
+    assert.equal(nearBindings.uShadowCoverageCenter, atmosphereUniforms.uShadowCoverageCenter);
     assert.equal(nearBindings.uWaterDepthTex, waterSurfaceUniforms.uWaterDepthTex);
     assert.equal(farBindings.uAtmosNear, atmosphereUniforms.uAtmosNear);
     assert.equal(farBindings.uWaterDeepColor, waterSurfaceUniforms.uWaterDeepColor);
@@ -125,7 +133,12 @@ test('water owned shader templates match the legacy water patch output', () => {
         'uAtmosCameraPos',
         'uAtmosColor',
         'uAtmosNear',
-        'uAtmosFar'
+        'uAtmosFar',
+        'uSurfaceShadowDistance',
+        'uSurfaceShadowFadeStart',
+        'uShadowCoverageCenter',
+        'uShadowCoverageExtent',
+        'uShadowCoverageFadeStart'
     ].map((key) => [key, { value: null }]));
 
     function buildLegacyWaterSource(isFarLOD) {
