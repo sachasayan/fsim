@@ -17,6 +17,31 @@
       "targetTriangles": 3500,
       "joinMeshes": true
     },
+    "air-traffic-control-2": {
+      "category": "airport",
+      "targetTriangles": 3500,
+      "joinMeshes": true
+    },
+    "airliner-blue": {
+      "category": "airport",
+      "targetTriangles": 4500,
+      "joinMeshes": true
+    },
+    "airliner-white": {
+      "category": "airport",
+      "targetTriangles": 4500,
+      "joinMeshes": true
+    },
+    "airplane-quad-engine": {
+      "category": "airport",
+      "targetTriangles": 5000,
+      "joinMeshes": true
+    },
+    "prop-biplane": {
+      "category": "airport",
+      "targetTriangles": 2500,
+      "joinMeshes": true
+    },
     "aircraft-carrier": {
       "category": "scenery",
       "targetTriangles": 4500,
