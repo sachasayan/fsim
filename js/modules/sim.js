@@ -227,38 +227,6 @@ if (debugGui) {
       .name('Wireframe')
       .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
 
-    const grassFolder = nativeFolder.addFolder('Grass');
-    grassFolder.add(terrainDebugSettings, 'showGrassMask')
-      .name('Debug Grass Mask')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'showGrassTexture')
-      .name('Show Texture')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'grassTextureScale', 0.001, 0.08, 0.001)
-      .name('Texture Scale')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'grassTextureStrength', 0, 3, 0.05)
-      .name('Texture Strength')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'grassTextureNearStart', 0, 5000, 25)
-      .name('Fade Start')
-      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'grassTextureNearEnd', 1, 12000, 50)
-      .name('Fade End')
-      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'useGrassBumpMap')
-      .name('Use Bump Map')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'grassBumpScale', 0, 2, 0.02)
-      .name('Bump Scale')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'useGrassNormalMap')
-      .name('Use Normal Map')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-    grassFolder.add(terrainDebugSettings, 'grassNormalScale', 0, 4, 0.05)
-      .name('Normal Scale')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
-
     const objectsFolder = nativeFolder.addFolder('Objects');
     objectsFolder.add(terrainDebugSettings, 'showTrees')
       .name('Trees')
