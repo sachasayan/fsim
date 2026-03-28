@@ -1,3 +1,5 @@
+// @ts-check
+
 const hasWindow = typeof window !== 'undefined';
 const search = hasWindow ? (window.location?.search || '') : '';
 const params = new URLSearchParams(search);

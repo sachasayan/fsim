@@ -38,8 +38,9 @@
 ### Phase 0 Notes
 
 - [x] Start with one shared `tsconfig.json` and revisit folder-specific configs later if the migration needs them.
-- [ ] Decide whether Playwright config should stay JavaScript for now or move later with the rest of tooling files.
+- [x] Keep Playwright config and other Node/tooling entrypoints in JavaScript for now, but bring them under `@ts-check` once Node ambient types are installed.
 - [x] Keep `checkJs` off initially so converted `.ts/.tsx` files can be verified without surfacing the entire legacy JS backlog at once.
+- [x] Added `@types/node` and `types: ["node"]` in `tsconfig.json` once the migration expanded `@ts-check` coverage to the server and Playwright/test harness files.
 
 ## Phase 1: Establish a Safe Editor Beachhead
 
@@ -123,6 +124,7 @@
 - [x] Verified the inspector/detail-layer batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Converted the editor UI primitive component set under `js/editor/ui/components/ui/*`.
 - [x] Verified the primitive component batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Converted the remaining editor UI tail by moving `js/editor/ui/LayersPanel.jsx` to `js/editor/ui/LayersPanel.tsx`, `js/editor/ui/StatusBar.jsx` to `js/editor/ui/StatusBar.tsx`, and `js/editor.js` to `js/editor.ts`, then updated the remaining imports and the direct browser editor entrypoint.
 
 ### Phase 3 Follow-Up Notes
 
@@ -161,6 +163,7 @@
 - [x] Converted `js/modules/world/hangar.ts` as the first slightly heavier airport renderer and aligned it with the current typed config shape by using `yawDeg` instead of the stale `angle` field.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/runway.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/airports.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a final JSDoc-first cleanup sweep across the remaining native-browser JS companion/runtime tail, covering `js/modules/core/logging.js`, `js/modules/ui/MapColors.js`, `js/modules/world/AirportLayout.js`, `js/modules/world/AuthoredObjectCatalog.js`, `js/modules/world/LodSystem.js`, `js/modules/world/WorldConfig.js`, `js/modules/world/config.js`, `js/modules/noise.js`, and `js/modules/world/aircraft_breakup.js`, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 
 ## Phase 5: Type Worker and Terrain/World Boundaries
 
@@ -238,7 +241,7 @@
 
 ## Phase 7: Tighten Compiler Strictness Gradually
 
-- [ ] Turn on stronger compiler checks only after enough code has moved onto typed seams.
+- [x] Turn on stronger compiler checks only after enough code has moved onto typed seams.
 - [ ] Evaluate enabling `checkJs` for selected folders once the migration stabilizes.
 - [ ] Evaluate enabling `noImplicitAny`.
 - [ ] Evaluate stronger nullability checks where practical.
@@ -249,6 +252,7 @@
 - [ ] Avoid enabling full strict mode globally at the start.
 - [ ] Tighten settings in response to progress, not aspiration.
 - [ ] Prefer eliminating recurring categories of type holes over chasing one-off warnings.
+- [x] Added the first strictness-adjacent batch by bringing `server.js`, `playwright.config.js`, the editor Playwright helpers/specs, the perf Playwright specs, `js/vendor/react-loader.js`, and `js/editor/canvas/TerrainPreviewWorkerManager.js` under `@ts-check`, then added Node ambient types so those files could stay checked without being rewritten first.
 
 ## Batch Workflow
 
@@ -336,3 +340,5 @@
 - [x] Fifty-second migration pattern: terrain shader/material folders are good large-batch `@ts-check` candidates once the shared shader pipeline is already typed, but they usually need one explicit round of named option-object typedefs so the owned-source builders and shader-patch helpers stop inferring incompatible anonymous object shapes.
 - [x] Fifty-third migration pattern: once a terrain support folder is mostly surrounded by typed modules, the remaining errors often collapse to one browser-global seam in a loader or cache file; typing that runtime window locally is usually cheaper and safer than inventing a broader shared global contract for the whole folder.
 - [x] Fifty-fourth migration pattern: for large procedural generator modules, the highest-leverage boundary to type is usually the top-level options object, but that contract needs to reflect the runtime data the generator actually consumes; reusing a narrower editor-facing type too early tends to create avoidable friction at helper call sites.
+- [x] Fifty-fifth migration pattern: once the major runtime folders are under `@ts-check`, the remaining native-browser JS companion files are worth sweeping in as one batch; they usually go green immediately, and doing them together prevents the migration tracker from looking “done” while the browser-entry fallback layer still sits outside checked coverage.
+- [x] Fifty-sixth migration pattern: once the app/runtime code is largely covered, the next best large batch is often the editor/tooling tail; converting the last small TSX stragglers and bringing server/test harness files under `@ts-check` together creates a much cleaner handoff into real compiler-tightening work than leaving those areas as permanent exceptions.

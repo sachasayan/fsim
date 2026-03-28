@@ -1,3 +1,5 @@
+// @ts-check
+
 const AUTHORED_OBJECT_ASSETS = [
   {
     id: 'air-traffic-control-1',

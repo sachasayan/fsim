@@ -1,3 +1,5 @@
+// @ts-check
+
 export const AIRPORT_CONFIG = {
   RUNWAY: {
     x: 0,

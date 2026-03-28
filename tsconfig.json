@@ -9,6 +9,7 @@
     "checkJs": false,
     "noEmit": true,
     "strict": false,
+    "types": ["node"],
     "skipLibCheck": true,
     "isolatedModules": true,
     "resolveJsonModule": true,

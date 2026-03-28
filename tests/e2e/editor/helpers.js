@@ -1,3 +1,5 @@
+// @ts-check
+
 import { expect } from 'playwright/test';
 
 const ALLOWED_CONSOLE_PATTERNS = [

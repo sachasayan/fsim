@@ -1,3 +1,5 @@
+// @ts-check
+
 import { AIRPORT_CONFIG } from './config.js';
 
 export const DEFAULT_AIRPORT_TEMPLATE = 'default';

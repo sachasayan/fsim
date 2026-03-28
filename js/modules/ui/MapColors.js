@@ -1,3 +1,5 @@
+// @ts-check
+
 import { getSurfaceMapSrgb } from '../world/terrain/TerrainPalette.js';
 
 function clampByte(v) {

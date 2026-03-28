@@ -1,3 +1,5 @@
+// @ts-check
+
 function clampInteger(value, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;

@@ -1,16 +1,24 @@
+// @ts-check
+
 import { test, expect } from 'playwright/test';
 import { attachEditorErrorWatch, clickCanvas, getEditorState, gotoEditor, hoverCanvas } from './helpers.js';
+
+/**
+ * @typedef {{ allowConsoleError(pattern: RegExp): void, assertNoErrors(): void }} EditorErrorWatch
+ * @typedef {import('playwright/test').Page & { __editorErrorWatch?: EditorErrorWatch }} EditorTestPage
+ */
 
 test.describe('editor e2e', () => {
     test.describe.configure({ mode: 'serial' });
 
     test.beforeEach(async ({ page }, testInfo) => {
+        const editorPage = /** @type {EditorTestPage} */ (page);
         testInfo.annotations.push({ type: 'editor-error-watch', description: 'Fails on browser console.error and pageerror' });
-        page.__editorErrorWatch = attachEditorErrorWatch(page);
+        editorPage.__editorErrorWatch = attachEditorErrorWatch(page);
     });
 
     test.afterEach(async ({ page }) => {
-        page.__editorErrorWatch?.assertNoErrors();
+        /** @type {EditorTestPage} */ (page).__editorErrorWatch?.assertNoErrors();
     });
 
     test('loads the editor and exposes initial clean state', async ({ page }) => {
@@ -302,7 +310,7 @@ test.describe('editor e2e', () => {
             }
             await route.continue();
         });
-        page.__editorErrorWatch.allowConsoleError(/Failed to load resource: the server responded with a status of 500/);
+        /** @type {EditorTestPage} */ (page).__editorErrorWatch?.allowConsoleError(/Failed to load resource: the server responded with a status of 500/);
 
         await page.getByTestId('field-coord-z').fill('1120');
         await page.getByTestId('field-coord-z').blur();

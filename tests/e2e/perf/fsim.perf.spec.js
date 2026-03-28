@@ -1,3 +1,5 @@
+// @ts-check
+
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 import { expect, test } from 'playwright/test';

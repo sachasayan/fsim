@@ -1,3 +1,5 @@
+// @ts-check
+
 export function createTerrainPreviewWorkerManager() {
     const worker = new Worker(new URL('./TerrainPreviewWorker.js', import.meta.url), { type: 'module' });
     let nextJobId = 1;

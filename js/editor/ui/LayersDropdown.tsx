@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import type { EditorStore } from '../core/types.js';
 import { Button, Icon, shallowEqual, useStore } from './common';
-import { LayerVisibilityControls } from './LayersPanel.jsx';
+import { LayerVisibilityControls } from './LayersPanel';
 
 export function LayersDropdown({ store }: { store: EditorStore }) {
     const [open, setOpen] = React.useState(false);

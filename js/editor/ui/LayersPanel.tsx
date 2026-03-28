@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { Icon, Panel, SurfaceIcon, Toggle, Tooltip, TooltipContent, TooltipTrigger, cn, shallowEqual, useStore } from './common';
 import { listLayerGroups } from '../core/document.js';
+import type { EditorGroupId, EditorStore } from '../core/types.js';
 
 export const LAYER_DEFS = {
     districts: { label: 'Districts', path: 'M4 6h16v12H4zM8 6v12M16 6v12M4 12h16' },
@@ -10,13 +11,19 @@ export const LAYER_DEFS = {
     objects: { label: 'Objects', path: 'M5 8l7-4 7 4v8l-7 4-7-4z' },
     terrain: { label: 'Terrain', path: 'M3 16l5-5 4 3 4-6 5 8M3 19h18' },
     vantage: { label: 'Views', path: 'M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12zm10 3a3 3 0 100-6 3 3 0 000 6z' }
-};
+} as const satisfies Partial<Record<EditorGroupId, { label: string; path: string }>>;
 
-export function LayerVisibilityControls({ store, variant = 'panel' }) {
+export function LayerVisibilityControls({
+    store,
+    variant = 'panel'
+}: {
+    store: EditorStore;
+    variant?: 'panel' | 'dropdown';
+}) {
     const { document, groupVisibility } = useStore(store, (state) => ({
         document: state.document,
         groupVisibility: state.layers.groupVisibility
-    }), shallowEqual);
+    }), shallowEqual<{ document: ReturnType<EditorStore['getState']>['document']; groupVisibility: ReturnType<EditorStore['getState']>['layers']['groupVisibility'] }>);
     const groups = listLayerGroups(document).filter((group) => LAYER_DEFS[group.id]);
 
     if (variant === 'dropdown') {
@@ -84,7 +91,7 @@ export function LayerVisibilityControls({ store, variant = 'panel' }) {
     );
 }
 
-export function LayersPanel({ store }) {
+export function LayersPanel({ store }: { store: EditorStore }) {
     return (
         <Panel title="Layers" testId="layers-panel">
             <LayerVisibilityControls store={store} />

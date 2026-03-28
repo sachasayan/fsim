@@ -1,3 +1,5 @@
+// @ts-check
+
 const moduleCache = new Map();
 
 function createRequire(registry) {

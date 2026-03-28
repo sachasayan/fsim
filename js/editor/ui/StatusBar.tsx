@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-export function StatusBar({ coordsRef }) {
+export function StatusBar({ coordsRef }: { coordsRef: React.Ref<HTMLDivElement> }) {
     return (
         <footer className="editor-statusbar">
             <span>Canvas Status</span>

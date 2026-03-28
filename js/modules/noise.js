@@ -1,3 +1,5 @@
+// @ts-check
+
 export const Noise = {
   permutation: new Uint8Array(512),
   init(seed = 12345) {

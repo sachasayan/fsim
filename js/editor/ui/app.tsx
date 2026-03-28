@@ -11,7 +11,7 @@ import { Icon, TooltipProvider, shallowEqual, useStore } from './common';
 import { InspectorPanel } from './InspectorPanel';
 import { ObjectToolPanel } from './ObjectToolPanel';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
-import { StatusBar } from './StatusBar.jsx';
+import { StatusBar } from './StatusBar';
 import { TerrainBrushPanel } from './TerrainBrushPanel';
 import { TerrainLabPanel } from './TerrainLabPanel';
 import { Toast } from './Toast';

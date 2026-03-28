@@ -1,3 +1,5 @@
+// @ts-check
+
 export const AIRCRAFT_BREAKUP_PIECES = [
   {
     id: 'fuselage_front',
