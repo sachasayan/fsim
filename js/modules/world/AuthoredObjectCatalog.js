@@ -6,6 +6,30 @@ const AUTHORED_OBJECT_ASSETS = [
         color: '#86efac'
     },
     {
+        id: 'airliner-blue',
+        label: 'Blue Airliner',
+        url: '/world/objects/airport/airliner-blue.glb',
+        color: '#60a5fa'
+    },
+    {
+        id: 'airliner-white',
+        label: 'White Airliner',
+        url: '/world/objects/airport/airliner-white.glb',
+        color: '#e5e7eb'
+    },
+    {
+        id: 'airplane-quad-engine',
+        label: 'Quad Engine Airplane',
+        url: '/world/objects/airport/airplane-quad-engine.glb',
+        color: '#fca5a5'
+    },
+    {
+        id: 'prop-biplane',
+        label: 'Prop Biplane',
+        url: '/world/objects/airport/prop-biplane.glb',
+        color: '#fdba74'
+    },
+    {
         id: 'aircraft-carrier',
         label: 'Aircraft Carrier',
         url: '/world/objects/scenery/aircraft-carrier.glb',

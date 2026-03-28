@@ -934,6 +934,42 @@
             "heightMode": "terrain"
         },
         {
+            "assetId": "airliner-blue",
+            "x": -250,
+            "z": -520,
+            "y": 0,
+            "yaw": 42,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "airliner-white",
+            "x": -110,
+            "z": -600,
+            "y": 0,
+            "yaw": -118,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "airplane-quad-engine",
+            "x": -260,
+            "z": -360,
+            "y": 0,
+            "yaw": 167,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
+            "assetId": "prop-biplane",
+            "x": -90,
+            "z": -430,
+            "y": 0,
+            "yaw": -27,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
             "assetId": "lighthouse",
             "x": -1800,
             "z": -700,
@@ -973,7 +1009,7 @@
             "assetId": "balloon",
             "x": 1300,
             "z": -3700,
-            "y": 250,
+            "y": 1000,
             "yaw": 0,
             "scale": 1,
             "heightMode": "terrain"

@@ -49,7 +49,7 @@ const runtimeConfig = window.__FSIM_RUNTIME__ || {};
 const shouldShowDebugUi = runtimeConfig.showDebugUi === true || urlParamsForInit.get('debug') === '1';
 const debugView = {
   slewMode: false,
-  slewSpeed: 250,
+  slewSpeed: 1000,
   showShadowCameraHelper: false
 };
 const lodSettings = createRuntimeLodSettings({ urlSearch: window.location.search });
