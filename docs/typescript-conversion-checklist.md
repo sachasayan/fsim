@@ -6,6 +6,7 @@
 - [ ] Establish a repeatable migration workflow that lets us convert files in small, verifiable batches.
 - [ ] Prioritize high-leverage type coverage in shared editor and runtime boundaries before large orchestrator files.
 - [ ] Tighten compiler settings over time instead of forcing strictness on day one.
+- [x] Treat `.js`/`.jsx` as transitional only: the long-term goal is full `.ts`/`.tsx` conversion, not permanent JSDoc-checked JavaScript.
 
 ## Current Baseline
 
@@ -205,6 +206,7 @@
 - [x] Added JSDoc-first `@ts-check` passes across the terrain shader/material support slice, covering `ShaderLibrary.js`, `TerrainMaterials.js`, `TerrainOwnedShaderSource.js`, `TerrainPalette.js`, `TerrainPropOwnedShaderSource.js`, `TerrainShaderPatches.js`, `TerrainSurfaceWeights.js`, `TerrainTextures.js`, and `WaterOwnedShaderSource.js`, then aligned the shared option-object contracts between the owned-source builders and shader-patch helpers, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the next terrain support folder slice, covering `BuildingSpawner.js`, `CityChunkLoader.js`, `QuadtreeSelectionController.js`, `RoadMarkingOverlay.js`, `RoadNetworkGeometry.js`, and `TerrainEdits.js`, then typed the loader's browser-global runtime window seam directly instead of widening the rest of the batch, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainSynthesis.js`, then formalized the top-level synthesizer options contract around the real runtime runway-flattening world-data shape instead of forcing it through the narrower editor-world type, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Fixed a newly exposed execution-boundary bug in `js/editor/canvas/EditorMapTileWorkerManager.ts` by replacing `window.setTimeout` with `globalThis.setTimeout`, so the manager works under both browser execution and the new TS-aware Node unit-test runner.
 - [ ] Decide when to extract shared worker request/response types instead of keeping local worker-message shapes inside each manager.
 
 ## Phase 6: Convert Large Orchestrator Files Late
@@ -245,7 +247,8 @@
 - [ ] Evaluate enabling `checkJs` for selected folders once the migration stabilizes.
 - [ ] Evaluate enabling `noImplicitAny`.
 - [ ] Evaluate stronger nullability checks where practical.
-- [ ] Keep strictness changes incremental and tied to real cleanup progress.
+- [x] Keep strictness changes incremental and tied to real cleanup progress.
+- [ ] Make the remaining execution boundaries TypeScript-aware so the last large `.js` modules can actually be renamed instead of staying as checked JS.
 
 ### Strictness Strategy
 
@@ -253,6 +256,9 @@
 - [ ] Tighten settings in response to progress, not aspiration.
 - [ ] Prefer eliminating recurring categories of type holes over chasing one-off warnings.
 - [x] Added the first strictness-adjacent batch by bringing `server.js`, `playwright.config.js`, the editor Playwright helpers/specs, the perf Playwright specs, `js/vendor/react-loader.js`, and `js/editor/canvas/TerrainPreviewWorkerManager.js` under `@ts-check`, then added Node ambient types so those files could stay checked without being rewritten first.
+- [x] Declared the final migration intent explicitly: checked JS is now only a staging step, and future phases should optimize for removing `.js`/`.jsx` files rather than treating `@ts-check` coverage as the finish line.
+- [x] Started the first execution-boundary upgrade for full conversion by switching the unit-test runner from `node --test` to `tsx --test`, so future `.ts` module renames are not blocked by direct Node imports in the unit tests.
+- [x] Verified the upgraded unit-test boundary end-to-end: `npm run test:unit` now passes under `tsx --test` (269 passing tests), which means direct Node test imports are no longer a hard blocker for future editor/runtime `.ts` renames.
 
 ## Batch Workflow
 
@@ -264,10 +270,10 @@
 
 ## Decision Log
 
-- [ ] Decide whether to prefer `rename-first` or `JSDoc-first` for each area.
-- [ ] Default recommendation: `rename-first` for the editor path.
-- [ ] Default recommendation: `JSDoc-first` only for very large runtime modules where renaming immediately would create too much churn.
-- [ ] Decide when to begin converting tooling files such as `playwright.config.js`.
+- [x] Prefer `rename-first` when the execution boundary already supports TypeScript, and use `JSDoc-first` only as a staging step where native runtime/test boundaries still block renames.
+- [x] Default recommendation: `rename-first` for the editor path once the direct Node test imports are moved behind a TS-aware runner.
+- [x] Default recommendation: `JSDoc-first` only for very large runtime modules where renaming immediately would create too much churn or where the runtime still loads native `.js` directly.
+- [x] Keep tooling files such as `playwright.config.js` in JavaScript for now, but under `@ts-check`, unless a later toolchain cleanup makes `.ts` the simpler option.
 - [ ] Decide whether to add folder-specific tsconfigs later for editor/runtime separation.
 - [x] For editor core modules that are still imported directly as `.js` by Node tests or runtime code, use declaration-first typing before file renames.
 
@@ -342,3 +348,4 @@
 - [x] Fifty-fourth migration pattern: for large procedural generator modules, the highest-leverage boundary to type is usually the top-level options object, but that contract needs to reflect the runtime data the generator actually consumes; reusing a narrower editor-facing type too early tends to create avoidable friction at helper call sites.
 - [x] Fifty-fifth migration pattern: once the major runtime folders are under `@ts-check`, the remaining native-browser JS companion files are worth sweeping in as one batch; they usually go green immediately, and doing them together prevents the migration tracker from looking “done” while the browser-entry fallback layer still sits outside checked coverage.
 - [x] Fifty-sixth migration pattern: once the app/runtime code is largely covered, the next best large batch is often the editor/tooling tail; converting the last small TSX stragglers and bringing server/test harness files under `@ts-check` together creates a much cleaner handoff into real compiler-tightening work than leaving those areas as permanent exceptions.
+- [x] Fifty-seventh migration pattern: when you make a Node-side execution boundary TypeScript-aware, expect it to expose browser-only global assumptions that were previously hidden; fixing those with `globalThis`-style APIs is usually a real portability improvement, not just test-runner cleanup.

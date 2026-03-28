@@ -96,7 +96,7 @@ export function createEditorMapTileWorkerManager({
             const worker = workers[workerIndex];
             nextWorkerIndex = (nextWorkerIndex + 1) % workers.length;
             const timeoutId = Number.isFinite(jobTimeoutMs) && jobTimeoutMs > 0
-                ? window.setTimeout(() => {
+                ? globalThis.setTimeout(() => {
                     const pending = clearPendingJob(jobId);
                     if (!pending) return;
                     pending.reject(new Error(`Editor map tile worker timed out after ${jobTimeoutMs}ms`));
