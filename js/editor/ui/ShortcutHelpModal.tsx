@@ -1,9 +1,10 @@
 import * as React from 'react';
 
-import { Button, HintCard, Icon, useStore } from './common.jsx';
+import type { EditorStore } from '../core/types.js';
+import { Button, HintCard, Icon, useStore } from './common';
 
-export function ShortcutHelpButton({ store }) {
-    const showHelp = useStore(store, (state) => state.ui.showHelp);
+export function ShortcutHelpButton({ store }: { store: EditorStore }) {
+    const showHelp = useStore<boolean>(store, (state) => state.ui.showHelp);
 
     return (
         <Button
@@ -21,13 +22,13 @@ export function ShortcutHelpButton({ store }) {
     );
 }
 
-export function ShortcutHelpModal({ store }) {
-    const showHelp = useStore(store, (state) => state.ui.showHelp);
+export function ShortcutHelpModal({ store }: { store: EditorStore }) {
+    const showHelp = useStore<boolean>(store, (state) => state.ui.showHelp);
 
     React.useEffect(() => {
         if (!showHelp) return undefined;
 
-        function handleKeyDown(event) {
+        function handleKeyDown(event: KeyboardEvent) {
             if (event.key === 'Escape') {
                 store.dispatch({ type: 'toggle-help', value: false });
             }
@@ -51,7 +52,7 @@ export function ShortcutHelpModal({ store }) {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="shortcut-help-title"
-                onClick={(event) => event.stopPropagation()}
+                onClick={(event: React.MouseEvent<HTMLDivElement>) => event.stopPropagation()}
             >
                 <div className="flex items-start justify-between gap-4">
                     <div className="flex flex-col gap-2">

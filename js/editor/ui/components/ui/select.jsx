@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 
-import { cn } from '../../utils.js';
+import { cn } from '../../utils';
 
 function ChevronDownIcon() {
     return (

@@ -1,17 +1,46 @@
 import * as React from 'react';
 
-import { CommandButton, StatusChip, shallowEqual, useStore } from './common.jsx';
+import type { EditorStore, EditorUiProgress } from '../core/types.js';
+import { CommandButton, StatusChip, shallowEqual, useStore } from './common';
 
-export function CommandStrip({ store, controller, onSave, onRebuild }) {
-    const { saveState, saveProgress, rebuildState, rebuildProgress, dirty, snappingEnabled, undoCount } = useStore(store, (state) => ({
-        saveState: state.ui.saveState,
-        saveProgress: state.ui.saveProgress,
-        rebuildState: state.ui.rebuildState,
-        rebuildProgress: state.ui.rebuildProgress,
-        dirty: state.history.dirty,
-        snappingEnabled: state.tools.snappingEnabled,
-        undoCount: state.history.undoStack.length
-    }), shallowEqual);
+type CommandStripController = {
+    resetView: () => void;
+};
+
+type CommandStripSelection = {
+    saveState: string;
+    saveProgress: EditorUiProgress | null;
+    rebuildState: string;
+    rebuildProgress: EditorUiProgress | null;
+    dirty: boolean;
+    snappingEnabled: boolean;
+    undoCount: number;
+};
+
+export function CommandStrip({
+    store,
+    controller,
+    onSave,
+    onRebuild
+}: {
+    store: EditorStore;
+    controller: CommandStripController;
+    onSave: () => void | Promise<void | boolean> | Promise<boolean>;
+    onRebuild: () => void | Promise<void>;
+}) {
+    const { saveState, saveProgress, rebuildState, rebuildProgress, dirty, snappingEnabled, undoCount } = useStore<CommandStripSelection>(
+        store,
+        (state) => ({
+            saveState: state.ui.saveState,
+            saveProgress: state.ui.saveProgress,
+            rebuildState: state.ui.rebuildState,
+            rebuildProgress: state.ui.rebuildProgress,
+            dirty: state.history.dirty,
+            snappingEnabled: state.tools.snappingEnabled,
+            undoCount: state.history.undoStack.length
+        }),
+        shallowEqual
+    );
     const isSaving = saveState === 'saving';
     const isRebuilding = rebuildState === 'queued' || rebuildState === 'running';
     const saveLabel = isSaving
@@ -27,7 +56,7 @@ export function CommandStrip({ store, controller, onSave, onRebuild }) {
         ? `${saveProgress.label} (${saveProgress.step}/${saveProgress.total})`
         : !dirty && isRebuilding && rebuildProgress
             ? `${rebuildProgress.label} (${rebuildProgress.step}/${rebuildProgress.total})`
-        : saveLabel;
+            : saveLabel;
     const saveButtonBusy = isSaving || (!dirty && isRebuilding);
     const saveButtonDisabled = isSaving || (!dirty && isRebuilding);
 

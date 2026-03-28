@@ -1,14 +1,19 @@
 import * as React from 'react';
 
-import { Button, Icon, shallowEqual, useStore } from './common.jsx';
+import type { EditorStore } from '../core/types.js';
+import { Button, Icon, shallowEqual, useStore } from './common';
 import { LayerVisibilityControls } from './LayersPanel.jsx';
 
-export function LayersDropdown({ store }) {
+export function LayersDropdown({ store }: { store: EditorStore }) {
     const [open, setOpen] = React.useState(false);
-    const rootRef = React.useRef(null);
-    const { groupVisibility } = useStore(store, (state) => ({
-        groupVisibility: state.layers.groupVisibility
-    }), shallowEqual);
+    const rootRef = React.useRef<HTMLDivElement | null>(null);
+    const { groupVisibility } = useStore<{ groupVisibility: Record<string, boolean> }>(
+        store,
+        (state) => ({
+            groupVisibility: state.layers.groupVisibility
+        }),
+        shallowEqual
+    );
     const layerGroups = React.useMemo(
         () => Object.values(groupVisibility),
         [groupVisibility]
@@ -18,13 +23,13 @@ export function LayersDropdown({ store }) {
     React.useEffect(() => {
         if (!open) return undefined;
 
-        function handlePointerDown(event) {
-            if (!rootRef.current?.contains(event.target)) {
+        function handlePointerDown(event: PointerEvent) {
+            if (!rootRef.current?.contains(event.target as Node)) {
                 setOpen(false);
             }
         }
 
-        function handleKeyDown(event) {
+        function handleKeyDown(event: KeyboardEvent) {
             if (event.key === 'Escape') {
                 setOpen(false);
             }

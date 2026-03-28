@@ -6,7 +6,7 @@ import { normalizeMapData } from '../modules/world/MapDataUtils.js';
 import { createEditorCanvasController } from './canvas/controller.js';
 import { createEditorDocument } from './core/document.js';
 import { createEditorStore } from './core/store.js';
-import { EditorApp } from './ui/app.jsx';
+import { EditorApp } from './ui/app';
 
 const isEditorE2e = window.__FSIM_EDITOR_E2E__ === true;
 

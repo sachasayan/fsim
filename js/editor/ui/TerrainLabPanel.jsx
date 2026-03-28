@@ -3,7 +3,7 @@ import * as React from 'react';
 import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { TERRAIN_GENERATOR_PRESETS, TERRAIN_PREVIEW_OVERLAYS, applyTerrainGeneratorPreset } from '../../modules/world/terrain/TerrainSynthesis.js';
 import { getEntityById } from '../core/document.js';
-import { Badge, Button, CheckboxField, HintCard, Panel, RangeNumberField, SectionHeading, SelectField, Separator, useStore } from './common.jsx';
+import { Badge, Button, CheckboxField, HintCard, Panel, RangeNumberField, SectionHeading, SelectField, Separator, useStore } from './common';
 
 export function TerrainLabPanel({ store, controller }) {
     const terrainLab = useStore(store, (state) => state.ui.terrainLab);

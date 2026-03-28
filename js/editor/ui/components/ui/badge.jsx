@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { cn } from '../../utils.js';
+import { cn } from '../../utils';
 
 function Badge({ className, variant = 'default', ...props }) {
     return (

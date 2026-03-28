@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { Icon, Panel, SurfaceIcon, Toggle, Tooltip, TooltipContent, TooltipTrigger, cn, shallowEqual, useStore } from './common.jsx';
+import { Icon, Panel, SurfaceIcon, Toggle, Tooltip, TooltipContent, TooltipTrigger, cn, shallowEqual, useStore } from './common';
 import { listLayerGroups } from '../core/document.js';
 
 export const LAYER_DEFS = {

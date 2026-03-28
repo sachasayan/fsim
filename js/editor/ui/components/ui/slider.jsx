@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as SliderPrimitive from '@radix-ui/react-slider';
 
-import { cn } from '../../utils.js';
+import { cn } from '../../utils';
 
 const Slider = React.forwardRef(({ className, thumbTestId, thumbAriaLabel, ...props }, ref) => (
     <SliderPrimitive.Root

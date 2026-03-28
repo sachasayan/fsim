@@ -1,9 +1,10 @@
 import * as React from 'react';
 
-import { cn, useStore } from './common.jsx';
+import type { EditorStore, EditorToast } from '../core/types.js';
+import { cn, useStore } from './common';
 
-export function Toast({ store }) {
-    const toast = useStore(store, (state) => state.ui.toast);
+export function Toast({ store }: { store: EditorStore }) {
+    const toast = useStore<EditorToast | null>(store, (state) => state.ui.toast);
     if (!toast) return null;
     return (
         <div

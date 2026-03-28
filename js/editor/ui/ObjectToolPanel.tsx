@@ -1,7 +1,8 @@
 import * as React from 'react';
 
 import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog.js';
-import { Panel, RangeNumberField, SelectField, shallowEqual, useStore } from './common.jsx';
+import type { EditorStore, EditorStoreState } from '../core/types.js';
+import { Panel, RangeNumberField, SelectField, shallowEqual, useStore } from './common';
 
 const OBJECT_HEIGHT_MODE_OPTIONS = [
     { value: 'terrain', label: 'Terrain Height' },
@@ -14,8 +15,12 @@ const OBJECT_ASSET_OPTIONS = listAuthoredObjectAssets().map((asset) => ({
     label: asset.label
 }));
 
-export function ObjectToolPanel({ store }) {
-    const objectPlacement = useStore(store, (state) => state.tools.objectPlacement, shallowEqual);
+export function ObjectToolPanel({ store }: { store: EditorStore }) {
+    const objectPlacement = useStore<EditorStoreState['tools']['objectPlacement']>(
+        store,
+        (state) => state.tools.objectPlacement,
+        shallowEqual
+    );
     const heightLabel = objectPlacement.heightMode === 'absolute'
         ? 'Altitude (m)'
         : objectPlacement.heightMode === 'sea-level'
@@ -24,7 +29,7 @@ export function ObjectToolPanel({ store }) {
     const heightMin = objectPlacement.heightMode === 'terrain' ? -100 : -200;
     const heightMax = objectPlacement.heightMode === 'terrain' ? 1000 : 3000;
 
-    function patchObjectPlacement(patch) {
+    function patchObjectPlacement(patch: Partial<EditorStoreState['tools']['objectPlacement']>) {
         store.dispatch({ type: 'set-object-placement', patch });
     }
 

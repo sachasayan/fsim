@@ -4,7 +4,7 @@ import { isAirport, isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerra
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
 import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog.js';
 import { getEntityById, getEntityLabel } from '../core/document.js';
-import { Badge, Button, FieldRow, HintCard, Input, NumberInputField, Panel, RangeNumberField, SelectField, Separator, shallowEqual, useStore } from './common.jsx';
+import { Badge, Button, FieldRow, HintCard, Input, NumberInputField, Panel, RangeNumberField, SelectField, Separator, shallowEqual, useStore } from './common';
 
 const OBJECT_ASSET_OPTIONS = listAuthoredObjectAssets().map((asset) => ({
     value: asset.id,

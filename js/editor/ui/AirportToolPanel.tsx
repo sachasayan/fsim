@@ -1,11 +1,16 @@
 import * as React from 'react';
 
-import { Panel, RangeNumberField, shallowEqual, useStore } from './common.jsx';
+import type { EditorStore, EditorStoreState } from '../core/types.js';
+import { Panel, RangeNumberField, shallowEqual, useStore } from './common';
 
-export function AirportToolPanel({ store }) {
-    const airportPlacement = useStore(store, (state) => state.tools.airportPlacement, shallowEqual);
+export function AirportToolPanel({ store }: { store: EditorStore }) {
+    const airportPlacement = useStore<EditorStoreState['tools']['airportPlacement']>(
+        store,
+        (state) => state.tools.airportPlacement,
+        shallowEqual
+    );
 
-    function patchAirportPlacement(patch) {
+    function patchAirportPlacement(patch: Partial<EditorStoreState['tools']['airportPlacement']>) {
         store.dispatch({ type: 'set-airport-placement', patch });
     }
 

@@ -3,26 +3,62 @@ import * as React from 'react';
 import { isTerrainBrushTool } from '../../modules/editor/constants.js';
 import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getEntityById } from '../core/document.js';
-import { AppHeader } from './AppHeader.jsx';
-import { AirportToolPanel } from './AirportToolPanel.jsx';
-import { FooterPanel } from './FooterPanel.jsx';
-import { Icon, TooltipProvider, shallowEqual, useStore } from './common.jsx';
+import type { EditorEntity, EditorStore, EditorTool } from '../core/types.js';
+import { AppHeader } from './AppHeader';
+import { AirportToolPanel } from './AirportToolPanel';
+import { FooterPanel } from './FooterPanel';
+import { Icon, TooltipProvider, shallowEqual, useStore } from './common';
 import { InspectorPanel } from './InspectorPanel.jsx';
-import { ObjectToolPanel } from './ObjectToolPanel.jsx';
-import { ShortcutHelpModal } from './ShortcutHelpModal.jsx';
+import { ObjectToolPanel } from './ObjectToolPanel';
+import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { StatusBar } from './StatusBar.jsx';
-import { TerrainBrushPanel } from './TerrainBrushPanel.jsx';
+import { TerrainBrushPanel } from './TerrainBrushPanel';
 import { TerrainLabPanel } from './TerrainLabPanel.jsx';
-import { Toast } from './Toast.jsx';
-import { ToolPalette } from './ToolPalette.jsx';
+import { Toast } from './Toast';
+import { ToolPalette } from './ToolPalette';
 
-export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onRebuild }) {
-    const { currentTool, selectedEntity } = useStore(store, (state) => ({
-        currentTool: state.tools.currentTool,
-        selectedEntity: getEntityById(state.document, state.selection.selectedId)
-    }), shallowEqual);
+type EditorAppController = {
+    resetView: () => void;
+    frameSelection: () => void;
+};
 
-    const toolDefs = [
+type EditorAppSelection = {
+    currentTool: EditorTool;
+    selectedEntity: EditorEntity | null;
+};
+
+type ToolIconProps = {
+    path: string;
+    className?: string;
+};
+
+type ToolDefinition = readonly [EditorTool, string, string, string, React.ComponentType<ToolIconProps>];
+
+export function EditorApp({
+    store,
+    controller,
+    canvasRef,
+    coordsRef,
+    onSave,
+    onRebuild
+}: {
+    store: EditorStore;
+    controller: EditorAppController;
+    canvasRef: React.Ref<HTMLCanvasElement>;
+    coordsRef: React.Ref<HTMLDivElement>;
+    onSave: () => void | Promise<void | boolean> | Promise<boolean>;
+    onRebuild: () => void | Promise<void>;
+}) {
+    const { currentTool, selectedEntity } = useStore<EditorAppSelection>(
+        store,
+        (state) => ({
+            currentTool: state.tools.currentTool,
+            selectedEntity: getEntityById(state.document, state.selection.selectedId)
+        }),
+        shallowEqual
+    );
+
+    const toolDefs: ToolDefinition[] = [
         ['select', 'Select', 'V', 'M5 3v18l5-6 4 6 5-2-4-6 6-4z', Icon],
         ['add-airport', 'Airport', 'A', 'M4 18h16M8 18V8m8 10V8M12 18V4M7 8h10', Icon],
         ['add-district', 'District', 'D', 'M4 6h16v12H4z', Icon],
