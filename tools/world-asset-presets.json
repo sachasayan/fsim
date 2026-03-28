@@ -1,5 +1,6 @@
 {
   "defaults": {
+    "unprocessedDir": "world/assets/unprocessed",
     "sourceDir": "world/assets/source",
     "decimatedDir": "world/assets/decimated",
     "gameReadyDir": "world/objects",

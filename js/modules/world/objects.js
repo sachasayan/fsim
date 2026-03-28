@@ -1,7 +1,6 @@
 import { createEnvironment } from './environment.js';
 import { createTerrainSystem } from './terrain.js';
 import { createRunwaySystem } from './runway.js';
-import { createTowerSystem } from './tower.js';
 import { createApron } from './apron.js';
 import { createHangarSystem } from './hangar.js';
 import { createRadarSystem } from './radar.js';
@@ -33,7 +32,6 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   });
   const terrain = createTerrainSystem({ scene, renderer, Noise, PHYSICS, lodSettings });
   const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
-  const tower = createTowerSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const apron = createApron({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const hangar = createHangarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const radar = createRadarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
@@ -124,14 +122,12 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
 
   // Register objects for centralized LOD management
   lodManager.register(runway);
-  lodManager.register(tower);
   lodManager.register(apron);
   lodManager.register(hangar);
   lodManager.register(radar);
   lodManager.register(tokenSystem);
 
   function refreshTerrainAlignment() {
-    tower.refreshTerrainAlignment?.();
     apron.refreshTerrainAlignment?.();
     hangar.refreshTerrainAlignment?.();
     radar.refreshTerrainAlignment?.();
@@ -144,7 +140,6 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     ...environment,
     ...terrain,
     ...runway,
-    ...tower,
     ...apron,
     ...hangar,
     ...cloudSystem,

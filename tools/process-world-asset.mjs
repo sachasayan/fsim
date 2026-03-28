@@ -77,6 +77,7 @@ function mergePreset(defaults, name, assetConfig) {
   return {
     ...merged,
     category,
+    unprocessedDir: merged.unprocessedDir || defaults.unprocessedDir,
     sourceDir: merged.sourceDir || defaults.sourceDir,
     decimatedDir: merged.decimatedDir || defaults.decimatedDir,
     gameReadyDir: merged.gameReadyDir || defaults.gameReadyDir
@@ -84,14 +85,32 @@ function mergePreset(defaults, name, assetConfig) {
 }
 
 function resolveAssetPaths(preset) {
+  const unprocessedDir = toAbsolute(preset.category ? path.join(preset.unprocessedDir, preset.category) : preset.unprocessedDir);
   const sourceDir = toAbsolute(preset.category ? path.join(preset.sourceDir, preset.category) : preset.sourceDir);
   const decimatedDir = toAbsolute(preset.category ? path.join(preset.decimatedDir, preset.category) : preset.decimatedDir);
   const gameReadyDir = toAbsolute(preset.category ? path.join(preset.gameReadyDir, preset.category) : preset.gameReadyDir);
+  const unprocessedPath = toAbsolute(preset.unprocessedPath || path.join(unprocessedDir, preset.inputFile));
   const inputPath = toAbsolute(preset.inputPath || path.join(sourceDir, preset.inputFile));
   const decimatedPath = toAbsolute(preset.decimatedPath || path.join(decimatedDir, `${preset.name}.glb`));
   const gameReadyPath = toAbsolute(preset.gameReadyPath || path.join(gameReadyDir, `${preset.name}.glb`));
   const reportPath = `${decimatedPath}.report.json`;
-  return { sourceDir, decimatedDir, gameReadyDir, inputPath, decimatedPath, gameReadyPath, reportPath };
+  return { unprocessedDir, sourceDir, decimatedDir, gameReadyDir, unprocessedPath, inputPath, decimatedPath, gameReadyPath, reportPath };
+}
+
+function ensureSourceAssetAvailable(preset, resolved) {
+  if (fs.existsSync(resolved.inputPath)) {
+    return;
+  }
+
+  if (!fs.existsSync(resolved.unprocessedPath)) {
+    throw new Error(
+      `Missing source asset '${resolved.inputPath}'. Put the raw asset in ${resolved.unprocessedDir} for first-time processing or restore it in ${resolved.sourceDir}.`
+    );
+  }
+
+  ensureDir(path.dirname(resolved.inputPath));
+  fs.renameSync(resolved.unprocessedPath, resolved.inputPath);
+  console.log(`  imported  ${path.relative(repoRoot, resolved.unprocessedPath)} -> ${path.relative(repoRoot, resolved.inputPath)}`);
 }
 
 function runBlenderPipeline(args, preset, resolved) {
@@ -186,12 +205,10 @@ function main() {
       targetHeightMeters: Number(targetHeights[name] || assetConfig.targetHeightMeters || 0)
     });
     const resolved = resolveAssetPaths(preset);
+    ensureDir(resolved.unprocessedDir);
     ensureDir(resolved.decimatedDir);
     ensureDir(resolved.gameReadyDir);
-
-    if (!fs.existsSync(resolved.inputPath)) {
-      throw new Error(`Missing source asset '${resolved.inputPath}'. Seed or copy the original asset into ${resolved.sourceDir}.`);
-    }
+    ensureSourceAssetAvailable(preset, resolved);
 
     if (!args.force && fs.existsSync(resolved.decimatedPath)) {
       console.log(`\n[world-assets] ${preset.name}`);

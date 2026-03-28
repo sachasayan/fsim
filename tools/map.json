@@ -925,6 +925,15 @@
     ],
     "authoredObjects": [
         {
+            "assetId": "air-traffic-control-1",
+            "x": -190,
+            "z": -300,
+            "y": 0,
+            "yaw": 0,
+            "scale": 1,
+            "heightMode": "terrain"
+        },
+        {
             "assetId": "lighthouse",
             "x": -1800,
             "z": -700,
