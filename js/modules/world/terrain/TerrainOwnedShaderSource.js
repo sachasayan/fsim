@@ -41,7 +41,7 @@ function makePlaceholderUniformMap(keys) {
     return Object.fromEntries(keys.map((key) => [key, { value: null }]));
 }
 
-function buildTerrainOwnedShaderSource(isFarLOD) {
+function buildTerrainOwnedShaderSource({ isFarLOD = false, shadowContrast = 0.0 } = {}) {
     const shader = {
         uniforms: {},
         defines: {},
@@ -53,7 +53,8 @@ function buildTerrainOwnedShaderSource(isFarLOD) {
         terrainDetailUniforms: makePlaceholderUniformMap(TERRAIN_DETAIL_UNIFORM_KEYS),
         atmosphereUniforms: makePlaceholderUniformMap(ATMOSPHERE_UNIFORM_KEYS),
         timeUniform: { value: 0 },
-        isFarLOD
+        isFarLOD,
+        shadowContrast
     });
 
     return {
@@ -63,10 +64,10 @@ function buildTerrainOwnedShaderSource(isFarLOD) {
     };
 }
 
-export function getTerrainOwnedShaderSource({ isFarLOD = false } = {}) {
-    const cacheKey = isFarLOD ? 'far' : 'near';
+export function getTerrainOwnedShaderSource({ isFarLOD = false, shadowContrast = 0.0 } = {}) {
+    const cacheKey = `${isFarLOD ? 'far' : 'near'}:${shadowContrast.toFixed(4)}`;
     if (!SOURCE_CACHE.has(cacheKey)) {
-        SOURCE_CACHE.set(cacheKey, buildTerrainOwnedShaderSource(isFarLOD));
+        SOURCE_CACHE.set(cacheKey, buildTerrainOwnedShaderSource({ isFarLOD, shadowContrast }));
     }
     return SOURCE_CACHE.get(cacheKey);
 }
@@ -79,22 +80,23 @@ export function getTerrainOwnedUniformBindings({
     return createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform);
 }
 
-export function getTerrainShaderDescriptor({ isFarLOD = false } = {}) {
-    const cacheKey = isFarLOD ? 'far' : 'near';
+export function getTerrainShaderDescriptor({ isFarLOD = false, shadowContrast = 0.0 } = {}) {
+    const cacheKey = `${isFarLOD ? 'far' : 'near'}:${shadowContrast.toFixed(4)}`;
     if (!DESCRIPTOR_CACHE.has(cacheKey)) {
         const fragId = isFarLOD ? 'far' : 'near';
         DESCRIPTOR_CACHE.set(cacheKey, createOwnedShaderDescriptor({
-            id: `terrain-owned-${fragId}`,
+            id: `terrain-owned-${fragId}-${shadowContrast.toFixed(4)}`,
             baseCacheKey: `terrain-owned-standard-v1-${fragId}`,
             patchId: 'terrain-owned-source',
-            patchCacheKey: `terrain-owned-source-${fragId}`,
+            patchCacheKey: `terrain-owned-source-${fragId}-${shadowContrast.toFixed(4)}`,
             metadata: {
                 system: 'terrain',
                 shaderFamily: 'standard',
                 shaderVariant: fragId,
-                isFarLOD
+                isFarLOD,
+                shadowContrast
             },
-            source: getTerrainOwnedShaderSource({ isFarLOD }),
+            source: getTerrainOwnedShaderSource({ isFarLOD, shadowContrast }),
             uniformBindings({
                 terrainDetailUniforms,
                 atmosphereUniforms,

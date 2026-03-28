@@ -9,7 +9,6 @@ import {
 import { applyOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 import {
     applyDistanceAtmosphereShaderPatch,
-    applyWaterDualScrollShaderPatch
 } from './TerrainShaderPatches.js';
 import {
     getTerrainShaderDescriptor
@@ -34,16 +33,6 @@ export function applyDistanceAtmosphereToMaterial(material, programKey, atmosphe
         metadata: { programKey, strength, desat },
         apply(shader) {
             applyDistanceAtmosphereShaderPatch(shader, { atmosphereUniforms, strength, desat });
-        }
-    }));
-}
-
-export function applyWaterDualScrollToMaterial(material, timeUniform) {
-    upsertMaterialShaderPatch(material, createShaderPatch({
-        id: 'water-dual-scroll',
-        cacheKey: 'water-dual-scroll',
-        apply(shader) {
-            applyWaterDualScrollShaderPatch(shader, { timeUniform });
         }
     }));
 }
@@ -159,10 +148,17 @@ export function createDetailedBuildingMat(style, cameraPosUniform = null) {
     return mat;
 }
 
-export function setupTerrainMaterial(material, terrainDetailUniforms, atmosphereUniforms, timeUniform, isFarLOD = false) {
+export function setupTerrainMaterial(
+    material,
+    terrainDetailUniforms,
+    atmosphereUniforms,
+    timeUniform,
+    isFarLOD = false,
+    { shadowContrast = 0.0 } = {}
+) {
     applyOwnedShaderDescriptor(
         material,
-        getTerrainShaderDescriptor({ isFarLOD }),
+        getTerrainShaderDescriptor({ isFarLOD, shadowContrast }),
         {
             terrainDetailUniforms,
             atmosphereUniforms,
@@ -177,15 +173,24 @@ export function setupWaterMaterial(
     timeUniform = null,
     isFarLOD = false,
     waterSurfaceUniforms = null,
-    { strength = 0.74, desat = 0.08 } = {}
+    {
+        strength = 0.74,
+        desat = 0.08,
+        shadowContrast = 0.0,
+        normalStrength = 1.5,
+        patternEnabled = true
+    } = {}
 ) {
-    if (!isFarLOD && !timeUniform) {
-        throw new Error('setupWaterMaterial requires a timeUniform for near water materials');
-    }
-
     applyOwnedShaderDescriptor(
         material,
-        getWaterShaderDescriptor({ isFarLOD, strength, desat }),
+        getWaterShaderDescriptor({
+            isFarLOD,
+            strength,
+            desat,
+            shadowContrast,
+            normalStrength,
+            patternEnabled
+        }),
         {
             atmosphereUniforms,
             waterSurfaceUniforms,

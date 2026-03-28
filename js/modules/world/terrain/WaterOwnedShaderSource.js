@@ -3,8 +3,7 @@ import { createOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 
 import {
     applyWaterSurfaceColorShaderPatch,
-    applyWaterDualScrollShaderPatch,
-    createWaterDualScrollUniformBindings,
+    applyWaterStaticPatternShaderPatch,
     createWaterSurfaceUniformBindings
 } from './TerrainShaderPatches.js';
 
@@ -36,7 +35,14 @@ function makePlaceholderUniformMap(keys) {
     return Object.fromEntries(keys.map((key) => [key, { value: null }]));
 }
 
-function buildWaterOwnedShaderSource({ isFarLOD = false, strength = 0.74, desat = 0.08 } = {}) {
+function buildWaterOwnedShaderSource({
+    isFarLOD = false,
+    strength = 0.74,
+    desat = 0.08,
+    shadowContrast = 0.0,
+    normalStrength = 1.5,
+    patternEnabled = true
+} = {}) {
     const shader = {
         uniforms: {},
         defines: {},
@@ -48,12 +54,14 @@ function buildWaterOwnedShaderSource({ isFarLOD = false, strength = 0.74, desat 
         atmosphereUniforms: makePlaceholderUniformMap(ATMOSPHERE_UNIFORM_KEYS),
         waterSurfaceUniforms: makePlaceholderUniformMap(WATER_SURFACE_UNIFORM_KEYS),
         strength,
-        desat
+        desat,
+        shadowContrast
     });
 
     if (!isFarLOD) {
-        applyWaterDualScrollShaderPatch(shader, {
-            timeUniform: { value: 0 }
+        applyWaterStaticPatternShaderPatch(shader, {
+            normalStrength,
+            patternEnabled
         });
     }
 
@@ -64,37 +72,50 @@ function buildWaterOwnedShaderSource({ isFarLOD = false, strength = 0.74, desat 
     };
 }
 
-export function getWaterOwnedShaderSource({ isFarLOD = false, strength = 0.74, desat = 0.08 } = {}) {
-    const cacheKey = `${isFarLOD ? 'far' : 'near'}:${strength.toFixed(4)}:${desat.toFixed(4)}`;
+export function getWaterOwnedShaderSource({
+    isFarLOD = false,
+    strength = 0.74,
+    desat = 0.08,
+    shadowContrast = 0.0,
+    normalStrength = 1.5,
+    patternEnabled = true
+} = {}) {
+    const cacheKey = `${isFarLOD ? 'far' : 'near'}:${strength.toFixed(4)}:${desat.toFixed(4)}:${shadowContrast.toFixed(4)}:${normalStrength.toFixed(4)}:${patternEnabled ? 'pattern' : 'flat'}`;
     if (!SOURCE_CACHE.has(cacheKey)) {
-        SOURCE_CACHE.set(cacheKey, buildWaterOwnedShaderSource({ isFarLOD, strength, desat }));
+        SOURCE_CACHE.set(cacheKey, buildWaterOwnedShaderSource({
+            isFarLOD,
+            strength,
+            desat,
+            shadowContrast,
+            normalStrength,
+            patternEnabled
+        }));
     }
     return SOURCE_CACHE.get(cacheKey);
 }
 
-export function getWaterOwnedUniformBindings({ atmosphereUniforms, waterSurfaceUniforms, timeUniform = null, isFarLOD = false }) {
+export function getWaterOwnedUniformBindings({ atmosphereUniforms, waterSurfaceUniforms, isFarLOD = false }) {
     const bindings = createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfaceUniforms);
-
-    if (!isFarLOD) {
-        if (!timeUniform) {
-            throw new Error('Near water owned shader requires a time uniform binding');
-        }
-        Object.assign(bindings, createWaterDualScrollUniformBindings(timeUniform));
-    }
-
     return bindings;
 }
 
-export function getWaterShaderDescriptor({ isFarLOD = false, strength = 0.74, desat = 0.08 } = {}) {
+export function getWaterShaderDescriptor({
+    isFarLOD = false,
+    strength = 0.74,
+    desat = 0.08,
+    shadowContrast = 0.0,
+    normalStrength = 1.5,
+    patternEnabled = true
+} = {}) {
     const fragId = isFarLOD ? 'far' : 'near';
     const shaderFamily = isFarLOD ? 'basic' : 'standard';
-    const cacheKey = `${fragId}:${strength.toFixed(4)}:${desat.toFixed(4)}`;
+    const cacheKey = `${fragId}:${strength.toFixed(4)}:${desat.toFixed(4)}:${shadowContrast.toFixed(4)}:${normalStrength.toFixed(4)}:${patternEnabled ? 'pattern' : 'flat'}`;
     if (!DESCRIPTOR_CACHE.has(cacheKey)) {
         DESCRIPTOR_CACHE.set(cacheKey, createOwnedShaderDescriptor({
-            id: `water-owned-${fragId}-${strength.toFixed(4)}-${desat.toFixed(4)}`,
+            id: `water-owned-${fragId}-${strength.toFixed(4)}-${desat.toFixed(4)}-${shadowContrast.toFixed(4)}-${normalStrength.toFixed(4)}-${patternEnabled ? 'pattern' : 'flat'}`,
             baseCacheKey: `water-owned-${shaderFamily}-v1-${fragId}`,
             patchId: 'water-owned-source',
-            patchCacheKey: `water-owned-source-${fragId}-${strength.toFixed(4)}-${desat.toFixed(4)}`,
+            patchCacheKey: `water-owned-source-${fragId}-${strength.toFixed(4)}-${desat.toFixed(4)}-${shadowContrast.toFixed(4)}-${normalStrength.toFixed(4)}-${patternEnabled ? 'pattern' : 'flat'}`,
             metadata: {
                 system: 'terrain',
                 shaderFamily,
@@ -102,14 +123,22 @@ export function getWaterShaderDescriptor({ isFarLOD = false, strength = 0.74, de
                 isFarLOD,
                 atmosphereStrength: strength,
                 atmosphereDesat: desat,
-                dualScroll: !isFarLOD
+                shadowContrast,
+                normalStrength,
+                staticPattern: !isFarLOD && patternEnabled
             },
-            source: getWaterOwnedShaderSource({ isFarLOD, strength, desat }),
-            uniformBindings({ atmosphereUniforms, waterSurfaceUniforms, timeUniform = null }) {
+            source: getWaterOwnedShaderSource({
+                isFarLOD,
+                strength,
+                desat,
+                shadowContrast,
+                normalStrength,
+                patternEnabled
+            }),
+            uniformBindings({ atmosphereUniforms, waterSurfaceUniforms }) {
                 return getWaterOwnedUniformBindings({
                     atmosphereUniforms,
                     waterSurfaceUniforms,
-                    timeUniform,
                     isFarLOD
                 });
             }

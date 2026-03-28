@@ -7,10 +7,10 @@ import {
     applyDistanceAtmosphereShaderPatch,
     applyTerrainDetailShaderPatch,
     applyTreeDepthShaderPatch,
+    applyWaterStaticPatternShaderPatch,
     createBuildingPopInUniformBindings,
     createDistanceAtmosphereUniformBindings,
-    createTreeDepthUniformBindings,
-    createWaterDualScrollUniformBindings
+    createTreeDepthUniformBindings
 } from '../js/modules/world/terrain/TerrainShaderPatches.js';
 
 function makeShader(overrides = {}) {
@@ -48,21 +48,18 @@ test('applyDistanceAtmosphereShaderPatch injects atmosphere uniforms and blend c
     assert.match(shader.fragmentShader, /diffuseColor\.rgb = mix\(diffuseColor\.rgb, uAtmosColor, atmosMix\);/);
 });
 
-test('distance atmosphere and water dual-scroll helpers return live uniform references', () => {
+test('distance atmosphere helper returns live uniform references', () => {
     const atmosphereUniforms = {
         uAtmosCameraPos: { value: 'camera' },
         uAtmosColor: { value: 'color' },
         uAtmosNear: { value: 1 },
         uAtmosFar: { value: 2 }
     };
-    const timeUniform = { value: 42 };
 
     const atmosphereBindings = createDistanceAtmosphereUniformBindings(atmosphereUniforms);
-    const waterBindings = createWaterDualScrollUniformBindings(timeUniform);
 
     assert.equal(atmosphereBindings.uAtmosCameraPos, atmosphereUniforms.uAtmosCameraPos);
     assert.equal(atmosphereBindings.uAtmosFar, atmosphereUniforms.uAtmosFar);
-    assert.equal(waterBindings.uTime, timeUniform);
 });
 
 test('building pop-in and tree depth helpers expose expected uniform bindings', () => {
@@ -158,7 +155,8 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
         terrainDetailUniforms,
         atmosphereUniforms,
         timeUniform,
-        isFarLOD: true
+        isFarLOD: true,
+        shadowContrast: 0.3
     });
 
     assert.equal(shader.uniforms.uTime, timeUniform);
@@ -182,4 +180,19 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
     assert.doesNotMatch(shader.fragmentShader, /#include <color_fragment>/);
     assert.match(shader.fragmentShader, /float cityAlpha = 0\.0;/);
     assert.match(shader.fragmentShader, /#define IS_FAR_LOD/);
+});
+
+test('applyWaterStaticPatternShaderPatch injects a static procedural water normal', () => {
+    const shader = makeShader({
+        fragmentShader: `#include <common>
+varying vec3 vWaterWorldPos;
+vec4 diffuseColor = vec4( diffuse, opacity );
+#include <normal_fragment_maps>`
+    });
+
+    applyWaterStaticPatternShaderPatch(shader, { normalStrength: 1.5, patternEnabled: true });
+
+    assert.match(shader.fragmentShader, /float waterValueNoise\(vec2 p\)/);
+    assert.match(shader.fragmentShader, /float waterPatternStrength = 1\.5000;/);
+    assert.match(shader.fragmentShader, /float hL = waterProceduralHeight\(vWaterWorldPos\.xz - vec2\(waterNormalStep, 0\.0\)\);/);
 });

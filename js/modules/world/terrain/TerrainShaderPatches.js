@@ -45,12 +45,6 @@ export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosp
     };
 }
 
-export function createWaterDualScrollUniformBindings(timeUniform) {
-    return {
-        uTime: timeUniform
-    };
-}
-
 export function createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfaceUniforms) {
     return {
         uAtmosCameraPos: atmosphereUniforms.uAtmosCameraPos,
@@ -130,8 +124,10 @@ export function applyWaterSurfaceColorShaderPatch(shader, {
     atmosphereUniforms,
     waterSurfaceUniforms,
     strength = 0.74,
-    desat = 0.08
+    desat = 0.08,
+    shadowContrast = 0.0
 }) {
+    const supportsLitWater = shader.fragmentShader.includes('vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;');
     Object.assign(shader.uniforms, createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfaceUniforms));
 
     shader.vertexShader = replaceShaderInclude(
@@ -197,39 +193,80 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uAtmosColor, atmosMix);`,
         'water world-space color assignment'
     );
 
+    if (supportsLitWater) {
+        shader.fragmentShader = replaceShaderInclude(
+            shader.fragmentShader,
+            'shadowmap_pars_fragment',
+            `#include <shadowmap_pars_fragment>
+#include <shadowmask_pars_fragment>`
+        );
+        shader.fragmentShader = replaceShaderSnippet(
+            shader.fragmentShader,
+            'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
+            `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+float waterShadowVisibility = mix(1.0, getShadowMask(), ${shadowContrast.toFixed(4)});
+outgoingLight *= waterShadowVisibility;`,
+            'water shadow contrast adjustment'
+        );
+    }
+
     return shader;
 }
 
-export function applyWaterDualScrollShaderPatch(shader, { timeUniform }) {
-    Object.assign(shader.uniforms, createWaterDualScrollUniformBindings(timeUniform));
-
+export function applyWaterStaticPatternShaderPatch(shader, {
+    normalStrength = 1.5,
+    patternEnabled = true
+} = {}) {
     shader.fragmentShader = replaceShaderInclude(
         shader.fragmentShader,
         'common',
-        '#include <common>\nuniform float uTime; '
+        `#include <common>
+float waterHash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float waterValueNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = waterHash12(i);
+    float b = waterHash12(i + vec2(1.0, 0.0));
+    float c = waterHash12(i + vec2(0.0, 1.0));
+    float d = waterHash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float waterProceduralHeight(vec2 worldXZ) {
+    vec2 uvA = worldXZ * 0.0023;
+    vec2 uvB = worldXZ * 0.0057 + vec2(17.3, -9.1);
+    vec2 uvC = worldXZ * 0.0115 + vec2(-4.7, 12.9);
+    float broad = waterValueNoise(uvA);
+    float mid = waterValueNoise(uvB);
+    float fine = waterValueNoise(uvC);
+    return broad * 0.55 + mid * 0.3 + fine * 0.15;
+}`
     );
     shader.fragmentShader = replaceShaderInclude(
         shader.fragmentShader,
         'normal_fragment_maps',
         `
-#ifdef USE_NORMALMAP
-    vec2 normalUv1 = vNormalMapUv + vec2(uTime * 0.12, uTime * 0.08);
-    vec2 normalUv2 = vNormalMapUv * 1.5 + vec2(uTime * -0.08, uTime * 0.12);
-    
-    vec3 map1 = texture2D(normalMap, normalUv1).xyz;
-    vec3 map2 = texture2D(normalMap, normalUv2).xyz;
-    
-    vec3 normal1 = map1 * 2.0 - 1.0;
-    vec3 normal2 = map2 * 2.0 - 1.0;
-    
-    vec3 baseNormal = normalize(normal1 + normal2);
-baseNormal.xy *= normalScale;
+{
+    float waterPatternStrength = ${patternEnabled ? normalStrength.toFixed(4) : '0.0000'};
+    if (waterPatternStrength > 0.0001) {
+        float waterNormalStep = 6.0;
+        float hL = waterProceduralHeight(vWaterWorldPos.xz - vec2(waterNormalStep, 0.0));
+        float hR = waterProceduralHeight(vWaterWorldPos.xz + vec2(waterNormalStep, 0.0));
+        float hD = waterProceduralHeight(vWaterWorldPos.xz - vec2(0.0, waterNormalStep));
+        float hU = waterProceduralHeight(vWaterWorldPos.xz + vec2(0.0, waterNormalStep));
+        vec3 baseNormal = normalize(vec3((hL - hR) * waterPatternStrength, (hD - hU) * waterPatternStrength, 1.0));
 
-    // Compute TBN matrix from derivatives
+        // Compute TBN matrix from derivatives
     vec3 q0_ds = dFdx(- vViewPosition.xyz);
     vec3 q1_ds = dFdy(- vViewPosition.xyz);
-    vec2 st0_ds = dFdx(vNormalMapUv.st);
-    vec2 st1_ds = dFdy(vNormalMapUv.st);
+    vec2 st0_ds = dFdx(vWaterWorldPos.xz);
+    vec2 st1_ds = dFdy(vWaterWorldPos.xz);
     
     vec3 N_ds = normalize(normal);
     vec3 q1perp_ds = cross(q1_ds, N_ds);
@@ -245,10 +282,11 @@ baseNormal.xy *= normalScale;
     vec3 B_n_ds = B_ds * scale_ds;
     mat3 tbn_ds = mat3(T_n_ds, B_n_ds, N_ds);
 
-normal = normalize(tbn_ds * baseNormal);
-#else
-#include <normal_fragment_maps>
-    #endif`
+        normal = normalize(tbn_ds * baseNormal);
+    } else {
+        #include <normal_fragment_maps>
+    }
+}`
     );
 
     return shader;
@@ -628,8 +666,10 @@ export function applyTerrainDetailShaderPatch(shader, {
     terrainDetailUniforms,
     atmosphereUniforms,
     timeUniform,
-    isFarLOD = false
+    isFarLOD = false,
+    shadowContrast = 0.0
 }) {
+    const supportsLitTerrain = shader.fragmentShader.includes('vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;');
     Object.assign(
         shader.uniforms,
         createTerrainDetailUniformBindings(terrainDetailUniforms, atmosphereUniforms, timeUniform)
@@ -770,6 +810,23 @@ ${ShaderLibrary.terrain_city_pavement_fragment}
         'color_fragment',
         ''
     );
+
+    if (supportsLitTerrain) {
+        shader.fragmentShader = replaceShaderInclude(
+            shader.fragmentShader,
+            'shadowmap_pars_fragment',
+            `#include <shadowmap_pars_fragment>
+#include <shadowmask_pars_fragment>`
+        );
+        shader.fragmentShader = replaceShaderSnippet(
+            shader.fragmentShader,
+            'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
+            `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+float terrainShadowVisibility = mix(1.0, getShadowMask(), ${shadowContrast.toFixed(4)});
+outgoingLight *= terrainShadowVisibility;`,
+            'terrain shadow contrast adjustment'
+        );
+    }
 
     if (isFarLOD) {
         shader.fragmentShader = prependShaderDefine(shader.fragmentShader, '#define IS_FAR_LOD');

@@ -49,7 +49,8 @@ const runtimeConfig = window.__FSIM_RUNTIME__ || {};
 const shouldShowDebugUi = runtimeConfig.showDebugUi === true || urlParamsForInit.get('debug') === '1';
 const debugView = {
   slewMode: false,
-  slewSpeed: 250
+  slewSpeed: 250,
+  showShadowCameraHelper: false
 };
 const lodSettings = createRuntimeLodSettings({ urlSearch: window.location.search });
 
@@ -153,6 +154,7 @@ const {
   updateTerrain,
   updateTerrainAtmosphere,
   getTerrainSelectionDiagnostics,
+  getSurfaceShadowDiagnostics,
   consumeLeafBuildApplyTiming,
   hasPendingTerrainWork,
   terrainDebugSettings,
@@ -195,6 +197,12 @@ const {
   updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER, lodSettings });
 
+const shadowCameraHelper = shadowsEnabled ? new THREE.CameraHelper(dirLight.shadow.camera) : null;
+if (shadowCameraHelper) {
+  shadowCameraHelper.visible = false;
+  scene.add(shadowCameraHelper);
+}
+
 function refreshLodState() {
   normalizeLodSettings(worldLodSettings);
   updateTerrain();
@@ -226,6 +234,45 @@ if (debugGui) {
     nativeFolder.add(terrainDebugSettings, 'showTerrainWireframe')
       .name('Wireframe')
       .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    nativeFolder.add(terrainDebugSettings, 'surfaceShadowDistance', 0, 20000, 100)
+      .name('Shadow Distance')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    nativeFolder.add(terrainDebugSettings, 'terrainShadowContrast', 0, 1, 0.01)
+      .name('Terrain Shadow Boost')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+
+    const waterFolder = nativeFolder.addFolder('Water');
+    waterFolder.add(terrainDebugSettings, 'showWaterWireframe')
+      .name('Wireframe')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterShadowMode', {
+      Auto: 'auto',
+      ForceOn: 'force-on',
+      ForceOff: 'force-off'
+    })
+      .name('Shadow Receive')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterRoughness', 0, 1, 0.01)
+      .name('Roughness')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterMetalness', 0, 1, 0.01)
+      .name('Metalness')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterNormalStrength', 0, 4, 0.05)
+      .name('Normal Strength')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterNormalAnimation')
+      .name('Animate Normals')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterAtmosphereStrength', 0, 2, 0.01)
+      .name('Atmos Strength')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterAtmosphereDesaturation', 0, 1, 0.01)
+      .name('Atmos Desat')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    waterFolder.add(terrainDebugSettings, 'waterShadowContrast', 0, 1, 0.01)
+      .name('Shadow Boost')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
 
     const objectsFolder = nativeFolder.addFolder('Objects');
     objectsFolder.add(terrainDebugSettings, 'showTrees')
@@ -235,6 +282,15 @@ if (debugGui) {
       .name('Buildings')
       .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
   }
+
+  const shadowsFolder = debugGui.addFolder('Shadows');
+  shadowsFolder.add(debugView, 'showShadowCameraHelper')
+    .name('Shadow Frustum')
+    .onChange((visible) => {
+      if (!shadowCameraHelper) return;
+      shadowCameraHelper.visible = visible === true;
+      if (shadowCameraHelper.visible) shadowCameraHelper.update();
+    });
 }
 
 // ==========================================
@@ -314,9 +370,11 @@ window.fsimWorld = {
   profilingReady: false,
   profilingReadinessReason: profilingState.profilingReadinessReason,
   getTerrainSelectionDiagnostics,
+  getSurfaceShadowDiagnostics,
   terrainDebugSettings,
   applyTerrainDebugSettings,
   terrainSelection: getTerrainSelectionDiagnostics?.() || null,
+  surfaceShadows: getSurfaceShadowDiagnostics?.() || null,
   loaderProgress: null,
   shaderValidation: getShaderValidationReport(),
   shaderValidationSummary: getShaderValidationSummary(),
@@ -600,6 +658,7 @@ function updateProfilingReadiness(now) {
   window.fsimWorld.profilingReady = profilingState.profilingReady;
   window.fsimWorld.profilingReadinessReason = reason;
   window.fsimWorld.terrainSelection = getTerrainSelectionDiagnostics?.() || null;
+  window.fsimWorld.surfaceShadows = getSurfaceShadowDiagnostics?.() || null;
 }
 
 function animate() {
@@ -870,6 +929,9 @@ function animate() {
       shadowCam.updateProjectionMatrix();
       prevShadowCenter.copy(shadowTarget);
       prevShadowExtent = shadowExtent;
+    }
+    if (shadowCameraHelper?.visible) {
+      shadowCameraHelper.update();
     }
   }
   perfCollector.recordPhase('shadow_setup', performance.now() - phaseStart);

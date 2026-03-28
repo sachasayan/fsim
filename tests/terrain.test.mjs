@@ -96,6 +96,16 @@ global.document = {
             };
         }
         return {};
+    },
+    createElementNS: (_namespace, tag) => {
+        if (tag === 'img' || tag === 'image') {
+            return {
+                addEventListener: () => { },
+                removeEventListener: () => { },
+                setAttribute: () => { }
+            };
+        }
+        return global.document.createElement(tag);
     }
 };
 
@@ -201,6 +211,87 @@ test('terrain tests', async (t) => {
         // Because pendingChunkBuilds is private, the best we can do is ensure
         // updateTerrain doesn't throw and executes successfully.
         assert.ok(typeof system.updateTerrain === 'function');
+    });
+
+    await t.test('terrain debug settings can override water shadow mode and wireframe', () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+
+        system.terrainDebugSettings.showWaterWireframe = true;
+        system.terrainDebugSettings.waterShadowMode = 'force-on';
+        system.applyTerrainDebugSettings();
+
+        assert.equal(system.waterMaterial.wireframe, true);
+        assert.equal(system.terrainDebugSettings.waterShadowMode, 'force-on');
+
+        system.terrainDebugSettings.waterShadowMode = 'not-a-mode';
+        system.applyTerrainDebugSettings();
+
+        assert.equal(system.terrainDebugSettings.waterShadowMode, 'auto');
+    });
+
+    await t.test('terrain debug settings can tune water material response', () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+
+        system.terrainDebugSettings.waterRoughness = 0.18;
+        system.terrainDebugSettings.waterMetalness = 0.32;
+        system.terrainDebugSettings.waterNormalStrength = 2.25;
+        system.terrainDebugSettings.waterNormalAnimation = false;
+        system.terrainDebugSettings.surfaceShadowDistance = 8500;
+        system.terrainDebugSettings.terrainShadowContrast = 0.45;
+        system.terrainDebugSettings.waterAtmosphereStrength = 1.4;
+        system.terrainDebugSettings.waterAtmosphereDesaturation = 0.3;
+        system.terrainDebugSettings.waterShadowContrast = 0.55;
+        system.applyTerrainDebugSettings();
+
+        assert.equal(system.waterMaterial.roughness, 0.18);
+        assert.equal(system.waterMaterial.metalness, 0.32);
+        assert.equal(system.waterMaterial.normalMap, null);
+        assert.equal(system.waterMaterial.normalScale.x, 3.375);
+        assert.equal(system.waterMaterial.normalScale.y, 3.375);
+
+        system.terrainDebugSettings.waterRoughness = -1;
+        system.terrainDebugSettings.waterMetalness = 2;
+        system.terrainDebugSettings.waterNormalStrength = 10;
+        system.terrainDebugSettings.surfaceShadowDistance = -100;
+        system.terrainDebugSettings.terrainShadowContrast = -2;
+        system.terrainDebugSettings.waterAtmosphereStrength = -1;
+        system.terrainDebugSettings.waterAtmosphereDesaturation = 2;
+        system.terrainDebugSettings.waterShadowContrast = 4;
+        system.applyTerrainDebugSettings();
+
+        assert.equal(system.terrainDebugSettings.surfaceShadowDistance, 0);
+        assert.equal(system.terrainDebugSettings.terrainShadowContrast, 0);
+        assert.equal(system.terrainDebugSettings.waterRoughness, 0);
+        assert.equal(system.terrainDebugSettings.waterMetalness, 1);
+        assert.equal(system.terrainDebugSettings.waterNormalStrength, 4);
+        assert.equal(system.terrainDebugSettings.waterAtmosphereStrength, 0);
+        assert.equal(system.terrainDebugSettings.waterAtmosphereDesaturation, 1);
+        assert.equal(system.terrainDebugSettings.waterShadowContrast, 1);
+    });
+
+    await t.test('surface shadow diagnostics expose nearest surface state', () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        system.updateTerrainAtmosphere({ position: new THREE.Vector3(120, 300, 240) });
+
+        const diagnostics = system.getSurfaceShadowDiagnostics();
+
+        assert.deepEqual(diagnostics.focus, { x: 120, y: 300, z: 240 });
+        assert.equal(diagnostics.settings.surfaceShadowDistance, system.terrainDebugSettings.surfaceShadowDistance);
+        assert.equal(diagnostics.settings.waterShadowMode, system.terrainDebugSettings.waterShadowMode);
+        assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestTerrain'), true);
+        assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestWater'), true);
     });
 
     await t.test('terrain base becomes visible before deferred props finish', async () => {

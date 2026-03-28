@@ -198,8 +198,6 @@ function insertChunkBaseSurfaceMesh(chunkGroup, mesh, index) {
 export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) {
     const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
-    const receiveTerrainShadows = lod <= 1;
-    const receiveWaterShadows = lod === 0;
     let chunkGroup = existingGroup;
     let { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
 
@@ -218,20 +216,20 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
         geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
         terrainMesh = new THREE.Mesh(geometry, lod === 0 ? terrainMaterial : terrainFarMaterial);
-        terrainMesh.receiveShadow = receiveTerrainShadows;
+        terrainMesh.receiveShadow = false;
         insertChunkBaseSurfaceMesh(chunkGroup, terrainMesh, 0);
 
         const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
         waterGeo.rotateX(-Math.PI / 2);
         waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
         waterMesh = new THREE.Mesh(waterGeo, lod === 0 ? waterMaterial : waterFarMaterial);
-        waterMesh.receiveShadow = receiveWaterShadows;
+        waterMesh.receiveShadow = false;
         insertChunkBaseSurfaceMesh(chunkGroup, waterMesh, 1);
         setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh);
     }
 
-    terrainMesh.receiveShadow = receiveTerrainShadows;
-    waterMesh.receiveShadow = receiveWaterShadows;
+    terrainMesh.receiveShadow = false;
+    waterMesh.receiveShadow = false;
 
     chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
     chunkGroup.userData.lod = lod;

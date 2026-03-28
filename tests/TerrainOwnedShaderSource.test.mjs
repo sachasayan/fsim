@@ -18,14 +18,15 @@ function normalizeShaderSource(source) {
 }
 
 test('getTerrainOwnedShaderSource caches and returns owned terrain shader variants', () => {
-    const nearSourceA = getTerrainOwnedShaderSource({ isFarLOD: false });
-    const nearSourceB = getTerrainOwnedShaderSource({ isFarLOD: false });
-    const farSource = getTerrainOwnedShaderSource({ isFarLOD: true });
+    const nearSourceA = getTerrainOwnedShaderSource({ isFarLOD: false, shadowContrast: 0.3 });
+    const nearSourceB = getTerrainOwnedShaderSource({ isFarLOD: false, shadowContrast: 0.3 });
+    const farSource = getTerrainOwnedShaderSource({ isFarLOD: true, shadowContrast: 0.3 });
 
     assert.equal(nearSourceA, nearSourceB);
     assert.match(nearSourceA.vertexShader, /attribute vec4 surfaceWeights;/);
     assert.match(nearSourceA.fragmentShader, /baseTerrainColor \*= naturalTerrainVertexTint;/);
     assert.match(nearSourceA.fragmentShader, /diffuseColor\.rgb = baseTerrainColor;/);
+    assert.match(nearSourceA.fragmentShader, /float terrainShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3000\);/);
     assert.doesNotMatch(nearSourceA.fragmentShader, /#include <color_fragment>/);
     assert.match(farSource.fragmentShader, /#define IS_FAR_LOD/);
 });
@@ -72,33 +73,35 @@ test('getTerrainOwnedUniformBindings returns live uniform references', () => {
 });
 
 test('getTerrainShaderDescriptor returns cached near/far descriptors with stable metadata', () => {
-    const nearDescriptorA = getTerrainShaderDescriptor({ isFarLOD: false });
-    const nearDescriptorB = getTerrainShaderDescriptor({ isFarLOD: false });
-    const farDescriptor = getTerrainShaderDescriptor({ isFarLOD: true });
+    const nearDescriptorA = getTerrainShaderDescriptor({ isFarLOD: false, shadowContrast: 0.3 });
+    const nearDescriptorB = getTerrainShaderDescriptor({ isFarLOD: false, shadowContrast: 0.3 });
+    const farDescriptor = getTerrainShaderDescriptor({ isFarLOD: true, shadowContrast: 0.3 });
 
     assert.equal(nearDescriptorA, nearDescriptorB);
     assert.deepEqual(describeOwnedShaderDescriptor(nearDescriptorA), {
-        id: 'terrain-owned-near',
+        id: 'terrain-owned-near-0.3000',
         baseCacheKey: 'terrain-owned-standard-v1-near',
         patchId: 'terrain-owned-source',
-        patchCacheKey: 'terrain-owned-source-near',
+        patchCacheKey: 'terrain-owned-source-near-0.3000',
         metadata: {
             system: 'terrain',
             shaderFamily: 'standard',
             shaderVariant: 'near',
-            isFarLOD: false
+            isFarLOD: false,
+            shadowContrast: 0.3
         }
     });
     assert.deepEqual(describeOwnedShaderDescriptor(farDescriptor), {
-        id: 'terrain-owned-far',
+        id: 'terrain-owned-far-0.3000',
         baseCacheKey: 'terrain-owned-standard-v1-far',
         patchId: 'terrain-owned-source',
-        patchCacheKey: 'terrain-owned-source-far',
+        patchCacheKey: 'terrain-owned-source-far-0.3000',
         metadata: {
             system: 'terrain',
             shaderFamily: 'standard',
             shaderVariant: 'far',
-            isFarLOD: true
+            isFarLOD: true,
+            shadowContrast: 0.3
         }
     });
 });
@@ -143,15 +146,16 @@ test('terrain owned shader templates match the legacy terrain patch output', () 
             terrainDetailUniforms,
             atmosphereUniforms,
             timeUniform: { value: 0 },
-            isFarLOD
+            isFarLOD,
+            shadowContrast: 0.3
         });
         return shader;
     }
 
     const legacyNear = buildLegacyTerrainSource(false);
     const legacyFar = buildLegacyTerrainSource(true);
-    const ownedNear = getTerrainOwnedShaderSource({ isFarLOD: false });
-    const ownedFar = getTerrainOwnedShaderSource({ isFarLOD: true });
+    const ownedNear = getTerrainOwnedShaderSource({ isFarLOD: false, shadowContrast: 0.3 });
+    const ownedFar = getTerrainOwnedShaderSource({ isFarLOD: true, shadowContrast: 0.3 });
 
     assert.equal(normalizeShaderSource(ownedNear.vertexShader), normalizeShaderSource(legacyNear.vertexShader));
     assert.equal(normalizeShaderSource(ownedNear.fragmentShader), normalizeShaderSource(legacyNear.fragmentShader));

@@ -10,7 +10,7 @@ import {
 import { describeOwnedShaderDescriptor } from '../js/modules/world/shaders/ShaderDescriptor.js';
 import {
     applyWaterSurfaceColorShaderPatch,
-    applyWaterDualScrollShaderPatch
+    applyWaterStaticPatternShaderPatch
 } from '../js/modules/world/terrain/TerrainShaderPatches.js';
 
 function normalizeShaderSource(source) {
@@ -21,22 +21,24 @@ function normalizeShaderSource(source) {
 }
 
 test('water owned shader sources are cached and expose expected near/far behavior', () => {
-    const nearSourceA = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08 });
-    const nearSourceB = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08 });
-    const farSource = getWaterOwnedShaderSource({ isFarLOD: true, strength: 0.74, desat: 0.08 });
+    const nearSourceA = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08, shadowContrast: 0.35, normalStrength: 1.5, patternEnabled: true });
+    const nearSourceB = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08, shadowContrast: 0.35, normalStrength: 1.5, patternEnabled: true });
+    const farSource = getWaterOwnedShaderSource({ isFarLOD: true, strength: 0.74, desat: 0.08, shadowContrast: 0.35 });
 
     assert.equal(nearSourceA, nearSourceB);
     assert.match(nearSourceA.vertexShader, /varying vec3 vWaterWorldPos;/);
-    assert.match(nearSourceA.fragmentShader, /uniform float uTime;/);
-    assert.match(nearSourceA.fragmentShader, /vec2 normalUv1 = vNormalMapUv \+ vec2\(uTime \* 0\.12, uTime \* 0\.08\);/);
+    assert.match(nearSourceA.fragmentShader, /float waterProceduralHeight\(vec2 worldXZ\)/);
+    assert.match(nearSourceA.fragmentShader, /float waterPatternStrength = 1\.5000;/);
     assert.match(nearSourceA.fragmentShader, /uniform sampler2D uWaterDepthTex;/);
     assert.match(nearSourceA.fragmentShader, /float waterDepth = texture2D\(uWaterDepthTex, waterUv\)\.r \* uWaterDepthScale;/);
     assert.match(nearSourceA.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
+    assert.match(nearSourceA.fragmentShader, /float waterShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3500\);/);
     assert.match(farSource.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
-    assert.doesNotMatch(farSource.fragmentShader, /uniform float uTime;/);
+    assert.doesNotMatch(farSource.fragmentShader, /getShadowMask/);
+    assert.doesNotMatch(farSource.fragmentShader, /waterProceduralHeight/);
 });
 
-test('water owned uniform bindings expose live references and reject missing near-water time uniforms', () => {
+test('water owned uniform bindings expose live references for near and far water', () => {
     const atmosphereUniforms = {
         uAtmosCameraPos: { value: 'camera' },
         uAtmosColor: { value: 'color' },
@@ -56,12 +58,10 @@ test('water owned uniform bindings expose live references and reject missing nea
         uWaterShallowColor: { value: 'shallow' },
         uWaterDeepColor: { value: 'deep' }
     };
-    const timeUniform = { value: 42 };
 
     const nearBindings = getWaterOwnedUniformBindings({
         atmosphereUniforms,
         waterSurfaceUniforms,
-        timeUniform,
         isFarLOD: false
     });
     const farBindings = getWaterOwnedUniformBindings({
@@ -72,27 +72,23 @@ test('water owned uniform bindings expose live references and reject missing nea
 
     assert.equal(nearBindings.uAtmosColor, atmosphereUniforms.uAtmosColor);
     assert.equal(nearBindings.uWaterDepthTex, waterSurfaceUniforms.uWaterDepthTex);
-    assert.equal(nearBindings.uTime, timeUniform);
     assert.equal(farBindings.uAtmosNear, atmosphereUniforms.uAtmosNear);
     assert.equal(farBindings.uWaterDeepColor, waterSurfaceUniforms.uWaterDeepColor);
+    assert.equal(Object.prototype.hasOwnProperty.call(nearBindings, 'uTime'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(farBindings, 'uTime'), false);
-    assert.throws(
-        () => getWaterOwnedUniformBindings({ atmosphereUniforms, waterSurfaceUniforms, isFarLOD: false }),
-        /Near water owned shader requires a time uniform binding/
-    );
 });
 
 test('getWaterShaderDescriptor returns cached descriptors with variant metadata', () => {
-    const nearDescriptorA = getWaterShaderDescriptor({ isFarLOD: false, strength: 0.74, desat: 0.08 });
-    const nearDescriptorB = getWaterShaderDescriptor({ isFarLOD: false, strength: 0.74, desat: 0.08 });
-    const farDescriptor = getWaterShaderDescriptor({ isFarLOD: true, strength: 0.74, desat: 0.08 });
+    const nearDescriptorA = getWaterShaderDescriptor({ isFarLOD: false, strength: 0.74, desat: 0.08, shadowContrast: 0.35, normalStrength: 1.5, patternEnabled: true });
+    const nearDescriptorB = getWaterShaderDescriptor({ isFarLOD: false, strength: 0.74, desat: 0.08, shadowContrast: 0.35, normalStrength: 1.5, patternEnabled: true });
+    const farDescriptor = getWaterShaderDescriptor({ isFarLOD: true, strength: 0.74, desat: 0.08, shadowContrast: 0.35 });
 
     assert.equal(nearDescriptorA, nearDescriptorB);
     assert.deepEqual(describeOwnedShaderDescriptor(nearDescriptorA), {
-        id: 'water-owned-near-0.7400-0.0800',
+        id: 'water-owned-near-0.7400-0.0800-0.3500-1.5000-pattern',
         baseCacheKey: 'water-owned-standard-v1-near',
         patchId: 'water-owned-source',
-        patchCacheKey: 'water-owned-source-near-0.7400-0.0800',
+        patchCacheKey: 'water-owned-source-near-0.7400-0.0800-0.3500-1.5000-pattern',
         metadata: {
             system: 'terrain',
             shaderFamily: 'standard',
@@ -100,14 +96,16 @@ test('getWaterShaderDescriptor returns cached descriptors with variant metadata'
             isFarLOD: false,
             atmosphereStrength: 0.74,
             atmosphereDesat: 0.08,
-            dualScroll: true
+            shadowContrast: 0.35,
+            normalStrength: 1.5,
+            staticPattern: true
         }
     });
     assert.deepEqual(describeOwnedShaderDescriptor(farDescriptor), {
-        id: 'water-owned-far-0.7400-0.0800',
+        id: 'water-owned-far-0.7400-0.0800-0.3500-1.5000-pattern',
         baseCacheKey: 'water-owned-basic-v1-far',
         patchId: 'water-owned-source',
-        patchCacheKey: 'water-owned-source-far-0.7400-0.0800',
+        patchCacheKey: 'water-owned-source-far-0.7400-0.0800-0.3500-1.5000-pattern',
         metadata: {
             system: 'terrain',
             shaderFamily: 'basic',
@@ -115,7 +113,9 @@ test('getWaterShaderDescriptor returns cached descriptors with variant metadata'
             isFarLOD: true,
             atmosphereStrength: 0.74,
             atmosphereDesat: 0.08,
-            dualScroll: false
+            shadowContrast: 0.35,
+            normalStrength: 1.5,
+            staticPattern: false
         }
     });
 });
@@ -152,11 +152,13 @@ test('water owned shader templates match the legacy water patch output', () => {
             atmosphereUniforms,
             waterSurfaceUniforms,
             strength: 0.74,
-            desat: 0.08
+            desat: 0.08,
+            shadowContrast: 0.35
         });
         if (!isFarLOD) {
-            applyWaterDualScrollShaderPatch(shader, {
-                timeUniform: { value: 0 }
+            applyWaterStaticPatternShaderPatch(shader, {
+                normalStrength: 1.5,
+                patternEnabled: true
             });
         }
         return shader;
@@ -164,8 +166,8 @@ test('water owned shader templates match the legacy water patch output', () => {
 
     const legacyNear = buildLegacyWaterSource(false);
     const legacyFar = buildLegacyWaterSource(true);
-    const ownedNear = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08 });
-    const ownedFar = getWaterOwnedShaderSource({ isFarLOD: true, strength: 0.74, desat: 0.08 });
+    const ownedNear = getWaterOwnedShaderSource({ isFarLOD: false, strength: 0.74, desat: 0.08, shadowContrast: 0.35, normalStrength: 1.5, patternEnabled: true });
+    const ownedFar = getWaterOwnedShaderSource({ isFarLOD: true, strength: 0.74, desat: 0.08, shadowContrast: 0.35 });
 
     assert.equal(normalizeShaderSource(ownedNear.vertexShader), normalizeShaderSource(legacyNear.vertexShader));
     assert.equal(normalizeShaderSource(ownedNear.fragmentShader), normalizeShaderSource(legacyNear.fragmentShader));

@@ -334,9 +334,9 @@ export function createTerrainSystem({
     vertexColors: true,
     roughness: 0.62,
     metalness: 0.05,
-    normalMap: createWaterNormalMap(Noise),
     normalScale: new THREE.Vector2(1.5, 1.5)
   });
+  const baseWaterNormalScale = waterMaterial.normalScale.clone();
   waterMaterial.polygonOffset = true;
   waterMaterial.polygonOffsetFactor = 1; // Pull water slightly back to let terrain shorelines/river-splines win if near
   waterMaterial.polygonOffsetUnits = 1;
@@ -781,6 +781,17 @@ export function createTerrainSystem({
     resolution8MaxNodeSize: CHUNK_SIZE * 2,
     resolution4MaxNodeSize: CHUNK_SIZE * 4,
     showTerrainWireframe: false,
+    surfaceShadowDistance: 10000,
+    terrainShadowContrast: 0.3,
+    showWaterWireframe: false,
+    waterShadowMode: 'auto',
+    waterRoughness: 0.62,
+    waterMetalness: 0.05,
+    waterNormalStrength: 1.5,
+    waterNormalAnimation: true,
+    waterAtmosphereStrength: 0.74,
+    waterAtmosphereDesaturation: 0.08,
+    waterShadowContrast: 0.3,
     showTrees: true,
     showBuildings: true
   };
@@ -1006,7 +1017,6 @@ export function createTerrainSystem({
   }
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassBumpTexture.colorSpace = THREE.NoColorSpace;
-  if (waterMaterial.normalMap) waterMaterial.normalMap.anisotropy = maxAnisotropy;
   const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02, flatShading: false });
   const terrainFarMaterial = terrainMaterial.clone();
   terrainFarMaterial.roughness = 1.0;
@@ -1034,8 +1044,22 @@ export function createTerrainSystem({
     uTerrainSnowColor: { value: new THREE.Color(1, 1, 1) }
   };
 
-  setupTerrainMaterial(terrainMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, false);
-  setupTerrainMaterial(terrainFarMaterial, terrainDetailUniforms, atmosphereUniforms, waterTimeUniform, true);
+  setupTerrainMaterial(
+    terrainMaterial,
+    terrainDetailUniforms,
+    atmosphereUniforms,
+    waterTimeUniform,
+    false,
+    { shadowContrast: terrainDebugSettings.terrainShadowContrast }
+  );
+  setupTerrainMaterial(
+    terrainFarMaterial,
+    terrainDetailUniforms,
+    atmosphereUniforms,
+    waterTimeUniform,
+    true,
+    { shadowContrast: terrainDebugSettings.terrainShadowContrast }
+  );
   function rebuildGrassNormalTexture() {
     if (!grassBumpTexture.image) return;
     const nextNormalTexture = createNormalMapFromHeightImage(grassBumpTexture.image, 2.4);
@@ -1124,6 +1148,15 @@ export function createTerrainSystem({
     };
   }
 
+  function createChunkBounds(cx, cz) {
+    return {
+      minX: cx * CHUNK_SIZE,
+      minZ: cz * CHUNK_SIZE,
+      maxX: (cx + 1) * CHUNK_SIZE,
+      maxZ: (cz + 1) * CHUNK_SIZE
+    };
+  }
+
   function markLeafPendingSurface(leafState, { resetPendingStart = false } = {}) {
     if (!leafState) return;
     const now = performance.now();
@@ -1208,6 +1241,17 @@ export function createTerrainSystem({
       terrainDebugSettings.resolution8MaxNodeSize,
       terrainDebugSettings.resolution4MaxNodeSize
     ] = thresholds;
+    if (!['auto', 'force-on', 'force-off'].includes(terrainDebugSettings.waterShadowMode)) {
+      terrainDebugSettings.waterShadowMode = 'auto';
+    }
+    terrainDebugSettings.surfaceShadowDistance = Math.max(0, terrainDebugSettings.surfaceShadowDistance);
+    terrainDebugSettings.terrainShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.terrainShadowContrast));
+    terrainDebugSettings.waterRoughness = Math.max(0, Math.min(1, terrainDebugSettings.waterRoughness));
+    terrainDebugSettings.waterMetalness = Math.max(0, Math.min(1, terrainDebugSettings.waterMetalness));
+    terrainDebugSettings.waterNormalStrength = Math.max(0, Math.min(4, terrainDebugSettings.waterNormalStrength));
+    terrainDebugSettings.waterAtmosphereStrength = Math.max(0, Math.min(2, terrainDebugSettings.waterAtmosphereStrength));
+    terrainDebugSettings.waterAtmosphereDesaturation = Math.max(0, Math.min(1, terrainDebugSettings.waterAtmosphereDesaturation));
+    terrainDebugSettings.waterShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.waterShadowContrast));
   }
 
   function applyTerrainWireframeSetting() {
@@ -1215,6 +1259,113 @@ export function createTerrainSystem({
     terrainFarMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
     terrainMaterial.needsUpdate = true;
     terrainFarMaterial.needsUpdate = true;
+  }
+
+  function applyTerrainMaterialDebugSettings() {
+    setupTerrainMaterial(
+      terrainMaterial,
+      terrainDetailUniforms,
+      atmosphereUniforms,
+      waterTimeUniform,
+      false,
+      { shadowContrast: terrainDebugSettings.terrainShadowContrast }
+    );
+    setupTerrainMaterial(
+      terrainFarMaterial,
+      terrainDetailUniforms,
+      atmosphereUniforms,
+      waterTimeUniform,
+      true,
+      { shadowContrast: terrainDebugSettings.terrainShadowContrast }
+    );
+    terrainMaterial.needsUpdate = true;
+    terrainFarMaterial.needsUpdate = true;
+  }
+
+  function shouldSurfaceReceiveShadow(bounds = null) {
+    if (!bounds) return false;
+    const threshold = terrainDebugSettings.surfaceShadowDistance;
+    if (!Number.isFinite(threshold) || threshold <= 0) return false;
+    const focusX = atmosphereCameraPos.x;
+    const focusZ = atmosphereCameraPos.z;
+    return distanceToLeafBoundsSq(bounds, focusX, focusZ) <= threshold * threshold;
+  }
+
+  function shouldWaterReceiveShadow(bounds = null) {
+    if (terrainDebugSettings.waterShadowMode === 'force-on') return true;
+    if (terrainDebugSettings.waterShadowMode === 'force-off') return false;
+    return shouldSurfaceReceiveShadow(bounds);
+  }
+
+  function configureWaterMaterialDebug(material, {
+    isFarLOD = false,
+    waterUniforms = waterSurfaceUniforms
+  } = {}) {
+    if (!material) return;
+    material.roughness = terrainDebugSettings.waterRoughness;
+    material.metalness = terrainDebugSettings.waterMetalness;
+    material.normalMap = null;
+    if (material.normalScale) {
+      material.normalScale.set(
+        baseWaterNormalScale.x * terrainDebugSettings.waterNormalStrength,
+        baseWaterNormalScale.y * terrainDebugSettings.waterNormalStrength
+      );
+    } else {
+      material.normalScale = new THREE.Vector2(
+        baseWaterNormalScale.x * terrainDebugSettings.waterNormalStrength,
+        baseWaterNormalScale.y * terrainDebugSettings.waterNormalStrength
+      );
+    }
+    material.wireframe = terrainDebugSettings.showWaterWireframe;
+    material.userData = material.userData || {};
+    material.userData.isFarWaterLod = isFarLOD;
+    material.userData.waterSurfaceUniforms = waterUniforms;
+    material.userData.timeUniform = null;
+    setupWaterMaterial(
+      material,
+      atmosphereUniforms,
+      null,
+      isFarLOD,
+      waterUniforms,
+      {
+        strength: terrainDebugSettings.waterAtmosphereStrength,
+        desat: terrainDebugSettings.waterAtmosphereDesaturation,
+        shadowContrast: terrainDebugSettings.waterShadowContrast,
+        normalStrength: terrainDebugSettings.waterNormalStrength,
+        patternEnabled: terrainDebugSettings.waterNormalAnimation
+      }
+    );
+    material.needsUpdate = true;
+  }
+
+  function applyWaterDebugSettings() {
+    configureWaterMaterialDebug(waterMaterial, {
+      isFarLOD: false,
+      waterUniforms: waterSurfaceUniforms
+    });
+    configureWaterMaterialDebug(waterFarMaterial, {
+      isFarLOD: true,
+      waterUniforms: waterSurfaceUniforms
+    });
+
+    for (const leafState of activeLeaves.values()) {
+      if (!leafState?.waterMesh) continue;
+      leafState.waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
+      configureWaterMaterialDebug(leafState.waterMesh.material, {
+        isFarLOD: false,
+        waterUniforms: leafState.waterMesh.material?.userData?.waterSurfaceUniforms || waterSurfaceUniforms
+      });
+    }
+
+    for (const state of terrainChunks.values()) {
+      const waterMesh = state?.group?.userData?.chunkBaseWaterMesh || null;
+      if (!waterMesh) continue;
+      waterMesh.receiveShadow = shouldWaterReceiveShadow(state.bounds || null);
+      configureWaterMaterialDebug(waterMesh.material, {
+        isFarLOD: state.lod !== 0,
+        waterUniforms: waterMesh.material?.userData?.waterSurfaceUniforms || waterSurfaceUniforms
+      });
+    }
   }
 
   function applyTerrainGrassMapSettings() {
@@ -1364,6 +1515,9 @@ export function createTerrainSystem({
   function applyTerrainDebugSettings({ rebuildSurfaces = false, refreshSelection = false, rebuildProps = false, rebuildHydrology = false } = {}) {
     normalizeTerrainDebugSettings();
     applyTerrainWireframeSetting();
+    applyTerrainMaterialDebugSettings();
+    applyWaterDebugSettings();
+    syncSurfaceShadowReception();
     applyTerrainGrassShaderSettings();
     applyTerrainGrassMapSettings();
     if (rebuildSurfaces) {
@@ -1467,7 +1621,10 @@ export function createTerrainSystem({
       uWaterDeepColor: { value: waterSurfaceUniforms.uWaterDeepColor.value.clone() }
     };
 
-    setupWaterMaterial(material, atmosphereUniforms, waterTimeUniform, false, leafWaterUniforms);
+    configureWaterMaterialDebug(material, {
+      isFarLOD: false,
+      waterUniforms: leafWaterUniforms
+    });
     return material;
   }
 
@@ -1640,7 +1797,7 @@ export function createTerrainSystem({
     const terrainGeometry = createLeafSurfaceGeometryFromBuffers(result.terrain, 'terrain');
     const terrainGeometryMs = performance.now() - materialSetupStartedAtMs;
     const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
-    terrainMesh.receiveShadow = true;
+    terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(leafState.bounds);
     terrainMesh.position.set(result.node.minX, 0, result.node.minZ);
 
     let waterGeometryMs = 0;
@@ -1656,7 +1813,7 @@ export function createTerrainSystem({
       waterDepthTextureMs = performance.now() - waterDepthStartedAtMs;
       const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, result.node);
       waterMesh = new THREE.Mesh(waterGeometry, leafWaterMaterial);
-      waterMesh.receiveShadow = leafState.chunkLod === 0;
+      waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
       waterMesh.position.set(result.node.minX, 0, result.node.minZ);
     }
     const materialSetupMs = performance.now() - materialSetupStartedAtMs;
@@ -1971,15 +2128,15 @@ export function createTerrainSystem({
 
   function activateChunkBaseGroup(chunkGroup) {
     if (!chunkGroup) return;
-    const lod = Number.isInteger(chunkGroup.userData?.lod) ? chunkGroup.userData.lod : 3;
+    const bounds = chunkGroup?.userData?.bounds || null;
     const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
     if (terrainMesh) {
       terrainMesh.visible = true;
-      terrainMesh.receiveShadow = lod <= 1;
+      terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(bounds);
     }
     if (waterMesh) {
       waterMesh.visible = false;
-      waterMesh.receiveShadow = lod === 0;
+      waterMesh.receiveShadow = shouldWaterReceiveShadow(bounds);
     }
   }
 
@@ -1988,6 +2145,7 @@ export function createTerrainSystem({
     group.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
     group.userData.lod = lod;
     group.userData.chunkKey = `${cx},${cz}`;
+    group.userData.bounds = createChunkBounds(cx, cz);
     if (!group.parent) {
       scene.add(group);
     }
@@ -2048,6 +2206,115 @@ export function createTerrainSystem({
     }
     terrainPerfState.chunkBaseRole.currentVisibleChunkCount = currentVisibleChunkCount;
     terrainPerfState.chunkBaseRole.currentHiddenByReadyLeafCount = currentHiddenByReadyLeafCount;
+  }
+
+  function syncSurfaceShadowReception() {
+    for (const leafState of activeLeaves.values()) {
+      if (leafState?.terrainMesh) {
+        leafState.terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(leafState.bounds);
+      }
+      if (leafState?.waterMesh) {
+        leafState.waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
+      }
+    }
+
+    for (const [chunkKey, state] of terrainChunks.entries()) {
+      const chunkBounds = state?.bounds || createChunkBounds(...chunkKey.split(',').map((value) => Number(value.trim())));
+      const terrainMesh = state?.group?.userData?.chunkBaseTerrainMesh || null;
+      const waterMesh = state?.group?.userData?.chunkBaseWaterMesh || null;
+      if (terrainMesh) terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(chunkBounds);
+      if (waterMesh) waterMesh.receiveShadow = shouldWaterReceiveShadow(chunkBounds);
+    }
+  }
+
+  function getSurfaceCenter(bounds = null) {
+    if (!bounds) return null;
+    return {
+      x: (bounds.minX + bounds.maxX) * 0.5,
+      z: (bounds.minZ + bounds.maxZ) * 0.5
+    };
+  }
+
+  function describeSurfaceShadowEntry(type, source, mesh, bounds) {
+    if (!mesh || !bounds) return null;
+    const focusX = atmosphereCameraPos.x;
+    const focusZ = atmosphereCameraPos.z;
+    const center = getSurfaceCenter(bounds);
+    return {
+      type,
+      source,
+      visible: mesh.visible === true,
+      receiveShadow: mesh.receiveShadow === true,
+      distanceToBounds: Math.round(Math.sqrt(distanceToLeafBoundsSq({ bounds }, focusX, focusZ))),
+      center,
+      bounds: {
+        minX: Math.round(bounds.minX),
+        minZ: Math.round(bounds.minZ),
+        maxX: Math.round(bounds.maxX),
+        maxZ: Math.round(bounds.maxZ)
+      },
+      material: {
+        type: mesh.material?.type || null,
+        roughness: Number.isFinite(mesh.material?.roughness) ? mesh.material.roughness : null,
+        metalness: Number.isFinite(mesh.material?.metalness) ? mesh.material.metalness : null
+      }
+    };
+  }
+
+  function getNearestSurfaceShadowEntry(type) {
+    let best = null;
+    let bestDistanceSq = Number.POSITIVE_INFINITY;
+    const focusX = atmosphereCameraPos.x;
+    const focusZ = atmosphereCameraPos.z;
+
+    for (const leafState of activeLeaves.values()) {
+      const mesh = type === 'water' ? leafState?.waterMesh : leafState?.terrainMesh;
+      if (!mesh || mesh.visible !== true || !leafState?.bounds) continue;
+      const distanceSq = distanceToLeafBoundsSq(leafState.bounds ? { bounds: leafState.bounds } : null, focusX, focusZ);
+      if (distanceSq >= bestDistanceSq) continue;
+      bestDistanceSq = distanceSq;
+      best = describeSurfaceShadowEntry(type, 'leaf', mesh, leafState.bounds);
+      if (best) {
+        best.leafId = leafState.leafId ?? null;
+        best.surfaceState = leafState.state ?? null;
+      }
+    }
+
+    for (const [chunkKey, state] of terrainChunks.entries()) {
+      const mesh = type === 'water'
+        ? state?.group?.userData?.chunkBaseWaterMesh || null
+        : state?.group?.userData?.chunkBaseTerrainMesh || null;
+      const bounds = state?.bounds || null;
+      if (!mesh || mesh.visible !== true || !bounds) continue;
+      const distanceSq = distanceToLeafBoundsSq({ bounds }, focusX, focusZ);
+      if (distanceSq >= bestDistanceSq) continue;
+      bestDistanceSq = distanceSq;
+      best = describeSurfaceShadowEntry(type, 'chunk-base', mesh, bounds);
+      if (best) {
+        best.chunkKey = chunkKey;
+        best.lod = state?.lod ?? null;
+      }
+    }
+
+    return best;
+  }
+
+  function getSurfaceShadowDiagnostics() {
+    return {
+      focus: {
+        x: Math.round(atmosphereCameraPos.x),
+        y: Math.round(atmosphereCameraPos.y),
+        z: Math.round(atmosphereCameraPos.z)
+      },
+      settings: {
+        surfaceShadowDistance: terrainDebugSettings.surfaceShadowDistance,
+        waterShadowMode: terrainDebugSettings.waterShadowMode,
+        terrainShadowContrast: terrainDebugSettings.terrainShadowContrast,
+        waterShadowContrast: terrainDebugSettings.waterShadowContrast
+      },
+      nearestTerrain: getNearestSurfaceShadowEntry('terrain'),
+      nearestWater: getNearestSurfaceShadowEntry('water')
+    };
   }
 
   function generateChunkBase(cx, cz, lod = 0) {
@@ -2114,7 +2381,7 @@ export function createTerrainSystem({
   }
 
   function distanceToLeafBoundsSq(leaf, x, z) {
-    const bounds = leaf?.bounds;
+    const bounds = leaf?.bounds || leaf;
     if (!bounds) return Infinity;
     const dx = x < bounds.minX ? bounds.minX - x : (x > bounds.maxX ? x - bounds.maxX : 0);
     const dz = z < bounds.minZ ? bounds.minZ - z : (z > bounds.maxZ ? z - bounds.maxZ : 0);
@@ -2314,12 +2581,7 @@ export function createTerrainSystem({
           nodeId: null,
           depth: 0,
           type: 'grid',
-          bounds: {
-            minX: cx * CHUNK_SIZE,
-            minZ: cz * CHUNK_SIZE,
-            maxX: (cx + 1) * CHUNK_SIZE,
-            maxZ: (cz + 1) * CHUNK_SIZE
-          },
+          bounds: createChunkBounds(cx, cz),
           size: CHUNK_SIZE,
           chunkLod: lod,
           blockingReady: true,
@@ -2756,6 +3018,7 @@ export function createTerrainSystem({
         terrainChunks.set(job.key, {
           group: hostGroup,
           pendingGroup: null,
+          bounds: createChunkBounds(job.cx, job.cz),
           lod: job.lod,
           propsBuilt: false,
           state: 'base_done'
@@ -2766,7 +3029,14 @@ export function createTerrainSystem({
         continue;
       }
 
-      terrainChunks.set(job.key, { group: oldGroup, pendingGroup: null, lod: job.lod, propsBuilt: false, state: 'building_base' });
+      terrainChunks.set(job.key, {
+        group: oldGroup,
+        pendingGroup: null,
+        bounds: createChunkBounds(job.cx, job.cz),
+        lod: job.lod,
+        propsBuilt: false,
+        state: 'building_base'
+      });
       terrainPerfState.chunkBaseRole.buildStarts += 1;
       builds++;
 
@@ -2968,6 +3238,7 @@ export function createTerrainSystem({
     const chunkBuildStats = processChunkBuildQueue(buildBudget);
     const propBuildStats = processPropBuildQueue(propBuildBudget);
     const leafApplyStats = consumeLeafBuildApplyTiming();
+    syncSurfaceShadowReception();
     refreshTerrainSelectionDiagnostics();
     terrainPerfState.lastUpdate = {
       selectionBuildMs,
@@ -3055,6 +3326,7 @@ export function createTerrainSystem({
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
+      syncSurfaceShadowReception();
     }
     const windmillTime = performance.now() * 0.001;
     for (const state of terrainChunks.values()) {
@@ -3390,6 +3662,7 @@ export function createTerrainSystem({
     updateTerrain,
     updateTerrainAtmosphere,
     getTerrainSelectionDiagnostics,
+    getSurfaceShadowDiagnostics,
     consumeLeafBuildApplyTiming,
     terrainDebugSettings,
     applyTerrainDebugSettings,
