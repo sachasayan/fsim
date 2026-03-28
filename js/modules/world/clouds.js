@@ -2,13 +2,10 @@ import * as THREE from 'three';
 import {
   createFarCloudUniforms,
   getFarCloudOwnedShaderSource,
-  getNearCloudOwnedShaderSource,
-  getNearCloudUniformBindings
+  getNearCloudShaderDescriptor
 } from './shaders/CloudOwnedShaderSource.js';
-import {
-  configureMaterialShaderPipeline,
-  createOwnedShaderSourcePatch
-} from './shaders/MaterialShaderPipeline.js';
+import { configureMaterialShaderPipeline } from './shaders/MaterialShaderPipeline.js';
+import { applyOwnedShaderDescriptor } from './shaders/ShaderDescriptor.js';
 
 export function createCloudSystem({ scene }) {
   const voxelSize = 220;
@@ -68,22 +65,8 @@ export function createCloudSystem({ scene }) {
     uCloudPhaseStrength: { value: 0.25 }
   };
 
-  configureMaterialShaderPipeline(voxelMat, {
-    baseCacheKey: 'near-clouds-owned-v1',
-    patches: [
-      createOwnedShaderSourcePatch({
-        id: 'near-cloud-owned-source',
-        cacheKey: 'near-cloud-owned-source-v1',
-        metadata: {
-          shaderFamily: 'basic',
-          cloudLayer: 'near'
-        },
-        source: getNearCloudOwnedShaderSource(),
-        uniformBindings() {
-          return getNearCloudUniformBindings(sharedCloudUniforms);
-        }
-      })
-    ]
+  applyOwnedShaderDescriptor(voxelMat, getNearCloudShaderDescriptor(), {
+    sharedCloudUniforms
   });
 
   const clouds = new THREE.Group();

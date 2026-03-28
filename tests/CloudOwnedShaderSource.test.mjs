@@ -5,8 +5,10 @@ import {
     createFarCloudUniforms,
     getFarCloudOwnedShaderSource,
     getNearCloudOwnedShaderSource,
+    getNearCloudShaderDescriptor,
     getNearCloudUniformBindings
 } from '../js/modules/world/shaders/CloudOwnedShaderSource.js';
+import { describeOwnedShaderDescriptor } from '../js/modules/world/shaders/ShaderDescriptor.js';
 
 test('cloud owned shader sources are cached and expose expected near/far code', () => {
     const nearSourceA = getNearCloudOwnedShaderSource();
@@ -18,6 +20,7 @@ test('cloud owned shader sources are cached and expose expected near/far code', 
     assert.equal(farSourceA, farSourceB);
     assert.match(nearSourceA.vertexShader, /varying vec3 vCloudWorldPos;/);
     assert.match(nearSourceA.fragmentShader, /float nearFade = 1\.0 - smoothstep\(uNearFadeStart, uNearFadeEnd, cloudDist\);/);
+    assert.doesNotMatch(nearSourceA.fragmentShader, /uTime/);
     assert.match(farSourceA.fragmentShader, /float n = fbm\(p \+ fbm\(p \* 0\.5\) \* 0\.3\);/);
     assert.match(farSourceA.fragmentShader, /gl_FragColor = vec4\(finalColor, alpha \* uOpacity\);/);
 });
@@ -45,4 +48,22 @@ test('cloud owned uniform helpers return live references and tuning-driven defau
     assert.equal(farUniforms.uFarFadeStart.value, 9000);
     assert.equal(farUniforms.uFarFadeEnd.value, 14500);
     assert.equal(farUniforms.uDomainRadius.value, 114000);
+});
+
+test('near cloud shader descriptor is cached with stable metadata', () => {
+    const descriptorA = getNearCloudShaderDescriptor();
+    const descriptorB = getNearCloudShaderDescriptor();
+
+    assert.equal(descriptorA, descriptorB);
+    assert.deepEqual(describeOwnedShaderDescriptor(descriptorA), {
+        id: 'near-cloud-owned',
+        baseCacheKey: 'near-clouds-owned-v1',
+        patchId: 'near-cloud-owned-source',
+        patchCacheKey: 'near-cloud-owned-source-v1',
+        metadata: {
+            shaderFamily: 'basic',
+            cloudLayer: 'near',
+            system: 'clouds'
+        }
+    });
 });

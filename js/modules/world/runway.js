@@ -2,10 +2,9 @@ import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
 import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 import {
-  getRunwayLightOwnedShaderSource,
-  getRunwayLightUniformBindings
+  getRunwayLightShaderDescriptor
 } from './shaders/RunwayOwnedShaderSource.js';
-import { configureMaterialShaderPipeline, createOwnedShaderSourcePatch } from './shaders/MaterialShaderPipeline.js';
+import { applyOwnedShaderDescriptor } from './shaders/ShaderDescriptor.js';
 
 export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSettings }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
@@ -286,23 +285,7 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
       color: baseEmissive, // Basic material uses 'color' for its brightness, not 'emissive'. We manually boost it in the shader.
     });
 
-    configureMaterialShaderPipeline(mat, {
-      baseCacheKey: `runway-light-owned-v1-${intensity}`,
-      patches: [
-        createOwnedShaderSourcePatch({
-          id: 'runway-light-owned-source',
-          cacheKey: `runway-light-owned-source-${intensity}`,
-          metadata: {
-            intensity,
-            shaderFamily: 'basic'
-          },
-          source: getRunwayLightOwnedShaderSource({ intensity }),
-          uniformBindings() {
-            return getRunwayLightUniformBindings(intensity);
-          }
-        })
-      ]
-    });
+    applyOwnedShaderDescriptor(mat, getRunwayLightShaderDescriptor({ intensity }));
     return mat;
   }
 
