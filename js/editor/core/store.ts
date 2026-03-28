@@ -4,16 +4,17 @@ import { applyEditorCommand } from './commands.js';
 import { createEditorDocument, getEntityById, serializeEditorDocument } from './document.js';
 import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getDefaultAuthoredObjectAssetId } from '../../modules/world/AuthoredObjectCatalog';
-
-/** @typedef {import('./types.js').EditorCommand} EditorCommand */
-/** @typedef {import('./types.js').EditorCommandOptions} EditorCommandOptions */
-/** @typedef {import('./types.js').EditorCommandResult} EditorCommandResult */
-/** @typedef {import('./types.js').EditorDocument} EditorDocument */
-/** @typedef {import('./types.js').EditorHistorySnapshot} EditorHistorySnapshot */
-/** @typedef {import('./types.js').EditorStore} EditorStore */
-/** @typedef {import('./types.js').EditorStoreAction} EditorStoreAction */
-/** @typedef {import('./types.js').EditorStoreState} EditorStoreState */
-/** @typedef {import('./types.js').EditorTerrainGenerator} EditorTerrainGenerator */
+import type {
+    EditorCommand,
+    EditorCommandOptions,
+    EditorCommandResult,
+    EditorDocument,
+    EditorHistorySnapshot,
+    EditorStore,
+    EditorStoreAction,
+    EditorStoreState,
+    EditorTerrainGenerator
+} from './types.js';
 
 /**
  * @param {EditorDocument} document
@@ -51,7 +52,7 @@ function bumpVersion(version) {
  * @param {EditorDocument} document
  * @returns {EditorStoreState}
  */
-function createInitialState(document) {
+function createInitialState(document: EditorDocument): EditorStoreState {
     return {
         document,
         viewport: {
@@ -127,10 +128,9 @@ function createInitialState(document) {
  * @param {EditorDocument} initialDocument
  * @returns {EditorStore}
  */
-export function createEditorStore(initialDocument) {
-    /** @type {EditorStoreState} */
+export function createEditorStore(initialDocument: EditorDocument): EditorStore {
     let state = createInitialState(initialDocument);
-    const listeners = new Set();
+    const listeners = new Set<() => void>();
 
     /** @returns {void} */
     function notify() {
@@ -141,7 +141,7 @@ export function createEditorStore(initialDocument) {
      * @param {EditorStoreState | ((state: EditorStoreState) => EditorStoreState)} updater
      * @returns {void}
      */
-    function setState(updater) {
+    function setState(updater: EditorStoreState | ((state: EditorStoreState) => EditorStoreState)) {
         const nextState = typeof updater === 'function' ? updater(state) : updater;
         state = nextState;
         notify();
@@ -152,7 +152,7 @@ export function createEditorStore(initialDocument) {
      * @param {EditorCommandOptions} [options]
      * @returns {EditorCommandResult}
      */
-    function runCommand(command, options = {}) {
+    function runCommand(command: EditorCommand, options: EditorCommandOptions = {}) {
         const snapshot = cloneSnapshot(state);
         const result = applyEditorCommand(state.document, command, options.context);
         if (result.document === state.document) return result;
@@ -387,13 +387,12 @@ export function createEditorStore(initialDocument) {
                     case 'toggle-help':
                         return { ...current, ui: { ...current.ui, showHelp: action.value ?? !current.ui.showHelp } };
                     case 'set-terrain-generator-config': {
-                        const nextDraft = structuredClone(current.ui.terrainLab.draftConfig);
-                        /** @type {Record<string, any>} */
-                        let target = /** @type {Record<string, any>} */ (nextDraft);
+                        const nextDraft: EditorTerrainGenerator = structuredClone(current.ui.terrainLab.draftConfig);
+                        let target: Record<string, any> = nextDraft as Record<string, any>;
                         const path = Array.isArray(action.path) ? action.path : [];
                         for (let index = 0; index < path.length - 1; index += 1) {
                             const key = path[index];
-                            target = /** @type {Record<string, any>} */ (target[key]);
+                            target = (target[key] ??= {}) as Record<string, any>;
                         }
                         target[path[path.length - 1]] = action.value;
                         if (path[0] === 'preview' && path[1] === 'overlay') {

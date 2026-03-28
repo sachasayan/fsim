@@ -16,20 +16,22 @@ import {
     getEntityById,
     resolveSelectionAfterReload
 } from './document.js';
-
-/** @typedef {import('./types.js').EditorActiveVertex} EditorActiveVertex */
-/** @typedef {import('./types.js').EditorAirport} EditorAirport */
-/** @typedef {import('./types.js').EditorAuthoredObject} EditorAuthoredObject */
-/** @typedef {import('./types.js').EditorCommand} EditorCommand */
-/** @typedef {import('./types.js').EditorCommandResult} EditorCommandResult */
-/** @typedef {import('./types.js').EditorDocument} EditorDocument */
-/** @typedef {import('./types.js').EditorDistrict} EditorDistrict */
-/** @typedef {import('./types.js').EditorEntity} EditorEntity */
-/** @typedef {import('./types.js').EditorEntityId} EditorEntityId */
-/** @typedef {import('./types.js').EditorRoad} EditorRoad */
-/** @typedef {import('./types.js').EditorTerrainEdit} EditorTerrainEdit */
-/** @typedef {import('./types.js').EditorTerrainRegion} EditorTerrainRegion */
-/** @typedef {import('./types.js').EditorWorldPoint} EditorWorldPoint */
+import type {
+    EditorActiveVertex,
+    EditorAirport,
+    EditorAuthoredObject,
+    EditorCommand,
+    EditorCommandResult,
+    EditorDocument,
+    EditorDistrict,
+    EditorEntity,
+    EditorEntityId,
+    EditorRoad,
+    EditorTerrainEdit,
+    EditorTerrainRegion,
+    EditorVantageEntity,
+    EditorWorldPoint
+} from './types.js';
 
 /**
  * @param {number} value
@@ -48,7 +50,7 @@ function snapValue(value, gridSize = 100) {
  * @param {EditorEntityId | null} [ignoreEntityId]
  * @returns {EditorWorldPoint}
  */
-export function snapWorldPoint(worldPos, enabled, allowSnap = true, document = null, ignoreEntityId = null) {
+export function snapWorldPoint(worldPos: EditorWorldPoint, enabled: boolean, allowSnap = true, document: EditorDocument | null = null, ignoreEntityId: EditorEntityId | null = null): EditorWorldPoint {
     if (!enabled || !allowSnap) return { x: Math.round(worldPos.x), z: Math.round(worldPos.z) };
     
     // Road snapping strategy: snap to existing road endpoints or vertices if disabled, but grid snap takes precedence if enabled?
@@ -180,7 +182,8 @@ function removeEntityById(document, entityId) {
         document.worldData.terrainEdits = document.worldData.terrainEdits.filter(item => item.__editorId !== entityId);
         return true;
     }
-    const entry = Object.entries(document.vantageData).find(([, value]) => value.__editorId === entityId);
+    const entry = (Object.entries(document.vantageData) as [string, EditorVantageEntity][])
+        .find(([, value]) => value.__editorId === entityId);
     if (entry) {
         delete document.vantageData[entry[0]];
         return true;
@@ -194,24 +197,23 @@ function removeEntityById(document, entityId) {
  * @param {{ terrainStrokeDeps?: Record<string, unknown> }} [context]
  * @returns {EditorCommandResult}
  */
-export function applyEditorCommand(document, command, context = {}) {
+export function applyEditorCommand(document: EditorDocument, command: EditorCommand, context: { terrainStrokeDeps?: any } = {}): EditorCommandResult {
     const nextDocument = cloneDocument(document);
     const { terrainStrokeDeps } = context;
     let selectionId = command.selectionId ?? null;
 
     switch (command.type) {
         case 'create-district': {
-            /** @type {EditorDistrict} */
-            const district = {
+            const district: EditorDistrict = {
                 district_type: command.districtType || 'commercial',
-                center: /** @type {[number, number]} */ ([command.center.x, command.center.z]),
+                center: [command.center.x, command.center.z],
                 radius: 500,
-                points: /** @type {import('./types.js').EditorPoint2[]} */ ([
+                points: [
                     [command.center.x - 500, command.center.z - 500],
                     [command.center.x + 500, command.center.z - 500],
                     [command.center.x + 500, command.center.z + 500],
                     [command.center.x - 500, command.center.z + 500]
-                ])
+                ]
             };
             nextDocument.worldData.districts.push(district);
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
@@ -267,7 +269,7 @@ export function applyEditorCommand(document, command, context = {}) {
             return { document: finalized, selectionId: created?.__editorId || null };
         }
         case 'create-airport': {
-            const airport = {
+            const airport: EditorAirport = {
                 template: 'default',
                 x: command.center.x,
                 z: command.center.z,
@@ -419,7 +421,7 @@ export function applyEditorCommand(document, command, context = {}) {
             const entity = getEntityById(nextDocument, command.entityId);
             if (!entity) return { document };
             if (isTerrainRegion(entity) && command.key === 'terrainGenerator') {
-                entity.terrainGenerator = /** @type {import('./types.js').EditorTerrainGenerator} */ (command.value);
+                entity.terrainGenerator = command.value as import('./types.js').EditorTerrainGenerator;
                 return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
             }
             entity[command.key] = command.value;
@@ -453,7 +455,7 @@ export function applyEditorCommand(document, command, context = {}) {
  * @param {EditorActiveVertex | null} [activeVertex]
  * @returns {EditorCommand | null}
  */
-export function nudgeEntityCommand(document, entityId, delta, activeVertex = null) {
+export function nudgeEntityCommand(document: EditorDocument, entityId: EditorEntityId, delta: EditorWorldPoint, activeVertex: EditorActiveVertex | null = null): EditorCommand | null {
     const entity = getEntityById(document, entityId);
     if (!entity) return null;
     if (isTerrainRegion(entity)) {

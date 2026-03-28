@@ -3,7 +3,7 @@ type WorkerFactory = () => Worker;
 type PendingJob = {
     resolve: (value: unknown) => void;
     reject: (reason?: unknown) => void;
-    timeoutId: number | null;
+    timeoutId: ReturnType<typeof globalThis.setTimeout> | null;
     workerIndex: number;
     worker: Worker;
 };

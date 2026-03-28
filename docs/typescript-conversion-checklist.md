@@ -67,9 +67,9 @@
 
 ### Core Files To Target
 
-- [x] `js/editor/core/document.js`
-- [x] `js/editor/core/store.js`
-- [x] `js/editor/core/commands.js`
+- [x] `js/editor/core/document.js` -> `js/editor/core/document.ts`
+- [x] `js/editor/core/store.js` -> `js/editor/core/store.ts`
+- [x] `js/editor/core/commands.js` -> `js/editor/core/commands.ts`
 
 ### Desired Outcome
 
@@ -81,10 +81,12 @@
 - [x] Introduced `js/editor/core/types.ts` as the first shared editor type seam.
 - [x] Added declaration files for `document.js`, `store.js`, and `commands.js` so TypeScript consumers can get typed editor-core APIs before those runtime modules are renamed.
 - [x] Added discriminated command and store-action types for the current editor-core surface so future `.ts/.tsx` consumers can use typed dispatch and command payloads.
-- [x] Keep the runtime-facing core modules in `.js` for now because they are still loaded directly by Node tests and browser/runtime code without a transpilation layer.
+- [x] Kept the runtime-facing core modules in `.js` temporarily while Node tests and direct imports still depended on a non-TS execution boundary.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/core/document.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/core/commands.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/core/store.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Renamed `js/editor/core/document.js`, `js/editor/core/store.js`, and `js/editor/core/commands.js` to `.ts` after the unit-test boundary moved to `tsx --test`, then removed the temporary declaration shims for those modules.
+- [x] Verified the editor-core rename batch end-to-end with `npm run typecheck`, `npm run editor:build`, and `npm run test:unit` (269 passing tests).
 
 ## Phase 3: Convert Editor React Components in Batches
 
@@ -259,14 +261,15 @@
 - [x] Declared the final migration intent explicitly: checked JS is now only a staging step, and future phases should optimize for removing `.js`/`.jsx` files rather than treating `@ts-check` coverage as the finish line.
 - [x] Started the first execution-boundary upgrade for full conversion by switching the unit-test runner from `node --test` to `tsx --test`, so future `.ts` module renames are not blocked by direct Node imports in the unit tests.
 - [x] Verified the upgraded unit-test boundary end-to-end: `npm run test:unit` now passes under `tsx --test` (269 passing tests), which means direct Node test imports are no longer a hard blocker for future editor/runtime `.ts` renames.
+- [x] Completed the first post-upgrade rename batch by moving `js/editor/core/document.js`, `js/editor/core/store.js`, and `js/editor/core/commands.js` to real `.ts` modules, then removing their temporary `.d.ts` bridge files after the batch went green under `typecheck`, `editor:build`, and `test:unit`.
 
 ## Batch Workflow
 
 - [ ] Define or refine shared types first.
 - [x] Rename only a small cluster of files in each batch.
-- [ ] Run the relevant build and tests after each batch.
-- [ ] Fix surfaced type holes before moving on.
-- [ ] Document notable migration blockers or patterns discovered during each batch.
+- [x] Run the relevant build and tests after each batch.
+- [x] Fix surfaced type holes before moving on.
+- [x] Document notable migration blockers or patterns discovered during each batch.
 
 ## Decision Log
 
@@ -276,6 +279,7 @@
 - [x] Keep tooling files such as `playwright.config.js` in JavaScript for now, but under `@ts-check`, unless a later toolchain cleanup makes `.ts` the simpler option.
 - [ ] Decide whether to add folder-specific tsconfigs later for editor/runtime separation.
 - [x] For editor core modules that are still imported directly as `.js` by Node tests or runtime code, use declaration-first typing before file renames.
+- [x] Once an execution boundary is TS-aware, finish the transition by renaming the staged `.js` module to `.ts` and deleting any temporary `.d.ts` bridge files instead of leaving declaration-first typing in place indefinitely.
 
 ## Recommended Next Slice
 
@@ -294,6 +298,7 @@
 - [x] Added `js/editor/canvas/controller.d.ts` so the browser bootstrap can depend on a typed controller contract without converting the controller implementation yet.
 - [x] First build-system surprise: TypeScript needed an ambient `declare module '*.css'` file for the editor entrypoint side-effect stylesheet import.
 - [x] Second migration constraint: several editor core modules are executed directly as `.js`, so declaration-first typing is the safest next step before wider file renames.
+- [x] That editor-core constraint is now partially retired: after the unit-test runner moved to `tsx`, the first staged editor-core modules were able to rename cleanly to `.ts`.
 - [x] Third migration pattern: prefer extensionless imports when moving editor UI helpers to TS so Vite and TypeScript agree on resolution without enabling TS-extension imports.
 - [x] Fourth migration pattern: when `useStore()` selectors plus `shallowEqual` lose inference, add an explicit generic at the call site instead of weakening the shared store types.
 - [x] Fifth migration pattern: when a converted child component requires a real prop contract, tighten the nearest TSX parent boundary instead of loosening the child prop type back to `unknown`.
@@ -349,3 +354,4 @@
 - [x] Fifty-fifth migration pattern: once the major runtime folders are under `@ts-check`, the remaining native-browser JS companion files are worth sweeping in as one batch; they usually go green immediately, and doing them together prevents the migration tracker from looking “done” while the browser-entry fallback layer still sits outside checked coverage.
 - [x] Fifty-sixth migration pattern: once the app/runtime code is largely covered, the next best large batch is often the editor/tooling tail; converting the last small TSX stragglers and bringing server/test harness files under `@ts-check` together creates a much cleaner handoff into real compiler-tightening work than leaving those areas as permanent exceptions.
 - [x] Fifty-seventh migration pattern: when you make a Node-side execution boundary TypeScript-aware, expect it to expose browser-only global assumptions that were previously hidden; fixing those with `globalThis`-style APIs is usually a real portability improvement, not just test-runner cleanup.
+- [x] Fifty-eighth migration pattern: once a staged JS module reaches a TS-aware execution boundary, the real rename usually needs one cleanup pass converting JSDoc-heavy exports into explicit TypeScript signatures, but after that it is cleaner to delete the temporary `.d.ts` bridge immediately than to maintain duplicate type surfaces.

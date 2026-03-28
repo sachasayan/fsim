@@ -3,24 +3,25 @@
 import { normalizeMapData, normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { objectLabel } from '../../modules/editor/objectTypes.js';
 import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout';
-
-/** @typedef {import('./types.js').EditorBounds} EditorBounds */
-/** @typedef {import('./types.js').EditorDocument} EditorDocument */
-/** @typedef {import('./types.js').EditorDocumentIndex} EditorDocumentIndex */
-/** @typedef {import('./types.js').EditorDistrict} EditorDistrict */
-/** @typedef {import('./types.js').EditorEntity} EditorEntity */
-/** @typedef {import('./types.js').EditorEntityBase} EditorEntityBase */
-/** @typedef {import('./types.js').EditorEntityId} EditorEntityId */
-/** @typedef {import('./types.js').EditorGroupId} EditorGroupId */
-/** @typedef {import('./types.js').EditorLayerGroup} EditorLayerGroup */
-/** @typedef {import('./types.js').EditorRoad} EditorRoad */
-/** @typedef {import('./types.js').EditorTerrainRegion} EditorTerrainRegion */
-/** @typedef {import('./types.js').EditorAirport} EditorAirport */
-/** @typedef {import('./types.js').EditorAuthoredObject} EditorAuthoredObject */
-/** @typedef {import('./types.js').EditorTerrainEdit} EditorTerrainEdit */
-/** @typedef {import('./types.js').EditorVantageEntity} EditorVantageEntity */
-/** @typedef {import('./types.js').EditorVantageData} EditorVantageData */
-/** @typedef {import('./types.js').EditorWorldData} EditorWorldData */
+import type {
+    EditorAirport,
+    EditorAuthoredObject,
+    EditorBounds,
+    EditorDistrict,
+    EditorDocument,
+    EditorDocumentIndex,
+    EditorEntity,
+    EditorEntityBase,
+    EditorEntityId,
+    EditorGroupId,
+    EditorLayerGroup,
+    EditorRoad,
+    EditorTerrainEdit,
+    EditorTerrainRegion,
+    EditorVantageData,
+    EditorVantageEntity,
+    EditorWorldData
+} from './types.js';
 
 /** @type {EditorGroupId[]} */
 const ENTITY_GROUPS = ['districts', 'roads', 'terrainRegions', 'airports', 'objects', 'terrain', 'vantage'];
@@ -129,7 +130,7 @@ function indexGroup(document, prevDocument, entities, type, groupId, auxBuilder)
  * @param {EditorDocument | null} [prevDocument]
  * @returns {EditorDocument}
  */
-export function createEditorDocument(worldData, vantageData, prevDocument = null) {
+export function createEditorDocument(worldData: EditorWorldData, vantageData: EditorVantageData, prevDocument: EditorDocument | null = null): EditorDocument {
     /** @type {EditorDocument} */
     const document = {
         worldData: clone(worldData),
@@ -153,7 +154,7 @@ export function createEditorDocument(worldData, vantageData, prevDocument = null
     indexGroup(document, prevDocument, document.worldData.authoredObjects || [], 'authored-object', 'objects', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.terrainEdits || [], 'terrain', 'terrain', (_entity, index) => String(index));
 
-    const vantageEntries = Object.entries(document.vantageData || {});
+    const vantageEntries = Object.entries(document.vantageData || {}) as [string, EditorVantageEntity][];
     for (let index = 0; index < vantageEntries.length; index++) {
         const [id, entity] = vantageEntries[index];
         const stableKey = computeStableKey('vantage', entity, id);
