@@ -15,6 +15,7 @@ function createFixture() {
             roads: [{ kind: 'road', surface: 'asphalt', width: 24, feather: 8, points: [[0, 0], [400, 0]] }],
             terrainRegions: [{ tileX: 4, tileZ: 5, tileWidth: 2, tileHeight: 3, terrainGenerator: { seed: 24680 } }],
             terrainEdits: [{ kind: 'raise', x: 100, z: 100, radius: 150, delta: 40 }],
+            airports: [{ template: 'default', x: 2200, z: -1800, yaw: 30 }],
             authoredObjects: [{ assetId: 'lighthouse', x: -300, z: 800, y: 12, heightMode: 'terrain', yaw: 45, scale: 1.2 }]
         },
         {
@@ -70,6 +71,67 @@ test('commands can create authored objects with terrain and arbitrary height mod
     assert.ok(createResult.selectionId);
 });
 
+test('commands can create and rotate airports', () => {
+    const document = createFixture();
+    const createResult = applyEditorCommand(document, {
+        type: 'create-airport',
+        center: { x: -2400, z: 3100 },
+        yaw: -45
+    });
+
+    const created = createResult.document.worldData.airports.at(-1);
+    assert.equal(createResult.document.worldData.airports.length, 2);
+    assert.equal(created.template, 'default');
+    assert.equal(created.x, -2400);
+    assert.equal(created.z, 3100);
+    assert.equal(created.yaw, -45);
+    assert.ok(created.bounds);
+    assert.ok(createResult.selectionId);
+});
+
+test('airports support move, duplicate, delete, and yaw edits', () => {
+    const document = createFixture();
+    const airportId = document.worldData.airports[0].__editorId;
+
+    const moved = applyEditorCommand(document, {
+        type: 'move-entity',
+        entityId: airportId,
+        nextPoint: { x: 2600, z: -1400 }
+    });
+    assert.equal(moved.document.worldData.airports[0].x, 2600);
+    assert.equal(moved.document.worldData.airports[0].z, -1400);
+    assert.ok(moved.document.worldData.airports[0].bounds);
+
+    const rotated = applyEditorCommand(moved.document, {
+        type: 'change-property',
+        entityId: airportId,
+        key: 'yaw',
+        value: -75
+    });
+    assert.equal(rotated.document.worldData.airports[0].yaw, -75);
+    assert.ok(rotated.document.worldData.airports[0].bounds);
+
+    const duplicated = applyEditorCommand(rotated.document, {
+        type: 'duplicate-entity',
+        entityId: airportId
+    });
+    assert.equal(duplicated.document.worldData.airports.length, 2);
+    assert.deepEqual(
+        duplicated.document.worldData.airports.map(({ x, z, yaw, template }) => ({ x, z, yaw, template })),
+        [
+            { x: 2600, z: -1400, yaw: -75, template: 'default' },
+            { x: 3000, z: -1000, yaw: -75, template: 'default' }
+        ]
+    );
+
+    const deleted = applyEditorCommand(duplicated.document, {
+        type: 'delete-entity',
+        entityId: duplicated.selectionId
+    });
+    assert.equal(deleted.document.worldData.airports.length, 1);
+    assert.equal(deleted.document.worldData.airports[0].x, 2600);
+});
+
 test('commands can create terrain regions and block overlap', () => {
     const document = createFixture();
     const createResult = applyEditorCommand(document, {
@@ -100,6 +162,7 @@ test('serializeEditorDocument strips editor metadata from payloads', () => {
     assert.equal(Object.hasOwn(mapPayload.districts[0], '__editorId'), false);
     assert.equal(Object.hasOwn(mapPayload.terrainRegions[0], '__editorId'), false);
     assert.equal(Object.hasOwn(mapPayload.terrainRegions[0], 'bounds'), false);
+    assert.equal(Object.hasOwn(mapPayload.airports[0], 'bounds'), false);
     assert.equal(Object.hasOwn(mapPayload.authoredObjects[0], '__editorId'), false);
     assert.equal(Object.hasOwn(vantagePayload.gateA, '__editorId'), false);
 });

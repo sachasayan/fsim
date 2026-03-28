@@ -1,9 +1,6 @@
 import { createEnvironment } from './environment.js';
 import { createTerrainSystem } from './terrain.js';
-import { createRunwaySystem } from './runway.js';
-import { createApron } from './apron.js';
-import { createHangarSystem } from './hangar.js';
-import { createRadarSystem } from './radar.js';
+import { createAirportSystem } from './airports.js';
 import { createCloudSystem } from './clouds.js';
 import { createParticleSystem } from './particles.js';
 import { createAircraftSystem } from './aircraft.js';
@@ -31,10 +28,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     shadowsEnabled: renderer?.shadowMap?.enabled !== false
   });
   const terrain = createTerrainSystem({ scene, renderer, Noise, PHYSICS, lodSettings });
-  const runway = createRunwaySystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
-  const apron = createApron({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
-  const hangar = createHangarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
-  const radar = createRadarSystem({ scene, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
+  const airportSystem = createAirportSystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
   const aircraft = createAircraftSystem({ scene, renderer });
@@ -51,7 +45,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const shaderVariantRegistry = createShaderVariantRegistry();
   registerShaderVariants(shaderVariantRegistry, [
     terrain.getShaderValidationVariants?.(),
-    runway.getShaderValidationVariants?.(),
+    airportSystem.getShaderValidationVariants?.(),
     cloudSystem.getShaderValidationVariants?.()
   ]);
   const shaderVariants = listShaderVariants(shaderVariantRegistry);
@@ -121,16 +115,11 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   }
 
   // Register objects for centralized LOD management
-  lodManager.register(runway);
-  lodManager.register(apron);
-  lodManager.register(hangar);
-  lodManager.register(radar);
+  lodManager.register(airportSystem);
   lodManager.register(tokenSystem);
 
   function refreshTerrainAlignment() {
-    apron.refreshTerrainAlignment?.();
-    hangar.refreshTerrainAlignment?.();
-    radar.refreshTerrainAlignment?.();
+    airportSystem.refreshTerrainAlignment?.();
     tokenSystem.refreshTerrainAlignment?.();
     authoredObjects.refreshTerrainAlignment?.();
   }
@@ -139,9 +128,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     lodSettings,
     ...environment,
     ...terrain,
-    ...runway,
-    ...apron,
-    ...hangar,
+    ...airportSystem,
     ...cloudSystem,
     ...particles,
     ...aircraft,
@@ -155,7 +142,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     getShaderValidationVariants,
     warmupShaders,
     updateWorldObjects: (time) => {
-      radar.update(time);
+      airportSystem.update(time);
     },
     getTerrainSelectionDiagnostics: terrain.getTerrainSelectionDiagnostics,
     hasPendingTerrainWork: terrain.hasPendingTerrainWork,

@@ -1,14 +1,48 @@
 import { createRapierWorld } from './rapierWorld.js';
 import { debugInfo } from '../core/logging.js';
+import { listRuntimeAirports } from '../world/AirportLayout.js';
 
 export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
   let rapier = null;
   let RAPIER = null;
+  let groundBody = null;
   let body = null;
   let collider = null;
   let runwayCollider = null;
+  let runwayColliders = [];
   let needsSyncFromState = false;
   let mainBodyActive = true;
+
+  function syncRunwayColliders() {
+    if (!rapier || !RAPIER) return;
+    const { world } = rapier;
+    for (const collider of runwayColliders) {
+      world.removeCollider?.(collider, false);
+    }
+    runwayColliders = [];
+
+    const worldData = (typeof window !== 'undefined' ? window.fsimWorld : null) || { airports: [] };
+    for (const airport of listRuntimeAirports(worldData)) {
+      const yawRad = (airport.yaw || 0) * Math.PI / 180;
+      const halfYaw = yawRad * 0.5;
+      const rotation = {
+        x: 0,
+        y: Math.sin(halfYaw),
+        z: 0,
+        w: Math.cos(halfYaw)
+      };
+      const collider = world.createCollider(
+        RAPIER.ColliderDesc.cuboid(50, 0.15, 2050)
+          .setTranslation(airport.x, 0.15, airport.z)
+          .setRotation(rotation)
+          .setFriction(0.08)
+          .setRestitution(0.0),
+        groundBody
+      );
+      runwayColliders.push(collider);
+    }
+    runwayCollider = runwayColliders[0] || null;
+  }
 
   async function init() {
     try {
@@ -16,7 +50,7 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
       ({ RAPIER } = rapier);
       const { world } = rapier;
 
-      const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+      groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
       // Safety-net ground plane placed well below any reachable terrain.
       // Normal ground contact is handled by the spring-damper wheel model in
       // calculateAerodynamics; this collider only catches extreme edge cases.
@@ -27,13 +61,7 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
           .setRestitution(0.0),
         groundBody
       );
-      runwayCollider = world.createCollider(
-        RAPIER.ColliderDesc.cuboid(50, 0.15, 2050)
-          .setTranslation(0, 0.15, 0)
-          .setFriction(0.08)
-          .setRestitution(0.0),
-        groundBody
-      );
+      syncRunwayColliders();
 
       const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(PHYSICS.position.x, PHYSICS.position.y, PHYSICS.position.z)
@@ -88,6 +116,9 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
       }
 
       needsSyncFromState = true;
+      if (typeof window !== 'undefined') {
+        window.addEventListener('fsim:world-metadata-updated', syncRunwayColliders);
+      }
       debugInfo('[physics] Rapier backend initialized (force/torque flight dynamics)');
     } catch (err) {
       console.error('[physics] Rapier init failed.', err);
@@ -152,6 +183,7 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
     getRapier: () => rapier,
     getBody: () => body,
     getCollider: () => collider,
-    getRunwayCollider: () => runwayCollider
+    getRunwayCollider: () => runwayCollider,
+    syncRunwayColliders
   };
 }

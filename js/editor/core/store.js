@@ -46,6 +46,9 @@ function createInitialState(document) {
                 y: 0,
                 yaw: 0,
                 scale: 1
+            },
+            airportPlacement: {
+                yaw: 0
             }
         },
         history: {
@@ -248,6 +251,17 @@ export function createEditorStore(initialDocument) {
                                 ...current.tools,
                                 objectPlacement: {
                                     ...current.tools.objectPlacement,
+                                    ...action.patch
+                                }
+                            }
+                        };
+                    case 'set-airport-placement':
+                        return {
+                            ...current,
+                            tools: {
+                                ...current.tools,
+                                airportPlacement: {
+                                    ...current.tools.airportPlacement,
                                     ...action.patch
                                 }
                             }

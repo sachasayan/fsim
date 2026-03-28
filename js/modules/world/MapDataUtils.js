@@ -1,6 +1,7 @@
 import { normalizeTerrainGeneratorConfig } from './terrain/TerrainSynthesis.js';
 import { normalizeTerrainRegions } from './terrain/TerrainRegions.js';
 import { normalizeAuthoredObject } from './AuthoredObjectCatalog.js';
+import { normalizeAirport } from './AirportLayout.js';
 
 export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban', 'windmill_farm'];
 export const ROAD_KINDS = ['road', 'taxiway', 'service'];
@@ -179,6 +180,7 @@ export function normalizeMapData(data) {
     if (!data.roads) data.roads = [];
     if (!data.terrainEdits) data.terrainEdits = [];
     if (!data.terrainRegions) data.terrainRegions = [];
+    if (!data.airports) data.airports = [];
     if (!data.authoredObjects) data.authoredObjects = [];
     data.terrainGenerator = normalizeTerrainGeneratorConfig(data.terrainGenerator);
 
@@ -198,6 +200,7 @@ export function normalizeMapData(data) {
         .filter(road => Array.isArray(road.points) && road.points.length >= 2);
     data.terrainEdits = data.terrainEdits.map(edit => normalizeTerrainEdit(edit));
     data.terrainRegions = normalizeTerrainRegions(data.terrainRegions);
+    data.airports = data.airports.map((airport) => normalizeAirport(airport));
     data.authoredObjects = data.authoredObjects.map(object => normalizeAuthoredObject(object));
     delete data.cities;
     return data;

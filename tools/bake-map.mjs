@@ -93,12 +93,14 @@ const terrainSynthConfig = normalizeTerrainGeneratorConfig(mapData?.terrainGener
 const terrainSynthesizer = createTerrainSynthesizer({
     Noise,
     worldSize: DEFAULT_WORLD_SIZE,
-    config: terrainSynthConfig
+    config: terrainSynthConfig,
+    worldData: mapData
 });
 const terrainRegionSampler = createRegionalTerrainSampler({
     Noise,
     worldSize: DEFAULT_WORLD_SIZE,
     regions: mapData?.terrainRegions || [],
+    worldData: mapData,
     applyRunwayFlattening: true
 });
 const terrainMetadata = (mapData?.terrainRegions?.length || 0) > 0

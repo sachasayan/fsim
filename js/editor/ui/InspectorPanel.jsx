@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { isAirport, isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
 import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog.js';
 import { getEntityById, getEntityLabel } from '../core/document.js';
@@ -26,6 +26,8 @@ export function InspectorPanel({ store, controller }) {
                 ? 'roads'
                 : isTerrainRegion(selectedEntity)
                     ? 'terrainRegions'
+                    : isAirport(selectedEntity)
+                        ? 'airports'
                     : isAuthoredObject(selectedEntity)
                         ? 'objects'
                     : isTerrainEdit(selectedEntity)
@@ -67,7 +69,7 @@ export function InspectorPanel({ store, controller }) {
         store.runCommand({ type: 'move-entity', entityId: selectedId, nextPoint: point });
     }
 
-    const typeLabel = isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isAuthoredObject(selected) ? 'OBJECT' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE';
+    const typeLabel = isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isAirport(selected) ? 'AIRPORT' : isAuthoredObject(selected) ? 'OBJECT' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE';
 
     return (
         <Panel
@@ -165,6 +167,15 @@ export function InspectorPanel({ store, controller }) {
                     </>
                 ) : null}
 
+                {isAirport(selected) ? (
+                    <>
+                        <FieldRow label="Template">
+                            <Input type="text" readOnly value={selected.template || 'default'} data-testid="field-airport-template" />
+                        </FieldRow>
+                        <RangeNumberField label="Yaw (deg)" value={selected.yaw || 0} min={-180} max={180} step={1} disabled={locked} onChange={(value) => updateProperty('yaw', value)} />
+                    </>
+                ) : null}
+
                 {isAuthoredObject(selected) ? (
                     <>
                         <SelectField
@@ -197,7 +208,7 @@ export function InspectorPanel({ store, controller }) {
                     </>
                 ) : null}
 
-                {!isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) && !isTerrainRegion(selected) && !isAuthoredObject(selected) ? (
+                {!isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) && !isTerrainRegion(selected) && !isAirport(selected) && !isAuthoredObject(selected) ? (
                     <>
                         <RangeNumberField label="Altitude (m)" value={selected.y || 0} min={0} max={3000} step={10} disabled={locked} onChange={(value) => updateProperty('y', value)} />
                         <RangeNumberField label="Tilt (deg)" value={selected.tilt || 45} min={5} max={85} step={1} disabled={locked} onChange={(value) => updateProperty('tilt', value)} />

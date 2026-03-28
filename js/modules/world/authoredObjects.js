@@ -3,6 +3,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { getAuthoredObjectAsset, listAuthoredObjectAssets } from './AuthoredObjectCatalog.js';
+import {
+    extractDefaultAirportAuthoredObjectTemplates,
+    listRuntimeAirports,
+    rotateAirportOffset
+} from './AirportLayout.js';
 import { SEA_LEVEL } from './terrain/TerrainPalette.js';
 
 const DRACO_DECODER_PATH = '/node_modules/three/examples/jsm/libs/draco/gltf/';
@@ -30,6 +35,29 @@ function getRuntimeWorldData() {
 
 function buildPlacementKey(placement, index) {
     return `${placement.assetId}:${placement.x}:${placement.z}:${placement.heightMode || 'terrain'}:${index}`;
+}
+
+function buildGeneratedAirportAuthoredObjects(worldData) {
+    const runtimeAirports = listRuntimeAirports(worldData);
+    const authoredTemplates = extractDefaultAirportAuthoredObjectTemplates(worldData);
+    if (authoredTemplates.length === 0 || runtimeAirports.length <= 1) return [];
+    const generated = [];
+    for (const airport of runtimeAirports) {
+        if (airport.builtin) continue;
+        for (const template of authoredTemplates) {
+            const rotated = rotateAirportOffset(template.x, template.z, airport.yaw || 0);
+            generated.push({
+                assetId: template.assetId,
+                x: airport.x + rotated.x,
+                z: airport.z + rotated.z,
+                y: template.y || 0,
+                yaw: (template.yaw || 0) + (airport.yaw || 0),
+                scale: template.scale || 1,
+                heightMode: template.heightMode || 'terrain'
+            });
+        }
+    }
+    return generated;
 }
 
 function configureTemplate(root) {
@@ -127,7 +155,10 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
 
     async function syncToWorldData() {
         const worldData = getRuntimeWorldData();
-        const placements = Array.isArray(worldData?.authoredObjects) ? worldData.authoredObjects : [];
+        const placements = [
+            ...(Array.isArray(worldData?.authoredObjects) ? worldData.authoredObjects : []),
+            ...buildGeneratedAirportAuthoredObjects(worldData)
+        ];
         const nextKeys = new Set();
 
         for (let index = 0; index < placements.length; index += 1) {

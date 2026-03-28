@@ -1,6 +1,7 @@
 export const TOOL_SHORTCUTS = {
     v: 'select',
     h: 'select',
+    a: 'add-airport',
     d: 'add-district',
     o: 'add-object',
     w: 'add-road',
@@ -40,6 +41,8 @@ export const COLORS = {
     roadSelected: 'rgba(255, 236, 179, 1)',
     terrainRegion: 'rgba(34, 197, 94, 0.22)',
     terrainRegionSelected: 'rgba(74, 222, 128, 0.38)',
+    airport: 'rgba(244, 114, 182, 0.24)',
+    airportSelected: 'rgba(255, 255, 255, 0.42)',
     object: 'rgba(103, 232, 249, 0.85)',
     objectSelected: 'rgba(255, 255, 255, 1)',
     accent: '#7dd3fc',

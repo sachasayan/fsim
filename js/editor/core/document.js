@@ -1,7 +1,8 @@
 import { normalizeMapData, normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { objectLabel } from '../../modules/editor/objectTypes.js';
+import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout.js';
 
-const ENTITY_GROUPS = ['districts', 'roads', 'terrainRegions', 'objects', 'terrain', 'vantage'];
+const ENTITY_GROUPS = ['districts', 'roads', 'terrainRegions', 'airports', 'objects', 'terrain', 'vantage'];
 
 function clone(value) {
     return structuredClone(value);
@@ -14,6 +15,7 @@ function createEmptyIndex() {
             districts: [],
             roads: [],
             terrainRegions: [],
+            airports: [],
             objects: [],
             terrain: [],
             vantage: []
@@ -42,6 +44,9 @@ function computeStableKey(type, entity, aux = '') {
     }
     if (type === 'terrain-region') {
         return `terrain-region:${entity.tileX},${entity.tileZ},${entity.tileWidth},${entity.tileHeight}:${aux}`;
+    }
+    if (type === 'airport') {
+        return `airport:${entity.template || 'default'}:${entity.x},${entity.z}:${aux}`;
     }
     if (type === 'authored-object') {
         return `authored-object:${entity.assetId}:${entity.x},${entity.z}:${entity.heightMode || 'terrain'}:${aux}`;
@@ -84,10 +89,14 @@ export function createEditorDocument(worldData, vantageData, prevDocument = null
     for (const road of document.worldData.roads || []) {
         normalizeRoad(road);
     }
+    for (const airport of document.worldData.airports || []) {
+        airport.bounds = getAirportWorldFootprintBounds(airport);
+    }
 
     indexGroup(document, prevDocument, document.worldData.districts || [], 'district', 'districts', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.roads || [], 'road', 'roads', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.terrainRegions || [], 'terrain-region', 'terrainRegions', (_entity, index) => String(index));
+    indexGroup(document, prevDocument, document.worldData.airports || [], 'airport', 'airports', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.authoredObjects || [], 'authored-object', 'objects', (_entity, index) => String(index));
     indexGroup(document, prevDocument, document.worldData.terrainEdits || [], 'terrain', 'terrain', (_entity, index) => String(index));
 
@@ -120,6 +129,7 @@ export function findEntityGroup(document, entityId) {
     if (document.index.groupIds.districts.includes(entityId)) return 'districts';
     if (document.index.groupIds.roads.includes(entityId)) return 'roads';
     if (document.index.groupIds.terrainRegions.includes(entityId)) return 'terrainRegions';
+    if (document.index.groupIds.airports.includes(entityId)) return 'airports';
     if (document.index.groupIds.objects.includes(entityId)) return 'objects';
     if (document.index.groupIds.terrain.includes(entityId)) return 'terrain';
     if (document.index.groupIds.vantage.includes(entityId)) return 'vantage';
@@ -165,6 +175,9 @@ export function serializeEditorDocument(document) {
     }));
     mapPayload.terrainRegions = (mapPayload.terrainRegions || []).map(({ bounds, center, ...region }) => ({
         ...region
+    }));
+    mapPayload.airports = (mapPayload.airports || []).map(({ bounds, ...airport }) => ({
+        ...airport
     }));
     mapPayload.authoredObjects = (mapPayload.authoredObjects || []).map((object) => ({
         ...object
@@ -219,6 +232,14 @@ export function getEntityBounds(document, entityId) {
         if (entity.bounds) return entity.bounds;
         return null;
     }
+    if (group === 'airports') {
+        return entity.bounds || {
+            minX: entity.x - 2400,
+            maxX: entity.x + 2400,
+            minZ: entity.z - 2400,
+            maxZ: entity.z + 2400
+        };
+    }
     if (group === 'objects') {
         return {
             minX: entity.x - 400,
@@ -254,6 +275,8 @@ export function listLayerGroups(document) {
                 ? 'Terrain Edits'
                 : groupId === 'terrainRegions'
                     ? 'Terrain Regions'
+                    : groupId === 'airports'
+                        ? 'Airports'
                     : groupId === 'objects'
                         ? 'Objects'
                     : groupId[0].toUpperCase() + groupId.slice(1),

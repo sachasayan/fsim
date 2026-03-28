@@ -72,7 +72,7 @@ export function ShortcutHelpModal({ store }) {
 
                 <div className="editor-modal-grid">
                     <HintCard tone="info">
-                        <p>Tools: V Select, D District, W Road, T Region, E Poly Edit, R Raise, L Lower, F Flatten.</p>
+                        <p>Tools: V Select, A Airport, D District, O Object, W Road, T Region, E Poly Edit, R Raise, L Lower, F Flatten.</p>
                         <p>Terrain Regions: drag on the canvas with Region active to claim a rectangular group of tiles.</p>
                     </HintCard>
                     <HintCard>

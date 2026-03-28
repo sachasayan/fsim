@@ -16,13 +16,17 @@ export const AIRPORT_CONFIG = {
         width: 180,
         depth: 600
     },
+    RADAR: {
+        x: -250,
+        z: -450
+    },
     TAXIWAY: {
         width: 20
     },
     HANGARS: [
-        { x: -190, z: -480, angle: Math.PI / 2 },
-        { x: -190, z: -560, angle: Math.PI / 2 },
-        { x: -190, z: -640, angle: Math.PI / 2 }
+        { x: -190, z: -480, yawDeg: 90 },
+        { x: -190, z: -560, yawDeg: 90 },
+        { x: -190, z: -640, yawDeg: 90 }
     ]
 };
 

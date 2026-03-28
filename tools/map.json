@@ -136,52 +136,52 @@
         {
             "district_type": "industrial",
             "center": [
-                8300,
-                -400
+                6700,
+                -1500
             ],
             "radius": 500,
             "points": [
                 [
-                    7425,
-                    -933
+                    5400,
+                    -2300
                 ],
                 [
-                    10222,
-                    -1354
+                    5600,
+                    -2400
                 ],
                 [
-                    10334,
-                    955
+                    5800,
+                    -2300
                 ],
                 [
-                    7456,
-                    821
+                    5500,
+                    -2000
                 ]
             ]
         },
         {
             "district_type": "windmill_farm",
             "center": [
-                4400,
-                0
+                2000,
+                1000
             ],
             "radius": 500,
             "points": [
                 [
-                    3900,
-                    -500
-                ],
-                [
-                    4900,
-                    -500
-                ],
-                [
-                    4900,
+                    1500,
                     500
                 ],
                 [
-                    3900,
+                    2500,
                     500
+                ],
+                [
+                    2500,
+                    1500
+                ],
+                [
+                    1500,
+                    1500
                 ]
             ],
             "turbine_density": 0.5,
@@ -866,9 +866,9 @@
         },
         {
             "tileX": 13,
-            "tileZ": 35,
-            "tileWidth": 5,
-            "tileHeight": 5,
+            "tileZ": 30,
+            "tileWidth": 12,
+            "tileHeight": 16,
             "terrainGenerator": {
                 "version": 2,
                 "preset": "coastal",
@@ -989,8 +989,8 @@
         },
         {
             "assetId": "ancient-greek-ruins",
-            "x": 2000,
-            "z": 700,
+            "x": 4200,
+            "z": -700,
             "y": 0,
             "yaw": 0,
             "scale": 1,
@@ -1016,8 +1016,8 @@
         },
         {
             "assetId": "mountain-statue",
-            "x": 700,
-            "z": -300,
+            "x": 4000,
+            "z": -700,
             "y": 0,
             "yaw": 0,
             "scale": 1,
@@ -1025,12 +1025,20 @@
         },
         {
             "assetId": "oil-rig",
-            "x": 3600,
-            "z": -3300,
+            "x": 1500,
+            "z": -2400,
             "y": 0,
             "yaw": 0,
             "scale": 1,
             "heightMode": "terrain"
+        }
+    ],
+    "airports": [
+        {
+            "template": "default",
+            "x": -9700,
+            "z": -16800,
+            "yaw": 141
         }
     ]
 }

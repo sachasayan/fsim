@@ -413,3 +413,31 @@ test('gear – always down when on ground (regression)', () => {
     calculateAerodynamics(ctx);
     assert.equal(ctx.PHYSICS.gearDown, true, 'Gear must stay down when on ground');
 });
+
+test('gear – deploys on approach to a rotated non-origin airport', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        fsimWorld: {
+            airports: [{
+                template: 'default',
+                x: 12000,
+                z: 8000,
+                yaw: 90
+            }]
+        }
+    };
+
+    try {
+        const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0));
+        const ctx = makeCtx({
+            position: new THREE.Vector3(4000, 400, 8000),
+            quaternion: q,
+            onGround: false,
+            gearDown: false
+        });
+        calculateAerodynamics(ctx);
+        assert.equal(ctx.PHYSICS.gearDown, true, 'Gear should deploy for rotated airport approaches too');
+    } finally {
+        globalThis.window = previousWindow;
+    }
+});

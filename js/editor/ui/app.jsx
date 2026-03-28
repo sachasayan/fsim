@@ -4,6 +4,7 @@ import { isTerrainBrushTool } from '../../modules/editor/constants.js';
 import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getEntityById } from '../core/document.js';
 import { AppHeader } from './AppHeader.jsx';
+import { AirportToolPanel } from './AirportToolPanel.jsx';
 import { FooterPanel } from './FooterPanel.jsx';
 import { Icon, TooltipProvider, shallowEqual, useStore } from './common.jsx';
 import { InspectorPanel } from './InspectorPanel.jsx';
@@ -23,6 +24,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
 
     const toolDefs = [
         ['select', 'Select', 'V', 'M5 3v18l5-6 4 6 5-2-4-6 6-4z', Icon],
+        ['add-airport', 'Airport', 'A', 'M4 18h16M8 18V8m8 10V8M12 18V4M7 8h10', Icon],
         ['add-district', 'District', 'D', 'M4 6h16v12H4z', Icon],
         ['add-object', 'Object', 'O', 'M5 8l7-4 7 4v8l-7 4-7-4z', Icon],
         ['add-road', 'Road', 'W', 'M8 3l2 7-2 11M16 3l-2 7 2 11', Icon],
@@ -57,6 +59,7 @@ export function EditorApp({ store, controller, canvasRef, coordsRef, onSave, onR
 
                     <aside className="editor-dock editor-right-dock" id="inspector-dock">
                         <InspectorPanel store={store} controller={controller} />
+                        {currentTool === 'add-airport' ? <AirportToolPanel store={store} /> : null}
                         {currentTool === 'add-object' ? <ObjectToolPanel store={store} /> : null}
                         {isTerrainBrushTool(currentTool) ? <TerrainBrushPanel store={store} /> : null}
                         {isTerrainRegion(selectedEntity) ? <TerrainLabPanel store={store} controller={controller} /> : null}

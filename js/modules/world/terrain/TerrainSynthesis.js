@@ -1,4 +1,5 @@
 import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
+import { applyAirportRunwayFlattening } from '../AirportLayout.js';
 import { SEA_LEVEL } from './TerrainPalette.js';
 
 function clamp01(value) {
@@ -1265,22 +1266,6 @@ function buildHydrologyModel({ Noise, terrainExtent, config, ranges, offsets, is
     };
 }
 
-function applyRunwayFlattening(baseHeight, x, z) {
-    const distFromRunwayZ = Math.abs(z);
-    const distFromRunwayX = Math.abs(x);
-
-    if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-        return 0;
-    }
-    if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-        const blendX = Math.max(0, (distFromRunwayX - 150) / 450);
-        const blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-        const runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-        return Math.max(0, baseHeight * runwayMask);
-    }
-    return baseHeight;
-}
-
 function getOverlayColor(overlayKind, value, heightValue, showContours) {
     if (overlayKind === 'rivers') {
         return [76, 177, 255, Math.round(180 * clamp01(value))];
@@ -1369,6 +1354,7 @@ export function createTerrainSynthesizer({
     worldSize = DEFAULT_WORLD_SIZE,
     config = {},
     authoredBounds = null,
+    worldData = null,
     applyRunwayFlattening: shouldApplyRunwayFlattening = true
 } = {}) {
     if (!Noise) {
@@ -1461,7 +1447,7 @@ export function createTerrainSynthesizer({
         const wetlandSoftening = masks.wetland * 3;
         const height = stage.baseHeight - riverCarve - gorgeCarve - floodplainCarve - wetlandSoftening;
         if (!shouldApplyRunwayFlattening) return height;
-        return applyRunwayFlattening(height, x, z);
+        return applyAirportRunwayFlattening(height, x, z, worldData);
     }
 
     function sampleOverlay(x, z, overlayKind = resolvedConfig.preview.overlay) {

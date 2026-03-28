@@ -2,6 +2,7 @@ import { applyTerrainEdits } from './TerrainEdits.js';
 import { resolveTerrainRingLod } from '../LodSystem.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from './TerrainSynthesis.js';
 import { createRegionalTerrainSampler } from './TerrainRegions.js';
+import { applyAirportRunwayFlattening } from '../AirportLayout.js';
 import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
 import { Noise } from '../../noise.js';
 
@@ -562,7 +563,8 @@ function getTerrainModelSampler() {
         _terrainModelSampler = createRegionalTerrainSampler({
             Noise,
             worldSize,
-            regions: metadata.terrainRegions
+            regions: metadata.terrainRegions,
+            worldData: metadata
         });
         _terrainModelSamplerKey = key;
         return _terrainModelSampler;
@@ -583,7 +585,8 @@ function getTerrainModelSampler() {
     _terrainModelSampler = createTerrainSynthesizer({
         Noise: seededNoise,
         worldSize,
-        config
+        config,
+        worldData: metadata
     });
     _terrainModelSamplerKey = key;
     return _terrainModelSampler;
@@ -633,20 +636,13 @@ export function getTerrainHeight(x, z, Noise, octaves = 6) {
         baseHeight = _staticSampler.getAltitudeAt(x, z);
     } else {
         // Fallback to noise if sampler isn't loaded yet
-        const distFromRunwayZ = Math.abs(z);
-        const distFromRunwayX = Math.abs(x);
         const noiseVal = Noise.fractal(x, z, octaves, 0.5, 0.0003) * 600 + 100;
-
-        if (distFromRunwayX < 150 && distFromRunwayZ < 2500) {
-            baseHeight = 0;
-        } else if (distFromRunwayX < 600 && distFromRunwayZ < 3500) {
-            const blendX = Math.max(0, (distFromRunwayX - 150) / 450);
-            const blendZ = Math.max(0, (distFromRunwayZ - 2500) / 1000);
-            const runwayMask = Math.min(1.0, Math.max(blendX, blendZ));
-            baseHeight = noiseVal * runwayMask;
-        } else {
-            baseHeight = noiseVal;
-        }
+        baseHeight = applyAirportRunwayFlattening(
+            noiseVal,
+            x,
+            z,
+            (typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null
+        );
     }
     const fsimWorld = (typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null;
     return applyTerrainEdits(baseHeight, x, z, fsimWorld?.terrainEdits || []);

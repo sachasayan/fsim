@@ -1,5 +1,6 @@
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
-import { isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { isAirport, isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout.js';
 import { normalizeAuthoredObjectHeightMode } from '../../modules/world/AuthoredObjectCatalog.js';
 import { findTerrainRegionOverlap, getTerrainRegionTileSize, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
 import {
@@ -112,6 +113,10 @@ function removeEntityById(document, entityId) {
         document.worldData.terrainRegions = document.worldData.terrainRegions.filter(item => item.__editorId !== entityId);
         return true;
     }
+    if (group === 'airports') {
+        document.worldData.airports = document.worldData.airports.filter(item => item.__editorId !== entityId);
+        return true;
+    }
     if (group === 'objects') {
         document.worldData.authoredObjects = document.worldData.authoredObjects.filter(item => item.__editorId !== entityId);
         return true;
@@ -199,6 +204,19 @@ export function applyEditorCommand(document, command, context = {}) {
             const created = finalized.worldData.authoredObjects[finalized.worldData.authoredObjects.length - 1];
             return { document: finalized, selectionId: created?.__editorId || null };
         }
+        case 'create-airport': {
+            const airport = {
+                template: 'default',
+                x: command.center.x,
+                z: command.center.z,
+                yaw: Number.isFinite(command.yaw) ? command.yaw : 0
+            };
+            airport.bounds = getAirportWorldFootprintBounds(airport);
+            nextDocument.worldData.airports.push(airport);
+            const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
+            const created = finalized.worldData.airports[finalized.worldData.airports.length - 1];
+            return { document: finalized, selectionId: created?.__editorId || null };
+        }
         case 'create-terrain-stroke': {
             if (!terrainStrokeDeps) {
                 throw new Error('Missing terrain stroke dependencies');
@@ -247,18 +265,33 @@ export function applyEditorCommand(document, command, context = {}) {
                 copy.x += 200;
                 copy.z += 200;
             }
+            if (isAirport(copy)) {
+                copy.x += 400;
+                copy.z += 400;
+                copy.bounds = getAirportWorldFootprintBounds(copy);
+            }
             if (isDistrict(copy)) {
                 nextDocument.worldData.districts.push(copy);
             } else if (isRoad(copy)) {
                 normalizeRoad(copy);
                 nextDocument.worldData.roads.push(copy);
+            } else if (isAirport(copy)) {
+                nextDocument.worldData.airports.push(copy);
             } else if (isAuthoredObject(copy)) {
                 nextDocument.worldData.authoredObjects.push(copy);
             } else if (isTerrainEdit(copy)) {
                 nextDocument.worldData.terrainEdits.push(copy);
             }
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
-            const groupId = isDistrict(copy) ? 'districts' : isRoad(copy) ? 'roads' : isAuthoredObject(copy) ? 'objects' : 'terrain';
+            const groupId = isDistrict(copy)
+                ? 'districts'
+                : isRoad(copy)
+                    ? 'roads'
+                    : isAirport(copy)
+                        ? 'airports'
+                        : isAuthoredObject(copy)
+                            ? 'objects'
+                            : 'terrain';
             const createdId = finalized.index.groupIds[groupId][finalized.index.groupIds[groupId].length - 1] || null;
             return { document: finalized, selectionId: createdId };
         }
@@ -287,6 +320,9 @@ export function applyEditorCommand(document, command, context = {}) {
             } else {
                 entity.x = command.nextPoint.x;
                 entity.z = command.nextPoint.z;
+                if (isAirport(entity)) {
+                    entity.bounds = getAirportWorldFootprintBounds(entity);
+                }
                 if (isTerrainEdit(entity)) refreshTerrainEditGeometry(entity);
             }
             return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
@@ -324,6 +360,9 @@ export function applyEditorCommand(document, command, context = {}) {
                 return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
             }
             entity[command.key] = command.value;
+            if (isAirport(entity) && (command.key === 'yaw' || command.key === 'x' || command.key === 'z')) {
+                entity.bounds = getAirportWorldFootprintBounds(entity);
+            }
             if (command.key === 'kind' || command.key === 'surface' || command.key === 'width' || command.key === 'feather') {
                 normalizeRoad(entity);
             }

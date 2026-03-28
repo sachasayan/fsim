@@ -1,18 +1,22 @@
 import { getPhysicsTmp } from './PhysicsUtils.js';
 import { solveAerodynamics, solveStabilityTorques, FLIGHT_TUNING } from './AeroSolver.js';
 import { solveGroundPhysics, updateGearAnimation } from './GroundPhysics.js';
+import { getAirportRunwayThresholds } from '../world/AirportLayout.js';
 
 // ── Approach-Cone constants ──────────────────────────────────────────────────
 // The runway sits at world origin, oriented along the Z axis (±Z).
 // Threshold A is at Z = -2000 (aircraft approaches from -Z, heading ~0°)
 // Threshold B is at Z = +2000 (aircraft approaches from +Z, heading ~180°)
-const _RUNWAY_THRESHOLDS = [
-    { x: 0, z: -2000 },   // runway end A — approach from south
-    { x: 0, z: 2000 },   // runway end B — approach from north
-];
 const _APPROACH_RADIUS = 12000;  // m — horizontal distance to check
 const _APPROACH_ALT_MAX = 1200;   // m AGL — arm gear only below this
 const _APPROACH_CONE_COS = Math.cos(15 * Math.PI / 180); // cos(15°)
+
+function getApproachThresholds() {
+    if (typeof window === 'undefined') {
+        return getAirportRunwayThresholds({ airports: [] });
+    }
+    return getAirportRunwayThresholds(window.fsimWorld || { airports: [] });
+}
 
 export function calculateAerodynamics(ctx) {
     const { THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight } = ctx;
@@ -43,10 +47,14 @@ export function calculateAerodynamics(ctx) {
         if (hLen > 1e-4) {
             const nhx = hx / hLen;
             const nhz = hz / hLen;
-            for (const thr of _RUNWAY_THRESHOLDS) {
+            for (const thr of getApproachThresholds()) {
                 const dx = p.position.x - thr.x;
                 const dz = p.position.z - thr.z;
                 const dist2D = Math.sqrt(dx * dx + dz * dz);
+                if (dist2D <= 1e-4) {
+                    onApproach = true;
+                    break;
+                }
                 if (dist2D > _APPROACH_RADIUS) continue;
 
                 // Vector FROM aircraft TOWARD the threshold (approach direction)

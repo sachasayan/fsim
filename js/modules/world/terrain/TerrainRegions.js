@@ -197,6 +197,7 @@ export function createRegionalTerrainSampler({
     Noise,
     worldSize = DEFAULT_WORLD_SIZE,
     regions = [],
+    worldData = null,
     applyRunwayFlattening = false
 }) {
     const normalizedRegions = normalizeTerrainRegions(regions, worldSize);
@@ -213,6 +214,7 @@ export function createRegionalTerrainSampler({
                 worldSize,
                 config: region.terrainGenerator,
                 authoredBounds: region.bounds,
+                worldData,
                 applyRunwayFlattening
             }));
         }

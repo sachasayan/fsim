@@ -38,13 +38,13 @@ test.describe('editor e2e', () => {
 
         await page.getByTestId('shortcut-help-button').click();
         await expect(page.getByTestId('shortcut-help-modal')).toBeVisible();
-        await expect(page.getByText(/tools: v select, d district/i)).toBeVisible();
+        await expect(page.getByText(/tools: v select, a airport, d district, o object/i)).toBeVisible();
         await page.keyboard.press('Escape');
         await expect(page.getByTestId('shortcut-help-modal')).toBeHidden();
 
         await page.keyboard.press('?');
         await expect(page.getByTestId('shortcut-help-modal')).toBeVisible();
-        await expect(page.getByText(/tools: v select, d district/i)).toBeVisible();
+        await expect(page.getByText(/tools: v select, a airport, d district, o object/i)).toBeVisible();
         await page.keyboard.press('Escape');
         await expect(page.getByTestId('shortcut-help-modal')).toBeHidden();
 
@@ -128,6 +128,34 @@ test.describe('editor e2e', () => {
         expect(state.saveState).toBe('saved');
         expect(state.dirty).toBe(false);
         expect(state.serialized.mapPayload.districts[0].center[1]).toBe(1100);
+    });
+
+    test('places an airport, edits yaw, and saves serialized airport data', async ({ page }) => {
+        await gotoEditor(page);
+
+        await page.getByTestId('tool-add-airport').click({ force: true });
+        await expect(page.getByTestId('airport-tool-panel')).toBeVisible();
+        await clickCanvas(page, 320, 220);
+
+        await expect(page.getByTestId('inspector-panel')).toBeVisible();
+        await expect(page.getByTestId('inspector-type-badge')).toHaveText('AIRPORT');
+
+        const inspector = page.getByTestId('inspector-panel');
+        await inspector.getByTestId('field-yaw-deg-number').fill('135');
+        await inspector.getByTestId('field-yaw-deg-number').blur();
+
+        let state = await getEditorState(page);
+        expect(state.serialized.mapPayload.airports).toHaveLength(1);
+        expect(state.serialized.mapPayload.airports[0].template).toBe('default');
+        expect(state.serialized.mapPayload.airports[0].yaw).toBe(135);
+
+        await page.getByTestId('save-button').click({ force: true });
+
+        await expect(page.getByTestId('save-button')).toHaveText('Saved');
+        state = await getEditorState(page);
+        expect(state.dirty).toBe(false);
+        expect(state.serialized.mapPayload.airports).toHaveLength(1);
+        expect(state.serialized.mapPayload.airports[0].yaw).toBe(135);
     });
 
     test('clicking a selected terrain vertex edits it instead of starting a new terrain stroke', async ({ page }) => {

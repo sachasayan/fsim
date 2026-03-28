@@ -1,7 +1,9 @@
 import { COLORS, isTerrainBrushTool } from '../../modules/editor/constants.js';
 import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint, terrainRegionContainsPoint } from '../../modules/editor/geometry.js';
-import { isAuthoredObject, isRoad, isDistrict, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
+import { isAirport, isAuthoredObject, isRoad, isDistrict, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getAuthoredObjectAsset } from '../../modules/world/AuthoredObjectCatalog.js';
+import { AIRPORT_CONFIG } from '../../modules/world/config.js';
+import { airportContainsWorldPoint, transformAirportPoint } from '../../modules/world/AirportLayout.js';
 import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
 import { TERRAIN_REGION_GRID_SIZE, getTerrainRegionTileSize, getTerrainRegionTileWorldBounds } from '../../modules/world/terrain/TerrainRegions.js';
@@ -85,6 +87,7 @@ export function renderEditorScene(ctx, canvas, tileManager, state, interactionSt
     drawDistricts(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawRoads(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrainRegions(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
+    drawAirports(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawAuthoredObjects(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrain(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawVantagePoints(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
@@ -340,6 +343,61 @@ function drawTerrain(ctx, state, interactions, document, worldToScreen, viewport
     }
 }
 
+function drawAirports(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
+    if (!isGroupVisible(state, 'airports')) return;
+    for (const entityId of getGroupEntityIds(document, 'airports')) {
+        if (!isObjectVisible(state, entityId, 'airports')) continue;
+        const airport = getEntityById(document, entityId);
+        if (!isAirport(airport)) continue;
+        const bounds = airport.bounds || {
+            minX: airport.x - 2500,
+            maxX: airport.x + 2500,
+            minZ: airport.z - 2500,
+            maxZ: airport.z + 2500
+        };
+        if (bounds.maxX < worldBounds.minX || bounds.minX > worldBounds.maxX || bounds.maxZ < worldBounds.minZ || bounds.minZ > worldBounds.maxZ) continue;
+        const point = worldToScreen(airport.x, airport.z);
+        if (!isScreenPointVisible(viewportRect, point, 48)) continue;
+        const isSelected = state.selection.selectedId === entityId;
+        const isHovered = interactions.hoverId === entityId && !isSelected;
+        const runwayStart = transformAirportPoint(airport, 0, -AIRPORT_CONFIG.RUNWAY.length * 0.5);
+        const runwayEnd = transformAirportPoint(airport, 0, AIRPORT_CONFIG.RUNWAY.length * 0.5);
+        const runwayA = worldToScreen(runwayStart.x, runwayStart.z);
+        const runwayB = worldToScreen(runwayEnd.x, runwayEnd.z);
+        const apronCorners = [
+            transformAirportPoint(airport, AIRPORT_CONFIG.APRON.x - AIRPORT_CONFIG.APRON.width * 0.5, AIRPORT_CONFIG.APRON.z - AIRPORT_CONFIG.APRON.depth * 0.5),
+            transformAirportPoint(airport, AIRPORT_CONFIG.APRON.x + AIRPORT_CONFIG.APRON.width * 0.5, AIRPORT_CONFIG.APRON.z - AIRPORT_CONFIG.APRON.depth * 0.5),
+            transformAirportPoint(airport, AIRPORT_CONFIG.APRON.x + AIRPORT_CONFIG.APRON.width * 0.5, AIRPORT_CONFIG.APRON.z + AIRPORT_CONFIG.APRON.depth * 0.5),
+            transformAirportPoint(airport, AIRPORT_CONFIG.APRON.x - AIRPORT_CONFIG.APRON.width * 0.5, AIRPORT_CONFIG.APRON.z + AIRPORT_CONFIG.APRON.depth * 0.5)
+        ];
+
+        ctx.save();
+        ctx.strokeStyle = isSelected ? '#fff1f8' : isHovered ? '#ffd7ea' : '#f472b6';
+        ctx.fillStyle = isSelected ? COLORS.airportSelected : isHovered ? 'rgba(244, 114, 182, 0.32)' : COLORS.airport;
+        ctx.lineWidth = isSelected ? 2.4 : 1.5;
+        ctx.beginPath();
+        ctx.moveTo(runwayA.x, runwayA.y);
+        ctx.lineTo(runwayB.x, runwayB.y);
+        ctx.stroke();
+
+        const apronPath = new Path2D();
+        const apronStart = worldToScreen(apronCorners[0].x, apronCorners[0].z);
+        apronPath.moveTo(apronStart.x, apronStart.y);
+        for (let index = 1; index < apronCorners.length; index += 1) {
+            const corner = worldToScreen(apronCorners[index].x, apronCorners[index].z);
+            apronPath.lineTo(corner.x, corner.y);
+        }
+        apronPath.closePath();
+        ctx.fill(apronPath);
+        ctx.stroke(apronPath);
+
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, isSelected ? 8 : 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
 function drawAuthoredObjects(ctx, state, interactions, document, worldToScreen, viewportRect, worldBounds) {
     if (!isGroupVisible(state, 'objects')) return;
     for (const entityId of getGroupEntityIds(document, 'objects')) {
@@ -505,6 +563,12 @@ function mayContainWorldPos(groupId, entity, worldPos, zoom) {
             ? worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ
             : true;
     }
+    if (groupId === 'airports') {
+        const bounds = entity?.bounds;
+        return bounds
+            ? worldPos.x >= bounds.minX && worldPos.x <= bounds.maxX && worldPos.z >= bounds.minZ && worldPos.z <= bounds.maxZ
+            : true;
+    }
     if (groupId === 'objects') {
         return Math.abs(worldPos.x - entity.x) <= 500 && Math.abs(worldPos.z - entity.z) <= 500;
     }
@@ -539,6 +603,7 @@ export function findObjectsAtWorldPos(state, worldPos) {
     const found = [];
     const document = state.document;
     const checkOrder = [
+        ['airports', entity => airportContainsWorldPoint(entity, worldPos.x, worldPos.z, Math.max(120, 24 / state.viewport.zoom))],
         ['objects', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < Math.max(220, 14 / state.viewport.zoom)],
         ['vantage', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < 500],
         ['terrainRegions', entity => terrainRegionContainsPoint(entity, worldPos.x, worldPos.z)],

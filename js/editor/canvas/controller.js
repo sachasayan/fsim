@@ -800,6 +800,17 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 return;
             }
 
+            if (state.tools.currentTool === 'add-airport') {
+                const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
+                const placement = state.tools.airportPlacement;
+                store.runCommand({
+                    type: 'create-airport',
+                    center: pointSnapped,
+                    yaw: placement.yaw
+                });
+                return;
+            }
+
             if (state.tools.currentTool === 'add-object') {
                 const pointSnapped = snapWorldPoint(world, state.tools.snappingEnabled, true, state.document);
                 const placement = state.tools.objectPlacement;
