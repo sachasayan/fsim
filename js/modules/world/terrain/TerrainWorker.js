@@ -1,3 +1,5 @@
+// @ts-check
+
 import { hash2, pickWeighted, cityHubInfluence, getDistrictProfile, getForestProfile, getTerrainHeight, getTerrainMaskSet, QuadtreeMapSampler, setStaticSampler, getStaticWorldMetadata, getStaticSampler } from './TerrainUtils.js';
 import { Noise } from '../../noise.js';
 import { SEA_LEVEL, WATER_DEPTH_BANDS, getTerrainBaseSrgb, getWaterDepthSrgb } from './TerrainPalette.js';
@@ -7,6 +9,120 @@ import { getTerrainSurfaceWeights } from './TerrainSurfaceWeights.js';
 const TREE_DENSITY_MULTIPLIER = 4.0;
 const CHUNK_SIZE = 4000;
 const SKIRT_DEPTH = 28;
+
+/**
+ * @typedef {{
+ *   cx: number,
+ *   cz: number,
+ *   lodCfg: { centerPadding?: number, shoulderWidth?: number }
+ * }} RoadSettingsJob
+ */
+
+/**
+ * @typedef {{
+ *   p1: [number, number],
+ *   p2: [number, number],
+ *   halfWidth: number,
+ *   embankment: number,
+ *   totalRadius: number,
+ *   startHeight?: number,
+ *   endHeight?: number
+ * }} RoadSegment
+ */
+
+/**
+ * @typedef {{
+ *   x: number,
+ *   y: number,
+ *   z: number,
+ *   lean: number,
+ *   seed: number,
+ *   seed2: number
+ * }} TreePositionSeed
+ */
+
+/**
+ * @typedef {{
+ *   positions: Float32Array,
+ *   normals: Float32Array,
+ *   colors: Float32Array,
+ *   surfaceWeights: Float32Array,
+ *   wPos: Float32Array,
+ *   wNormals: Float32Array,
+ *   wCols: Float32Array
+ * }} ChunkBaseResult
+ */
+
+/**
+ * @typedef {{
+ *   cx: number,
+ *   cz: number,
+ *   lod: number,
+ *   lodCfg: { terrainRes: number, waterRes: number },
+ *   positions: Float32Array,
+ *   colors: Float32Array,
+ *   surfaceWeights: Float32Array,
+ *   wPos: Float32Array,
+ *   wCols: Float32Array
+ * }} ChunkBaseJob
+ */
+
+/**
+ * @typedef {{
+ *   cx: number,
+ *   cz: number,
+ *   lod: number,
+ *   lodCfg: {
+ *     enableBoats?: boolean,
+ *     enableTrees?: boolean,
+ *     propDensity: number
+ *   },
+ *   positions: Float32Array,
+ *   cityZones?: Array<{
+ *     cx: number,
+ *     cz: number,
+ *     radius: number,
+ *     districts?: Array<{ points?: number[][], center?: [number, number], radius?: number }>
+ *   }>
+ * }} ChunkPropsJob
+ */
+
+/**
+ * @typedef {{
+ *   treeInstances: Record<string, Float32Array>,
+ *   buildingPositions: Record<string, unknown[]>,
+ *   boatPositions: Array<{ x: number, z: number, rot: number }>
+ * }} ChunkPropsResult
+ */
+
+/**
+ * @typedef {{
+ *   nodeId: number,
+ *   depth?: number | null,
+ *   surfaceResolution: number,
+ *   waterDepthResolution: number
+ * }} LeafSurfaceJob
+ */
+
+/**
+ * @typedef {{
+ *   type: 'initStaticMap',
+ *   payload: ArrayBuffer,
+ *   jobId?: number
+ * } | {
+ *   type: 'chunkBase',
+ *   payload: ChunkBaseJob,
+ *   jobId: number
+ * } | {
+ *   type: 'chunkProps',
+ *   payload: ChunkPropsJob,
+ *   jobId: number
+ * } | {
+ *   type: 'leafSurface',
+ *   payload: LeafSurfaceJob,
+ *   jobId: number
+ * }} TerrainWorkerRequest
+ */
 
 const treeSizes = {
     broadleaf: { hRange: [12, 21], wScale: 0.68 },
@@ -164,6 +280,7 @@ function roadNeedsTerrainSupport(road) {
 }
 
 function collectLocalRoadSegments(staticWorldMetadata, bounds, settings, margin = 300) {
+    /** @type {RoadSegment[]} */
     const localRoadSegments = [];
     const localRoadsForOverrides = [];
     if (!staticWorldMetadata?.roads) {
@@ -573,6 +690,7 @@ function buildLeafSurface(job) {
 }
 
 function buildChunkBase(job) {
+    /** @type {ChunkBaseJob} */
     const { cx, cz, lodCfg, positions, colors, surfaceWeights, wPos, wCols } = job;
     const staticWorldMetadata = getStaticWorldMetadata();
 
@@ -580,6 +698,7 @@ function buildChunkBase(job) {
     const chunkMinZ = cz * CHUNK_SIZE;
     const chunkMaxX = chunkMinX + CHUNK_SIZE;
     const chunkMaxZ = chunkMinZ + CHUNK_SIZE;
+    /** @type {RoadSegment[]} */
     const localRoadSegments = [];
     
     // A helper to get the potentially carved height so slope calculations match the physics surface
@@ -673,10 +792,11 @@ function buildChunkBase(job) {
     const normals = computeGridNormals(positions, lodCfg.terrainRes);
     const wNormals = computeGridNormals(wPos, lodCfg.waterRes);
 
-    return { cx, cz, positions, normals, colors, surfaceWeights, wPos, wNormals, wCols };
+    return /** @type {ChunkBaseResult} */ ({ cx, cz, positions, normals, colors, surfaceWeights, wPos, wNormals, wCols });
 }
 
 function buildChunkProps(job) {
+    /** @type {ChunkPropsJob} */
     const { cx, cz, lod, lodCfg, positions, cityZones = [] } = job;
 
     function isPointInPolygon(x, z, points) {
@@ -713,6 +833,7 @@ function buildChunkProps(job) {
         return false;
     }
 
+    /** @type {{ broadleaf: TreePositionSeed[], poplar: TreePositionSeed[], dry: TreePositionSeed[] }} */
     const treePositions = { broadleaf: [], poplar: [], dry: [] };
     const buildingPositions = { supertall: [], highrise: [], office: [], apartment: [], townhouse: [], industrial: [] };
     const boatPositions = [];
@@ -774,6 +895,7 @@ function buildChunkProps(job) {
     }
 
     // Process trees
+    /** @type {Record<string, Float32Array>} */
     const treeInstances = {};
     for (const [treeType, trees] of Object.entries(treePositions)) {
         const count = trees.length;
@@ -801,12 +923,15 @@ function buildChunkProps(job) {
         treeInstances[treeType] = instances;
     }
 
-    return { cx, cz, treeInstances, buildingPositions, boatPositions };
+    return /** @type {ChunkPropsResult} */ ({ cx, cz, treeInstances, buildingPositions, boatPositions });
 }
 
 if (typeof self !== 'undefined') {
     self.postMessage({ type: 'workerReady' });
 
+    /**
+     * @param {MessageEvent<TerrainWorkerRequest>} e
+     */
     self.onmessage = function (e) {
         const { type, payload, jobId } = e.data;
 

@@ -1,12 +1,59 @@
+// @ts-check
+
 import {
     configureMaterialShaderPipeline,
     createOwnedShaderSourcePatch
 } from './MaterialShaderPipeline.js';
 
+/** @typedef {import('three').Material} Material */
+/** @typedef {import('./MaterialShaderPipeline.js').ShaderPatch} ShaderPatch */
+
+/**
+ * @template T
+ * @typedef {T | ((context: Record<string, unknown>, descriptor: OwnedShaderDescriptor | null) => T)} ResolvableValue
+ */
+
+/**
+ * @template T
+ * @typedef {(context: Record<string, unknown>, descriptor: OwnedShaderDescriptor | null) => T} ResolverFn
+ */
+
+/**
+ * @typedef OwnedShaderDescriptor
+ * @property {string} id
+ * @property {ResolvableValue<string>} baseCacheKey
+ * @property {ResolvableValue<string>} patchId
+ * @property {ResolvableValue<string>} patchCacheKey
+ * @property {Record<string, unknown>} metadata
+ * @property {ResolvableValue<{ vertexShader?: string, fragmentShader?: string, defines?: Record<string, unknown> }>} source
+ * @property {ResolvableValue<Record<string, unknown>> | null} [uniformBindings]
+ */
+
+/**
+ * @template T
+ * @param {ResolvableValue<T>} value
+ * @param {Record<string, unknown>} [context]
+ * @param {OwnedShaderDescriptor | null} [descriptor]
+ * @returns {T}
+ */
 function resolveDescriptorValue(value, context = {}, descriptor = null) {
-    return typeof value === 'function' ? value(context, descriptor) : value;
+    return typeof value === 'function'
+        ? /** @type {ResolverFn<T>} */ (value)(context, descriptor)
+        : value;
 }
 
+/**
+ * @param {{
+ *   id: string,
+ *   baseCacheKey: ResolvableValue<string>,
+ *   patchId?: ResolvableValue<string> | null,
+ *   patchCacheKey?: ResolvableValue<string> | null,
+ *   metadata?: Record<string, unknown>,
+ *   source: OwnedShaderDescriptor['source'],
+ *   uniformBindings?: OwnedShaderDescriptor['uniformBindings']
+ * }} options
+ * @returns {OwnedShaderDescriptor}
+ */
 export function createOwnedShaderDescriptor({
     id,
     baseCacheKey,
@@ -38,6 +85,11 @@ export function createOwnedShaderDescriptor({
     };
 }
 
+/**
+ * @param {OwnedShaderDescriptor | null | undefined} descriptor
+ * @param {Record<string, unknown>} [context]
+ * @returns {{ id: string, baseCacheKey: string, patchId: string, patchCacheKey: string, metadata: Record<string, unknown> } | null}
+ */
 export function describeOwnedShaderDescriptor(descriptor, context = {}) {
     if (!descriptor) return null;
 
@@ -52,6 +104,11 @@ export function describeOwnedShaderDescriptor(descriptor, context = {}) {
     };
 }
 
+/**
+ * @param {OwnedShaderDescriptor | null | undefined} descriptor
+ * @param {Record<string, unknown>} [context]
+ * @returns {ShaderPatch}
+ */
 export function createOwnedShaderDescriptorPatch(descriptor, context = {}) {
     const description = describeOwnedShaderDescriptor(descriptor, context);
     if (!description) {
@@ -72,6 +129,12 @@ export function createOwnedShaderDescriptorPatch(descriptor, context = {}) {
     });
 }
 
+/**
+ * @param {Material} material
+ * @param {OwnedShaderDescriptor} descriptor
+ * @param {Record<string, unknown>} [context]
+ * @returns {{ id: string, baseCacheKey: string, patchId: string, patchCacheKey: string, metadata: Record<string, unknown> }}
+ */
 export function applyOwnedShaderDescriptor(material, descriptor, context = {}) {
     const description = describeOwnedShaderDescriptor(descriptor, context);
     configureMaterialShaderPipeline(material, {

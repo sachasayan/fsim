@@ -1,7 +1,56 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { AIRCRAFT_BREAKUP_PIECES } from './aircraft_breakup.js';
 
+/**
+ * @typedef AircraftPhysicsLike
+ * @property {number} flaps
+ * @property {number} aileron
+ * @property {number} elevator
+ * @property {number} rudder
+ * @property {boolean} spoilers
+ */
+
+/**
+ * @typedef {THREE.Object3D & { intensity?: number, userData: Record<string, any> & { baseIntensity?: number } }} MarkerObject
+ */
+
+/**
+ * @typedef {THREE.Object3D & { userData: Record<string, any> & { hingeAxis?: THREE.Vector3, currentRot?: number } }} HingedObject
+ */
+
+/**
+ * @typedef AircraftSystemArgs
+ * @property {THREE.Scene} scene
+ */
+
+/**
+ * @typedef AircraftSystem
+ * @property {THREE.Group} planeGroup
+ * @property {THREE.Object3D[]} engineExhausts
+ * @property {{
+ *   flaps: HingedObject[],
+ *   aileronsL: HingedObject[],
+ *   aileronsR: HingedObject[],
+ *   elevators: HingedObject[],
+ *   rudder: HingedObject[],
+ *   spoilers: HingedObject[],
+ *   gears: Array<{ animGroup: HingedObject, type: string }>
+ * }} movableSurfaces
+ * @property {THREE.Group} gearGroup
+ * @property {MarkerObject[]} strobes
+ * @property {MarkerObject[]} beacons
+ * @property {() => Array<(typeof AIRCRAFT_BREAKUP_PIECES)[number] & { sourceObjects: THREE.Object3D[], localPosition: THREE.Vector3, localQuaternion: THREE.Quaternion }>} getBreakupPieceSpecs
+ * @property {(camera?: THREE.Camera | null) => void} updateAircraftLOD
+ * @property {(PHYSICS: AircraftPhysicsLike, dt: number) => void} updateControlSurfaces
+ */
+
+/**
+ * @param {AircraftSystemArgs} args
+ * @returns {AircraftSystem}
+ */
 export function createAircraftSystem({ scene }) {
   const planeGroup = new THREE.Group();
   scene.add(planeGroup);
@@ -23,6 +72,10 @@ export function createAircraftSystem({ scene }) {
 
   const loader = new GLTFLoader();
 
+  /**
+   * @param {string} url
+   * @returns {Promise<import('three/examples/jsm/loaders/GLTFLoader.js').GLTF>}
+   */
   const loadGltf = (url) => new Promise((resolve, reject) => {
     loader.load(url, resolve, undefined, reject);
   });
@@ -36,13 +89,26 @@ export function createAircraftSystem({ scene }) {
   ]).then(([mainGltf, noseGltf, lwingGltf, rwingGltf, AIRCRAFT_CONFIG]) => {
     const model = mainGltf.scene;
 
+    /**
+     * @param {string | null | undefined} name
+     * @param {THREE.Object3D | null | undefined} object
+     */
     const registerBreakupSource = (name, object) => {
       if (!name || !object) return;
       breakupSourceLookup.set(name.toLowerCase(), object);
     };
 
+    /**
+     * @param {THREE.Object3D} scene
+     * @param {string[]} partsList
+     * @param {[number, number, number]} center
+     * @param {[number, number, number]} axis
+     * @param {string | null} [breakupAlias]
+     * @returns {HingedObject}
+     */
     const extractGearCluster = (scene, partsList, center, axis, breakupAlias = null) => {
       const cluster = new THREE.Group();
+      /** @type {THREE.Object3D[]} */
       const extractedChildren = [];
 
       // Collect first to prevent mutating the graph during traverse
@@ -70,7 +136,8 @@ export function createAircraftSystem({ scene }) {
       const restGroup = new THREE.Group();
       restGroup.position.copy(pivotWorld);
 
-      const animGroup = new THREE.Group();
+      /** @type {HingedObject} */
+      const animGroup = /** @type {HingedObject} */ (new THREE.Group());
       const [ax, ay, az] = axis;
       animGroup.userData.hingeAxis = new THREE.Vector3(ay, az, ax).normalize();
 
@@ -116,6 +183,10 @@ export function createAircraftSystem({ scene }) {
     // Best Practice: The GLB is a static export. However, the exact animation pivots 
     // were documented in the original FlightGear XML source files!
     // We load those explicit `center` and `axis` definitions instead of guessing math.
+    /**
+     * @param {THREE.Object3D} mesh
+     * @returns {THREE.Object3D}
+     */
     function makePivot(mesh) {
       const config = AIRCRAFT_CONFIG.pivots[mesh.name];
       if (!config) return mesh;
@@ -136,7 +207,8 @@ export function createAircraftSystem({ scene }) {
 
       // 2) The Anim Group: Sits at [0,0,0] securely inside RestGroup.
       // This safely catches `setFromAxisAngle` without destroying the base rotations!
-      const animGroup = new THREE.Group();
+      /** @type {HingedObject} */
+      const animGroup = /** @type {HingedObject} */ (new THREE.Group());
       const [ax, ay, az] = config.axis;
       // Native XML values, no axis scrambling needed.
       animGroup.userData.hingeAxis = new THREE.Vector3(ax, ay, az).normalize();
@@ -230,12 +302,12 @@ export function createAircraftSystem({ scene }) {
     }
 
     // Pass 2: Apply tree transformations AFTER collection to prevent loop recursion
-    pendingPivots.flaps.forEach(c => movableSurfaces.flaps.push(makePivot(c)));
-    pendingPivots.aileronsL.forEach(c => movableSurfaces.aileronsL.push(makePivot(c)));
-    pendingPivots.aileronsR.forEach(c => movableSurfaces.aileronsR.push(makePivot(c)));
-    pendingPivots.elevators.forEach(c => movableSurfaces.elevators.push(makePivot(c)));
-    pendingPivots.rudder.forEach(c => movableSurfaces.rudder.push(makePivot(c)));
-    pendingPivots.spoilers.forEach(c => movableSurfaces.spoilers.push(makePivot(c)));
+    pendingPivots.flaps.forEach(c => movableSurfaces.flaps.push(/** @type {HingedObject} */ (makePivot(c))));
+    pendingPivots.aileronsL.forEach(c => movableSurfaces.aileronsL.push(/** @type {HingedObject} */ (makePivot(c))));
+    pendingPivots.aileronsR.forEach(c => movableSurfaces.aileronsR.push(/** @type {HingedObject} */ (makePivot(c))));
+    pendingPivots.elevators.forEach(c => movableSurfaces.elevators.push(/** @type {HingedObject} */ (makePivot(c))));
+    pendingPivots.rudder.forEach(c => movableSurfaces.rudder.push(/** @type {HingedObject} */ (makePivot(c))));
+    pendingPivots.spoilers.forEach(c => movableSurfaces.spoilers.push(/** @type {HingedObject} */ (makePivot(c))));
 
     modelWrapper.add(gearGroup); // Placeholder for future gear integration
 
@@ -265,8 +337,14 @@ export function createAircraftSystem({ scene }) {
 
   const lightBulbGeo = new THREE.SphereGeometry(0.15, 10, 10);
 
+  /**
+   * @param {number | string | THREE.Color} color
+   * @param {number} emissiveIntensity
+   * @returns {MarkerObject}
+   */
   function createMarker(color, emissiveIntensity) {
-    const marker = new THREE.Object3D();
+    /** @type {MarkerObject} */
+    const marker = /** @type {MarkerObject} */ (new THREE.Object3D());
     marker.intensity = 0;
     marker.userData.baseIntensity = emissiveIntensity;
     const lens = new THREE.Mesh(lightBulbGeo, new THREE.MeshStandardMaterial({
@@ -278,6 +356,12 @@ export function createAircraftSystem({ scene }) {
     return marker;
   }
 
+  /**
+   * @param {number | string | THREE.Color} color
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   */
   function addNavLight(color, x, y, z) {
     const navMarker = createMarker(color, 20);
     navMarker.position.set(x, y, z);
@@ -290,6 +374,11 @@ export function createAircraftSystem({ scene }) {
   // Right Green
   addNavLight(0x00ff00, 17.5, 2.0, 5);
 
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   */
   function addStrobe(x, y, z) {
     const strobe = createMarker(0xffffff, 70);
     strobe.position.set(x, y, z);
@@ -320,6 +409,9 @@ export function createAircraftSystem({ scene }) {
   gearGroup.add(landingLights);
   planeGroup.add(gearGroup);
 
+  /**
+   * @param {THREE.Camera | null | undefined} camera
+   */
   function updateAircraftLOD(camera) {
     if (!camera) return;
     const dist = planeGroup.position.distanceTo(camera.position);
@@ -342,8 +434,16 @@ export function createAircraftSystem({ scene }) {
 
   }
 
+  /**
+   * @param {AircraftPhysicsLike} PHYSICS
+   * @param {number} dt
+   */
   function updateControlSurfaces(PHYSICS, dt) {
     // Helper to rotate a hingeGroup around its predefined custom axis
+    /**
+     * @param {HingedObject} group
+     * @param {number} angle
+     */
     const applyHinge = (group, angle) => {
       if (group.userData && group.userData.hingeAxis) {
         group.quaternion.setFromAxisAngle(group.userData.hingeAxis, angle);

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { applyTerrainEdits } from './TerrainEdits.js';
 import { resolveTerrainRingLod } from '../LodSystem.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from './TerrainSynthesis.js';
@@ -12,6 +14,78 @@ const NODE_EMPTY = 2;
 const LEAF_RESOLUTION = 64;
 const MIN_ALTITUDE = -200;
 const ALTITUDE_RANGE = 2000;
+
+/**
+ * @typedef {{
+ *   minX: number,
+ *   minZ: number,
+ *   maxX: number,
+ *   maxZ: number
+ * }} TerrainAabbBounds
+ */
+
+/**
+ * @typedef {{
+ *   river: number,
+ *   lake: number,
+ *   moisture: number,
+ *   flow: number,
+ *   erosion: number,
+ *   gorge: number,
+ *   floodplain: number,
+ *   cliff: number,
+ *   talus: number,
+ *   alpine: number,
+ *   wetland: number,
+ *   terrace: number
+ * }} TerrainMaskSet
+ */
+
+/**
+ * @typedef {{
+ *   id: number,
+ *   rawType: number,
+ *   type: 'branch' | 'leaf' | 'empty',
+ *   depth: number | null,
+ *   minX: number,
+ *   minZ: number,
+ *   maxX: number,
+ *   maxZ: number,
+ *   size: number,
+ *   centerX: number,
+ *   centerZ: number,
+ *   childIds: number[],
+ *   payloadOffset: number | null,
+ *   avgHeight: number | null
+ * }} QuadtreeNode
+ */
+
+/**
+ * @typedef {{
+ *   worldSize?: number,
+ *   terrainGenerator?: unknown,
+ *   terrainRegions?: unknown[],
+ *   airports?: unknown[],
+ *   authoredObjects?: unknown[],
+ *   terrainEdits?: unknown[]
+ * }} TerrainRuntimeWorldMetadata
+ */
+
+/**
+ * @typedef {{
+ *   fractal: (x: number, z: number, octaves: number, persistence: number, scale: number) => number,
+ *   fade?: (t: number) => number,
+ *   lerp?: (t: number, a: number, b: number) => number,
+ *   grad?: (hash: number, x: number, y: number, z: number) => number
+ * }} TerrainNoiseLike
+ */
+
+/**
+ * @typedef {{
+ *   sampleHeight: (x: number, z: number) => number,
+ *   sampleMasks?: (x: number, z: number) => TerrainMaskSet
+ * }} TerrainModelSampler
+ */
 
 function decodeNodeType(type) {
     if (type === NODE_BRANCH) return 'branch';
@@ -178,6 +252,9 @@ export function getForestProfile(vx, vz, height, forestNoise, urbanScore, Noise,
  * Sampler for the Adaptive Quadtree Map (world.bin)
  */
 export class QuadtreeMapSampler {
+    /**
+     * @param {ArrayBuffer} buffer
+     */
     constructor(buffer) {
         this.buffer = buffer;
         this.view = new DataView(buffer);
@@ -192,6 +269,7 @@ export class QuadtreeMapSampler {
 
         this.HEADER_SIZE = 32;
         this.NODE_SIZE = 32;
+        /** @type {Map<number, QuadtreeNode>} */
         this._nodeCache = new Map();
     }
 
@@ -238,6 +316,7 @@ export class QuadtreeMapSampler {
         const minZ = this.view.getFloat32(off + 8, true);
         const size = this.view.getFloat32(off + 12, true);
         const half = size * 0.5;
+        /** @type {QuadtreeNode} */
         const node = {
             id: nodeIdx,
             rawType,
@@ -544,8 +623,14 @@ function createSeededNoise(seed = 12345) {
     return localNoise;
 }
 
+/**
+ * @returns {TerrainRuntimeWorldMetadata | null}
+ */
 function getRuntimeWorldMetadata() {
-    return _staticWorldMetadata || ((typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null);
+    if (_staticWorldMetadata) return _staticWorldMetadata;
+    if (typeof window === 'undefined') return null;
+    const worldWindow = /** @type {Window & { fsimWorld?: TerrainRuntimeWorldMetadata }} */ (window);
+    return worldWindow.fsimWorld || null;
 }
 
 function getTerrainModelSampler() {
@@ -560,12 +645,12 @@ function getTerrainModelSampler() {
         if (_terrainModelSampler && _terrainModelSamplerKey === key) {
             return _terrainModelSampler;
         }
-        _terrainModelSampler = createRegionalTerrainSampler({
+        _terrainModelSampler = /** @type {TerrainModelSampler} */ (createRegionalTerrainSampler({
             Noise,
             worldSize,
             regions: metadata.terrainRegions,
             worldData: metadata
-        });
+        }));
         _terrainModelSamplerKey = key;
         return _terrainModelSampler;
     }
@@ -582,12 +667,12 @@ function getTerrainModelSampler() {
         return _terrainModelSampler;
     }
     const seededNoise = createSeededNoise(config.seed);
-    _terrainModelSampler = createTerrainSynthesizer({
+    _terrainModelSampler = /** @type {TerrainModelSampler} */ (createTerrainSynthesizer(/** @type {Parameters<typeof createTerrainSynthesizer>[0]} */ ({
         Noise: seededNoise,
         worldSize,
         config,
         worldData: metadata
-    });
+    })));
     _terrainModelSamplerKey = key;
     return _terrainModelSampler;
 }
@@ -607,6 +692,11 @@ export function getStaticWorldMetadata() {
     return _staticWorldMetadata;
 }
 
+/**
+ * @param {number} x
+ * @param {number} z
+ * @returns {TerrainMaskSet}
+ */
 export function getTerrainMaskSet(x, z) {
     const terrainModel = getTerrainModelSampler();
     if (terrainModel?.sampleMasks) {
@@ -630,7 +720,14 @@ export function getTerrainMaskSet(x, z) {
     };
 }
 
+/**
+ * @param {number} x
+ * @param {number} z
+ * @param {TerrainNoiseLike} Noise
+ * @param {number} [octaves]
+ */
 export function getTerrainHeight(x, z, Noise, octaves = 6) {
+    const fsimWorld = getRuntimeWorldMetadata();
     let baseHeight;
     if (_staticSampler) {
         baseHeight = _staticSampler.getAltitudeAt(x, z);
@@ -641,10 +738,9 @@ export function getTerrainHeight(x, z, Noise, octaves = 6) {
             noiseVal,
             x,
             z,
-            (typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null
+            /** @type {{ airports?: { x: number, z: number, yaw?: number, id?: string, template?: string, builtin?: boolean }[], authoredObjects?: { assetId: string, x: number, z: number, y?: number, yaw?: number, scale?: number, heightMode?: string }[] } | null} */ (fsimWorld)
         );
     }
-    const fsimWorld = (typeof window !== 'undefined' && window?.fsimWorld) ? window.fsimWorld : null;
     return applyTerrainEdits(baseHeight, x, z, fsimWorld?.terrainEdits || []);
 }
 

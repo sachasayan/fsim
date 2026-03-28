@@ -1,7 +1,59 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { LIGHTING_PRESETS } from '../lighting.js';
 import { debugLog } from './logging.js';
 
+/**
+ * @typedef WeatherLike
+ * @property {number} clearColor
+ * @property {number} stormColor
+ * @property {number} cloudColorClear
+ * @property {number} cloudColorStorm
+ * @property {number} exposure
+ * @property {number} bloomThreshold
+ * @property {number} bloomStrength
+ * @property {number} bloomRadius
+ * @property {string} [lightingPresetId]
+ * @property {number} lightAmbientBase
+ * @property {number} lightDirectBase
+ * @property {number} hemiSkyColor
+ * @property {number} hemiGroundColor
+ * @property {number} dirColor
+ * @property {number} sunPhiDeg
+ * @property {number} sunThetaDeg
+ * @property {number} skyTurbidity
+ * @property {number} skyRayleigh
+ * @property {number} skyMieCoefficient
+ * @property {number} skyMieDirectionalG
+ * @property {number} hazeColor
+ * @property {number} hazeOpacity
+ * @property {number} starOpacity
+ * @property {number} cloudOpacityBase
+ * @property {number} cloudOpacityStorm
+ * @property {number} cloudEmissiveBase
+ * @property {number} cloudEmissiveStorm
+ * @property {number} targetFog
+ * @property {number} currentFog
+ * @property {number} targetTransition
+ * @property {number} transition
+ */
+
+/**
+ * @param {{
+ *   scene: import('three').Scene,
+ *   renderer: import('three').WebGLRenderer,
+ *   bloomPass: { threshold: number, strength: number, radius: number },
+ *   WEATHER: WeatherLike,
+ *   hemiLight: import('three').Light & { intensity: number },
+ *   dirLight: import('three').Object3D & { intensity: number, position: import('three').Vector3 },
+ *   cloudMaterial?: (import('three').Material & { color: import('three').Color, opacity: number, emissiveIntensity: number }) | null,
+ *   updateClouds?: ((dt: number, camera: import('three').Camera, weather: WeatherLike, currentCloudColor: import('three').Color, sunDir: import('three').Vector3) => void) | null,
+ *   updateTerrainAtmosphere?: ((camera: import('three').Camera, currentWeatherColor: import('three').Color) => void) | null,
+ *   applyEnvironmentFromWeather?: ((weather: WeatherLike, options?: { refreshEnvironmentMap?: boolean }) => void) | null,
+ *   initialPreset?: string | null
+ * }} options
+ */
 export function createWeatherManager({
     scene,
     renderer,

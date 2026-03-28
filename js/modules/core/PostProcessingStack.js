@@ -1,9 +1,42 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
+/** @typedef {import('three').Scene} Scene */
+/** @typedef {import('three').Camera} Camera */
+/** @typedef {import('three').WebGLRenderer} WebGLRenderer */
+
+/**
+ * @typedef PostStackRuntimeState
+ * @property {WebGLRenderer} renderer
+ * @property {Scene} scene
+ * @property {Camera} camera
+ * @property {number} width
+ * @property {number} height
+ * @property {number} pixelRatio
+ */
+
+/**
+ * @typedef PostStackDefinition
+ * @property {string} id
+ * @property {(state: PostStackRuntimeState) => any} create
+ * @property {((state: PostStackRuntimeState & { pass: any }) => void) | undefined} [resize]
+ * @property {((state: PostStackRuntimeState & { pass: any, frameTimeEmaMs?: number }) => void) | undefined} [update]
+ */
+
+/**
+ * @param {{
+ *   THREEImpl?: typeof THREE,
+ *   RenderPassImpl?: typeof RenderPass,
+ *   SMAAPassImpl?: typeof SMAAPass,
+ *   UnrealBloomPassImpl?: typeof UnrealBloomPass
+ * }} [options]
+ * @returns {PostStackDefinition[]}
+ */
 export function createDefaultPostStackDefinitions({
     THREEImpl = THREE,
     RenderPassImpl = RenderPass,
@@ -43,6 +76,18 @@ export function createDefaultPostStackDefinitions({
     ];
 }
 
+/**
+ * @param {{
+ *   renderer: WebGLRenderer,
+ *   scene: Scene,
+ *   camera: Camera,
+ *   width: number,
+ *   height: number,
+ *   pixelRatio: number,
+ *   definitions?: PostStackDefinition[],
+ *   composerFactory?: (rendererRef: WebGLRenderer) => EffectComposer
+ * }} options
+ */
 export function createPostProcessingStack({
     renderer,
     scene,
@@ -59,11 +104,16 @@ export function createPostProcessingStack({
     const passTimings = new Map();
     let totalRenderMs = 0;
 
+    /** @param {number} value */
     function roundTiming(value) {
         if (!Number.isFinite(value)) return null;
         return Math.round(value * 1000) / 1000;
     }
 
+    /**
+     * @param {PostStackDefinition} definition
+     * @param {any} pass
+     */
     function wrapPassRender(definition, pass) {
         if (typeof pass?.render !== 'function') return;
         const originalRender = pass.render.bind(pass);
@@ -83,6 +133,10 @@ export function createPostProcessingStack({
         passesById.set(definition.id, { definition, pass });
     }
 
+    /**
+     * @param {'resize' | 'update'} hook
+     * @param {Partial<PostStackRuntimeState & { frameTimeEmaMs?: number }>} [nextState]
+     */
     function applyDefinitions(hook, nextState = {}) {
         Object.assign(runtimeState, nextState);
 

@@ -1,11 +1,18 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { createOwnedShaderDescriptor } from './ShaderDescriptor.js';
 import { finalizeOwnedShaderSource } from './OwnedShaderSourceBuilder.js';
 import { createNearCloudUniformBindings } from './CloudShaderPatches.js';
 
+/** @typedef {ReturnType<typeof finalizeOwnedShaderSource>} OwnedShaderSource */
+/** @typedef {ReturnType<typeof createOwnedShaderDescriptor>} OwnedShaderDescriptor */
+/** @typedef {Parameters<typeof createNearCloudUniformBindings>[0]} SharedCloudUniforms */
+
 const SOURCE_CACHE = new Map();
 const DESCRIPTOR_CACHE = new Map();
 
+/** @returns {OwnedShaderSource} */
 function buildNearCloudOwnedShaderSource() {
     return finalizeOwnedShaderSource({
         label: 'near cloud owned source',
@@ -118,6 +125,7 @@ function buildNearCloudOwnedShaderSource() {
     });
 }
 
+/** @returns {OwnedShaderSource} */
 function buildFarCloudOwnedShaderSource() {
     return finalizeOwnedShaderSource({
         label: 'far cloud owned source',
@@ -216,6 +224,7 @@ function buildFarCloudOwnedShaderSource() {
     });
 }
 
+/** @returns {OwnedShaderSource} */
 export function getNearCloudOwnedShaderSource() {
     if (!SOURCE_CACHE.has('near')) {
         SOURCE_CACHE.set('near', buildNearCloudOwnedShaderSource());
@@ -223,10 +232,15 @@ export function getNearCloudOwnedShaderSource() {
     return SOURCE_CACHE.get('near');
 }
 
+/**
+ * @param {SharedCloudUniforms} sharedCloudUniforms
+ * @returns {ReturnType<typeof createNearCloudUniformBindings>}
+ */
 export function getNearCloudUniformBindings(sharedCloudUniforms) {
     return createNearCloudUniformBindings(sharedCloudUniforms);
 }
 
+/** @returns {OwnedShaderDescriptor} */
 export function getNearCloudShaderDescriptor() {
     if (!DESCRIPTOR_CACHE.has('near')) {
         DESCRIPTOR_CACHE.set('near', createOwnedShaderDescriptor({
@@ -240,14 +254,17 @@ export function getNearCloudShaderDescriptor() {
                 system: 'clouds'
             },
             source: getNearCloudOwnedShaderSource(),
-            uniformBindings({ sharedCloudUniforms }) {
-                return getNearCloudUniformBindings(sharedCloudUniforms);
+            uniformBindings(context) {
+                return getNearCloudUniformBindings(
+                    /** @type {SharedCloudUniforms} */ (context.sharedCloudUniforms)
+                );
             }
         }));
     }
     return DESCRIPTOR_CACHE.get('near');
 }
 
+/** @returns {OwnedShaderSource} */
 export function getFarCloudOwnedShaderSource() {
     if (!SOURCE_CACHE.has('far')) {
         SOURCE_CACHE.set('far', buildFarCloudOwnedShaderSource());
@@ -255,6 +272,19 @@ export function getFarCloudOwnedShaderSource() {
     return SOURCE_CACHE.get('far');
 }
 
+/**
+ * @param {{ cloudTuning: { farFadeStart: number, farFadeEnd: number } }} options
+ * @returns {{
+ *   uTime: { value: number },
+ *   uCloudCameraPos: { value: THREE.Vector3 },
+ *   uSunDir: { value: THREE.Vector3 },
+ *   uColor: { value: THREE.Color },
+ *   uOpacity: { value: number },
+ *   uDomainRadius: { value: number },
+ *   uFarFadeStart: { value: number },
+ *   uFarFadeEnd: { value: number }
+ * }}
+ */
 export function createFarCloudUniforms({ cloudTuning }) {
     return {
         uTime: { value: 0 },

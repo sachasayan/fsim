@@ -1,5 +1,32 @@
+// @ts-check
+
+/** @typedef {import('three').Material} Material */
+/** @typedef {import('three').WebGLProgramParametersWithUniforms['shader']} WebGLShaderLike */
+/** @typedef {import('three').WebGLRenderer} WebGLRenderer */
+
+/**
+ * @typedef ShaderPatch
+ * @property {string} id
+ * @property {(shader: WebGLShaderLike, renderer: WebGLRenderer) => void} apply
+ * @property {string | ((this: Material, patch: ShaderPatch, material: Material) => string | null | undefined) | null | undefined} [cacheKey]
+ * @property {Record<string, unknown>} [metadata]
+ */
+
+/**
+ * @typedef PipelineState
+ * @property {Material['onBeforeCompile']} previousCompile
+ * @property {Material['customProgramCacheKey']} previousCacheKey
+ * @property {string | ((this: Material, material: Material) => string) | null} baseCacheKey
+ * @property {ShaderPatch[]} patches
+ */
+
+/** @type {symbol} */
 const PIPELINE_STATE_KEY = Symbol('materialShaderPipeline');
 
+/**
+ * @param {Material & { [PIPELINE_STATE_KEY]?: PipelineState }} material
+ * @returns {PipelineState}
+ */
 function ensurePipelineState(material) {
     let state = material[PIPELINE_STATE_KEY];
     if (state) return state;
@@ -40,6 +67,11 @@ function ensurePipelineState(material) {
     return state;
 }
 
+/**
+ * @param {Material} material
+ * @param {PipelineState} state
+ * @returns {void}
+ */
 function syncPipelineMetadata(material, state) {
     material.userData = material.userData || {};
     material.userData.shaderPipeline = {
@@ -48,10 +80,32 @@ function syncPipelineMetadata(material, state) {
     };
 }
 
+/**
+ * @param {{ id: string, apply: ShaderPatch['apply'], cacheKey?: ShaderPatch['cacheKey'], metadata?: Record<string, unknown> }} options
+ * @returns {ShaderPatch}
+ */
 export function createShaderPatch({ id, apply, cacheKey = id, metadata = {} }) {
     return { id, apply, cacheKey, metadata };
 }
 
+/**
+ * @param {{
+ *   id: string,
+ *   cacheKey?: ShaderPatch['cacheKey'],
+ *   source: {
+ *     vertexShader?: string,
+ *     fragmentShader?: string,
+ *     defines?: Record<string, unknown>
+ *   } | ((shader: WebGLShaderLike, renderer: WebGLRenderer) => {
+ *     vertexShader?: string,
+ *     fragmentShader?: string,
+ *     defines?: Record<string, unknown>
+ *   }),
+ *   uniformBindings?: Record<string, unknown> | ((shader: WebGLShaderLike, renderer: WebGLRenderer) => Record<string, unknown>) | null,
+ *   metadata?: Record<string, unknown>
+ * }} options
+ * @returns {ShaderPatch}
+ */
 export function createOwnedShaderSourcePatch({
     id,
     cacheKey = id,
@@ -91,12 +145,22 @@ export function createOwnedShaderSourcePatch({
     });
 }
 
+/**
+ * @param {Material & { [PIPELINE_STATE_KEY]?: PipelineState }} material
+ * @param {string | ((this: Material, material: Material) => string) | null} baseCacheKey
+ * @returns {void}
+ */
 export function setMaterialShaderBaseKey(material, baseCacheKey) {
     const state = ensurePipelineState(material);
     state.baseCacheKey = baseCacheKey;
     syncPipelineMetadata(material, state);
 }
 
+/**
+ * @param {Material & { [PIPELINE_STATE_KEY]?: PipelineState }} material
+ * @param {ShaderPatch} patch
+ * @returns {void}
+ */
 export function upsertMaterialShaderPatch(material, patch) {
     const state = ensurePipelineState(material);
     const index = state.patches.findIndex((candidate) => candidate.id === patch.id);
@@ -108,6 +172,11 @@ export function upsertMaterialShaderPatch(material, patch) {
     syncPipelineMetadata(material, state);
 }
 
+/**
+ * @param {Material & { [PIPELINE_STATE_KEY]?: PipelineState }} material
+ * @param {{ baseCacheKey?: string | ((this: Material, material: Material) => string) | null, patches?: ShaderPatch[] }} [options]
+ * @returns {void}
+ */
 export function configureMaterialShaderPipeline(material, { baseCacheKey = null, patches = [] } = {}) {
     const state = ensurePipelineState(material);
     state.baseCacheKey = baseCacheKey;
@@ -115,6 +184,10 @@ export function configureMaterialShaderPipeline(material, { baseCacheKey = null,
     syncPipelineMetadata(material, state);
 }
 
+/**
+ * @param {Material & { [PIPELINE_STATE_KEY]?: PipelineState }} material
+ * @returns {{ baseCacheKey: PipelineState['baseCacheKey'], patches: Array<{ id: string, cacheKey: ShaderPatch['cacheKey'], metadata: Record<string, unknown> }> } | null}
+ */
 export function describeMaterialShaderPipeline(material) {
     const state = material[PIPELINE_STATE_KEY];
     if (!state) return null;

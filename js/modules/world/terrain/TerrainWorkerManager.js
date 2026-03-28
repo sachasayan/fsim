@@ -1,4 +1,58 @@
+// @ts-check
+
+/**
+ * @typedef {{
+ *   completed: number,
+ *   failed: number,
+ *   avgDurationMs: number,
+ *   maxDurationMs: number,
+ *   lastDurationMs: number | null
+ * }} TerrainWorkerJobSummary
+ */
+
+/**
+ * @typedef {{
+ *   type: string,
+ *   startedAtMs: number,
+ *   resolve: (result: unknown) => void,
+ *   reject: (error: Error) => void
+ * }} PendingTerrainWorkerJob
+ */
+
+/**
+ * @typedef {{
+ *   activeWorkerCount: number,
+ *   inFlightJobs: number,
+ *   inFlightByType: Record<string, number>,
+ *   jobs: Record<string, {
+ *     completed: number,
+ *     failed: number,
+ *     avgDurationMs: number | null,
+ *     maxDurationMs: number | null,
+ *     lastDurationMs: number | null,
+ *     inFlight: number
+ *   }>
+ * }} TerrainWorkerDiagnostics
+ */
+
+/**
+ * @typedef {{
+ *   type: 'workerReady'
+ * } | {
+ *   type: 'initStaticMap_done'
+ * } | {
+ *   jobId: number,
+ *   type: 'chunkBase_done' | 'chunkProps_done' | 'leafSurface_done',
+ *   result: unknown,
+ *   error?: undefined
+ * } | {
+ *   jobId?: number,
+ *   error: string
+ * }} TerrainWorkerMessage
+ */
+
 function createJobSummary() {
+    /** @type {TerrainWorkerJobSummary} */
     return {
         completed: 0,
         failed: 0,
@@ -8,15 +62,24 @@ function createJobSummary() {
     };
 }
 
+/**
+ * @param {ArrayBuffer | null | undefined} _staticWorldBuffer
+ */
 export function initWorkerManager(_staticWorldBuffer) {
     const maxWorkers = navigator.hardwareConcurrency ? Math.min(navigator.hardwareConcurrency, 4) : 2;
+    /** @type {Worker[]} */
     const workers = [];
+    /** @type {Set<Worker>} */
     const readyWorkers = new Set();
+    /** @type {Map<number, PendingTerrainWorkerJob>} */
     const pendingJobs = new Map();
+    /** @type {Map<string, number>} */
     const inFlightByType = new Map();
+    /** @type {Map<string, TerrainWorkerJobSummary>} */
     const jobSummaries = new Map();
     let jobIdCounter = 0;
     let workerIdx = 0;
+    /** @type {Array<() => void>} */
     const pendingDispatches = [];
 
     function flushPendingDispatches() {
@@ -30,8 +93,12 @@ export function initWorkerManager(_staticWorldBuffer) {
         const worker = new Worker(new URL('./TerrainWorker.js', import.meta.url), { type: 'module' });
         workers.push(worker);
 
+        /**
+         * @param {MessageEvent<TerrainWorkerMessage>} e
+         */
         worker.onmessage = (e) => {
-            const { jobId, type, result, error } = e.data;
+            const message = /** @type {{ jobId?: number, type?: string, result?: unknown, error?: string }} */ (e.data);
+            const { jobId, type, result, error } = message;
             if (type === 'workerReady' && _staticWorldBuffer) {
                 readyWorkers.delete(worker);
                 worker.postMessage({ type: 'initStaticMap', payload: _staticWorldBuffer });
@@ -72,6 +139,12 @@ export function initWorkerManager(_staticWorldBuffer) {
         worker.onerror = (e) => console.error("TerrainWorker Error: ", e);
     }
 
+    /**
+     * @param {string} type
+     * @param {unknown} payload
+     * @param {Transferable[]} [transferables]
+     * @returns {Promise<unknown>}
+     */
     function dispatchWorker(type, payload, transferables = []) {
         return new Promise((resolve, reject) => {
             const launch = () => {
@@ -109,7 +182,11 @@ export function initWorkerManager(_staticWorldBuffer) {
         });
     }
 
+    /**
+     * @returns {TerrainWorkerDiagnostics}
+     */
     function getDiagnostics() {
+        /** @type {TerrainWorkerDiagnostics['jobs']} */
         const jobs = {};
         for (const [type, summary] of jobSummaries.entries()) {
             jobs[type] = {

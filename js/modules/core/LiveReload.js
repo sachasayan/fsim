@@ -1,3 +1,5 @@
+// @ts-check
+
 import { debugLog } from './logging.js';
 
 /**
@@ -7,6 +9,17 @@ import { debugLog } from './logging.js';
  * When triggered, it tells the terrain system to hot-swap city meshes.
  */
 
+/**
+ * @typedef TerrainSystemReloadLike
+ * @property {() => Promise<void>} reloadCity
+ * @property {() => void} refreshBakedTerrain
+ * @property {(() => void) | undefined} [refreshTerrainAlignment]
+ */
+
+/**
+ * @param {TerrainSystemReloadLike | null | undefined} terrainSystem
+ * @returns {void}
+ */
 export function initLiveReload(terrainSystem) {
     if (!terrainSystem || !terrainSystem.reloadCity || !terrainSystem.refreshBakedTerrain) {
         console.warn('[LiveReload] Terrain system not ready or missing reload hooks.');
@@ -19,6 +32,7 @@ export function initLiveReload(terrainSystem) {
     const es = new EventSource(`${serverOrigin}/events`);
 
     es.addEventListener('reload-city', async (event) => {
+        /** @type {{ timestamp?: string | number }} */
         const data = JSON.parse(event.data);
         debugLog(`[LiveReload] Received reload signal (timestamp: ${data.timestamp})`);
 
@@ -45,6 +59,7 @@ export function initLiveReload(terrainSystem) {
         }
     });
 
+    /** @param {Event} err */
     es.onerror = (err) => {
         console.error('[LiveReload] SSE Error:', err);
     };

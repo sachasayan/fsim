@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { fetchDistrictIndex, loadDistrictChunk } from './CityChunkLoader.js';
 import { QuadtreeMapSampler, hash2Local, setStaticSampler } from './TerrainUtils.js';
@@ -9,10 +11,101 @@ import { debugLog } from '../../core/logging.js';
 export const CHUNK_SIZE = 4000;
 export const TREE_DENSITY_MULTIPLIER = 8.0;
 
+/**
+ * @typedef {{
+ *   id: string,
+ *   cx: number,
+ *   cz: number,
+ *   radius: number
+ * }} DistrictIndexEntry
+ */
+
+/**
+ * @typedef {{
+ *   count: number,
+ *   workerMs: number | null,
+ *   applyMs: number | null,
+ *   avgWorkerMs: number,
+ *   avgApplyMs: number,
+ *   maxWorkerMs: number,
+ *   maxApplyMs: number
+ * }} GenerationPerfBucket
+ */
+
+/**
+ * @typedef {{
+ *   chunkBase: GenerationPerfBucket,
+ *   chunkProps: GenerationPerfBucket,
+ *   leafSurface: GenerationPerfBucket
+ * }} GenerationPerfState
+ */
+
+/**
+ * @typedef {{
+ *   terrainRes: number,
+ *   waterRes: number,
+ *   enableBoats?: boolean,
+ *   enableTrees?: boolean,
+ *   enableTreeContactShadows?: boolean,
+ *   treeRenderMode?: string
+ * }} TerrainGenerationLodConfig
+ */
+
+/**
+ * @typedef {{
+ *   showTrees?: boolean,
+ *   showBuildings?: boolean
+ * }} TerrainGenerationDebugSettings
+ */
+
+/**
+ * @typedef {(geometry: THREE.BufferGeometry, material: THREE.Material, count: number, options?: { colorable?: boolean }) => THREE.InstancedMesh} PooledInstancedMeshFactory
+ */
+
+/**
+ * @typedef {{
+ *   near: THREE.Material,
+ *   mid: THREE.Material
+ * }} TreeGroundMaterialSet
+ */
+
+/**
+ * @typedef {{
+ *   canopyMat: THREE.Material,
+ *   baseTint: THREE.Color,
+ *   depthMat: THREE.Material | null
+ * }} TreeTypeConfig
+ */
+
+/**
+ * @typedef {{
+ *   treeBillboardGeo: THREE.BufferGeometry,
+ *   treeGroundGeo: THREE.BufferGeometry,
+ *   treeTrunkGeo: THREE.BufferGeometry,
+ *   treeTrunkMat: THREE.Material,
+ *   treeGroundMats: TreeGroundMaterialSet,
+ *   treeTypeConfigs: Record<string, TreeTypeConfig>,
+ *   terrainDebugSettings?: TerrainGenerationDebugSettings,
+ *   getPooledInstancedMesh?: PooledInstancedMeshFactory
+ * }} TerrainTreeResources
+ */
+
+/**
+ * @typedef {{
+ *   LOD_LEVELS: TerrainGenerationLodConfig[],
+ *   chunkPools: THREE.Group[][],
+ *   terrainMaterial: THREE.Material,
+ *   terrainFarMaterial: THREE.Material,
+ *   waterMaterial: THREE.Material,
+ *   waterFarMaterial: THREE.Material
+ * }} TerrainChunkBaseContext
+ */
+
 // Lazily fetched district index (array of {id, cx, cz, radius})
 let _districtIndex = null;
 let _staticWorldBuffer = null;
 let _workerManager = null;
+/** @type {GenerationPerfState} */
 const _generationPerf = {
     chunkBase: {
         count: 0,
@@ -44,10 +137,17 @@ const _generationPerf = {
 };
 const _chunkPropSampleTemplateCache = new Map();
 
+/**
+ * @param {number | null | undefined} value
+ */
 function roundPerf(value) {
     return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
 }
 
+/**
+ * @param {'chunkBase' | 'chunkProps' | 'leafSurface'} kind
+ * @param {{ workerMs?: number | null, applyMs?: number | null }} [sample]
+ */
 function recordGenerationPerf(kind, { workerMs = null, applyMs = null } = {}) {
     const bucket = _generationPerf[kind];
     if (!bucket) return;
@@ -70,6 +170,9 @@ export function clearStaticWorldCache() {
     _districtIndex = null;
 }
 
+/**
+ * @returns {Promise<DistrictIndexEntry[] | null>}
+ */
 async function getDistrictIndex() {
     if (!_districtIndex) _districtIndex = await fetchDistrictIndex();
     return _districtIndex;
@@ -87,15 +190,17 @@ export async function loadStaticWorld() {
         const meta = sampler.getMetadata();
 
         if (meta) {
+            const worldWindow = /** @type {Window & { fsimWorld?: Record<string, unknown> }} */ (window);
             normalizeMapData(meta);
-            Object.assign(window.fsimWorld || (window.fsimWorld = {}), meta);
+            Object.assign(worldWindow.fsimWorld || (worldWindow.fsimWorld = {}), meta);
             window.dispatchEvent?.(new CustomEvent('fsim:world-metadata-updated', { detail: { source: 'world.bin' } }));
             debugLog("🌐 Initialized world from baked metadata");
         } else {
             const jsonResp = await fetch('/tools/map.json');
             const mapData = await jsonResp.json();
+            const worldWindow = /** @type {Window & { fsimWorld?: Record<string, unknown> }} */ (window);
             normalizeMapData(mapData);
-            Object.assign(window.fsimWorld || (window.fsimWorld = {}), mapData);
+            Object.assign(worldWindow.fsimWorld || (worldWindow.fsimWorld = {}), mapData);
             window.dispatchEvent?.(new CustomEvent('fsim:world-metadata-updated', { detail: { source: 'tools/map.json' } }));
             debugLog("⚠️ Baked metadata missing, fallbacked to map.json");
         }
@@ -126,10 +231,19 @@ function dispatchWorker(type, payload, transferables = []) {
     return _workerManager.dispatchWorker(type, payload, transferables);
 }
 
+/**
+ * @param {string} type
+ * @param {unknown} payload
+ * @param {Transferable[]} [transferables]
+ */
 export function dispatchTerrainWorker(type, payload, transferables = []) {
     return dispatchWorker(type, payload, transferables);
 }
 
+/**
+ * @param {'chunkBase' | 'chunkProps' | 'leafSurface'} kind
+ * @param {{ workerMs?: number | null, applyMs?: number | null }} [sample]
+ */
 export function recordTerrainGenerationPerf(kind, sample = {}) {
     recordGenerationPerf(kind, sample);
 }
@@ -162,6 +276,9 @@ function createChunkPropSamplePositions(terrainRes) {
     return positions;
 }
 
+/**
+ * @param {{ terrainRes?: number } | null | undefined} lodCfg
+ */
 function getChunkPropSamplePositions(lodCfg) {
     const terrainRes = Math.max(1, lodCfg?.terrainRes || 1);
     const cacheKey = `${terrainRes}`;
@@ -195,6 +312,13 @@ function insertChunkBaseSurfaceMesh(chunkGroup, mesh, index) {
     }
 }
 
+/**
+ * @param {number} cx
+ * @param {number} cz
+ * @param {number} lod
+ * @param {TerrainChunkBaseContext} ctx
+ * @param {THREE.Group | null} [existingGroup]
+ */
 export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) {
     const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
@@ -297,6 +421,11 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
  * Determine which authored districts overlap a terrain chunk (cx, cz).
  * Returns an array of matching district entries.
  */
+/**
+ * @param {number} cx
+ * @param {number} cz
+ * @returns {Promise<DistrictIndexEntry[]>}
+ */
 export async function getOverlappingDistricts(cx, cz) {
     const districtIndex = await getDistrictIndex();
     if (!districtIndex || districtIndex.length === 0) return [];
@@ -313,6 +442,11 @@ export async function getOverlappingDistricts(cx, cz) {
     return overlapping;
 }
 
+/**
+ * @param {THREE.InstancedMesh} mesh
+ * @param {number[]} instances
+ * @param {THREE.Color} baseTint
+ */
 function applyTreeInstanceColors(mesh, instances, baseTint) {
     const count = instances.length / 8;
     const colors = new Float32Array(count * 3);
@@ -331,6 +465,11 @@ function applyTreeInstanceColors(mesh, instances, baseTint) {
     mesh.instanceColor.needsUpdate = true;
 }
 
+/**
+ * @param {Record<string, number[]>} treeInstances
+ * @param {TerrainGenerationLodConfig} lodCfg
+ * @param {TerrainTreeResources} resources
+ */
 export function buildTreeMeshesForLod(treeInstances, lodCfg, resources) {
     const {
         treeBillboardGeo,

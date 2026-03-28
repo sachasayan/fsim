@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { createWaterNormalMap, createTreeBillboardTexture, createTreeContactTexture, createPackedTerrainDetailTexture, createNormalMapFromHeightImage } from './terrain/TerrainTextures.js';
 import {
@@ -40,6 +42,53 @@ import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsFor
 import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionController.js';
 import { debugLog } from '../core/logging.js';
 import { createRuntimeLodSettings } from './LodSystem.js';
+
+/** @typedef {ReturnType<typeof createRuntimeLodSettings>} RuntimeLodSettings */
+/** @typedef {Parameters<typeof getTerrainHeight>[2]} TerrainNoiseLike */
+
+/**
+ * @typedef PhysicsLike
+ * @property {{ x: number, z: number }} position
+ * @property {{ x?: number, z?: number }} [velocity]
+ */
+
+/**
+ * @typedef {Window & typeof globalThis & {
+ *   fsimWorld?: unknown,
+ *   _isReadyLogCounter?: number
+ * }} TerrainBrowserWindow
+ */
+
+/**
+ * @typedef TerrainSystemOptions
+ * @property {THREE.Scene} scene
+ * @property {THREE.WebGLRenderer} renderer
+ * @property {TerrainNoiseLike} Noise
+ * @property {unknown} [PHYSICS]
+ * @property {RuntimeLodSettings | null} [lodSettings]
+ * @property {typeof loadStaticWorld} [loadStaticWorldFn]
+ */
+
+/**
+ * @typedef TerrainSystem
+ * @property {THREE.MeshStandardMaterial} waterMaterial
+ * @property {(x: number, z: number, octaves?: number) => number} getTerrainHeight
+ * @property {() => unknown} updateTerrain
+ * @property {(camera?: THREE.Camera | null, weatherColor?: THREE.Color | null) => void} updateTerrainAtmosphere
+ * @property {(center: THREE.Vector3 | null | undefined, extent: number) => void} updateSurfaceShadowCoverage
+ * @property {() => unknown} getTerrainSelectionDiagnostics
+ * @property {() => unknown} getSurfaceShadowDiagnostics
+ * @property {() => { applyMs: number, applies: number }} consumeLeafBuildApplyTiming
+ * @property {Record<string, unknown>} terrainDebugSettings
+ * @property {(options?: { rebuildSurfaces?: boolean, refreshSelection?: boolean, rebuildProps?: boolean, rebuildHydrology?: boolean }) => void} applyTerrainDebugSettings
+ * @property {() => boolean} isReady
+ * @property {() => boolean} hasPendingTerrainWork
+ * @property {() => void} refreshBakedTerrain
+ * @property {() => void} reloadHydrology
+ * @property {(cityId?: string | null) => Promise<void>} reloadCity
+ * @property {() => unknown[]} getShaderValidationVariants
+ * @property {() => void} completeBootstrap
+ */
 
 export function createRiverStripGeometry(points, width, sampler, widths = null) {
   if (!Array.isArray(points) || points.length < 2 || !sampler || typeof sampler.getAltitudeAt !== 'function') return null;
@@ -317,6 +366,10 @@ export function createLakeSurfaceGeometry(lake, sampler, options = {}) {
   return geometry;
 }
 
+/**
+ * @param {TerrainSystemOptions} options
+ * @returns {TerrainSystem}
+ */
 export function createTerrainSystem({
   scene,
   renderer,
@@ -326,9 +379,12 @@ export function createTerrainSystem({
   loadStaticWorldFn = loadStaticWorld
 }) {
   const hasWindow = typeof window !== 'undefined';
+  /** @type {TerrainBrowserWindow | null} */
   const windowRef = hasWindow ? window : null;
   const locationSearch = windowRef?.location?.search || '';
   lodSettings = lodSettings || createRuntimeLodSettings({ urlSearch: locationSearch });
+  /** @type {PhysicsLike} */
+  const physicsState = /** @type {PhysicsLike} */ (PHYSICS || { position: { x: 0, z: 0 }, velocity: { x: 0, z: 0 } });
 
   const waterMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -896,6 +952,7 @@ export function createTerrainSystem({
     terrainPerfState.pendingFrameLeafApplyCount += 1;
   }
 
+  /** @returns {{ applyMs: number, applies: number }} */
   function consumeLeafBuildApplyTiming() {
     const summary = {
       applyMs: terrainPerfState.pendingFrameLeafApplyMs,
@@ -1520,6 +1577,9 @@ export function createTerrainSystem({
     }
   }
 
+  /**
+   * @param {{ rebuildSurfaces?: boolean, refreshSelection?: boolean, rebuildProps?: boolean, rebuildHydrology?: boolean }} [options]
+   */
   function applyTerrainDebugSettings({ rebuildSurfaces = false, refreshSelection = false, rebuildProps = false, rebuildHydrology = false } = {}) {
     normalizeTerrainDebugSettings();
     applyTerrainWireframeSetting();
@@ -1668,9 +1728,9 @@ export function createTerrainSystem({
 
   function getLeafBuildPriority(leafState) {
     if (!leafState) return Number.POSITIVE_INFINITY;
-    const distanceSq = distanceToLeafBoundsSq(leafState, PHYSICS.position.x, PHYSICS.position.z);
-    const velocityX = Number.isFinite(PHYSICS?.velocity?.x) ? PHYSICS.velocity.x : 0;
-    const velocityZ = Number.isFinite(PHYSICS?.velocity?.z) ? PHYSICS.velocity.z : 0;
+    const distanceSq = distanceToLeafBoundsSq(leafState, physicsState.position.x, physicsState.position.z);
+    const velocityX = Number.isFinite(physicsState.velocity?.x) ? physicsState.velocity.x : 0;
+    const velocityZ = Number.isFinite(physicsState.velocity?.z) ? physicsState.velocity.z : 0;
     const speed = Math.hypot(velocityX, velocityZ);
     let effectiveDistanceSq = distanceSq;
     let forwardBoost = 0;
@@ -1678,15 +1738,15 @@ export function createTerrainSystem({
     if (speed > 1) {
       const lookaheadTimes = [0.4, 0.9, 1.6];
       for (const lookaheadSeconds of lookaheadTimes) {
-        const predictedX = PHYSICS.position.x + velocityX * lookaheadSeconds;
-        const predictedZ = PHYSICS.position.z + velocityZ * lookaheadSeconds;
+        const predictedX = physicsState.position.x + velocityX * lookaheadSeconds;
+        const predictedZ = physicsState.position.z + velocityZ * lookaheadSeconds;
         effectiveDistanceSq = Math.min(effectiveDistanceSq, distanceToLeafBoundsSq(leafState, predictedX, predictedZ));
       }
 
       const center = getLeafCenter(leafState);
       if (center) {
-        const toLeafX = center.x - PHYSICS.position.x;
-        const toLeafZ = center.z - PHYSICS.position.z;
+        const toLeafX = center.x - physicsState.position.x;
+        const toLeafZ = center.z - physicsState.position.z;
         const toLeafLength = Math.hypot(toLeafX, toLeafZ);
         if (toLeafLength > 1e-3) {
           const alignment = ((toLeafX * velocityX) + (toLeafZ * velocityZ)) / (toLeafLength * speed);
@@ -2329,7 +2389,8 @@ export function createTerrainSystem({
   }
 
   function generateChunkBase(cx, cz, lod = 0) {
-    return genBase(cx, cz, lod, {
+    /** @type {Parameters<typeof genBase>[3]} */
+    const baseContext = /** @type {Parameters<typeof genBase>[3]} */ ({
       LOD_LEVELS,
       chunkPools,
       terrainMaterial,
@@ -2338,7 +2399,8 @@ export function createTerrainSystem({
       waterFarMaterial,
       Noise,
       scene
-    }, terrainChunks.get(`${cx}, ${cz}`)?.group || null)
+    });
+    return genBase(cx, cz, lod, baseContext, terrainChunks.get(`${cx}, ${cz}`)?.group || null)
       .then((group) => {
         const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(group);
         if (terrainMesh) {
@@ -2465,8 +2527,8 @@ export function createTerrainSystem({
       return selection;
     }
 
-    const velocityX = Number.isFinite(PHYSICS?.velocity?.x) ? PHYSICS.velocity.x : 0;
-    const velocityZ = Number.isFinite(PHYSICS?.velocity?.z) ? PHYSICS.velocity.z : 0;
+    const velocityX = Number.isFinite(physicsState.velocity?.x) ? physicsState.velocity.x : 0;
+    const velocityZ = Number.isFinite(physicsState.velocity?.z) ? physicsState.velocity.z : 0;
     const speed = Math.hypot(velocityX, velocityZ);
     const nearDistanceSq = Math.pow(Math.max(CHUNK_SIZE * 0.6, terrainDebugSettings.selectionBlockingRadius * 0.45), 2);
     const targetBlockingLeafCount = Math.max(
@@ -2843,7 +2905,7 @@ export function createTerrainSystem({
         state: leaf.state,
         ageMs,
         blockingReady: leaf.blockingReady,
-        distanceSq: distanceToLeafBoundsSq(leaf, PHYSICS.position.x, PHYSICS.position.z)
+        distanceSq: distanceToLeafBoundsSq(leaf, physicsState.position.x, physicsState.position.z)
       });
     }
     stalledPendingLeaves.sort((a, b) => (b.ageMs || 0) - (a.ageMs || 0));
@@ -2915,8 +2977,8 @@ export function createTerrainSystem({
       return buildGridActiveChunks(centerChunkX, centerChunkZ);
     }
 
-    const velocityX = Number.isFinite(PHYSICS?.velocity?.x) ? PHYSICS.velocity.x : 0;
-    const velocityZ = Number.isFinite(PHYSICS?.velocity?.z) ? PHYSICS.velocity.z : 0;
+    const velocityX = Number.isFinite(physicsState.velocity?.x) ? physicsState.velocity.x : 0;
+    const velocityZ = Number.isFinite(physicsState.velocity?.z) ? physicsState.velocity.z : 0;
     const speed = Math.hypot(velocityX, velocityZ);
     const baseInterestRadius = bootstrapMode ? terrainDebugSettings.bootstrapRadius : terrainDebugSettings.selectionInterestRadius;
     const lookaheadDistance = Math.min(
@@ -2924,8 +2986,8 @@ export function createTerrainSystem({
       speed * terrainDebugSettings.selectionLookaheadSeconds
     );
     const lookaheadScale = speed > 1 && lookaheadDistance > 0 ? (lookaheadDistance / speed) : 0;
-    const selectionFocusX = PHYSICS.position.x + velocityX * lookaheadScale;
-    const selectionFocusZ = PHYSICS.position.z + velocityZ * lookaheadScale;
+    const selectionFocusX = physicsState.position.x + velocityX * lookaheadScale;
+    const selectionFocusZ = physicsState.position.z + velocityZ * lookaheadScale;
     const interestRadius = baseInterestRadius + Math.min(
       terrainDebugSettings.selectionLookaheadRadiusPadding,
       lookaheadDistance * 0.5
@@ -2941,9 +3003,9 @@ export function createTerrainSystem({
       maxSelectionDepth: terrainDebugSettings.selectionMaxDepth
     });
     const effectiveSelection = refineBlockingSelection(
-      trimBootstrapSelection(selection, PHYSICS.position.x, PHYSICS.position.z),
-      PHYSICS.position.x,
-      PHYSICS.position.z
+      trimBootstrapSelection(selection, physicsState.position.x, physicsState.position.z),
+      physicsState.position.x,
+      physicsState.position.z
     );
     const activeChunks = new Map();
 
@@ -3168,11 +3230,12 @@ export function createTerrainSystem({
   let lastProcessedChunkZ = -999999;
   let lastReady = false;
 
+  /** @returns {unknown} */
   function updateTerrain() {
     const updateStartedAtMs = performance.now();
     resetLeafBuildBreakdown();
-    const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
-    const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
+    const px = Math.floor(physicsState.position.x / CHUNK_SIZE);
+    const pz = Math.floor(physicsState.position.z / CHUNK_SIZE);
 
     lastProcessedChunkX = px;
     lastProcessedChunkZ = pz;
@@ -3299,6 +3362,7 @@ export function createTerrainSystem({
     return counts;
   }
 
+  /** @returns {unknown} */
   function getTerrainSelectionDiagnostics() {
     const generationDiagnostics = getTerrainGenerationDiagnostics();
     const pendingLeafApplyMs = terrainPerfState.pendingFrameLeafApplyMs;
@@ -3332,6 +3396,10 @@ export function createTerrainSystem({
     };
   }
 
+  /**
+   * @param {THREE.Camera | null} [camera]
+   * @param {THREE.Color | null} [weatherColor]
+   */
   function updateTerrainAtmosphere(camera, weatherColor = null) {
     terrainDetailUniforms.uTerrainAtmosStrength.value = 0.25;
     if (camera) {
@@ -3358,8 +3426,13 @@ export function createTerrainSystem({
     }
   }
 
+  /** @type {TerrainSystem['getTerrainHeight']} */
   const getTerrainHeightWithNoise = (x, z, octaves = 6) => getTerrainHeight(x, z, Noise, octaves);
 
+  /**
+   * @param {THREE.Vector3 | null | undefined} center
+   * @param {number} extent
+   */
   function updateSurfaceShadowCoverage(center, extent) {
     if (!center || !Number.isFinite(extent) || extent <= 0) return;
     atmosphereUniforms.uShadowCoverageCenter.value.copy(center);
@@ -3416,6 +3489,7 @@ export function createTerrainSystem({
     return mesh;
   }
 
+  /** @returns {unknown[]} */
   function getShaderValidationVariants() {
     return [
       {
@@ -3582,8 +3656,8 @@ export function createTerrainSystem({
   const isReady = () => {
     if (activeLeaves.size === 0) return false;
 
-    const px = Math.floor(PHYSICS.position.x / CHUNK_SIZE);
-    const pz = Math.floor(PHYSICS.position.z / CHUNK_SIZE);
+    const px = Math.floor(physicsState.position.x / CHUNK_SIZE);
+    const pz = Math.floor(physicsState.position.z / CHUNK_SIZE);
     if (px !== lastProcessedChunkX || pz !== lastProcessedChunkZ) return false;
 
     const readyLeafIds = blockingLeafIds.size > 0
@@ -3602,14 +3676,17 @@ export function createTerrainSystem({
       }
     }
 
-    if (blocking.length > 0 && window._isReadyLogCounter % 120 === 0) {
+    if (blocking.length > 0 && (windowRef?._isReadyLogCounter || 0) % 120 === 0) {
       debugLog(`[isReady] leaves=${activeLeaves.size} blocking=[${blocking.slice(0, 5)}]`);
     }
-    window._isReadyLogCounter = (window._isReadyLogCounter || 0) + 1;
+    if (windowRef) {
+      windowRef._isReadyLogCounter = (windowRef._isReadyLogCounter || 0) + 1;
+    }
 
     return blocking.length === 0;
   };
 
+  /** @returns {boolean} */
   function hasPendingTerrainWork() {
     if (pendingLeafBuilds.length > 0 || pendingChunkBuilds.length > 0 || pendingPropBuilds.length > 0) {
       return true;
@@ -3630,6 +3707,10 @@ export function createTerrainSystem({
     return false;
   }
 
+  /**
+   * @param {string | null} [cityId]
+   * @returns {Promise<void>}
+   */
   async function reloadCity(cityId = null) {
     debugLog(`[terrain] Hot-swapping district data: ${cityId || 'all'}`);
     clearDistrictCache(cityId);

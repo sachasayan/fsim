@@ -173,8 +173,10 @@
 
 ### Priority Files
 
-- [ ] `js/modules/world/terrain/TerrainWorkerManager.js`
-- [ ] `js/modules/world/terrain/TerrainWorker.js`
+- [x] `js/modules/world/terrain/TerrainWorkerManager.js`
+- [x] `js/modules/world/terrain/TerrainWorker.js`
+- [x] `js/modules/world/terrain.js`
+- [x] `js/modules/world/CloudWorker.js`
 - [ ] Other worker-backed terrain modules
 
 ### Key Risks To Watch
@@ -190,6 +192,13 @@
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/canvas/render.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added shared terrain-preview, terrain-region hover/selection, and terrain metadata types to `js/editor/core/types.ts` so the canvas controller and UI can stop depending on `unknown` for those editor-owned state seams.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/editor/canvas/controller.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainRegions.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainUtils.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainGeneration.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainWorker.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainWorkerManager.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain.js`, typed its public terrain-system contract first, then tightened local browser-global, physics-state, and generation-context adapters until both `npm run typecheck` and `npm run editor:build` passed again.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/CloudWorker.js` and a matching helper pass to `js/modules/world/cloudNoise.js`, typing the cloud worker request/result payloads and transfer-ready tile arrays, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 - [ ] Decide when to extract shared worker request/response types instead of keeping local worker-message shapes inside each manager.
 
 ## Phase 6: Convert Large Orchestrator Files Late
@@ -214,6 +223,9 @@
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/authoredObjects.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/tokens.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes to `js/modules/world/particles.js` and `js/modules/world/environment.js` together and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/aircraft.js`, typing the GLTF-loading, hinge-group, marker-light, and breakup-piece boundaries locally, and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/world/shaders/` folder, covering `OwnedShaderSourceBuilder.js`, `ShaderPatchUtils.js`, `MaterialShaderPipeline.js`, `ShaderDescriptor.js`, `RunwayShaderPatches.js`, `CloudShaderPatches.js`, `RunwayOwnedShaderSource.js`, and `CloudOwnedShaderSource.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added JSDoc-first `@ts-check` passes across the full `js/modules/core/` folder runtime surface, covering `InputHandler.js`, `LiveReload.js`, `PostProcessingStack.js`, `RendererManager.js`, `WeatherManager.js`, and `PerformanceCollector.js`, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Restored native-browser runtime compatibility for shared converted helpers by adding `.js` companion modules for `logging`, `LodSystem`, `config`, `AirportLayout`, `AuthoredObjectCatalog`, `WorldConfig`, and `MapColors`, and by updating direct-runtime JS imports to use explicit `.js` specifiers.
 
 ## Phase 7: Tighten Compiler Strictness Gradually
@@ -233,7 +245,7 @@
 ## Batch Workflow
 
 - [ ] Define or refine shared types first.
-- [ ] Rename only a small cluster of files in each batch.
+- [x] Rename only a small cluster of files in each batch.
 - [ ] Run the relevant build and tests after each batch.
 - [ ] Fix surfaced type holes before moving on.
 - [ ] Document notable migration blockers or patterns discovered during each batch.
@@ -298,3 +310,13 @@
 - [x] Thirty-fourth migration pattern: gameplay-style systems with rich local state often typecheck quickly once their entry/event/effect records are named up front, and the most common cleanup is converting optional destructured parameters into a defaulted local options object.
 - [x] Thirty-fifth migration pattern: once a shared runtime path has enough typed seams around it, we can safely widen the batch size and convert two or three adjacent medium-risk modules together, especially when they only need external-boundary typedefs rather than deep internal refactors.
 - [x] Thirty-sixth migration pattern: for codepaths still loaded directly by the browser as native JS modules, renaming a shared helper to `.ts` is not enough by itself; those paths need explicit `.js` import specifiers and real `.js` companion entrypoints until the runtime is fully behind a TS-aware build step.
+- [x] Thirty-seventh migration pattern: terrain/editor bridge modules often need two parallel type layers, a loose input shape that matches editor-authored data and a stricter normalized runtime shape; trying to force one type to serve both ends usually creates more friction than value.
+- [x] Thirty-eighth migration pattern: terrain support modules with shared runtime caches benefit from typing the cache and metadata seams first, but it’s often better to use narrow call-site casts where those caches feed older helper contracts than to overfit one broad metadata type to every downstream consumer.
+- [x] Thirty-ninth migration pattern: terrain generation modules become tractable under `@ts-check` when we type the generation context in slices, such as base-chunk resources, tree resources, and debug toggles, instead of trying to describe the entire terrain runtime context as one giant object up front.
+- [x] Fortieth migration pattern: large worker modules respond well to a message-boundary-first pass, where we type the inbound job payloads, outbound results, and a few local record shapes first; once those contracts exist, the remaining errors usually collapse to a small number of specific nested payload fields.
+- [x] Forty-first migration pattern: worker managers usually only need one extra step after the worker itself is typed, a small local message envelope cast before branch-based narrowing, because destructuring a discriminated union too early tends to erase the information TypeScript needs.
+- [x] Forty-second migration pattern: for monolithic terrain systems, start by typing the returned public contract and constructor options first; that usually flushes the real loose boundaries into a short list of browser-global adapters, physics-state adapters, and one or two downstream caller typedefs instead of forcing a whole-file rewrite.
+- [x] Forty-third migration pattern: asset-heavy scene systems often typecheck cleanly with local JSDoc typedefs for GLTF payloads, hinge-group `userData`, and returned system APIs; keeping those shapes local is usually cheaper than introducing shared scene-object types too early.
+- [x] Forty-fourth migration pattern: when a worker already has a typed caller on the main-thread side, the cheapest follow-up is often to type the worker implementation and its tiny pure helper together, because the shared payload vocabulary already exists and the remaining fixes tend to be just stale accumulator fields or transfer-array bookkeeping.
+- [x] Forty-fifth migration pattern: pure utility folders with shared internal vocabulary, like shader descriptor and patch helpers, are good folder-at-a-time batches; a single consistent layer of local typedefs usually covers the whole directory, and the remaining fixes tend to be helper-generic ergonomics rather than runtime behavior changes.
+- [x] Forty-sixth migration pattern: mixed browser-runtime folders can still move folder-at-a-time if we type the smallest boundary-heavy modules first and leave one broader observer/reporting file for last; the remaining cleanup usually collapses to DOM narrowing and browser-only API adapters like `performance.memory`.

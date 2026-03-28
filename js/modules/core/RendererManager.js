@@ -1,6 +1,15 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { createPostProcessingStack } from './PostProcessingStack.js';
 
+/**
+ * @param {{
+ *   container?: HTMLElement | null,
+ *   scene: import('three').Scene,
+ *   camera: import('three').PerspectiveCamera
+ * }} options
+ */
 export function createRendererManager({ container, scene, camera }) {
     const urlParams = new URLSearchParams(window.location.search);
     const logarithmicDepthBufferEnabled = urlParams.get('logdepth') !== '0';

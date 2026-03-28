@@ -1,4 +1,25 @@
+// @ts-check
+
+/**
+ * @typedef InputPhysicsLike
+ * @property {boolean} brakes
+ */
+
+/**
+ * @typedef CameraControllerLike
+ * @property {() => void} cycleMode
+ * @property {() => void} recenterBehindAircraft
+ */
+
+/**
+ * @param {{
+ *   keys: Record<string, boolean>,
+ *   PHYSICS: InputPhysicsLike,
+ *   cameraController?: CameraControllerLike | null
+ * }} options
+ */
 export function createInputHandler({ keys, PHYSICS, cameraController }) {
+    /** @param {KeyboardEvent} e */
     const onKeyDown = (e) => {
         const key = e.key.toLowerCase();
         const originalKey = e.key;
@@ -11,13 +32,14 @@ export function createInputHandler({ keys, PHYSICS, cameraController }) {
         if (key === 'c' && cameraController) cameraController.cycleMode();
         if (!e.repeat && cameraController) cameraController.recenterBehindAircraft();
         if (key === 'g') {
-            const gui = document.querySelector('.lil-gui');
+            const gui = /** @type {HTMLElement | null} */ (document.querySelector('.lil-gui'));
             if (gui) {
                 gui.style.display = gui.style.display === 'none' ? '' : 'none';
             }
         }
     };
 
+    /** @param {KeyboardEvent} e */
     const onKeyUp = (e) => {
         const key = e.key.toLowerCase();
         const originalKey = e.key;

@@ -22,7 +22,7 @@ import {
  * @typedef WorldObjectsArgs
  * @property {import('three').Scene} scene
  * @property {import('three').WebGLRenderer} renderer
- * @property {unknown} Noise
+ * @property {Parameters<typeof createTerrainSystem>[0]['Noise']} Noise
  * @property {unknown} PHYSICS
  * @property {unknown} AIRCRAFT
  * @property {unknown} WEATHER

@@ -1,9 +1,67 @@
+// @ts-check
+
 import { CLOUD_NOISE } from './cloudNoise.js';
 
+/**
+ * @typedef CloudWorkerRequestMessage
+ * @property {number} worldHalfExtent
+ * @property {number} gridStep
+ * @property {number} layersMax
+ * @property {number} tileSize
+ * @property {number} voxelSize
+ */
+
+/**
+ * @typedef CloudInstanceRecord
+ * @property {number} x
+ * @property {number} y
+ * @property {number} z
+ * @property {number} sX
+ * @property {number} sY
+ * @property {number} rotY
+ * @property {number} r
+ * @property {number} g
+ * @property {number} b
+ */
+
+/**
+ * @typedef CloudTileAccumulator
+ * @property {number} ox
+ * @property {number} oz
+ * @property {CloudInstanceRecord[]} instances
+ */
+
+/**
+ * @typedef CloudWorkerTile
+ * @property {string} key
+ * @property {number} ox
+ * @property {number} oz
+ * @property {number} count
+ * @property {Float32Array} positions
+ * @property {Float32Array} scales
+ * @property {Float32Array} rotations
+ * @property {Float32Array} colors
+ */
+
+/**
+ * @typedef CloudWorkerGeneratedMessage
+ * @property {'CLOUDS_GENERATED'} type
+ * @property {CloudWorkerTile[]} tiles
+ */
+
+/**
+ * @param {MessageEvent<CloudWorkerRequestMessage>} e
+ */
 self.onmessage = function (e) {
     const { worldHalfExtent, gridStep, layersMax, tileSize, voxelSize } = e.data;
 
+    /** @type {Map<string, CloudTileAccumulator>} */
     const tiles = new Map();
+    /**
+     * @param {number} worldX
+     * @param {number} worldZ
+     * @returns {CloudTileAccumulator}
+     */
     function getTileEntry(worldX, worldZ) {
         const tx = Math.floor((worldX + worldHalfExtent) / tileSize);
         const tz = Math.floor((worldZ + worldHalfExtent) / tileSize);
@@ -11,7 +69,7 @@ self.onmessage = function (e) {
         if (!tiles.has(key)) {
             const ox = -worldHalfExtent + tx * tileSize;
             const oz = -worldHalfExtent + tz * tileSize;
-            tiles.set(key, { ox, oz, instances: [], colors: [] });
+            tiles.set(key, { ox, oz, instances: [] });
         }
         return tiles.get(key);
     }
@@ -60,6 +118,7 @@ self.onmessage = function (e) {
         }
     }
 
+    /** @type {CloudWorkerTile[]} */
     const resultTiles = [];
     for (const [key, entry] of tiles.entries()) {
         if (entry.instances.length > 0) {
@@ -102,5 +161,7 @@ self.onmessage = function (e) {
         transferables.push(tile.positions.buffer, tile.scales.buffer, tile.rotations.buffer, tile.colors.buffer);
     }
 
-    self.postMessage({ type: 'CLOUDS_GENERATED', tiles: resultTiles }, transferables);
+    /** @type {CloudWorkerGeneratedMessage} */
+    const message = { type: 'CLOUDS_GENERATED', tiles: resultTiles };
+    self.postMessage(message, transferables);
 };

@@ -1,10 +1,19 @@
+// @ts-check
+
 import { createOwnedShaderDescriptor } from './ShaderDescriptor.js';
 import { finalizeOwnedShaderSource } from './OwnedShaderSourceBuilder.js';
 import { createRunwayLightUniformBindings } from './RunwayShaderPatches.js';
 
+/** @typedef {ReturnType<typeof finalizeOwnedShaderSource>} OwnedShaderSource */
+/** @typedef {ReturnType<typeof createOwnedShaderDescriptor>} OwnedShaderDescriptor */
+
 const SOURCE_CACHE = new Map();
 const DESCRIPTOR_CACHE = new Map();
 
+/**
+ * @param {{ intensity: number }} options
+ * @returns {OwnedShaderSource}
+ */
 function buildRunwayLightOwnedShaderSource({ intensity }) {
     return finalizeOwnedShaderSource({
         label: 'runway light owned source',
@@ -74,6 +83,10 @@ function buildRunwayLightOwnedShaderSource({ intensity }) {
     });
 }
 
+/**
+ * @param {{ intensity: number }} options
+ * @returns {OwnedShaderSource}
+ */
 export function getRunwayLightOwnedShaderSource({ intensity }) {
     const cacheKey = `runway-light:${intensity}`;
     if (!SOURCE_CACHE.has(cacheKey)) {
@@ -82,10 +95,18 @@ export function getRunwayLightOwnedShaderSource({ intensity }) {
     return SOURCE_CACHE.get(cacheKey);
 }
 
+/**
+ * @param {number} intensity
+ * @returns {{ uIntensity: { value: number } }}
+ */
 export function getRunwayLightUniformBindings(intensity) {
     return createRunwayLightUniformBindings(intensity);
 }
 
+/**
+ * @param {{ intensity: number }} options
+ * @returns {OwnedShaderDescriptor}
+ */
 export function getRunwayLightShaderDescriptor({ intensity }) {
     const cacheKey = `runway-light:${intensity}`;
     if (!DESCRIPTOR_CACHE.has(cacheKey)) {

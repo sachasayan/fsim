@@ -1,3 +1,43 @@
+// @ts-check
+
+/**
+ * @typedef NumericSummary
+ * @property {number} count
+ * @property {number | null} avg
+ * @property {number | null} min
+ * @property {number | null} p50
+ * @property {number | null} p95
+ * @property {number | null} max
+ */
+
+/**
+ * @typedef CollectorFrameRecord
+ * @property {number} frameIndex
+ * @property {number | null} now
+ * @property {number | null} dt
+ * @property {number | null} frameMs
+ * @property {number | null} fps
+ * @property {number} physicsSteps
+ * @property {boolean} terrainUpdated
+ * @property {boolean} worldLodUpdated
+ * @property {boolean} hudUpdated
+ * @property {Record<string, unknown>} renderer
+ * @property {Record<string, unknown>} adaptive
+ * @property {Record<string, unknown>} profiling
+ * @property {Record<string, unknown>} renderPasses
+ * @property {Record<string, unknown>} phases
+ */
+
+/**
+ * @typedef PerformanceWithMemory
+ * @property {{ usedJSHeapSize?: number } | undefined} [memory]
+ */
+
+/**
+ * @param {number[]} sortedValues
+ * @param {number} ratio
+ * @returns {number | null}
+ */
 function percentile(sortedValues, ratio) {
     if (!sortedValues.length) return null;
     const index = Math.min(
@@ -7,6 +47,10 @@ function percentile(sortedValues, ratio) {
     return sortedValues[index];
 }
 
+/**
+ * @param {number[]} values
+ * @returns {NumericSummary | null}
+ */
 function summarizeValues(values) {
     if (!values.length) return null;
 
@@ -23,12 +67,21 @@ function summarizeValues(values) {
     };
 }
 
+/**
+ * @param {number} value
+ * @param {number} [digits]
+ * @returns {number | null}
+ */
 function round(value, digits = 3) {
     if (!Number.isFinite(value)) return null;
     const scale = 10 ** digits;
     return Math.round(value * scale) / scale;
 }
 
+/**
+ * @param {NumericSummary | null} summary
+ * @returns {NumericSummary | null}
+ */
 function roundSummary(summary) {
     if (!summary) return null;
     return {
@@ -41,11 +94,23 @@ function roundSummary(summary) {
     };
 }
 
+/**
+ * @param {number} bytes
+ * @returns {number | null}
+ */
 function formatBytesToMb(bytes) {
     if (!Number.isFinite(bytes)) return null;
     return round(bytes / (1024 * 1024), 3);
 }
 
+/**
+ * @param {{
+ *   renderer: import('three').WebGLRenderer,
+ *   getAdaptiveQualitySnapshot?: () => Record<string, any>,
+ *   getProfilingSnapshot?: () => Record<string, any>,
+ *   getRenderPassTimings?: () => Record<string, any>
+ * }} options
+ */
 export function createPerformanceCollector({
     renderer,
     getAdaptiveQualitySnapshot = () => ({}),
@@ -97,12 +162,16 @@ export function createPerformanceCollector({
 
     let collection = null;
     let observer = null;
+    /** @type {{ now: number, dt: number, cpuStartMs: number, phases: Record<string, number | null> } | null} */
     let currentFrame = null;
     let sessionCounter = 0;
     let framesCaptured = 0;
     let slowFrames = 0;
     let verySlowFrames = 0;
+    /** @type {CollectorFrameRecord | null} */
     let lastFrame = null;
+    /** @type {PerformanceWithMemory} */
+    const performanceWithMemory = /** @type {PerformanceWithMemory} */ (performance);
 
     renderer.info.autoReset = false;
 
@@ -122,6 +191,9 @@ export function createPerformanceCollector({
         }
     }
 
+    /**
+     * @param {{ scenario?: string, metadata?: Record<string, unknown> }} [options]
+     */
     function reset({
         scenario = 'default',
         metadata = {}
@@ -148,6 +220,7 @@ export function createPerformanceCollector({
         return getState();
     }
 
+    /** @param {string} name */
     function ensureMetric(name) {
         if (!metricSamples.has(name)) {
             metricSamples.set(name, []);
@@ -155,6 +228,7 @@ export function createPerformanceCollector({
         return metricSamples.get(name);
     }
 
+    /** @param {string} name */
     function ensurePhase(name) {
         if (!phaseSamples.has(name)) {
             phaseSamples.set(name, []);
@@ -162,6 +236,7 @@ export function createPerformanceCollector({
         return phaseSamples.get(name);
     }
 
+    /** @param {{ now: number, dt: number }} options */
     function beginFrame({ now, dt }) {
         if (!collection?.active) return;
         renderer.info.reset();
@@ -173,17 +248,34 @@ export function createPerformanceCollector({
         };
     }
 
+    /**
+     * @param {string} name
+     * @param {number} durationMs
+     */
     function recordPhase(name, durationMs) {
         if (!collection?.active || !currentFrame || !Number.isFinite(durationMs)) return;
         ensurePhase(name).push(durationMs);
         currentFrame.phases[name] = round(durationMs);
     }
 
+    /**
+     * @param {string} name
+     * @param {number} value
+     */
     function recordMetric(name, value) {
         if (!collection?.active || !Number.isFinite(value)) return;
         ensureMetric(name).push(value);
     }
 
+    /**
+     * @param {{
+     *   now?: number,
+     *   physicsSteps?: number,
+     *   terrainUpdated?: boolean,
+     *   worldLodUpdated?: boolean,
+     *   hudUpdated?: boolean
+     * }} [options]
+     */
     function endFrame({
         now,
         physicsSteps = 0,
@@ -199,8 +291,8 @@ export function createPerformanceCollector({
         const adaptive = getAdaptiveQualitySnapshot() || {};
         const profiling = getProfilingSnapshot() || {};
         const renderPassTimings = getRenderPassTimings() || {};
-        const memory = typeof performance !== 'undefined' && performance.memory
-            ? performance.memory
+        const memory = typeof performance !== 'undefined' && performanceWithMemory.memory
+            ? performanceWithMemory.memory
             : null;
 
         recordMetric('frameMs', frameMs);
@@ -327,6 +419,7 @@ export function createPerformanceCollector({
         currentFrame = null;
     }
 
+    /** @returns {{ active: boolean, scenario: string | null, framesCaptured: number }} */
     function getState() {
         return {
             active: Boolean(collection?.active),
@@ -335,6 +428,7 @@ export function createPerformanceCollector({
         };
     }
 
+    /** @returns {Record<string, unknown>} */
     function getReport() {
         if (!collection) {
             return {
@@ -436,8 +530,8 @@ export function createPerformanceCollector({
             },
             memory: {
                 usedJsHeapMb: formatBytesToMb(
-                    typeof performance !== 'undefined' && performance.memory
-                        ? performance.memory.usedJSHeapSize
+                    typeof performance !== 'undefined' && performanceWithMemory.memory
+                        ? performanceWithMemory.memory?.usedJSHeapSize
                         : Number.NaN
                 )
             },
@@ -448,6 +542,10 @@ export function createPerformanceCollector({
         };
     }
 
+    /**
+     * @param {{ scenario?: string, metadata?: Record<string, unknown>, warmupFrames?: number, sampleFrames?: number }} [options]
+     * @returns {Promise<Record<string, unknown>>}
+     */
     async function collectSample({
         scenario = 'default',
         metadata = {},

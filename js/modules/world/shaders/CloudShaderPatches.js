@@ -1,8 +1,31 @@
+// @ts-check
+
 import {
     replaceShaderInclude,
     replaceShaderSnippet
 } from './ShaderPatchUtils.js';
 
+/**
+ * @typedef SharedCloudUniforms
+ * @property {{ value: import('three').Vector3 }} uCloudCameraPos
+ * @property {{ value: number }} uNearFadeStart
+ * @property {{ value: number }} uNearFadeEnd
+ * @property {{ value: number }} uCloudMinLight
+ * @property {{ value: import('three').Vector3 }} uCloudSunDir
+ * @property {{ value: number }} uCloudPhaseStrength
+ */
+
+/**
+ * @param {SharedCloudUniforms} sharedCloudUniforms
+ * @returns {{
+ *   uCloudCameraPos: SharedCloudUniforms['uCloudCameraPos'],
+ *   uNearFadeStart: SharedCloudUniforms['uNearFadeStart'],
+ *   uNearFadeEnd: SharedCloudUniforms['uNearFadeEnd'],
+ *   uCloudMinLight: SharedCloudUniforms['uCloudMinLight'],
+ *   uCloudSunDir: SharedCloudUniforms['uCloudSunDir'],
+ *   uCloudPhaseStrength: SharedCloudUniforms['uCloudPhaseStrength']
+ * }}
+ */
 export function createNearCloudUniformBindings(sharedCloudUniforms) {
     return {
         uCloudCameraPos: sharedCloudUniforms.uCloudCameraPos,
@@ -14,6 +37,11 @@ export function createNearCloudUniformBindings(sharedCloudUniforms) {
     };
 }
 
+/**
+ * @param {import('three').WebGLProgramParametersWithUniforms['shader']} shader
+ * @param {{ sharedCloudUniforms: SharedCloudUniforms }} options
+ * @returns {import('three').WebGLProgramParametersWithUniforms['shader']}
+ */
 export function applyNearCloudShaderPatch(shader, { sharedCloudUniforms }) {
     Object.assign(shader.uniforms, createNearCloudUniformBindings(sharedCloudUniforms));
 

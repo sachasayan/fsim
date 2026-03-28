@@ -1,3 +1,5 @@
+// @ts-check
+
 import {
     replaceShaderInclude,
     replaceShaderSnippet
@@ -5,12 +7,21 @@ import {
 
 const DIFFUSE_COLOR_SNIPPET = 'vec4 diffuseColor = vec4( diffuse, opacity );';
 
+/**
+ * @param {number} intensity
+ * @returns {{ uIntensity: { value: number } }}
+ */
 export function createRunwayLightUniformBindings(intensity) {
     return {
         uIntensity: { value: intensity }
     };
 }
 
+/**
+ * @param {import('three').WebGLProgramParametersWithUniforms['shader']} shader
+ * @param {{ intensity: number }} options
+ * @returns {import('three').WebGLProgramParametersWithUniforms['shader']}
+ */
 export function applyInstancedRunwayLightShaderPatch(shader, { intensity }) {
     Object.assign(shader.uniforms, createRunwayLightUniformBindings(intensity));
 

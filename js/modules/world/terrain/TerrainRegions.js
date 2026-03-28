@@ -1,9 +1,82 @@
+// @ts-check
+
 import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
 import { normalizeTerrainGeneratorConfig, createSeededNoise, createTerrainSynthesizer } from './TerrainSynthesis.js';
 import { SEA_LEVEL } from './TerrainPalette.js';
 
 export const TERRAIN_REGION_GRID_SIZE = 64;
 const UNASSIGNED_REGION_OCEAN_HEIGHT = SEA_LEVEL - 140;
+
+/**
+ * @typedef {{
+ *   tileX?: number,
+ *   tileZ?: number,
+ *   tileWidth?: number,
+ *   tileHeight?: number
+ * }} TerrainRegionTileRect
+ */
+
+/**
+ * @typedef {TerrainRegionTileRect & {
+ *   terrainGenerator?: unknown,
+ *   __editorId?: string,
+ *   bounds?: TerrainRegionWorldBounds,
+ *   center?: [number, number]
+ * }} TerrainRegionLike
+ */
+
+/**
+ * @typedef {{
+ *   minX: number,
+ *   maxX: number,
+ *   minZ: number,
+ *   maxZ: number
+ * }} TerrainRegionWorldBounds
+ */
+
+/**
+ * @typedef {{
+ *   tileX: number,
+ *   tileZ: number,
+ *   tileWidth: number,
+ *   tileHeight: number,
+ *   terrainGenerator: ReturnType<typeof normalizeTerrainGeneratorConfig>,
+ *   __editorId?: string,
+ *   bounds: TerrainRegionWorldBounds,
+ *   center: [number, number]
+ * }} TerrainRegion
+ */
+
+/**
+ * @typedef {{
+ *   tileX: number,
+ *   tileZ: number
+ * }} TerrainRegionTile
+ */
+
+/**
+ * @typedef {TerrainRegionTile & {
+ *   blocked: boolean,
+ *   owner: TerrainRegionLike | null
+ * }} ClassifiedTerrainRegionTile
+ */
+
+/**
+ * @typedef {{
+ *   river: number,
+ *   lake: number,
+ *   moisture: number,
+ *   flow: number,
+ *   erosion: number,
+ *   gorge: number,
+ *   floodplain: number,
+ *   cliff: number,
+ *   talus: number,
+ *   alpine: number,
+ *   wetland: number,
+ *   terrace: number
+ * }} TerrainMaskSample
+ */
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -14,6 +87,9 @@ function toInteger(value, fallback) {
     return Math.round(value);
 }
 
+/**
+ * @returns {TerrainMaskSample}
+ */
 function makeEmptyMaskSample() {
     return {
         river: 0,
@@ -31,23 +107,34 @@ function makeEmptyMaskSample() {
     };
 }
 
+/**
+ * @param {number} [worldSize]
+ */
 export function getTerrainRegionTileSize(worldSize = DEFAULT_WORLD_SIZE) {
     return Math.max(1, worldSize / TERRAIN_REGION_GRID_SIZE);
 }
 
+/**
+ * @param {TerrainRegionLike | null | undefined} rawRegion
+ * @param {number} [worldSize]
+ * @returns {TerrainRegion}
+ */
 export function normalizeTerrainRegion(rawRegion, worldSize = DEFAULT_WORLD_SIZE) {
-    const region = rawRegion || {};
+    const region = /** @type {TerrainRegionLike} */ (rawRegion || {});
     const maxTileIndex = TERRAIN_REGION_GRID_SIZE - 1;
     const tileX = clamp(toInteger(region.tileX, 0), 0, maxTileIndex);
     const tileZ = clamp(toInteger(region.tileZ, 0), 0, maxTileIndex);
     const tileWidth = clamp(toInteger(region.tileWidth, 1), 1, TERRAIN_REGION_GRID_SIZE - tileX);
     const tileHeight = clamp(toInteger(region.tileHeight, 1), 1, TERRAIN_REGION_GRID_SIZE - tileZ);
+    /** @type {TerrainRegion} */
     const normalized = {
         tileX,
         tileZ,
         tileWidth,
         tileHeight,
-        terrainGenerator: normalizeTerrainGeneratorConfig(region.terrainGenerator)
+        terrainGenerator: normalizeTerrainGeneratorConfig(region.terrainGenerator),
+        bounds: /** @type {TerrainRegionWorldBounds} */ ({ minX: 0, maxX: 0, minZ: 0, maxZ: 0 }),
+        center: [0, 0]
     };
     if (region.__editorId) {
         normalized.__editorId = region.__editorId;
@@ -61,6 +148,11 @@ export function normalizeTerrainRegion(rawRegion, worldSize = DEFAULT_WORLD_SIZE
     return normalized;
 }
 
+/**
+ * @param {TerrainRegionLike[] | null | undefined} regions
+ * @param {number} [worldSize]
+ * @returns {TerrainRegion[]}
+ */
 export function normalizeTerrainRegions(regions, worldSize = DEFAULT_WORLD_SIZE) {
     if (!Array.isArray(regions)) return [];
     const normalized = regions.map(region => normalizeTerrainRegion(region, worldSize));
@@ -68,15 +160,24 @@ export function normalizeTerrainRegions(regions, worldSize = DEFAULT_WORLD_SIZE)
     return normalized;
 }
 
+/**
+ * @param {TerrainRegionLike} a
+ * @param {TerrainRegionLike} b
+ */
 export function terrainRegionsOverlap(a, b) {
     return !(
-        a.tileX + a.tileWidth <= b.tileX
-        || b.tileX + b.tileWidth <= a.tileX
-        || a.tileZ + a.tileHeight <= b.tileZ
-        || b.tileZ + b.tileHeight <= a.tileZ
+        (a.tileX || 0) + (a.tileWidth || 0) <= (b.tileX || 0)
+        || (b.tileX || 0) + (b.tileWidth || 0) <= (a.tileX || 0)
+        || (a.tileZ || 0) + (a.tileHeight || 0) <= (b.tileZ || 0)
+        || (b.tileZ || 0) + (b.tileHeight || 0) <= (a.tileZ || 0)
     );
 }
 
+/**
+ * @param {TerrainRegionLike} candidate
+ * @param {TerrainRegionLike[] | null | undefined} regions
+ * @param {TerrainRegionLike | null} [ignoreRegion]
+ */
 export function findTerrainRegionOverlap(candidate, regions, ignoreRegion = null) {
     for (const region of regions || []) {
         if (!region || region === ignoreRegion) continue;
@@ -85,6 +186,10 @@ export function findTerrainRegionOverlap(candidate, regions, ignoreRegion = null
     return null;
 }
 
+/**
+ * @param {TerrainRegionLike[] | null | undefined} regions
+ * @returns {TerrainRegionLike[]}
+ */
 export function validateTerrainRegions(regions) {
     const normalizedRegions = Array.isArray(regions) ? regions : [];
     for (let index = 0; index < normalizedRegions.length; index += 1) {
@@ -98,17 +203,28 @@ export function validateTerrainRegions(regions) {
     return normalizedRegions;
 }
 
+/**
+ * @param {TerrainRegionLike} region
+ * @param {number} [worldSize]
+ * @returns {TerrainRegionWorldBounds}
+ */
 export function getTerrainRegionWorldBounds(region, worldSize = DEFAULT_WORLD_SIZE) {
     const tileSize = getTerrainRegionTileSize(worldSize);
     const halfWorld = worldSize * 0.5;
     return {
-        minX: -halfWorld + region.tileX * tileSize,
-        maxX: -halfWorld + (region.tileX + region.tileWidth) * tileSize,
-        minZ: -halfWorld + region.tileZ * tileSize,
-        maxZ: -halfWorld + (region.tileZ + region.tileHeight) * tileSize
+        minX: -halfWorld + (region.tileX || 0) * tileSize,
+        maxX: -halfWorld + ((region.tileX || 0) + (region.tileWidth || 0)) * tileSize,
+        minZ: -halfWorld + (region.tileZ || 0) * tileSize,
+        maxZ: -halfWorld + ((region.tileZ || 0) + (region.tileHeight || 0)) * tileSize
     };
 }
 
+/**
+ * @param {number} tileX
+ * @param {number} tileZ
+ * @param {number} [worldSize]
+ * @returns {TerrainRegionWorldBounds}
+ */
 export function getTerrainRegionTileWorldBounds(tileX, tileZ, worldSize = DEFAULT_WORLD_SIZE) {
     return getTerrainRegionWorldBounds({
         tileX,
@@ -118,6 +234,12 @@ export function getTerrainRegionTileWorldBounds(tileX, tileZ, worldSize = DEFAUL
     }, worldSize);
 }
 
+/**
+ * @param {number} x
+ * @param {number} z
+ * @param {number} [worldSize]
+ * @returns {TerrainRegionTile | null}
+ */
 export function worldToTerrainRegionTile(x, z, worldSize = DEFAULT_WORLD_SIZE) {
     const halfWorld = worldSize * 0.5;
     if (x < -halfWorld || x >= halfWorld || z < -halfWorld || z >= halfWorld) {
@@ -130,6 +252,13 @@ export function worldToTerrainRegionTile(x, z, worldSize = DEFAULT_WORLD_SIZE) {
     };
 }
 
+/**
+ * @param {TerrainRegionTile} startTile
+ * @param {TerrainRegionTile} endTile
+ * @param {TerrainRegionLike | Record<string, unknown>} [template]
+ * @param {number} [worldSize]
+ * @returns {TerrainRegion}
+ */
 export function createTerrainRegionFromTiles(startTile, endTile, template = {}, worldSize = DEFAULT_WORLD_SIZE) {
     const tileX = Math.min(startTile.tileX, endTile.tileX);
     const tileZ = Math.min(startTile.tileZ, endTile.tileZ);
@@ -144,7 +273,12 @@ export function createTerrainRegionFromTiles(startTile, endTile, template = {}, 
     }, worldSize);
 }
 
+/**
+ * @param {TerrainRegionLike | null | undefined} regionRect
+ * @returns {TerrainRegionTile[]}
+ */
 export function getTerrainRegionTilesInRect(regionRect) {
+    /** @type {TerrainRegionTile[]} */
     const tiles = [];
     if (!regionRect) return tiles;
     for (let tileZ = regionRect.tileZ; tileZ < regionRect.tileZ + regionRect.tileHeight; tileZ += 1) {
@@ -155,6 +289,10 @@ export function getTerrainRegionTilesInRect(regionRect) {
     return tiles;
 }
 
+/**
+ * @param {TerrainRegionTile | null | undefined} tile
+ * @param {TerrainRegionLike | null | undefined} region
+ */
 export function tileBelongsToTerrainRegion(tile, region) {
     if (!tile || !region) return false;
     return (
@@ -165,6 +303,12 @@ export function tileBelongsToTerrainRegion(tile, region) {
     );
 }
 
+/**
+ * @param {TerrainRegionLike} regionRect
+ * @param {TerrainRegionLike[] | null | undefined} regions
+ * @param {TerrainRegionLike | null} [ignoreRegion]
+ * @returns {ClassifiedTerrainRegionTile[]}
+ */
 export function classifyTerrainRegionSelectionTiles(regionRect, regions, ignoreRegion = null) {
     return getTerrainRegionTilesInRect(regionRect).map(tile => {
         const owner = (regions || []).find(region => region !== ignoreRegion && tileBelongsToTerrainRegion(tile, region)) || null;
@@ -176,6 +320,13 @@ export function classifyTerrainRegionSelectionTiles(regionRect, regions, ignoreR
     });
 }
 
+/**
+ * @param {TerrainRegionLike[]} regions
+ * @param {number} x
+ * @param {number} z
+ * @param {number} [worldSize]
+ * @returns {TerrainRegionLike | null}
+ */
 export function getTerrainRegionAtWorldPos(regions, x, z, worldSize = DEFAULT_WORLD_SIZE) {
     const tile = worldToTerrainRegionTile(x, z, worldSize);
     if (!tile) return null;
@@ -193,6 +344,15 @@ export function getTerrainRegionAtWorldPos(regions, x, z, worldSize = DEFAULT_WO
     return null;
 }
 
+/**
+ * @param {{
+ *   Noise: unknown,
+ *   worldSize?: number,
+ *   regions?: unknown[],
+ *   worldData?: unknown,
+ *   applyRunwayFlattening?: boolean
+ * }} args
+ */
 export function createRegionalTerrainSampler({
     Noise,
     worldSize = DEFAULT_WORLD_SIZE,
@@ -203,26 +363,33 @@ export function createRegionalTerrainSampler({
     const normalizedRegions = normalizeTerrainRegions(regions, worldSize);
     const synthesizerCache = new Map();
 
+    /**
+     * @param {TerrainRegion} region
+     */
     function getSynthesizer(region) {
         const key = JSON.stringify({
             bounds: region.bounds,
             terrainGenerator: region.terrainGenerator
         });
         if (!synthesizerCache.has(key)) {
-            synthesizerCache.set(key, createTerrainSynthesizer({
+            synthesizerCache.set(key, createTerrainSynthesizer(/** @type {Parameters<typeof createTerrainSynthesizer>[0]} */ ({
                 Noise: createSeededNoise(region.terrainGenerator.seed),
                 worldSize,
                 config: region.terrainGenerator,
                 authoredBounds: region.bounds,
                 worldData,
                 applyRunwayFlattening
-            }));
+            })));
         }
         return synthesizerCache.get(key);
     }
 
+    /**
+     * @param {number} x
+     * @param {number} z
+     */
     function findRegion(x, z) {
-        return getTerrainRegionAtWorldPos(normalizedRegions, x, z, worldSize);
+        return /** @type {TerrainRegion | null} */ (getTerrainRegionAtWorldPos(normalizedRegions, x, z, worldSize));
     }
 
     return {

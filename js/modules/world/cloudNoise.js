@@ -1,12 +1,30 @@
+// @ts-check
+
+/**
+ * @param {number} x
+ * @param {number} z
+ * @param {number} [seed]
+ * @returns {number}
+ */
 function hash2D(x, z, seed = 0) {
   const n = Math.sin(x * 127.1 + z * 311.7 + seed * 74.7) * 43758.5453123;
   return n - Math.floor(n);
 }
 
+/**
+ * @param {number} t
+ * @returns {number}
+ */
 function smoothstep(t) {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * @param {number} x
+ * @param {number} z
+ * @param {number} [seed]
+ * @returns {number}
+ */
 function valueNoise2D(x, z, seed = 0) {
   const x0 = Math.floor(x);
   const z0 = Math.floor(z);
@@ -24,6 +42,15 @@ function valueNoise2D(x, z, seed = 0) {
   return nx0 * (1 - tz) + nx1 * tz;
 }
 
+/**
+ * @param {number} x
+ * @param {number} z
+ * @param {number} octaves
+ * @param {number} lacunarity
+ * @param {number} gain
+ * @param {number} [seed]
+ * @returns {number}
+ */
 function fbm2D(x, z, octaves, lacunarity, gain, seed = 0) {
   let frequency = 1;
   let amplitude = 1;
