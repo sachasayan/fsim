@@ -778,7 +778,7 @@ export function createTerrainSystem({
     selectionLookaheadSeconds: 1.6,
     selectionLookaheadMaxDistance: CHUNK_SIZE * 1.5,
     selectionLookaheadRadiusPadding: CHUNK_SIZE * 0.5,
-    selectionMaxDepth: 6,
+    selectionMaxDepth: 7,
     bootstrapRadius: 10000,
     resolution64MaxNodeSize: CHUNK_SIZE * 0.25,
     resolution32MaxNodeSize: CHUNK_SIZE * 0.5,

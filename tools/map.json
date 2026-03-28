@@ -999,11 +999,11 @@
         {
             "assetId": "oil-rig",
             "x": -4400,
-            "z": 1600,
-            "y": 0,
+            "z": 3500,
+            "y": -20,
             "yaw": 0,
             "scale": 1,
-            "heightMode": "terrain"
+            "heightMode": "sea-level"
         },
         {
             "assetId": "balloon",
