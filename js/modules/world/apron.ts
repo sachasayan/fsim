@@ -1,31 +1,46 @@
 import * as THREE from 'three';
-import { AIRPORT_CONFIG } from './config.js';
-import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
+import { AIRPORT_CONFIG } from './config';
+import { getAirportThresholds, resolveDistanceLod } from './LodSystem';
 
-export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) {
+type CreateApronArgs = {
+    scene: THREE.Scene;
+    renderer: THREE.WebGLRenderer;
+    getTerrainHeight: (x: number, z: number) => number;
+    lodSettings: {
+        airport: {
+            distanceHysteresis: number;
+            thresholds: {
+                mid: number;
+                low: number;
+                cull: number;
+            };
+        };
+    };
+};
+
+export function createApron({ scene, renderer, getTerrainHeight, lodSettings }: CreateApronArgs) {
     const apronX = AIRPORT_CONFIG.APRON.x;
     const apronZ = AIRPORT_CONFIG.APRON.z;
     const width = AIRPORT_CONFIG.APRON.width;
     const depth = AIRPORT_CONFIG.APRON.depth;
 
-    // Procedural texture similar to runway
-    function createApronMesh() {
+    function createApronMesh(): THREE.Mesh {
         const canvas = document.createElement('canvas');
         canvas.width = 512;
         canvas.height = 512;
         const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Failed to create apron canvas context');
+        }
 
-        // Asphalt/Concrete base
         ctx.fillStyle = '#3c4149';
         ctx.fillRect(0, 0, 512, 512);
 
-        // Noise
-        for (let i = 0; i < 8000; i++) {
+        for (let i = 0; i < 8000; i += 1) {
             ctx.fillStyle = Math.random() > 0.5 ? '#4a515a' : '#2e343c';
             ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
         }
 
-        // Cracks and expansion joints (grid-like for concrete feel)
         ctx.strokeStyle = 'rgba(20, 22, 25, 0.4)';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 512; i += 64) {
@@ -44,7 +59,7 @@ export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) 
         tex.anisotropy = anisotropy;
         tex.wrapS = THREE.RepeatWrapping;
         tex.wrapT = THREE.RepeatWrapping;
-        tex.repeat.set(4, 5); // Tile the texture
+        tex.repeat.set(4, 5);
         tex.colorSpace = THREE.SRGBColorSpace;
 
         const apronGeo = new THREE.PlaneGeometry(width, depth);
@@ -58,7 +73,6 @@ export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) 
         const mesh = new THREE.Mesh(apronGeo, apronMat);
         mesh.rotation.x = -Math.PI / 2;
 
-        // Slightly above terrain to avoid z-fighting
         const ty = getTerrainHeight(apronX, apronZ);
         mesh.position.set(apronX, ty + 0.15, apronZ);
         mesh.receiveShadow = true;
@@ -70,14 +84,10 @@ export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) 
     const apronMesh = createApronMesh();
     let currentLOD = -1;
 
-    function updateLOD(cameraPos, dist) {
+    function updateLOD(_cameraPos: THREE.Vector3, dist: number) {
         const [, lowThreshold] = getAirportThresholds(lodSettings);
         currentLOD = resolveDistanceLod(dist, currentLOD, [lowThreshold], lodSettings.airport.distanceHysteresis);
-        if (currentLOD === 1) {
-            apronMesh.visible = false;
-        } else {
-            apronMesh.visible = true;
-        }
+        apronMesh.visible = currentLOD !== 1;
     }
 
     function refreshTerrainAlignment() {
@@ -85,5 +95,10 @@ export function createApron({ scene, renderer, getTerrainHeight, lodSettings }) 
         apronMesh.position.set(apronX, ty + 0.15, apronZ);
     }
 
-    return { apronMesh, updateLOD, refreshTerrainAlignment, position: new THREE.Vector3(apronX, 0, apronZ) };
+    return {
+        apronMesh,
+        updateLOD,
+        refreshTerrainAlignment,
+        position: new THREE.Vector3(apronX, 0, apronZ)
+    };
 }

@@ -1,7 +1,9 @@
+// @ts-check
+
 import { normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { isAirport, isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
-import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout.js';
-import { normalizeAuthoredObjectHeightMode } from '../../modules/world/AuthoredObjectCatalog.js';
+import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout';
+import { normalizeAuthoredObjectHeightMode } from '../../modules/world/AuthoredObjectCatalog';
 import { findTerrainRegionOverlap, getTerrainRegionTileSize, normalizeTerrainRegion } from '../../modules/world/terrain/TerrainRegions.js';
 import {
     createTerrainStroke,
@@ -15,10 +17,37 @@ import {
     resolveSelectionAfterReload
 } from './document.js';
 
+/** @typedef {import('./types.js').EditorActiveVertex} EditorActiveVertex */
+/** @typedef {import('./types.js').EditorAirport} EditorAirport */
+/** @typedef {import('./types.js').EditorAuthoredObject} EditorAuthoredObject */
+/** @typedef {import('./types.js').EditorCommand} EditorCommand */
+/** @typedef {import('./types.js').EditorCommandResult} EditorCommandResult */
+/** @typedef {import('./types.js').EditorDocument} EditorDocument */
+/** @typedef {import('./types.js').EditorDistrict} EditorDistrict */
+/** @typedef {import('./types.js').EditorEntity} EditorEntity */
+/** @typedef {import('./types.js').EditorEntityId} EditorEntityId */
+/** @typedef {import('./types.js').EditorRoad} EditorRoad */
+/** @typedef {import('./types.js').EditorTerrainEdit} EditorTerrainEdit */
+/** @typedef {import('./types.js').EditorTerrainRegion} EditorTerrainRegion */
+/** @typedef {import('./types.js').EditorWorldPoint} EditorWorldPoint */
+
+/**
+ * @param {number} value
+ * @param {number} [gridSize]
+ * @returns {number}
+ */
 function snapValue(value, gridSize = 100) {
     return Math.round(value / gridSize) * gridSize;
 }
 
+/**
+ * @param {EditorWorldPoint} worldPos
+ * @param {boolean} enabled
+ * @param {boolean} [allowSnap]
+ * @param {EditorDocument | null} [document]
+ * @param {EditorEntityId | null} [ignoreEntityId]
+ * @returns {EditorWorldPoint}
+ */
 export function snapWorldPoint(worldPos, enabled, allowSnap = true, document = null, ignoreEntityId = null) {
     if (!enabled || !allowSnap) return { x: Math.round(worldPos.x), z: Math.round(worldPos.z) };
     
@@ -48,6 +77,11 @@ export function snapWorldPoint(worldPos, enabled, allowSnap = true, document = n
     return { x: snapValue(worldPos.x), z: snapValue(worldPos.z) };
 }
 
+/**
+ * @param {EditorDistrict} district
+ * @param {number} dx
+ * @param {number} dz
+ */
 function translateDistrict(district, dx, dz) {
     district.center[0] += dx;
     district.center[1] += dz;
@@ -59,6 +93,11 @@ function translateDistrict(district, dx, dz) {
     }
 }
 
+/**
+ * @param {EditorRoad} road
+ * @param {number} dx
+ * @param {number} dz
+ */
 function translateRoad(road, dx, dz) {
     if (Array.isArray(road.points)) {
         for (const point of road.points) {
@@ -73,6 +112,13 @@ function translateRoad(road, dx, dz) {
     normalizeRoad(road);
 }
 
+/**
+ * @param {EditorTerrainRegion} region
+ * @param {number} nextTileX
+ * @param {number} nextTileZ
+ * @param {EditorTerrainRegion[]} regions
+ * @returns {boolean}
+ */
 function moveTerrainRegion(region, nextTileX, nextTileZ, regions) {
     const movedRegion = normalizeTerrainRegion({
         ...region,
@@ -91,12 +137,21 @@ function moveTerrainRegion(region, nextTileX, nextTileZ, regions) {
     return true;
 }
 
+/**
+ * @param {EditorEntity} entity
+ * @returns {EditorEntity}
+ */
 function duplicateEntity(entity) {
-    const next = structuredClone(entity);
+    const next = /** @type {EditorEntity} */ (structuredClone(entity));
     delete next.__editorId;
     return next;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorEntityId | null | undefined} entityId
+ * @returns {boolean}
+ */
 function removeEntityById(document, entityId) {
     const group = findEntityGroup(document, entityId);
     const entity = getEntityById(document, entityId);
@@ -133,6 +188,12 @@ function removeEntityById(document, entityId) {
     return false;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorCommand} command
+ * @param {{ terrainStrokeDeps?: Record<string, unknown> }} [context]
+ * @returns {EditorCommandResult}
+ */
 export function applyEditorCommand(document, command, context = {}) {
     const nextDocument = cloneDocument(document);
     const { terrainStrokeDeps } = context;
@@ -140,16 +201,17 @@ export function applyEditorCommand(document, command, context = {}) {
 
     switch (command.type) {
         case 'create-district': {
+            /** @type {EditorDistrict} */
             const district = {
                 district_type: command.districtType || 'commercial',
-                center: [command.center.x, command.center.z],
+                center: /** @type {[number, number]} */ ([command.center.x, command.center.z]),
                 radius: 500,
-                points: [
+                points: /** @type {import('./types.js').EditorPoint2[]} */ ([
                     [command.center.x - 500, command.center.z - 500],
                     [command.center.x + 500, command.center.z - 500],
                     [command.center.x + 500, command.center.z + 500],
                     [command.center.x - 500, command.center.z + 500]
-                ]
+                ])
             };
             nextDocument.worldData.districts.push(district);
             const finalized = createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document);
@@ -233,12 +295,13 @@ export function applyEditorCommand(document, command, context = {}) {
         case 'append-terrain-point': {
             const edit = getEntityById(nextDocument, command.entityId);
             if (!edit || !Array.isArray(edit.points)) return { document };
-            const lastPoint = edit.points[edit.points.length - 1];
-            if (lastPoint && Math.hypot(lastPoint[0] - command.worldPos.x, lastPoint[1] - command.worldPos.z) < Math.max(10, edit.radius * 0.12)) {
+            const terrainEdit = /** @type {EditorTerrainEdit} */ (edit);
+            const lastPoint = terrainEdit.points?.[terrainEdit.points.length - 1];
+            if (lastPoint && Math.hypot(lastPoint[0] - command.worldPos.x, lastPoint[1] - command.worldPos.z) < Math.max(10, (terrainEdit.radius || 0) * 0.12)) {
                 return { document };
             }
-            edit.points.push([Math.round(command.worldPos.x), Math.round(command.worldPos.z)]);
-            refreshTerrainEditGeometry(edit);
+            terrainEdit.points?.push([Math.round(command.worldPos.x), Math.round(command.worldPos.z)]);
+            refreshTerrainEditGeometry(terrainEdit);
             return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
         }
         case 'delete-entity': {
@@ -250,8 +313,8 @@ export function applyEditorCommand(document, command, context = {}) {
             const group = findEntityGroup(nextDocument, command.entityId);
             if (!entity || group === 'vantage') return { document };
             const copy = duplicateEntity(entity);
-            if (copy.center) {
-                copy.center = [copy.center[0] + 200, copy.center[1] + 200];
+            if ('center' in copy && Array.isArray(copy.center)) {
+                copy.center = /** @type {[number, number]} */ ([copy.center[0] + 200, copy.center[1] + 200]);
             }
             if (Array.isArray(copy.points)) {
                 copy.points = copy.points.map(([x, z]) => [x + 200, z + 200]);
@@ -339,15 +402,15 @@ export function applyEditorCommand(document, command, context = {}) {
         case 'insert-vertex': {
             const entity = getEntityById(nextDocument, command.entityId);
             if (!entity?.points) return { document };
-            entity.points.splice(command.insertIndex, 0, [command.point.x, command.point.z]);
+            /** @type {import('./types.js').EditorPoint2[]} */ (entity.points).splice(command.insertIndex, 0, [command.point.x, command.point.z]);
             if (isRoad(entity)) normalizeRoad(entity);
             if (isTerrainEdit(entity)) refreshTerrainEditGeometry(entity);
             return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
         }
         case 'remove-vertex': {
             const entity = getEntityById(nextDocument, command.entityId);
-            if (!entity?.points || entity.points.length <= command.minPoints) return { document };
-            entity.points.splice(command.vertexIndex, 1);
+            if (!entity?.points || !Array.isArray(entity.points) || entity.points.length <= command.minPoints) return { document };
+            /** @type {import('./types.js').EditorPoint2[]} */ (entity.points).splice(command.vertexIndex, 1);
             if (isRoad(entity)) normalizeRoad(entity);
             if (isTerrainEdit(entity)) refreshTerrainEditGeometry(entity);
             return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
@@ -356,14 +419,14 @@ export function applyEditorCommand(document, command, context = {}) {
             const entity = getEntityById(nextDocument, command.entityId);
             if (!entity) return { document };
             if (isTerrainRegion(entity) && command.key === 'terrainGenerator') {
-                entity.terrainGenerator = command.value;
+                entity.terrainGenerator = /** @type {import('./types.js').EditorTerrainGenerator} */ (command.value);
                 return { document: createEditorDocument(nextDocument.worldData, nextDocument.vantageData, document), selectionId: command.entityId };
             }
             entity[command.key] = command.value;
             if (isAirport(entity) && (command.key === 'yaw' || command.key === 'x' || command.key === 'z')) {
                 entity.bounds = getAirportWorldFootprintBounds(entity);
             }
-            if (command.key === 'kind' || command.key === 'surface' || command.key === 'width' || command.key === 'feather') {
+            if (isRoad(entity) && (command.key === 'kind' || command.key === 'surface' || command.key === 'width' || command.key === 'feather')) {
                 normalizeRoad(entity);
             }
             if (isTerrainEdit(entity) && ['radius', 'delta', 'target_height', 'opacity'].includes(command.key)) {
@@ -383,6 +446,13 @@ export function applyEditorCommand(document, command, context = {}) {
     }
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorEntityId} entityId
+ * @param {EditorWorldPoint} delta
+ * @param {EditorActiveVertex | null} [activeVertex]
+ * @returns {EditorCommand | null}
+ */
 export function nudgeEntityCommand(document, entityId, delta, activeVertex = null) {
     const entity = getEntityById(document, entityId);
     if (!entity) return null;
@@ -413,9 +483,10 @@ export function nudgeEntityCommand(document, entityId, delta, activeVertex = nul
             nextCenter: [entity.center[0] + delta.x, entity.center[1] + delta.z]
         };
     }
+    const pointEntity = /** @type {EditorAirport | EditorAuthoredObject | EditorTerrainEdit} */ (entity);
     return {
         type: 'move-entity',
         entityId,
-        nextPoint: { x: entity.x + delta.x, z: entity.z + delta.z }
+        nextPoint: { x: pointEntity.x + delta.x, z: pointEntity.z + delta.z }
     };
 }

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { QuadtreeMapSampler, setStaticSampler, getTerrainHeight } from '../../modules/world/terrain/TerrainUtils.js';
 import { applyTerrainEdits } from '../../modules/world/terrain/TerrainEdits.js';
 import { createTerrainSynthesizer } from '../../modules/world/terrain/TerrainSynthesis.js';
@@ -6,24 +8,67 @@ import { MapTileManager } from '../../modules/ui/MapTileManager.js';
 import { getClosestTerrainSegmentIndex, getVertexHitIndex } from '../../modules/editor/geometry.js';
 import { isTerrainBrushTool, TOOL_SHORTCUTS } from '../../modules/editor/constants.js';
 import { isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
-import { debugLog } from '../../modules/core/logging.js';
+import { debugLog } from '../../modules/core/logging';
 import { Noise } from '../../modules/noise.js';
-import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig';
 import { nudgeEntityCommand, snapWorldPoint } from '../core/commands.js';
 import { getEntityById, getEntityBounds } from '../core/document.js';
 import { createCoordinateHelpers, findObjectsAtWorldPos, renderEditorScene } from './render.js';
-import { createTerrainPreviewWorkerManager } from './TerrainPreviewWorkerManager.js';
-import { createEditorMapTileWorkerManager } from './EditorMapTileWorkerManager.js';
+import { createTerrainPreviewWorkerManager } from './TerrainPreviewWorkerManager';
+import { createEditorMapTileWorkerManager } from './EditorMapTileWorkerManager';
+
+/** @typedef {import('../core/types.js').EditorBounds} EditorBounds */
+/** @typedef {import('../core/types.js').EditorDocument} EditorDocument */
+/** @typedef {import('../core/types.js').EditorTerrainGenerator} EditorTerrainGenerator */
+/** @typedef {import('../core/types.js').EditorTerrainRegion} EditorTerrainRegion */
+/** @typedef {import('../core/types.js').EditorStore} EditorStore */
+/** @typedef {import('../core/types.js').EditorStoreState} EditorStoreState */
+/** @typedef {import('../core/types.js').EditorTerrainLabMetadata} EditorTerrainLabMetadata */
+/** @typedef {import('../core/types.js').EditorTerrainPreviewOverlay} EditorTerrainPreviewOverlay */
+/** @typedef {import('../core/types.js').EditorTerrainRegionHover} EditorTerrainRegionHover */
+/** @typedef {import('../core/types.js').EditorTerrainRegionSelection} EditorTerrainRegionSelection */
+/** @typedef {import('../core/types.js').EditorTerrainRegionTile} EditorTerrainRegionTile */
+/** @typedef {import('../core/types.js').EditorWorldPoint} EditorWorldPoint */
+
+/**
+ * @typedef HoverSample
+ * @property {EditorWorldPoint} world
+ * @property {string | undefined} overlayKind
+ * @property {EditorStoreState['ui']['terrainLab']['draftConfig']} config
+ */
+
+/**
+ * @typedef TerrainRegionDragState
+ * @property {string} entityId
+ * @property {EditorWorldPoint} startWorld
+ * @property {number} originTileX
+ * @property {number} originTileZ
+ * @property {number} tileWidth
+ * @property {number} tileHeight
+ * @property {EditorTerrainRegion} region
+ */
+
+/**
+ * @typedef TerrainRegionCreateState
+ * @property {EditorTerrainRegionTile} startTile
+ * @property {EditorTerrainRegionTile} endTile
+ */
 
 const VERTEX_HIT_RADIUS_PX = 12;
 const PAN_DRAG_THRESHOLD_PX = 4;
 const MIN_VIEWPORT_ZOOM = 0.001;
 const MAX_VIEWPORT_ZOOM = 1;
 
+/** @param {number} value @param {number} min @param {number} max */
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * @param {{ x?: number; z?: number; zoom?: number } | null | undefined} viewport
+ * @param {{ width?: number; height?: number } | null | undefined} canvasSize
+ * @param {number} [worldSize]
+ */
 export function clampViewportToWorld(viewport, canvasSize, worldSize = DEFAULT_WORLD_SIZE) {
     const width = Math.max(1, canvasSize?.width || 1);
     const height = Math.max(1, canvasSize?.height || 1);
@@ -43,12 +88,18 @@ export function clampViewportToWorld(viewport, canvasSize, worldSize = DEFAULT_W
     };
 }
 
+/**
+ * @param {EditorStoreState} state
+ * @param {unknown} pendingCanvasPan
+ * @param {boolean} isPanning
+ */
 export function shouldClearSelectionOnPointerRelease(state, pendingCanvasPan, isPanning) {
     if (!pendingCanvasPan || isPanning || state?.tools?.currentTool !== 'select') return false;
     const selected = getEntityById(state.document, state.selection.selectedId);
     return isTerrainRegion(selected);
 }
 
+/** @param {EditorDocument} document */
 export function getTerrainEditBoundsById(document) {
     const boundsById = new Map();
     for (const edit of document?.worldData?.terrainEdits || []) {
@@ -58,6 +109,7 @@ export function getTerrainEditBoundsById(document) {
     return boundsById;
 }
 
+/** @param {EditorDocument} document */
 function getTerrainRegionBoundsById(document) {
     const boundsById = new Map();
     for (const region of document?.worldData?.terrainRegions || []) {
@@ -67,6 +119,7 @@ function getTerrainRegionBoundsById(document) {
     return boundsById;
 }
 
+/** @param {EditorDocument} document */
 function getTerrainAffectingBoundsById(document) {
     return new Map([
         ...getTerrainEditBoundsById(document).entries(),
@@ -74,6 +127,11 @@ function getTerrainAffectingBoundsById(document) {
     ]);
 }
 
+/**
+ * @param {{ invalidateWorldRect(minX: number, minZ: number, maxX: number, maxZ: number): void }} tileManager
+ * @param {Map<string, EditorBounds>} previousBoundsById
+ * @param {EditorDocument} nextDocument
+ */
 export function invalidateChangedTerrainTiles(tileManager, previousBoundsById, nextDocument) {
     const nextBoundsById = getTerrainAffectingBoundsById(nextDocument);
     const changedBounds = [];
@@ -133,6 +191,32 @@ export function reconcileTerrainTileInvalidation({
     };
 }
 
+/**
+ * @typedef EditorCanvasController
+ * @property {() => Promise<void>} init
+ * @property {() => void} destroy
+ * @property {() => void} frameSelection
+ * @property {() => void} frameTerrainHydrology
+ * @property {() => Promise<boolean>} reloadStaticWorld
+ * @property {() => void} resetView
+ * @property {() => void} scheduleRender
+ */
+
+/**
+ * @typedef TerrainSynthesizerLike
+ * @property {() => EditorTerrainLabMetadata} getMetadata
+ */
+
+const createEditorTerrainSynthesizer = /** @type {(args: {
+    Noise: typeof Noise;
+    worldSize: number;
+    config: EditorTerrainGenerator;
+}) => TerrainSynthesizerLike} */ (/** @type {unknown} */ (createTerrainSynthesizer));
+
+/**
+ * @param {{ canvas: HTMLCanvasElement; coordsElement: HTMLElement | null; store: EditorStore }} args
+ * @returns {EditorCanvasController}
+ */
 export function createEditorCanvasController({ canvas, coordsElement, store }) {
     const ctx = canvas.getContext('2d');
     let rafPending = false;
@@ -156,17 +240,22 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
     let pendingTerrainLabPreview = false;
     let terrainPreviewJobSerial = 0;
     let hoverCoordsRafPending = false;
+    /** @type {HoverSample | null} */
     let pendingHoverSample = null;
     let activeHoverSampleSerial = 0;
     let latestHoverSampleSerial = 0;
     let lastHoverId = null;
     let lastHoverWorldPos = null;
     let hoverWorldPos = null;
+    /** @type {EditorTerrainRegionHover | null} */
     let terrainRegionHover = null;
+    /** @type {EditorTerrainRegionSelection | null} */
     let terrainRegionSelection = null;
     let previousTerrainLabVersion = store.getState().ui.terrainLab.configVersion;
     let previousTerrainEditBoundsById = getTerrainAffectingBoundsById(store.getState().document);
+    /** @type {TerrainRegionCreateState | null} */
     let activeTerrainRegionSelection = null;
+    /** @type {TerrainRegionDragState | null} */
     let activeTerrainRegionDrag = null;
     let cachedCanvasRect = null;
     let normalizedPreviewRegionsDocumentRef = null;
@@ -211,7 +300,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const nextKey = terrainLab.configVersion;
         if (synthCache && synthCacheKey === nextKey) return synthCache;
         synthCacheKey = nextKey;
-        synthCache = createTerrainSynthesizer({
+        synthCache = createEditorTerrainSynthesizer({
             Noise,
             worldSize: DEFAULT_WORLD_SIZE,
             config: draftConfig
@@ -338,14 +427,14 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         const jobSerial = ++terrainPreviewJobSerial;
         try {
             store.dispatch({ type: 'set-terrain-preview-status', status: 'generating' });
-            const { snapshot, metadata } = await terrainPreviewWorker.buildPreview({
+            const { snapshot, metadata } = /** @type {{ snapshot: EditorStoreState['ui']['terrainLab']['previewSnapshot']; metadata: EditorTerrainLabMetadata | null }} */ (await terrainPreviewWorker.buildPreview({
                 bounds,
                 authoredBounds: selected.bounds ? { ...selected.bounds } : bounds,
                 config: terrainLab.draftConfig,
                 overlayKind: terrainLab.selectedOverlay,
                 resolution: terrainLab.draftConfig.preview.resolution,
                 showContours: terrainLab.draftConfig.preview.showContours
-            });
+            }));
             if (jobSerial !== terrainPreviewJobSerial) return;
             terrainLabPreviewKey = previewKey;
             store.dispatch({
@@ -673,7 +762,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             event.preventDefault();
             const state = store.getState();
             const selected = getEntityById(state.document, state.selection.selectedId);
-            if (!selected?.points || state.tools.currentTool !== 'edit-poly') return;
+            if (!selected?.points || !Array.isArray(selected.points) || state.tools.currentTool !== 'edit-poly') return;
             const { world } = getWorldPoint(event);
             const hitIndex = getVertexHitIndex(selected.points, world, VERTEX_HIT_RADIUS_PX / state.viewport.zoom);
             if (hitIndex === -1) return;
@@ -697,10 +786,11 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
                 Math.max(isRoad(selected) ? selected.width + selected.feather : 80, 30 / state.viewport.zoom)
             );
             const point = snapWorldPoint(world, state.tools.snappingEnabled, !isTerrainEdit(selected), state.document, state.selection.selectedId);
+            const selectedPoints = /** @type {number[][]} */ (selected.points);
             store.runCommand({
                 type: 'insert-vertex',
                 entityId: state.selection.selectedId,
-                insertIndex: insertIndex === -1 ? selected.points.length : insertIndex,
+                insertIndex: insertIndex === -1 ? selectedPoints.length : insertIndex,
                 point
             });
         });
@@ -713,7 +803,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             activePointerId = event.pointerId;
             canvas.setPointerCapture(event.pointerId);
 
-            if (event.button === 1 || state.tools.currentTool === 'pan') {
+            if (event.button === 1) {
                 isPanning = true;
                 lastMouse = { x: point.x, y: point.y };
                 scheduleRender();
@@ -771,10 +861,11 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             }
 
             if (isTerrainBrushTool(state.tools.currentTool)) {
+                const terrainTool = /** @type {'terrain-raise' | 'terrain-lower' | 'terrain-flatten'} */ (state.tools.currentTool);
                 const result = store.runCommand({
                     type: 'create-terrain-stroke',
                     worldPos: world,
-                    tool: state.tools.currentTool
+                    tool: terrainTool
                 }, {
                     context: {
                         terrainStrokeDeps: {
@@ -1068,7 +1159,8 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
         window.addEventListener('keydown', event => {
             const activeTag = document.activeElement?.tagName || '';
-            if (['INPUT', 'SELECT', 'TEXTAREA'].includes(activeTag) || document.activeElement?.isContentEditable) return;
+            const activeElement = document.activeElement;
+            if (['INPUT', 'SELECT', 'TEXTAREA'].includes(activeTag) || Boolean(activeElement && 'isContentEditable' in activeElement && activeElement.isContentEditable)) return;
 
             const isMeta = event.metaKey || event.ctrlKey;
             if (isMeta && event.key.toLowerCase() === 'z') {
@@ -1177,7 +1269,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         frameTerrainHydrology() {
             const selected = getEntityById(store.getState().document, store.getState().selection.selectedId);
             const metadata = isTerrainRegion(selected)
-                ? createTerrainSynthesizer({
+                ? createEditorTerrainSynthesizer({
                     Noise,
                     worldSize: DEFAULT_WORLD_SIZE,
                     config: store.getState().ui.terrainLab.draftConfig

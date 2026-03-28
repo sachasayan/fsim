@@ -1,6 +1,91 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { listShaderVariants } from './ShaderVariantRegistry.js';
 
+/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantBuilder} ShaderVariantBuilder */
+/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantEntry} ShaderVariantEntry */
+/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantRegistry} ShaderVariantRegistry */
+
+/**
+ * @typedef {{
+ *   type: string,
+ *   baseCacheKey: unknown,
+ *   patches: string[],
+ *   descriptorId?: unknown
+ * }} ShaderWarmupMaterialReport
+ */
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   system: string,
+ *   objectCount: number,
+ *   materials: ShaderWarmupMaterialReport[],
+ *   metadata?: unknown
+ * }} ShaderWarmupVariantReport
+ */
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   variantCount: number,
+ *   objectCount: number,
+ *   materialCount: number,
+ *   variants: string[],
+ *   pipelineKeys: string[]
+ * }} ShaderWarmupSystemSummary
+ */
+
+/**
+ * @typedef {{
+ *   result: string,
+ *   systemCount: number,
+ *   totalVariants: number,
+ *   totalObjects: number,
+ *   durationMs: number,
+ *   error: string | null,
+ *   systems: ShaderWarmupSystemSummary[]
+ * }} ShaderValidationSummary
+ */
+
+/**
+ * @typedef {{
+ *   compiled: boolean,
+ *   skipped: boolean,
+ *   mode: string,
+ *   variantCount: number,
+ *   objectCount: number,
+ *   durationMs: number,
+ *   variants: ShaderWarmupVariantReport[],
+ *   error?: string | null,
+ *   summary?: ShaderValidationSummary
+ * }} ShaderValidationReport
+ */
+
+/**
+ * @typedef {{
+ *   stage: string,
+ *   completed: number,
+ *   total: number,
+ *   ratio: number,
+ *   variantCount?: number,
+ *   variantId?: string
+ * }} ShaderWarmupProgress
+ */
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   objects: import('three').Object3D[],
+ *   dispose?: (() => void) | null,
+ *   metadata?: unknown
+ * }} NormalizedWarmupSpec
+ */
+
+/**
+ * @param {import('three').Camera | null | undefined} camera
+ */
 function buildWarmupCamera(camera) {
     const warmupCamera = camera ? camera.clone() : new THREE.PerspectiveCamera(60, 1, 1, 10000);
     warmupCamera.position.set(0, 200, 320);
@@ -9,38 +94,71 @@ function buildWarmupCamera(camera) {
     return warmupCamera;
 }
 
+/**
+ * @param {unknown} spec
+ * @param {string} fallbackId
+ * @param {unknown} [metadata]
+ * @returns {NormalizedWarmupSpec | null}
+ */
 function normalizeWarmupSpec(spec, fallbackId, metadata = null) {
     if (!spec) return null;
     if (Array.isArray(spec)) {
-        return { id: fallbackId, objects: spec, metadata };
+        return {
+            id: fallbackId,
+            objects: /** @type {import('three').Object3D[]} */ (spec),
+            metadata
+        };
     }
+    const normalizedSpec = /** @type {{
+        id?: string,
+        objects?: import('three').Object3D[],
+        dispose?: (() => void) | null,
+        metadata?: unknown
+    }} */ (spec);
     return {
-        id: spec.id || fallbackId,
-        objects: spec.objects || [],
-        dispose: spec.dispose || null,
-        metadata: spec.metadata || metadata || null
+        id: normalizedSpec.id || fallbackId,
+        objects: normalizedSpec.objects || [],
+        dispose: normalizedSpec.dispose || null,
+        metadata: normalizedSpec.metadata || metadata || null
     };
 }
 
+/**
+ * @param {import('three').Object3D[]} objects
+ * @returns {ShaderWarmupMaterialReport[]}
+ */
 function describeWarmupMaterials(objects) {
+    /** @type {ShaderWarmupMaterialReport[]} */
     const materials = [];
     const seen = new Set();
 
+    /**
+     * @param {unknown} material
+     */
     function collectFromMaterial(material) {
         if (!material) return;
         const list = Array.isArray(material) ? material : [material];
         for (const entry of list) {
-            const pipeline = entry?.userData?.shaderPipeline;
+            const materialEntry = /** @type {{
+                type?: string,
+                userData?: {
+                    shaderPipeline?: { baseCacheKey?: unknown, patches?: string[] },
+                    shaderDescriptor?: { id?: unknown }
+                }
+            }} */ (entry);
+            const pipeline = materialEntry.userData?.shaderPipeline;
             if (!pipeline) continue;
-            const key = `${pipeline.baseCacheKey || 'none'}::${pipeline.patches.join('+')}`;
+            const patches = Array.isArray(pipeline.patches) ? pipeline.patches : [];
+            const key = `${pipeline.baseCacheKey || 'none'}::${patches.join('+')}`;
             if (seen.has(key)) continue;
             seen.add(key);
+            /** @type {ShaderWarmupMaterialReport} */
             const materialReport = {
-                type: entry.type || 'Material',
+                type: materialEntry.type || 'Material',
                 baseCacheKey: pipeline.baseCacheKey,
-                patches: [...pipeline.patches]
+                patches: [...patches]
             };
-            const descriptorId = entry?.userData?.shaderDescriptor?.id;
+            const descriptorId = materialEntry.userData?.shaderDescriptor?.id;
             if (descriptorId) {
                 materialReport.descriptorId = descriptorId;
             }
@@ -60,20 +178,38 @@ function describeWarmupMaterials(objects) {
     return materials;
 }
 
-function resolveVariantEntries({ registry = null, variants = [] }) {
-    if (registry) return listShaderVariants(registry);
-    return Array.isArray(variants) ? variants : [];
+/**
+ * @param {{ registry?: unknown, variants?: unknown[] }} [options]
+ * @returns {(ShaderVariantEntry | ShaderVariantBuilder)[]}
+ */
+function resolveVariantEntries({ registry = null, variants = [] } = {}) {
+    if (registry) return listShaderVariants(/** @type {ShaderVariantRegistry} */ (registry));
+    return Array.isArray(variants)
+        ? /** @type {(ShaderVariantEntry | ShaderVariantBuilder)[]} */ (variants)
+        : [];
 }
 
+/**
+ * @param {unknown} [metadata]
+ */
 function getVariantSystem(metadata = null) {
-    return metadata?.system || 'unknown';
+    const variantMetadata = /** @type {{ system?: string } | null | undefined} */ (metadata);
+    return variantMetadata?.system || 'unknown';
 }
 
+/**
+ * @param {unknown} material
+ */
 function getMaterialPipelineKey(material) {
-    const patches = Array.isArray(material?.patches) ? material.patches : [];
-    return `${material?.baseCacheKey || 'none'}::${patches.join('+')}`;
+    const materialReport = /** @type {{ baseCacheKey?: unknown, patches?: string[] } | null | undefined } */ (material);
+    const patches = Array.isArray(materialReport?.patches) ? materialReport.patches : [];
+    return `${materialReport?.baseCacheKey || 'none'}::${patches.join('+')}`;
 }
 
+/**
+ * @param {ShaderValidationReport | null | undefined} report
+ * @returns {ShaderValidationSummary}
+ */
 export function summarizeShaderValidationReport(report) {
     const variants = Array.isArray(report?.variants) ? report.variants : [];
     const systems = new Map();
@@ -123,14 +259,30 @@ export function summarizeShaderValidationReport(report) {
     };
 }
 
+/**
+ * @param {ShaderValidationReport} report
+ * @param {number} startedAt
+ * @returns {ShaderValidationReport}
+ */
 function finalizeShaderValidationReport(report, startedAt) {
     report.durationMs = performance.now() - startedAt;
     report.summary = summarizeShaderValidationReport(report);
     return report;
 }
 
+/**
+ * @param {{
+ *   renderer?: import('three').WebGLRenderer | null,
+ *   camera?: import('three').Camera | null,
+ *   registry?: unknown,
+ *   variants?: unknown[],
+ *   onProgress?: ((progress: ShaderWarmupProgress) => void) | null
+ * }} args
+ * @returns {Promise<ShaderValidationReport>}
+ */
 export async function validateShaderPrograms({ renderer, camera, registry = null, variants = [], onProgress = null }) {
     const startedAt = performance.now();
+    /** @type {ShaderValidationReport} */
     const report = {
         compiled: false,
         skipped: false,
@@ -141,6 +293,9 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
         variants: []
     };
 
+    /**
+     * @param {ShaderWarmupProgress} progress
+     */
     const emitProgress = (progress) => {
         if (typeof onProgress === 'function') onProgress(progress);
     };
@@ -152,6 +307,7 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
     }
 
     const warmupScene = new THREE.Scene();
+    /** @type {Array<() => void>} */
     const disposers = [];
     const variantEntries = resolveVariantEntries({ registry, variants });
     const totalSteps = Math.max(1, variantEntries.length + 1);
@@ -167,15 +323,18 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
 
     for (const [index, variant] of variantEntries.entries()) {
         if (!variant) continue;
-        const build = typeof variant === 'function' ? variant : variant.build;
+        const variantEntry = /** @type {ShaderVariantEntry | ShaderVariantBuilder} */ (variant);
+        const build = typeof variantEntry === 'function' ? variantEntry : variantEntry.build;
         if (typeof build !== 'function') continue;
-        const fallbackId = typeof variant === 'function'
-            ? (variant.shaderVariantId || variant.shaderProviderId || build.name || `variant-${index}`)
-            : (variant.id || variant.shaderVariantId || variant.shaderProviderId || build.name || `variant-${index}`);
-        const spec = normalizeWarmupSpec(build(camera), fallbackId, variant.metadata || null);
+        const fallbackId = typeof variantEntry === 'function'
+            ? (variantEntry.shaderVariantId || variantEntry.shaderProviderId || build.name || `variant-${index}`)
+            : (variantEntry.id || variantEntry.shaderVariantId || variantEntry.shaderProviderId || build.name || `variant-${index}`);
+        const variantMetadata = typeof variantEntry === 'function' ? null : (variantEntry.metadata || null);
+        const spec = normalizeWarmupSpec(build(camera), fallbackId, variantMetadata);
         if (!spec) continue;
 
         const system = getVariantSystem(spec.metadata);
+        /** @type {ShaderWarmupVariantReport} */
         const entryReport = {
             id: spec.id,
             system,
@@ -247,6 +406,9 @@ export async function validateShaderPrograms({ renderer, camera, registry = null
     return finalizeShaderValidationReport(report, startedAt);
 }
 
+/**
+ * @param {Parameters<typeof validateShaderPrograms>[0]} options
+ */
 export async function warmupShaderPrograms(options) {
     return validateShaderPrograms(options);
 }

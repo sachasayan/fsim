@@ -2,8 +2,9 @@ import * as React from 'react';
 
 import { isAirport, isAuthoredObject, isDistrict, isRoad, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
 import { getDistrictType, DISTRICT_TYPES, ROAD_KINDS, ROAD_SURFACES } from '../../modules/world/MapDataUtils.js';
-import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog.js';
+import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog';
 import { getEntityById, getEntityLabel } from '../core/document.js';
+import type { EditorDocument, EditorEntity, EditorEntityId, EditorGroupId, EditorStore, EditorVantageEntity } from '../core/types.js';
 import { Badge, Button, FieldRow, HintCard, Input, NumberInputField, Panel, RangeNumberField, SelectField, Separator, shallowEqual, useStore } from './common';
 
 const OBJECT_ASSET_OPTIONS = listAuthoredObjectAssets().map((asset) => ({
@@ -17,32 +18,56 @@ const OBJECT_HEIGHT_MODE_OPTIONS = [
     { value: 'absolute', label: 'Arbitrary Height' }
 ];
 
-export function InspectorPanel({ store, controller }) {
-    const { document, selectedId, selected, groupLocked, itemLocked } = useStore(store, (state) => {
-        const selectedEntity = getEntityById(state.document, state.selection.selectedId);
-        const groupId = isDistrict(selectedEntity)
-            ? 'districts'
-            : isRoad(selectedEntity)
-                ? 'roads'
-                : isTerrainRegion(selectedEntity)
-                    ? 'terrainRegions'
-                    : isAirport(selectedEntity)
-                        ? 'airports'
-                    : isAuthoredObject(selectedEntity)
-                        ? 'objects'
-                    : isTerrainEdit(selectedEntity)
-                        ? 'terrain'
-                        : 'vantage';
-        return {
-            document: state.document,
-            selectedId: state.selection.selectedId,
-            selected: selectedEntity,
-            groupLocked: state.layers.groupLocked[groupId] === true,
-            itemLocked: state.layers.itemLocked[state.selection.selectedId] === true
-        };
-    }, shallowEqual);
+type InspectorController = {
+    frameSelection: () => void;
+};
 
-    if (!selected) {
+type InspectorSelection = {
+    document: EditorDocument;
+    selectedId: EditorEntityId | null;
+    selected: EditorEntity | null;
+    groupLocked: boolean;
+    itemLocked: boolean;
+};
+
+function getSelectedGroupId(selectedEntity: EditorEntity | null): EditorGroupId {
+    if (isDistrict(selectedEntity)) return 'districts';
+    if (isRoad(selectedEntity)) return 'roads';
+    if (isTerrainRegion(selectedEntity)) return 'terrainRegions';
+    if (isAirport(selectedEntity)) return 'airports';
+    if (isAuthoredObject(selectedEntity)) return 'objects';
+    if (isTerrainEdit(selectedEntity)) return 'terrain';
+    return 'vantage';
+}
+
+function getTypeLabel(selected: EditorEntity): string {
+    if (isDistrict(selected)) return 'DISTRICT';
+    if (isRoad(selected)) return 'ROAD';
+    if (isTerrainRegion(selected)) return 'REGION';
+    if (isAirport(selected)) return 'AIRPORT';
+    if (isAuthoredObject(selected)) return 'OBJECT';
+    if (isTerrainEdit(selected)) return 'TERRAIN';
+    return 'VANTAGE';
+}
+
+export function InspectorPanel({ store, controller }: { store: EditorStore; controller: InspectorController }) {
+    const { document, selectedId, selected, groupLocked, itemLocked } = useStore<InspectorSelection>(
+        store,
+        (state) => {
+            const selectedEntity = getEntityById(state.document, state.selection.selectedId);
+            const groupId = getSelectedGroupId(selectedEntity);
+            return {
+                document: state.document,
+                selectedId: state.selection.selectedId,
+                selected: selectedEntity,
+                groupLocked: state.layers.groupLocked[groupId] === true,
+                itemLocked: state.selection.selectedId !== null && state.layers.itemLocked[state.selection.selectedId] === true
+            };
+        },
+        shallowEqual
+    );
+
+    if (!selected || !selectedId) {
         return (
             <Panel title="Properties" copy="Selection details and terrain systems stay docked off the canvas, not stacked over it." testId="inspector-empty">
                 <HintCard className="text-center">Select an object to edit its properties.</HintCard>
@@ -52,24 +77,26 @@ export function InspectorPanel({ store, controller }) {
 
     const locked = groupLocked || itemLocked;
 
-    function updateProperty(key, value) {
+    function updateProperty(key: string, value: unknown) {
         store.runCommand({ type: 'change-property', entityId: selectedId, key, value });
     }
 
-    function updateCenter(axis, value) {
-        if (selected.center) {
-            const next = [...selected.center];
+    function updateCenter(axis: 0 | 1, value: number) {
+        if ('center' in selected && Array.isArray(selected.center)) {
+            const next: [number, number] = [selected.center[0], selected.center[1]];
             next[axis] = value;
             store.runCommand({ type: 'move-entity', entityId: selectedId, nextCenter: next });
             return;
         }
-        const point = { x: selected.x, z: selected.z };
-        if (axis === 0) point.x = value;
-        else point.z = value;
-        store.runCommand({ type: 'move-entity', entityId: selectedId, nextPoint: point });
+        if ('x' in selected && 'z' in selected && typeof selected.x === 'number' && typeof selected.z === 'number') {
+            const point = { x: selected.x, z: selected.z };
+            if (axis === 0) point.x = value;
+            else point.z = value;
+            store.runCommand({ type: 'move-entity', entityId: selectedId, nextPoint: point });
+        }
     }
 
-    const typeLabel = isDistrict(selected) ? 'DISTRICT' : isRoad(selected) ? 'ROAD' : isTerrainRegion(selected) ? 'REGION' : isAirport(selected) ? 'AIRPORT' : isAuthoredObject(selected) ? 'OBJECT' : isTerrainEdit(selected) ? 'TERRAIN' : 'VANTAGE';
+    const typeLabel = getTypeLabel(selected);
 
     return (
         <Panel
@@ -95,13 +122,13 @@ export function InspectorPanel({ store, controller }) {
                         <NumberInputField
                             label="Coord X"
                             disabled={locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0)}
-                            value={selected.center ? selected.center[0] : selected.x}
+                            value={'center' in selected && Array.isArray(selected.center) ? selected.center[0] : ('x' in selected ? selected.x : 0)}
                             onChange={(event) => updateCenter(0, Number(event.target.value))}
                         />
                         <NumberInputField
                             label="Coord Z"
                             disabled={locked || (isTerrainEdit(selected) && Array.isArray(selected.points) && selected.points.length > 0)}
-                            value={selected.center ? selected.center[1] : selected.z}
+                            value={'center' in selected && Array.isArray(selected.center) ? selected.center[1] : ('z' in selected ? selected.z : 0)}
                             onChange={(event) => updateCenter(1, Number(event.target.value))}
                         />
                     </div>
@@ -132,7 +159,7 @@ export function InspectorPanel({ store, controller }) {
                         <SelectField
                             label="Road Kind"
                             disabled={locked}
-                            value={selected.kind}
+                            value={selected.kind || 'road'}
                             onChange={(value) => updateProperty('kind', value)}
                             options={ROAD_KINDS.map((option) => ({ value: option, label: option }))}
                             testId="field-road-kind"
@@ -210,13 +237,14 @@ export function InspectorPanel({ store, controller }) {
 
                 {!isDistrict(selected) && !isRoad(selected) && !isTerrainEdit(selected) && !isTerrainRegion(selected) && !isAirport(selected) && !isAuthoredObject(selected) ? (
                     <>
-                        <RangeNumberField label="Altitude (m)" value={selected.y || 0} min={0} max={3000} step={10} disabled={locked} onChange={(value) => updateProperty('y', value)} />
-                        <RangeNumberField label="Tilt (deg)" value={selected.tilt || 45} min={5} max={85} step={1} disabled={locked} onChange={(value) => updateProperty('tilt', value)} />
+                        <RangeNumberField label="Altitude (m)" value={(selected as EditorVantageEntity).y || 0} min={0} max={3000} step={10} disabled={locked} onChange={(value) => updateProperty('y', value)} />
+                        <RangeNumberField label="Tilt (deg)" value={(selected as EditorVantageEntity).tilt || 45} min={5} max={85} step={1} disabled={locked} onChange={(value) => updateProperty('tilt', value)} />
                         <Button
                             type="button"
                             variant="accent"
                             onClick={() => {
-                                const url = `/fsim.html?x=${selected.x}&y=${selected.y || 0}&z=${selected.z}&tilt=${selected.tilt || 45}&fog=${selected.fog || 0}&clouds=${selected.clouds || 0}&lighting=${selected.lighting || 'noon'}`;
+                                const vantage = selected as EditorVantageEntity;
+                                const url = `/fsim.html?x=${vantage.x}&y=${vantage.y || 0}&z=${vantage.z}&tilt=${vantage.tilt || 45}&fog=${vantage.fog || 0}&clouds=${vantage.clouds || 0}&lighting=${vantage.lighting || 'noon'}`;
                                 window.open(url, '_blank');
                             }}
                         >

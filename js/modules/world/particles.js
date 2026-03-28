@@ -1,11 +1,40 @@
+// @ts-check
+
 import * as THREE from 'three';
 
+/**
+ * @typedef {{
+ *   active: boolean,
+ *   life: number,
+ *   maxLife: number,
+ *   pos: THREE.Vector3,
+ *   vel: THREE.Vector3,
+ *   size: number,
+ *   growth: number,
+ *   r: number,
+ *   g: number,
+ *   b: number
+ * }} ParticleEntry
+ */
+
+/**
+ * @typedef {{
+ *   scene: THREE.Scene
+ * }} CreateParticleSystemArgs
+ */
+
+/**
+ * @param {CreateParticleSystemArgs} args
+ */
 export function createParticleSystem({ scene }) {
   // Global Particle Texture (For Contrails/Smoke)
   const particleCanvas = document.createElement('canvas');
   particleCanvas.width = 64;
   particleCanvas.height = 64;
   const pCtx = particleCanvas.getContext('2d');
+  if (!pCtx) {
+    throw new Error('Failed to create particle canvas context');
+  }
   const pGrad = pCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
   pGrad.addColorStop(0, 'rgba(255,255,255,1)');
   pGrad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
@@ -28,17 +57,28 @@ export function createParticleSystem({ scene }) {
   particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(particleMesh);
 
+  /** @type {ParticleEntry[]} */
   const particles = [];
   for (let i = 0; i < MAX_PARTICLES; i++) {
     particles.push({ active: false, life: 0, maxLife: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(), size: 1, growth: 1, r: 1, g: 1, b: 1 });
     particleMesh.setColorAt(i, new THREE.Color(0x000000));
 
-    let m = new THREE.Matrix4();
+    const m = new THREE.Matrix4();
     m.scale(new THREE.Vector3(0, 0, 0));
     particleMesh.setMatrixAt(i, m);
   }
   let pIdx = 0;
 
+  /**
+   * @param {THREE.Vector3} pos
+   * @param {THREE.Vector3} vel
+   * @param {number} size
+   * @param {number} growth
+   * @param {number} life
+   * @param {number} r
+   * @param {number} g
+   * @param {number} b
+   */
   function spawnParticle(pos, vel, size, growth, life, r, g, b) {
     const p = particles[pIdx];
     p.active = true;

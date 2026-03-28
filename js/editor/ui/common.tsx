@@ -1,15 +1,15 @@
 import * as React from 'react';
 
 import type { EditorStore } from '../core/types.js';
-import { Badge } from './components/ui/badge.jsx';
-import { Button } from './components/ui/button.jsx';
-import { Card, CardContent } from './components/ui/card.jsx';
-import { Input } from './components/ui/input.jsx';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select.jsx';
-import { Separator } from './components/ui/separator.jsx';
-import { Slider } from './components/ui/slider.jsx';
-import { Toggle } from './components/ui/toggle.jsx';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip.jsx';
+import { Badge } from './components/ui/badge';
+import { Button } from './components/ui/button';
+import { Card, CardContent } from './components/ui/card';
+import { Input } from './components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
+import { Separator } from './components/ui/separator';
+import { Slider } from './components/ui/slider';
+import { Toggle } from './components/ui/toggle';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
 import { cn } from './utils';
 
 type ComparableRecord = Record<string, unknown>;

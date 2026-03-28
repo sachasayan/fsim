@@ -1,26 +1,59 @@
+// @ts-check
+
+/**
+ * @typedef {{
+ *   id?: string | null,
+ *   shaderVariantId?: string | null,
+ *   shaderProviderId?: string | null,
+ *   metadata?: unknown,
+ *   build: (...args: unknown[]) => unknown
+ * }} ShaderVariantEntry
+ */
+
+/** @typedef {ShaderVariantEntry['build'] & { shaderVariantId?: string | null, shaderProviderId?: string | null }} ShaderVariantBuilder */
+
+/**
+ * @typedef {{
+ *   variants: Map<string, ShaderVariantEntry>
+ * }} ShaderVariantRegistry
+ */
+
+/**
+ * @param {unknown} entry
+ * @returns {ShaderVariantEntry | null}
+ */
 function normalizeVariantEntry(entry) {
     if (!entry) return null;
 
     if (typeof entry === 'function') {
+        const builder = /** @type {ShaderVariantBuilder} */ (entry);
         return {
-            id: entry.shaderProviderId || entry.name || null,
-            build: entry
+            id: builder.shaderProviderId || builder.name || null,
+            build: builder
         };
     }
 
-    if (typeof entry.build !== 'function') {
-        throw new Error(`Shader variant "${entry.id || 'unknown'}" is missing a build() function`);
+    const variantEntry = /** @type {Partial<ShaderVariantEntry>} */ (entry);
+    if (typeof variantEntry.build !== 'function') {
+        throw new Error(`Shader variant "${variantEntry.id || 'unknown'}" is missing a build() function`);
     }
 
-    return entry;
+    return /** @type {ShaderVariantEntry} */ (variantEntry);
 }
 
+/**
+ * @returns {ShaderVariantRegistry}
+ */
 export function createShaderVariantRegistry() {
     return {
         variants: new Map()
     };
 }
 
+/**
+ * @param {ShaderVariantRegistry} registry
+ * @param {unknown} entry
+ */
 export function registerShaderVariant(registry, entry) {
     const normalized = normalizeVariantEntry(entry);
     if (!normalized) return;
@@ -38,6 +71,10 @@ export function registerShaderVariant(registry, entry) {
     registry.variants.set(normalized.id, normalized);
 }
 
+/**
+ * @param {ShaderVariantRegistry} registry
+ * @param {unknown[]} [entries]
+ */
 export function registerShaderVariants(registry, entries = []) {
     for (const entry of entries) {
         if (Array.isArray(entry)) {
@@ -48,6 +85,10 @@ export function registerShaderVariants(registry, entries = []) {
     }
 }
 
+/**
+ * @param {ShaderVariantRegistry | null | undefined} registry
+ * @returns {ShaderVariantEntry[]}
+ */
 export function listShaderVariants(registry) {
     if (!registry?.variants || !(registry.variants instanceof Map)) {
         return [];

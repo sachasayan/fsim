@@ -45,6 +45,9 @@ export interface EditorDistrict extends EditorEntityBase {
     type?: string;
     center: EditorPoint2;
     points?: EditorPoint2[];
+    turbine_density?: number;
+    rotor_radius?: number;
+    setback?: number;
 }
 
 export interface EditorRoad extends EditorEntityBase {
@@ -57,8 +60,48 @@ export interface EditorRoad extends EditorEntityBase {
 }
 
 export interface EditorTerrainGenerator {
+    preset?: string;
+    seed?: number;
+    macro?: {
+        baseOffset?: number;
+        continentalAmplitude?: number;
+        ridgeAmplitude?: number;
+        foothillAmplitude?: number;
+        valleyAmplitude?: number;
+        warpAmplitude?: number;
+        rangeCount?: number;
+        rangeLength?: number;
+        rangeWidth?: number;
+        upliftStrength?: number;
+        massifStrength?: number;
+        escarpmentStrength?: number;
+        plateauHeight?: number;
+        summitSharpness?: number;
+        [key: string]: unknown;
+    };
+    landforms?: {
+        glacialValleyStrength?: number;
+        canyonDepth?: number;
+        canyonWidth?: number;
+        basinDepth?: number;
+        basinBreadth?: number;
+        [key: string]: unknown;
+    };
+    hydrology?: {
+        riverCount?: number;
+        riverStrength?: number;
+        lakeCount?: number;
+        lakeStrength?: number;
+        erosionStrength?: number;
+        gorgeStrength?: number;
+        incisionBias?: number;
+        floodplainWidth?: number;
+        [key: string]: unknown;
+    };
     preview?: {
         overlay?: string;
+        resolution?: number;
+        showContours?: boolean;
         [key: string]: unknown;
     };
     [key: string]: unknown;
@@ -97,11 +140,22 @@ export interface EditorTerrainEdit extends EditorEntityBase {
     x: number;
     z: number;
     radius?: number;
+    delta?: number;
+    target_height?: number;
+    opacity?: number;
     points?: EditorPoint2[];
     bounds?: EditorBounds;
 }
 
-export interface EditorVantageEntity extends EditorEntityBase {}
+export interface EditorVantageEntity extends EditorEntityBase {
+    x: number;
+    z: number;
+    y?: number;
+    tilt?: number;
+    fog?: number;
+    clouds?: number;
+    lighting?: string;
+}
 
 export type EditorEntity =
     | EditorDistrict
@@ -181,6 +235,81 @@ export interface EditorToast {
     timestamp: number;
 }
 
+export type EditorTerrainPreviewOverlay =
+    | 'height'
+    | 'rivers'
+    | 'lakes'
+    | 'moisture'
+    | 'flow'
+    | 'erosion'
+    | 'gorge'
+    | 'cliff'
+    | 'floodplain'
+    | 'talus';
+
+export interface EditorTerrainPreviewSnapshot {
+    pixels: Uint8ClampedArray;
+    width: number;
+    height: number;
+    bounds: EditorBounds;
+    overlayKind?: EditorTerrainPreviewOverlay;
+    __canvas?: HTMLCanvasElement;
+}
+
+export interface EditorTerrainHydrologyRiver {
+    points: EditorPoint2[];
+}
+
+export interface EditorTerrainHydrologyLake {
+    x: number;
+    z: number;
+    radius: number;
+}
+
+export interface EditorTerrainHydrologySummary {
+    cliffCoverage?: number;
+    gorgeCoverage?: number;
+    peakRelief?: number;
+    [key: string]: unknown;
+}
+
+export interface EditorTerrainLabMetadata {
+    hydrology: {
+        rivers: EditorTerrainHydrologyRiver[];
+        lakes: EditorTerrainHydrologyLake[];
+        riverCount?: number;
+        lakeCount?: number;
+        summary?: EditorTerrainHydrologySummary;
+        [key: string]: unknown;
+    };
+    [key: string]: unknown;
+}
+
+export interface EditorTerrainRegionTile {
+    tileX: number;
+    tileZ: number;
+}
+
+export interface EditorTerrainRegionHover extends EditorTerrainRegionTile {
+    ownerId?: EditorEntityId | null;
+}
+
+export interface EditorTerrainRegionSelectionTile extends EditorTerrainRegionTile {
+    blocked?: boolean;
+}
+
+export interface EditorTerrainRegionSelection {
+    startTile?: EditorTerrainRegionTile;
+    endTile?: EditorTerrainRegionTile;
+    mode?: 'move';
+    entityId?: EditorEntityId;
+    tileX?: number;
+    tileZ?: number;
+    bounds: EditorBounds;
+    valid?: boolean;
+    tiles: EditorTerrainRegionSelectionTile[];
+}
+
 export interface EditorStoreState {
     document: EditorDocument;
     viewport: EditorViewport;
@@ -228,15 +357,15 @@ export interface EditorStoreState {
             configVersion: number;
             previewStatus: string;
             previewDirty: boolean;
-            previewSnapshot: unknown;
+            previewSnapshot: EditorTerrainPreviewSnapshot | null;
             previewKey: string | null;
             activeSubtool: string;
             selectedOverlay: string | undefined;
             pendingApply: boolean;
-            lastMetadata: unknown;
+            lastMetadata: EditorTerrainLabMetadata | null;
         };
-        terrainRegionHover: unknown;
-        terrainRegionSelection: unknown;
+        terrainRegionHover: EditorTerrainRegionHover | null;
+        terrainRegionSelection: EditorTerrainRegionSelection | null;
     };
 }
 
@@ -506,12 +635,12 @@ export interface EditorSetToastAction {
 
 export interface EditorSetTerrainRegionHoverAction {
     type: 'set-terrain-region-hover';
-    hover: unknown;
+    hover: EditorTerrainRegionHover | null;
 }
 
 export interface EditorSetTerrainRegionSelectionAction {
     type: 'set-terrain-region-selection';
-    selection: unknown;
+    selection: EditorTerrainRegionSelection | null;
 }
 
 export interface EditorClearTerrainRegionSelectionAction {
@@ -531,11 +660,11 @@ export interface EditorSetTerrainGeneratorConfigAction {
 
 export interface EditorSetTerrainPreviewAction {
     type: 'set-terrain-preview';
-    snapshot: unknown;
+    snapshot: EditorTerrainPreviewSnapshot | null;
     previewKey: string | null;
     status?: string;
     previewDirty?: boolean;
-    metadata?: unknown;
+    metadata?: EditorTerrainLabMetadata | null;
 }
 
 export interface EditorSetTerrainPreviewStatusAction {

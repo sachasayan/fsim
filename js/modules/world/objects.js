@@ -1,3 +1,5 @@
+// @ts-check
+
 import { createEnvironment } from './environment.js';
 import { createTerrainSystem } from './terrain.js';
 import { createAirportSystem } from './airports.js';
@@ -16,6 +18,28 @@ import {
   registerShaderVariants
 } from './ShaderVariantRegistry.js';
 
+/**
+ * @typedef WorldObjectsArgs
+ * @property {import('three').Scene} scene
+ * @property {import('three').WebGLRenderer} renderer
+ * @property {unknown} Noise
+ * @property {unknown} PHYSICS
+ * @property {unknown} AIRCRAFT
+ * @property {unknown} WEATHER
+ * @property {ReturnType<typeof createRuntimeLodSettings> | null | undefined} [lodSettings]
+ */
+
+/**
+ * @typedef AircraftSystemArgs
+ * @property {import('three').Scene} scene
+ * @property {import('three').WebGLRenderer} [renderer]
+ */
+
+/** @typedef {Awaited<ReturnType<typeof warmupShaderPrograms>>} ShaderValidationSnapshot */
+
+/**
+ * @param {WorldObjectsArgs} args
+ */
 export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER, lodSettings }) {
   lodSettings = lodSettings || createRuntimeLodSettings();
   normalizeLodSettings(lodSettings);
@@ -31,7 +55,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
   const airportSystem = createAirportSystem({ scene, renderer, getTerrainHeight: terrain.getTerrainHeight, lodSettings });
   const cloudSystem = createCloudSystem({ scene });
   const particles = createParticleSystem({ scene });
-  const aircraft = createAircraftSystem({ scene, renderer });
+  const aircraft = createAircraftSystem(/** @type {AircraftSystemArgs} */ ({ scene, renderer }));
   const tokenSystem = createTokenSystem({
     scene,
     getTerrainHeight: terrain.getTerrainHeight,
@@ -49,15 +73,25 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     cloudSystem.getShaderValidationVariants?.()
   ]);
   const shaderVariants = listShaderVariants(shaderVariantRegistry);
-  const shaderVariantManifest = shaderVariants.map((variant) => ({
-    id: variant.id,
-    system: variant.metadata?.system || 'unknown',
-    metadata: variant.metadata || null
-  }));
+  const shaderVariantManifest = shaderVariants.map((variant) => {
+    const variantMetadata = /** @type {{ system?: string } | null | undefined } */ (variant.metadata);
+    return {
+      id: variant.id,
+      system: variantMetadata?.system || 'unknown',
+      metadata: variant.metadata || null
+    };
+  });
+  /** @type {Promise<ShaderValidationSnapshot> | null} */
   let warmupPromise = null;
+  /** @type {ShaderValidationSnapshot | null} */
   let shaderValidationReport = null;
 
+  /**
+   * @param {Record<string, unknown>} [overrides]
+   * @returns {ShaderValidationSnapshot}
+   */
   function createShaderValidationSnapshot(overrides = {}) {
+    /** @type {Omit<ShaderValidationSnapshot, 'summary'>} */
     const snapshot = {
       compiled: false,
       skipped: false,
@@ -74,10 +108,16 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
       })),
       ...overrides
     };
-    snapshot.summary = summarizeShaderValidationReport(snapshot);
-    return snapshot;
+    return {
+      ...snapshot,
+      summary: summarizeShaderValidationReport(snapshot)
+    };
   }
 
+  /**
+   * @param {import('three').Camera} camera
+   * @param {{ force?: boolean, onProgress?: ((progress: unknown) => void) | null }} [options]
+   */
   function validateShaders(camera, { force = false, onProgress = null } = {}) {
     if (warmupPromise && !force) return warmupPromise;
     warmupPromise = warmupShaderPrograms({
@@ -98,6 +138,10 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     return warmupPromise;
   }
 
+  /**
+   * @param {import('three').Camera} camera
+   * @param {{ force?: boolean, onProgress?: ((progress: unknown) => void) | null }} [options]
+   */
   function warmupShaders(camera, options = {}) {
     return validateShaders(camera, options);
   }

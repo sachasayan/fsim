@@ -1,6 +1,39 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 
+/**
+ * @typedef {{
+ *   lightAmbientBase?: number,
+ *   lightDirectBase?: number,
+ *   hemiSkyColor?: THREE.ColorRepresentation,
+ *   hemiGroundColor?: THREE.ColorRepresentation,
+ *   dirColor?: THREE.ColorRepresentation,
+ *   skyTurbidity?: number,
+ *   skyRayleigh?: number,
+ *   skyMieCoefficient?: number,
+ *   skyMieDirectionalG?: number,
+ *   hazeColor?: THREE.ColorRepresentation,
+ *   hazeOpacity?: number,
+ *   starOpacity?: number,
+ *   sunPhiDeg?: number,
+ *   sunThetaDeg?: number
+ * }} EnvironmentWeatherState
+ */
+
+/**
+ * @typedef {{
+ *   scene: THREE.Scene,
+ *   renderer: THREE.WebGLRenderer,
+ *   WEATHER?: EnvironmentWeatherState | null,
+ *   shadowsEnabled?: boolean
+ * }} CreateEnvironmentArgs
+ */
+
+/**
+ * @param {CreateEnvironmentArgs} args
+ */
 export function createEnvironment({ scene, renderer, WEATHER, shadowsEnabled = true }) {
   const hemiBase = WEATHER?.lightAmbientBase ?? 0.25;
   const dirBase = WEATHER?.lightDirectBase ?? 1.0;
@@ -79,6 +112,10 @@ export function createEnvironment({ scene, renderer, WEATHER, shadowsEnabled = t
   );
   scene.add(stars);
 
+  /**
+   * @param {EnvironmentWeatherState | null | undefined} weather
+   * @param {{ refreshEnvironmentMap?: boolean }} [options]
+   */
   function applyEnvironmentFromWeather(weather, options = {}) {
     const { refreshEnvironmentMap = false } = options;
     hemiLight.color.setHex(weather?.hemiSkyColor ?? 0x444455);

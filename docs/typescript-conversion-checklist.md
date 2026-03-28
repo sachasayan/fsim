@@ -44,7 +44,7 @@
 ## Phase 1: Establish a Safe Editor Beachhead
 
 - [x] Convert `src/editor-app/main.jsx` to TypeScript.
-- [ ] Convert `js/editor/index.js` if it remains a thin boundary.
+- [x] Convert `js/editor/index.js` if it remains a thin boundary.
 - [x] Verify Vite resolves `.ts` and `.tsx` entrypoints correctly.
 - [ ] Keep the initial surface area small enough that build failures are easy to diagnose.
 - [x] Add any missing ambient declarations needed for editor bootstrapping.
@@ -52,7 +52,7 @@
 ### First Slice Candidates
 
 - [x] `src/editor-app/main.jsx`
-- [ ] `js/editor/index.js`
+- [x] `js/editor/index.js`
 - [ ] Any small helper modules directly imported by the editor entrypoint
 
 ## Phase 2: Type the Editor Data Model First
@@ -61,13 +61,13 @@
 - [x] Define shared types for selection and tool state.
 - [x] Define shared types for the editor store shape.
 - [x] Define shared types for controller actions and command payloads.
-- [ ] Convert editor core modules before broad React component conversion.
+- [x] Start converting editor core modules before broad React component conversion.
 
 ### Core Files To Target
 
-- [ ] `js/editor/core/document.js`
-- [ ] `js/editor/core/store.js`
-- [ ] `js/editor/core/commands.js`
+- [x] `js/editor/core/document.js`
+- [x] `js/editor/core/store.js`
+- [x] `js/editor/core/commands.js`
 
 ### Desired Outcome
 
@@ -80,6 +80,9 @@
 - [x] Added declaration files for `document.js`, `store.js`, and `commands.js` so TypeScript consumers can get typed editor-core APIs before those runtime modules are renamed.
 - [x] Added discriminated command and store-action types for the current editor-core surface so future `.ts/.tsx` consumers can use typed dispatch and command payloads.
 - [x] Keep the runtime-facing core modules in `.js` for now because they are still loaded directly by Node tests and browser/runtime code without a transpilation layer.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/editor/core/document.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/editor/core/commands.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/editor/core/store.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 
 ## Phase 3: Convert Editor React Components in Batches
 
@@ -91,7 +94,7 @@
 
 ### Suggested Batch Order
 
-- [ ] `js/editor/ui/components/ui/*`
+- [x] `js/editor/ui/components/ui/*`
 - [x] `js/editor/ui/common.jsx`
 - [x] Simple stateless panels and utility components
 - [x] Stateful panels that consume store/controller state
@@ -115,26 +118,55 @@
 - [x] Converted a second editor-control batch: `Toast`, `LayersDropdown`, and `CommandStrip`.
 - [x] Converted the top-level editor shell component: `js/editor/ui/app.tsx`.
 - [x] Converted another editor UI batch: `ObjectToolPanel` and `ShortcutHelpModal`.
+- [x] Converted `js/editor/ui/InspectorPanel.tsx`.
+- [x] Converted `js/editor/ui/TerrainLabPanel.tsx`.
+- [x] Verified the inspector/detail-layer batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Converted the editor UI primitive component set under `js/editor/ui/components/ui/*`.
+- [x] Verified the primitive component batch with both `npm run typecheck` and `npm run editor:build`.
+
+### Phase 3 Follow-Up Notes
+
+- [x] Added type predicate declarations for `js/modules/editor/objectTypes.js` so TS components can narrow editor entity variants without rewriting the runtime helper module first.
 - [x] Verified the `EditorApp` and follow-on UI batches with both `npm run typecheck` and `npm run editor:build`.
 - [x] Verified the second editor-control batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Tightened the shared terrain generator config type in `js/editor/core/types.ts` so `TerrainLabPanel.tsx` could use the nested config shape directly instead of relying on repeated local casts.
 
 ## Phase 4: Convert Low-Risk Runtime and Utility Modules
 
 - [ ] Convert isolated helpers with well-bounded inputs and outputs before central orchestration files.
+- [x] Convert a first low-risk runtime/helper batch to establish the post-editor migration pattern.
 - [ ] Introduce shared runtime/domain types only where they reduce repetition.
 - [ ] Avoid pulling large world modules into scope until helper types are already in place.
 
 ### Good Early Runtime Candidates
 
-- [ ] `js/modules/core/logging.js`
-- [ ] `js/modules/ui/MapColors.js`
-- [ ] `js/modules/world/config.js`
+- [x] `js/modules/core/logging.js`
+- [x] `js/modules/ui/MapColors.js`
+- [x] `js/modules/world/config.js`
+- [x] `js/modules/world/WorldConfig.js`
 - [ ] `js/modules/physics/PhysicsUtils.js`
 - [ ] Other small utility or config-style modules with minimal browser-global coupling
+
+### Phase 4 Notes
+
+- [x] Converted `js/modules/core/logging.ts` as the first low-risk runtime helper and updated JS consumers to use extensionless imports so the helper can stay usable from both JS and TS files.
+- [x] Converted `js/modules/ui/MapColors.ts` as the first pure runtime utility and tightened its color-array return type to a fixed RGB tuple.
+- [x] Converted `js/modules/world/config.ts` and `js/modules/world/WorldConfig.ts` as a small constant/config batch and updated the broad set of JS/TS consumers to use extensionless imports.
+- [x] Converted `js/modules/world/AirportLayout.ts` as the first bounded world-domain helper after the config/constants batch, keeping the JS callers stable through extensionless imports.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/MapDataUtils.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Converted `js/modules/world/AuthoredObjectCatalog.ts` as a small pure catalog/normalization module and updated editor/runtime callers to use extensionless imports.
+- [x] Converted `js/modules/world/apron.ts` as a small Three.js airport rendering helper, using direct library types and a narrow argument contract instead of widening the whole airport system.
+- [x] Converted `js/modules/world/radar.ts` as another isolated airport rendering helper, reusing the typed airport config and the same narrow LOD argument pattern as `apron.ts`.
+- [x] Converted `js/modules/world/LodSystem.ts` as a shared runtime helper and updated world/runtime callers to use extensionless imports, strengthening a central LOD contract before larger renderer modules.
+- [x] Converted `js/modules/world/hangar.ts` as the first slightly heavier airport renderer and aligned it with the current typed config shape by using `yawDeg` instead of the stale `angle` field.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/runway.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/airports.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 
 ## Phase 5: Type Worker and Terrain/World Boundaries
 
 - [ ] Define explicit worker request and response message types.
+- [x] Convert low-risk editor canvas worker managers after their message contracts are typed locally.
+- [x] Convert the first editor canvas worker implementations with typed payload parsing and results.
 - [ ] Convert worker managers after their message contracts are typed.
 - [ ] Convert worker implementations with typed payload parsing and typed results.
 - [ ] Expand shared terrain/world types carefully to avoid large circular dependencies.
@@ -151,6 +183,15 @@
 - [ ] Large nested data structures for terrain generation
 - [ ] Implicit cross-module contracts in world and terrain systems
 
+### Phase 5 Notes
+
+- [x] Converted `js/editor/canvas/EditorMapTileWorkerManager.ts` and `js/editor/canvas/TerrainPreviewWorkerManager.ts` as the first canvas-side worker boundary batch.
+- [x] Converted `js/editor/canvas/EditorMapTileWorker.ts` and `js/editor/canvas/TerrainPreviewWorker.ts` to TypeScript and updated the worker-manager URLs to keep the manager/worker boundary aligned after the renames.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/editor/canvas/render.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added shared terrain-preview, terrain-region hover/selection, and terrain metadata types to `js/editor/core/types.ts` so the canvas controller and UI can stop depending on `unknown` for those editor-owned state seams.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/editor/canvas/controller.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [ ] Decide when to extract shared worker request/response types instead of keeping local worker-message shapes inside each manager.
+
 ## Phase 6: Convert Large Orchestrator Files Late
 
 - [ ] Leave the central bootstrap/orchestration files until imported modules and shared types are in place.
@@ -162,6 +203,18 @@
 - [ ] `js/modules/sim.js`
 - [ ] Large world assembly/orchestration modules
 - [ ] Any file that currently acts as a catch-all integration layer
+
+### Phase 6 Notes
+
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/objects.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/ShaderWarmup.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/WorldLodManager.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/ShaderVariantRegistry.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/clouds.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/authoredObjects.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/tokens.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added JSDoc-first `@ts-check` passes to `js/modules/world/particles.js` and `js/modules/world/environment.js` together and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Restored native-browser runtime compatibility for shared converted helpers by adding `.js` companion modules for `logging`, `LodSystem`, `config`, `AirportLayout`, `AuthoredObjectCatalog`, `WorldConfig`, and `MapColors`, and by updating direct-runtime JS imports to use explicit `.js` specifiers.
 
 ## Phase 7: Tighten Compiler Strictness Gradually
 
@@ -199,16 +252,49 @@
 - [x] Add TypeScript tooling and a baseline `typecheck` script.
 - [x] Add a minimal `tsconfig.json` configured for incremental adoption.
 - [x] Convert `src/editor-app/main.jsx` to `main.ts` or `main.tsx` as appropriate.
-- [ ] Inspect `js/editor/index.js` and convert it only if the boundary remains thin.
+- [x] Inspect `js/editor/index.js` and convert it only if the boundary remains thin.
 - [ ] Introduce the first shared editor/store/document types needed to support that slice.
 
 ## Progress Notes
 
 - [x] Captured the first batch: TypeScript dependency, baseline `tsconfig.json`, `typecheck` script, and editor entrypoint conversion to `src/editor-app/main.ts`.
 - [x] Updated `src/editor-app/index.html` to point at `main.ts`.
-- [x] `js/editor/index.js` remains deferred because it is larger than the first safe rename boundary.
+- [x] `js/editor/index.js` initially stayed deferred because it was larger than the first safe rename boundary.
+- [x] Converted `js/editor/index.js` to `js/editor/index.tsx` after the editor UI shell and controller contract had enough typed seams around it.
+- [x] Added `js/editor/canvas/controller.d.ts` so the browser bootstrap can depend on a typed controller contract without converting the controller implementation yet.
 - [x] First build-system surprise: TypeScript needed an ambient `declare module '*.css'` file for the editor entrypoint side-effect stylesheet import.
 - [x] Second migration constraint: several editor core modules are executed directly as `.js`, so declaration-first typing is the safest next step before wider file renames.
 - [x] Third migration pattern: prefer extensionless imports when moving editor UI helpers to TS so Vite and TypeScript agree on resolution without enabling TS-extension imports.
 - [x] Fourth migration pattern: when `useStore()` selectors plus `shallowEqual` lose inference, add an explicit generic at the call site instead of weakening the shared store types.
 - [x] Fifth migration pattern: when a converted child component requires a real prop contract, tighten the nearest TSX parent boundary instead of loosening the child prop type back to `unknown`.
+- [x] Sixth migration pattern: declaration files for existing JS type guards can unlock large TSX conversions by giving TypeScript real narrowing behavior without converting the helper module yet.
+- [x] Seventh migration pattern: when a large TSX component depends on a nested config object, tighten the shared domain type once in `core/types.ts` instead of repeating local casts throughout the component.
+- [x] Eighth migration pattern: Radix and `cva` wrapper components can usually move straight to TSX with library-provided prop/ref types, without requiring tsconfig or build changes.
+- [x] Ninth migration pattern: if a converted browser entry starts rendering JSX directly, promote it to `.tsx` immediately rather than fighting syntax errors in `.ts`.
+- [x] Tenth migration pattern: for core JS modules under `@ts-check`, shared typedef imports plus explicit per-branch narrowing are usually enough to make the implementation type-safe without a full rename.
+- [x] Eleventh migration pattern: command/mutation modules often need explicit tuple and point-array casts at the write sites, even when the surrounding entity narrowing is already typed.
+- [x] Twelfth migration pattern: reducer-style store modules often need explicit casts only at the deepest dynamic-update points, such as nested path writes, while the rest of the switch can stay strongly typed through the shared action/state contracts.
+- [x] Thirteenth migration pattern: small browser worker managers are a good first canvas/runtime seam because they can move to `.ts` with local message and pending-job types before the larger controller or worker implementation files are ready.
+- [x] Fourteenth migration pattern: once a worker manager is in TypeScript, renaming the paired worker implementation is usually cheapest in the next batch because the `new URL(...)` entrypoint needs to stay aligned with the source file rename anyway.
+- [x] Fifteenth migration pattern: large render-layer canvas files respond well to `@ts-check` plus explicit group-based type-guard narrowing, because most of the dynamic behavior already follows layer-group conventions even when the shared store fields are still loose.
+- [x] Sixteenth migration pattern: before putting `@ts-check` on a large controller file, it helps to pull any controller-owned `unknown` state blobs into shared editor types first; once those seams are named, the remaining controller errors are usually local event or narrowing issues instead of cross-file shape ambiguity.
+- [x] Seventeenth migration pattern: for small runtime helpers that are imported from both JS and TS files, extensionless imports are the easiest way to rename the helper to `.ts` without forcing the surrounding JS modules to convert in the same batch.
+- [x] Eighteenth migration pattern: small config/constant modules are worth converting in pairs when they are widely imported together, because the import-update churn is mostly the same whether we rename one shared constant file or two.
+- [x] Nineteenth migration pattern: once a config module is typed, the next safest world helper is usually the one that mostly composes those constants and pure geometry transforms, because it adds domain typing without dragging rendering or Three.js-heavy code into the same batch.
+- [x] Twentieth migration pattern: for mutation-heavy normalization modules, `@ts-check` works best when shared typedefs describe the intended shapes and the remaining arithmetic/array assumptions are made explicit only at the narrowest hot spots.
+- [x] Twenty-first migration pattern: small catalog modules with normalization helpers are good rename-first candidates even in runtime code, because they centralize stable lookup data and usually only need typed defaults plus a few narrow consumer import updates.
+- [x] Twenty-second migration pattern: very small Three.js helpers can often go straight to `.ts` once their config inputs are typed, as long as the function boundary gets an explicit argument contract and we avoid pulling unrelated scene systems into the same batch.
+- [x] Twenty-third migration pattern: once one tiny rendering helper in a feature area converts cleanly, adjacent helpers with the same dependency profile are often cheap follow-up wins because the input-contract pattern is already established.
+- [x] Twenty-fourth migration pattern: after a few leaf helpers convert cleanly, it’s often worth converting the shared helper they all depend on next, because one import-update batch can strengthen many later runtime conversions at once.
+- [x] Twenty-fifth migration pattern: once config types are authoritative, converting medium-sized helpers can also flush out stale field names in legacy code; letting TypeScript force those alignments is a useful cleanup side effect rather than churn to avoid.
+- [x] Twenty-sixth migration pattern: larger renderer modules with lots of canvas work and shader hookups can still be good `@ts-check` candidates when the surrounding config/helper seams are already typed, because many of the remaining risks are just nullability and argument-contract issues rather than deep domain ambiguity.
+- [x] Twenty-seventh migration pattern: as larger JS modules move under `@ts-check`, typed helper APIs can reveal permissive legacy call shapes; fixing those call sites is useful contract cleanup, not just compiler appeasement.
+- [x] Twenty-eighth migration pattern: top-level orchestrator modules become much more tractable once their subsystems are already typed, but they often still need small local aggregate typedefs and narrow compatibility casts at legacy subsystem boundaries.
+- [x] Twenty-ninth migration pattern: shared aggregation modules often typecheck cleanly under `@ts-check` once they own their report/progress typedefs, but they still need a few explicit “shape recovery” casts at plugin-style boundaries where registry entries or material metadata are intentionally loose.
+- [x] Thirtieth migration pattern: small manager modules around typed helpers can usually be brought under `@ts-check` with one explicit registrable-contract typedef and a narrow `unknown` guard at the registration boundary, without needing to convert every managed subsystem in the same batch.
+- [x] Thirty-first migration pattern: once a shared registry starts owning real entry typedefs, the nearby callers should import and reuse those shapes instead of preserving parallel local assumptions, otherwise type drift just moves outward into the aggregation layer.
+- [x] Thirty-second migration pattern: medium-sized effect systems with worker generation and shader warmup hooks usually typecheck cleanly once their external boundaries are named explicitly, and the remaining friction is often just annotating callback parameters such as warmup-builder cameras or worker messages.
+- [x] Thirty-third migration pattern: world systems that read browser globals can still fit the JSDoc-first path cleanly, but it helps to isolate the global access behind one small typed adapter function instead of repeating `window` casts throughout the module.
+- [x] Thirty-fourth migration pattern: gameplay-style systems with rich local state often typecheck quickly once their entry/event/effect records are named up front, and the most common cleanup is converting optional destructured parameters into a defaulted local options object.
+- [x] Thirty-fifth migration pattern: once a shared runtime path has enough typed seams around it, we can safely widen the batch size and convert two or three adjacent medium-risk modules together, especially when they only need external-boundary typedefs rather than deep internal refactors.
+- [x] Thirty-sixth migration pattern: for codepaths still loaded directly by the browser as native JS modules, renaming a shared helper to `.ts` is not enough by itself; those paths need explicit `.js` import specifiers and real `.js` companion entrypoints until the runtime is fully behind a TS-aware build step.

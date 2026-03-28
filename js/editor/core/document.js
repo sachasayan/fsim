@@ -1,13 +1,40 @@
+// @ts-check
+
 import { normalizeMapData, normalizeRoad } from '../../modules/world/MapDataUtils.js';
 import { objectLabel } from '../../modules/editor/objectTypes.js';
-import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout.js';
+import { getAirportWorldFootprintBounds } from '../../modules/world/AirportLayout';
 
+/** @typedef {import('./types.js').EditorBounds} EditorBounds */
+/** @typedef {import('./types.js').EditorDocument} EditorDocument */
+/** @typedef {import('./types.js').EditorDocumentIndex} EditorDocumentIndex */
+/** @typedef {import('./types.js').EditorDistrict} EditorDistrict */
+/** @typedef {import('./types.js').EditorEntity} EditorEntity */
+/** @typedef {import('./types.js').EditorEntityBase} EditorEntityBase */
+/** @typedef {import('./types.js').EditorEntityId} EditorEntityId */
+/** @typedef {import('./types.js').EditorGroupId} EditorGroupId */
+/** @typedef {import('./types.js').EditorLayerGroup} EditorLayerGroup */
+/** @typedef {import('./types.js').EditorRoad} EditorRoad */
+/** @typedef {import('./types.js').EditorTerrainRegion} EditorTerrainRegion */
+/** @typedef {import('./types.js').EditorAirport} EditorAirport */
+/** @typedef {import('./types.js').EditorAuthoredObject} EditorAuthoredObject */
+/** @typedef {import('./types.js').EditorTerrainEdit} EditorTerrainEdit */
+/** @typedef {import('./types.js').EditorVantageEntity} EditorVantageEntity */
+/** @typedef {import('./types.js').EditorVantageData} EditorVantageData */
+/** @typedef {import('./types.js').EditorWorldData} EditorWorldData */
+
+/** @type {EditorGroupId[]} */
 const ENTITY_GROUPS = ['districts', 'roads', 'terrainRegions', 'airports', 'objects', 'terrain', 'vantage'];
 
+/**
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
 function clone(value) {
     return structuredClone(value);
 }
 
+/** @returns {EditorDocumentIndex} */
 function createEmptyIndex() {
     return {
         entitiesById: new Map(),
@@ -25,6 +52,12 @@ function createEmptyIndex() {
     };
 }
 
+/**
+ * @param {'district' | 'road' | 'terrain' | 'terrain-region' | 'airport' | 'authored-object' | 'vantage'} type
+ * @param {EditorEntityBase} entity
+ * @param {string} [aux]
+ * @returns {string}
+ */
 function computeStableKey(type, entity, aux = '') {
     if (type === 'district') {
         const center = Array.isArray(entity.center) ? entity.center.join(',') : 'na';
@@ -54,11 +87,24 @@ function computeStableKey(type, entity, aux = '') {
     return `vantage:${aux}`;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @returns {EditorEntityId}
+ */
 function createEntityId(document) {
+    /** @type {EditorEntityId} */
     const id = `ent_${document.nextEntityId++}`;
     return id;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorDocument | null | undefined} prevDocument
+ * @param {EditorEntityBase[]} entities
+ * @param {'district' | 'road' | 'terrain' | 'terrain-region' | 'airport' | 'authored-object'} type
+ * @param {EditorGroupId} groupId
+ * @param {(entity: EditorEntityBase, index: number) => string} auxBuilder
+ */
 function indexGroup(document, prevDocument, entities, type, groupId, auxBuilder) {
     for (let index = 0; index < entities.length; index++) {
         const entity = entities[index];
@@ -70,14 +116,21 @@ function indexGroup(document, prevDocument, entities, type, groupId, auxBuilder)
             entity.__editorId = reused || createEntityId(document);
         }
 
-        document.index.entitiesById.set(entity.__editorId, entity);
+        document.index.entitiesById.set(entity.__editorId, /** @type {EditorEntity} */ (entity));
         document.index.groupIds[groupId].push(entity.__editorId);
         document.index.stableKeyById.set(entity.__editorId, stableKey);
         document.index.idByStableKey.set(stableKey, entity.__editorId);
     }
 }
 
+/**
+ * @param {EditorWorldData} worldData
+ * @param {EditorVantageData} vantageData
+ * @param {EditorDocument | null} [prevDocument]
+ * @returns {EditorDocument}
+ */
 export function createEditorDocument(worldData, vantageData, prevDocument = null) {
+    /** @type {EditorDocument} */
     const document = {
         worldData: clone(worldData),
         vantageData: clone(vantageData),
@@ -117,15 +170,31 @@ export function createEditorDocument(worldData, vantageData, prevDocument = null
     return document;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @returns {EditorDocument}
+ */
 export function cloneDocument(document) {
     return createEditorDocument(document.worldData, document.vantageData, document);
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorEntityId | null | undefined} entityId
+ * @returns {EditorEntity | null}
+ */
 export function getEntityById(document, entityId) {
+    if (!entityId) return null;
     return document.index.entitiesById.get(entityId) || null;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorEntityId | null | undefined} entityId
+ * @returns {EditorGroupId | null}
+ */
 export function findEntityGroup(document, entityId) {
+    if (!entityId) return null;
     if (document.index.groupIds.districts.includes(entityId)) return 'districts';
     if (document.index.groupIds.roads.includes(entityId)) return 'roads';
     if (document.index.groupIds.terrainRegions.includes(entityId)) return 'terrainRegions';
@@ -136,10 +205,20 @@ export function findEntityGroup(document, entityId) {
     return null;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorGroupId} groupId
+ * @returns {EditorEntityId[]}
+ */
 export function getGroupEntityIds(document, groupId) {
     return document.index.groupIds[groupId] || [];
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorEntityId | null | undefined} entityId
+ * @returns {string}
+ */
 export function getEntityLabel(document, entityId) {
     const entity = getEntityById(document, entityId);
     if (!entity) return 'Unknown';
@@ -150,17 +229,27 @@ export function getEntityLabel(document, entityId) {
     return objectLabel(entity, 0, 'Item');
 }
 
+/**
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
 export function stripEditorMetadata(value) {
-    if (Array.isArray(value)) return value.map(stripEditorMetadata);
+    if (Array.isArray(value)) return /** @type {T} */ (value.map(stripEditorMetadata));
     if (!value || typeof value !== 'object') return value;
+    /** @type {Record<string, unknown>} */
     const next = {};
     for (const [key, child] of Object.entries(value)) {
         if (key.startsWith('__editor')) continue;
         next[key] = stripEditorMetadata(child);
     }
-    return next;
+    return /** @type {T} */ (next);
 }
 
+/**
+ * @param {EditorDocument} document
+ * @returns {{ mapPayload: EditorWorldData, vantagePayload: EditorVantageData }}
+ */
 export function serializeEditorDocument(document) {
     const mapPayload = stripEditorMetadata(document.worldData);
     const vantagePayload = stripEditorMetadata(document.vantageData);
@@ -186,6 +275,12 @@ export function serializeEditorDocument(document) {
     return { mapPayload, vantagePayload };
 }
 
+/**
+ * @param {EditorDocument} prevDocument
+ * @param {EditorDocument} nextDocument
+ * @param {EditorEntityId | null | undefined} selectedId
+ * @returns {EditorEntityId | null}
+ */
 export function resolveSelectionAfterReload(prevDocument, nextDocument, selectedId) {
     if (!selectedId) return null;
     if (nextDocument.index.entitiesById.has(selectedId)) return selectedId;
@@ -194,13 +289,19 @@ export function resolveSelectionAfterReload(prevDocument, nextDocument, selected
     return nextDocument.index.idByStableKey.get(stableKey) || null;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @param {EditorEntityId | null | undefined} entityId
+ * @returns {EditorBounds | null}
+ */
 export function getEntityBounds(document, entityId) {
     const entity = getEntityById(document, entityId);
     const group = findEntityGroup(document, entityId);
     if (!entity || !group) return null;
 
     if (group === 'districts') {
-        const points = Array.isArray(entity.points) && entity.points.length > 0 ? entity.points : [entity.center];
+        const district = /** @type {EditorDistrict} */ (entity);
+        const points = Array.isArray(district.points) && district.points.length > 0 ? district.points : [district.center];
         let minX = Infinity;
         let maxX = -Infinity;
         let minZ = Infinity;
@@ -214,7 +315,8 @@ export function getEntityBounds(document, entityId) {
         return { minX, maxX, minZ, maxZ };
     }
     if (group === 'roads') {
-        const points = entity.points || [entity.center || [0, 0]];
+        const road = /** @type {EditorRoad} */ (entity);
+        const points = road.points || [road.center || [0, 0]];
         let minX = Infinity;
         let maxX = -Infinity;
         let minZ = Infinity;
@@ -225,47 +327,57 @@ export function getEntityBounds(document, entityId) {
             minZ = Math.min(minZ, z);
             maxZ = Math.max(maxZ, z);
         }
-        const pad = (entity.width || 0) * 0.5 + (entity.feather || 0);
+        const pad = (road.width || 0) * 0.5 + (road.feather || 0);
         return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
     }
     if (group === 'terrainRegions') {
-        if (entity.bounds) return entity.bounds;
+        const region = /** @type {EditorTerrainRegion} */ (entity);
+        if (region.bounds) return region.bounds;
         return null;
     }
     if (group === 'airports') {
-        return entity.bounds || {
-            minX: entity.x - 2400,
-            maxX: entity.x + 2400,
-            minZ: entity.z - 2400,
-            maxZ: entity.z + 2400
+        const airport = /** @type {EditorAirport} */ (entity);
+        return airport.bounds || {
+            minX: airport.x - 2400,
+            maxX: airport.x + 2400,
+            minZ: airport.z - 2400,
+            maxZ: airport.z + 2400
         };
     }
     if (group === 'objects') {
+        const object = /** @type {EditorAuthoredObject} */ (entity);
         return {
-            minX: entity.x - 400,
-            maxX: entity.x + 400,
-            minZ: entity.z - 400,
-            maxZ: entity.z + 400
+            minX: object.x - 400,
+            maxX: object.x + 400,
+            minZ: object.z - 400,
+            maxZ: object.z + 400
         };
     }
     if (group === 'terrain') {
-        if (entity.bounds) return entity.bounds;
+        const terrainEdit = /** @type {EditorTerrainEdit} */ (entity);
+        if (terrainEdit.bounds) return terrainEdit.bounds;
         return {
-            minX: entity.x - entity.radius,
-            maxX: entity.x + entity.radius,
-            minZ: entity.z - entity.radius,
-            maxZ: entity.z + entity.radius
+            minX: terrainEdit.x - (terrainEdit.radius || 0),
+            maxX: terrainEdit.x + (terrainEdit.radius || 0),
+            minZ: terrainEdit.z - (terrainEdit.radius || 0),
+            maxZ: terrainEdit.z + (terrainEdit.radius || 0)
         };
     }
+    const vantage = /** @type {EditorVantageEntity} */ (entity);
     return {
-        minX: entity.x - 400,
-        maxX: entity.x + 400,
-        minZ: entity.z - 400,
-        maxZ: entity.z + 400
+        minX: vantage.x - 400,
+        maxX: vantage.x + 400,
+        minZ: vantage.z - 400,
+        maxZ: vantage.z + 400
     };
 }
 
+/**
+ * @param {EditorDocument} document
+ * @returns {EditorLayerGroup[]}
+ */
 export function listLayerGroups(document) {
+    /** @type {EditorLayerGroup[]} */
     const entries = [];
     for (const groupId of ENTITY_GROUPS) {
         const ids = getGroupEntityIds(document, groupId);

@@ -8,18 +8,19 @@ import { AppHeader } from './AppHeader';
 import { AirportToolPanel } from './AirportToolPanel';
 import { FooterPanel } from './FooterPanel';
 import { Icon, TooltipProvider, shallowEqual, useStore } from './common';
-import { InspectorPanel } from './InspectorPanel.jsx';
+import { InspectorPanel } from './InspectorPanel';
 import { ObjectToolPanel } from './ObjectToolPanel';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { StatusBar } from './StatusBar.jsx';
 import { TerrainBrushPanel } from './TerrainBrushPanel';
-import { TerrainLabPanel } from './TerrainLabPanel.jsx';
+import { TerrainLabPanel } from './TerrainLabPanel';
 import { Toast } from './Toast';
 import { ToolPalette } from './ToolPalette';
 
 type EditorAppController = {
     resetView: () => void;
     frameSelection: () => void;
+    frameTerrainHydrology: () => void;
 };
 
 type EditorAppSelection = {

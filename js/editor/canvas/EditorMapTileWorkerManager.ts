@@ -1,15 +1,41 @@
-function createDefaultWorker() {
-    return new Worker(new URL('./EditorMapTileWorker.js', import.meta.url), { type: 'module' });
+type WorkerFactory = () => Worker;
+
+type PendingJob = {
+    resolve: (value: unknown) => void;
+    reject: (reason?: unknown) => void;
+    timeoutId: number | null;
+    workerIndex: number;
+    worker: Worker;
+};
+
+type WorkerMessage = {
+    type?: string;
+    jobId?: number;
+    result?: unknown;
+    error?: string;
+};
+
+function createDefaultWorker(): Worker {
+    return new Worker(new URL('./EditorMapTileWorker', import.meta.url), { type: 'module' });
 }
 
-export function createEditorMapTileWorkerManager({ workerCount = 2, jobTimeoutMs = 15000, createWorker = createDefaultWorker } = {}) {
-    const workers = new Array(Math.max(1, Math.floor(workerCount)));
+export function createEditorMapTileWorkerManager({
+    workerCount = 2,
+    jobTimeoutMs = 15000,
+    createWorker = createDefaultWorker
+}: {
+    workerCount?: number;
+    jobTimeoutMs?: number;
+    createWorker?: WorkerFactory;
+} = {}) {
+    const workers: Worker[] = new Array(Math.max(1, Math.floor(workerCount)));
     let nextJobId = 1;
-    const pendingJobs = new Map();
+    const pendingJobs = new Map<number, PendingJob>();
     let nextWorkerIndex = 0;
     let isDestroyed = false;
 
-    function clearPendingJob(jobId) {
+    function clearPendingJob(jobId: number | undefined) {
+        if (jobId == null) return null;
         const pending = pendingJobs.get(jobId);
         if (!pending) return null;
         pendingJobs.delete(jobId);
@@ -19,18 +45,18 @@ export function createEditorMapTileWorkerManager({ workerCount = 2, jobTimeoutMs
         return pending;
     }
 
-    function terminateWorker(worker) {
+    function terminateWorker(worker: Worker | undefined) {
         if (!worker || typeof worker.terminate !== 'function') return;
         worker.terminate();
     }
 
-    function respawnWorker(workerIndex, failedWorker = workers[workerIndex]) {
+    function respawnWorker(workerIndex: number, failedWorker = workers[workerIndex]) {
         if (isDestroyed) return;
         if (failedWorker && workers[workerIndex] !== failedWorker) return;
         terminateWorker(workers[workerIndex]);
         const worker = createWorker();
         workers[workerIndex] = worker;
-        worker.onmessage = (event) => {
+        worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
             handleMessage(event);
         };
         worker.onerror = (event) => {
@@ -38,7 +64,7 @@ export function createEditorMapTileWorkerManager({ workerCount = 2, jobTimeoutMs
         };
     }
 
-    function handleMessage(event) {
+    function handleMessage(event: MessageEvent<WorkerMessage>) {
         const { type, jobId, result, error } = event.data || {};
         const pending = clearPendingJob(jobId);
         if (!pending) return;
@@ -49,7 +75,7 @@ export function createEditorMapTileWorkerManager({ workerCount = 2, jobTimeoutMs
         pending.resolve(result);
     }
 
-    function handleError(workerIndex, failedWorker, event) {
+    function handleError(workerIndex: number, failedWorker: Worker, event: ErrorEvent) {
         const message = event?.message || 'Editor map tile worker crashed';
         for (const [jobId, pending] of pendingJobs.entries()) {
             if (pending.workerIndex !== workerIndex || pending.worker !== failedWorker) continue;
@@ -63,14 +89,14 @@ export function createEditorMapTileWorkerManager({ workerCount = 2, jobTimeoutMs
         respawnWorker(workerIndex, undefined);
     }
 
-    function renderTile(payload) {
-        return new Promise((resolve, reject) => {
+    function renderTile(payload: unknown) {
+        return new Promise<unknown>((resolve, reject) => {
             const jobId = nextJobId++;
             const workerIndex = nextWorkerIndex;
             const worker = workers[workerIndex];
             nextWorkerIndex = (nextWorkerIndex + 1) % workers.length;
             const timeoutId = Number.isFinite(jobTimeoutMs) && jobTimeoutMs > 0
-                ? setTimeout(() => {
+                ? window.setTimeout(() => {
                     const pending = clearPendingJob(jobId);
                     if (!pending) return;
                     pending.reject(new Error(`Editor map tile worker timed out after ${jobTimeoutMs}ms`));

@@ -1,7 +1,32 @@
+// @ts-check
+
 import { normalizeTerrainGeneratorConfig } from './terrain/TerrainSynthesis.js';
 import { normalizeTerrainRegions } from './terrain/TerrainRegions.js';
 import { normalizeAuthoredObject } from './AuthoredObjectCatalog.js';
 import { normalizeAirport } from './AirportLayout.js';
+
+/** @typedef {import('../../editor/core/types.js').EditorAirport} EditorAirport */
+/** @typedef {import('../../editor/core/types.js').EditorAuthoredObject} EditorAuthoredObject */
+/** @typedef {import('../../editor/core/types.js').EditorDistrict} EditorDistrict */
+/** @typedef {import('../../editor/core/types.js').EditorPoint2} EditorPoint2 */
+/** @typedef {import('../../editor/core/types.js').EditorRoad} EditorRoad */
+/** @typedef {import('../../editor/core/types.js').EditorTerrainEdit} EditorTerrainEdit */
+/** @typedef {import('../../editor/core/types.js').EditorTerrainGenerator} EditorTerrainGenerator */
+/** @typedef {import('../../editor/core/types.js').EditorTerrainRegion} EditorTerrainRegion */
+/** @typedef {import('../../editor/core/types.js').EditorWorldData} EditorWorldData */
+
+/**
+ * @typedef MapDataLike
+ * @property {Array<{ id?: string, districts?: EditorDistrict[], radius?: number }>} [cities]
+ * @property {EditorDistrict[]} [districts]
+ * @property {EditorRoad[]} [roads]
+ * @property {EditorTerrainEdit[]} [terrainEdits]
+ * @property {EditorTerrainRegion[]} [terrainRegions]
+ * @property {EditorAirport[]} [airports]
+ * @property {EditorAuthoredObject[]} [authoredObjects]
+ * @property {EditorTerrainGenerator} [terrainGenerator]
+ * @property {string} [city_id]
+ */
 
 export const DISTRICT_TYPES = ['financial_core', 'commercial', 'residential', 'industrial', 'suburban', 'windmill_farm'];
 export const ROAD_KINDS = ['road', 'taxiway', 'service'];
@@ -12,15 +37,23 @@ export const WINDMILL_FARM_DEFAULTS = Object.freeze({
     setback: 90
 });
 
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ */
 function clampNumber(value, min, max, fallback) {
     if (!Number.isFinite(value)) return fallback;
     return Math.min(max, Math.max(min, value));
 }
 
+/** @param {Partial<EditorDistrict> | null | undefined} district */
 export function getDistrictType(district) {
     return district?.district_type || district?.type || 'residential';
 }
 
+/** @param {EditorDistrict} district */
 export function normalizeWindmillFarmProps(district) {
     district.turbine_density = clampNumber(district.turbine_density, 0.05, 1.0, WINDMILL_FARM_DEFAULTS.turbine_density);
     district.rotor_radius = clampNumber(district.rotor_radius, 8, 80, WINDMILL_FARM_DEFAULTS.rotor_radius);
@@ -28,6 +61,10 @@ export function normalizeWindmillFarmProps(district) {
     return district;
 }
 
+/**
+ * @param {EditorDistrict} rawDistrict
+ * @param {string | null} [cityId]
+ */
 export function normalizeDistrict(rawDistrict, cityId = null) {
     const district = rawDistrict;
     district.district_type = getDistrictType(district);
@@ -45,6 +82,7 @@ export function normalizeDistrict(rawDistrict, cityId = null) {
     const hasCenter = Array.isArray(district.center) && district.center.length === 2;
     let looksRelative = false;
     if (hasCenter && district.points.length > 0) {
+        const center = /** @type {[number, number]} */ (district.center);
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
         let sumX = 0, sumZ = 0;
         for (const [x, z] of district.points) {
@@ -58,13 +96,15 @@ export function normalizeDistrict(rawDistrict, cityId = null) {
         const centroidX = sumX / district.points.length;
         const centroidZ = sumZ / district.points.length;
         const maxSpan = Math.max(maxX - minX, maxZ - minZ, 1);
-        const centroidOffset = Math.hypot(centroidX - district.center[0], centroidZ - district.center[1]);
+        const radius = /** @type {number} */ (Number.isFinite(district.radius) ? district.radius : 0);
+        const centroidOffset = Math.hypot(centroidX - center[0], centroidZ - center[1]);
         looksRelative =
-            district.points.some(([x, z]) => Math.abs(x - district.center[0]) > 5000 || Math.abs(z - district.center[1]) > 5000) ||
-            centroidOffset > Math.max(1500, maxSpan * 2.5, (district.radius || 0) * 3);
+            district.points.some(([x, z]) => Math.abs(x - center[0]) > 5000 || Math.abs(z - center[1]) > 5000) ||
+            centroidOffset > Math.max(1500, maxSpan * 2.5, radius * 3);
     }
     if (looksRelative) {
-        district.points = district.points.map(([x, z]) => [district.center[0] + x, district.center[1] + z]);
+        const center = /** @type {[number, number]} */ (district.center);
+        district.points = district.points.map(([x, z]) => [center[0] + x, center[1] + z]);
     }
     if (district.district_type === 'windmill_farm') {
         normalizeWindmillFarmProps(district);
@@ -73,6 +113,7 @@ export function normalizeDistrict(rawDistrict, cityId = null) {
     return district;
 }
 
+/** @param {EditorTerrainEdit} rawEdit */
 export function normalizeTerrainEdit(rawEdit) {
     const edit = rawEdit;
     edit.kind = edit.kind || 'raise';
@@ -112,6 +153,7 @@ export function normalizeTerrainEdit(rawEdit) {
     return edit;
 }
 
+/** @param {EditorRoad} rawRoad */
 export function normalizeRoad(rawRoad) {
     const road = rawRoad;
     road.kind = ROAD_KINDS.includes(road.kind) ? road.kind : 'road';
@@ -174,6 +216,10 @@ export function normalizeRoad(rawRoad) {
     return road;
 }
 
+/**
+ * @param {MapDataLike & EditorWorldData} data
+ * @returns {EditorWorldData}
+ */
 export function normalizeMapData(data) {
     if (!data.cities) data.cities = [];
     if (!data.districts) data.districts = [];
@@ -200,17 +246,18 @@ export function normalizeMapData(data) {
         .filter(road => Array.isArray(road.points) && road.points.length >= 2);
     data.terrainEdits = data.terrainEdits.map(edit => normalizeTerrainEdit(edit));
     data.terrainRegions = normalizeTerrainRegions(data.terrainRegions);
-    data.airports = data.airports.map((airport) => normalizeAirport(airport));
+    data.airports = /** @type {EditorAirport[]} */ (data.airports.map((airport) => normalizeAirport(airport)));
     data.authoredObjects = data.authoredObjects.map(object => normalizeAuthoredObject(object));
     delete data.cities;
     return data;
 }
 
+/** @param {EditorDistrict} district */
 function getDistrictVertices(district) {
     if (district.points?.length >= 3) return district.points;
     if (!Array.isArray(district.center) || !Number.isFinite(district.radius)) return [];
-    const [cx, cz] = district.center;
-    const r = district.radius;
+    const [cx, cz] = /** @type {[number, number]} */ (district.center);
+    const r = /** @type {number} */ (district.radius);
     return [
         [cx - r, cz - r],
         [cx + r, cz - r],
@@ -219,11 +266,12 @@ function getDistrictVertices(district) {
     ];
 }
 
+/** @param {EditorDistrict} district */
 function getDistrictBounds(district) {
     const vertices = getDistrictVertices(district);
     if (vertices.length === 0) {
-        const [cx, cz] = Array.isArray(district.center) ? district.center : [0, 0];
-        const r = Number.isFinite(district.radius) ? district.radius : 0;
+        const [cx, cz] = /** @type {[number, number]} */ (Array.isArray(district.center) ? district.center : [0, 0]);
+        const r = /** @type {number} */ (Number.isFinite(district.radius) ? district.radius : 0);
         return { minX: cx - r, maxX: cx + r, minZ: cz - r, maxZ: cz + r };
     }
 
@@ -237,11 +285,16 @@ function getDistrictBounds(district) {
     return { minX, maxX, minZ, maxZ };
 }
 
+/**
+ * @param {EditorDistrict} district
+ * @param {{ minX: number, maxX: number, minZ: number, maxZ: number }} bounds
+ */
 function getDistrictCenter(district, bounds) {
     const boundsCenter = [(bounds.minX + bounds.maxX) * 0.5, (bounds.minZ + bounds.maxZ) * 0.5];
     return boundsCenter;
 }
 
+/** @param {MapDataLike} data */
 function collectNormalizedDistricts(data) {
     const districts = [];
     const hasTopLevelDistricts = Array.isArray(data.districts) && data.districts.length > 0;
@@ -271,6 +324,10 @@ function collectNormalizedDistricts(data) {
         });
 }
 
+/**
+ * @param {EditorDistrict} district
+ * @param {number} index
+ */
 function hashDistrictGeometry(district, index) {
     const type = getDistrictType(district);
     const geom = JSON.stringify((district.points || []).map(([x, z]) => [Math.round(x), Math.round(z)]));
@@ -283,6 +340,7 @@ function hashDistrictGeometry(district, index) {
     return (h >>> 0).toString(36);
 }
 
+/** @param {MapDataLike} data */
 export function buildDistrictRecords(data) {
     const districtEntries = collectNormalizedDistricts(data);
     if (districtEntries.length === 0) return [];
@@ -299,6 +357,7 @@ export function buildDistrictRecords(data) {
     });
 }
 
+/** @param {MapDataLike} data */
 export function buildCityRecords(data) {
     return buildDistrictRecords(data);
 }

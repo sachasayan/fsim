@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 
@@ -12,6 +14,56 @@ const TOKEN_EFFECT_DURATION = 0.38;
 const TOKEN_SPIN_SPEED_MULTIPLIER = 2;
 const TOKEN_EFFECT_HIDE_SCALE = new THREE.Vector3(0.0001, 0.0001, 0.0001);
 
+/**
+ * @typedef {{
+ *   x: number,
+ *   z: number,
+ *   hoverHeight: number,
+ *   scale: number,
+ *   spinSpeed: number,
+ *   bobSpeed: number,
+ *   phase: number,
+ *   wobbleAmount: number,
+ *   pulseOffset: number,
+ *   active: boolean
+ * }} TokenEntry
+ */
+
+/**
+ * @typedef {{
+ *   root: THREE.Group,
+ *   coin: THREE.Mesh,
+ *   ring: THREE.Mesh,
+ *   flash: THREE.Mesh,
+ *   starA: THREE.Mesh,
+ *   starB: THREE.Mesh,
+ *   origin: THREE.Vector3,
+ *   active: boolean,
+ *   startTime: number,
+ *   duration: number,
+ *   baseScale: number,
+ *   spinAngle: number,
+ *   spinVelocity: number
+ * }} TokenCollectionEffect
+ */
+
+/**
+ * @typedef {{
+ *   count: number,
+ *   worldPosition: THREE.Vector3,
+ *   collectedAtMs: number
+ * }} TokenCollectionEvent
+ */
+
+/**
+ * @typedef {{
+ *   scene: THREE.Scene,
+ *   getTerrainHeight: (x: number, z: number) => number,
+ *   spawnParticle?: ((pos: THREE.Vector3, vel: THREE.Vector3, size: number, growth: number, life: number, r: number, g: number, b: number) => void) | null,
+ *   lodSettings?: ReturnType<import('./LodSystem').createRuntimeLodSettings> | null
+ * }} CreateTokenSystemArgs
+ */
+
 function fract(value) {
   return value - Math.floor(value);
 }
@@ -20,6 +72,11 @@ function seededValue(seed) {
   return fract(Math.sin(seed * 12.9898) * 43758.5453123);
 }
 
+/**
+ * @param {(x: number, z: number) => number} getTerrainHeight
+ * @param {number} x
+ * @param {number} z
+ */
 function computeSlopeScore(getTerrainHeight, x, z) {
   const sampleStep = 40;
   const center = getTerrainHeight(x, z);
@@ -28,7 +85,12 @@ function computeSlopeScore(getTerrainHeight, x, z) {
   return Math.max(dx, dz);
 }
 
+/**
+ * @param {(x: number, z: number) => number} getTerrainHeight
+ * @returns {TokenEntry[]}
+ */
 function buildTokenEntries(getTerrainHeight) {
+  /** @type {TokenEntry[]} */
   const entries = [];
   let seed = 1;
   let candidateIndex = 0;
@@ -84,6 +146,11 @@ function buildTokenGeometry() {
   return geometry;
 }
 
+/**
+ * @param {THREE.Scene} scene
+ * @param {THREE.BufferGeometry} tokenGeometry
+ * @returns {TokenCollectionEffect[]}
+ */
 function createEffectPool(scene, tokenGeometry) {
   const group = new THREE.Group();
   scene.add(group);
@@ -125,6 +192,7 @@ function createEffectPool(scene, tokenGeometry) {
     side: THREE.DoubleSide
   });
 
+  /** @type {TokenCollectionEffect[]} */
   const effects = [];
   for (let index = 0; index < TOKEN_EFFECT_POOL_SIZE; index += 1) {
     const root = new THREE.Group();
@@ -170,6 +238,9 @@ function createEffectPool(scene, tokenGeometry) {
   return effects;
 }
 
+/**
+ * @param {CreateTokenSystemArgs} args
+ */
 export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodSettings }) {
   const tokenGeometry = buildTokenGeometry();
   const tokenMaterial = new THREE.MeshStandardMaterial({
@@ -196,6 +267,7 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
   const effectPool = createEffectPool(scene, tokenGeometry);
   let effectPoolIndex = 0;
   let collectedCount = 0;
+  /** @type {((event: TokenCollectionEvent) => void) | null} */
   let collectionHandler = null;
   let currentLOD = -1;
   const tokenSystemPosition = new THREE.Vector3();
@@ -216,6 +288,10 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     tokenMesh.instanceMatrix.needsUpdate = true;
   }
 
+  /**
+   * @param {THREE.Vector3} cameraPos
+   * @param {number} dist
+   */
   function updateLOD(cameraPos, dist) {
     const [lod0Threshold] = getAirportThresholds(lodSettings);
     currentLOD = resolveDistanceLod(
@@ -227,6 +303,9 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     tokenMesh.visible = currentLOD === 0;
   }
 
+  /**
+   * @param {THREE.Vector3} worldPosition
+   */
   function emitCollectionParticles(worldPosition) {
     if (typeof spawnParticle !== 'function') {
       return;
@@ -272,6 +351,11 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     }
   }
 
+  /**
+   * @param {THREE.Vector3} worldPosition
+   * @param {number} coinScale
+   * @param {number} timeSeconds
+   */
   function startCollectionEffect(worldPosition, coinScale, timeSeconds) {
     const effect = effectPool[effectPoolIndex];
     effectPoolIndex = (effectPoolIndex + 1) % effectPool.length;
@@ -296,11 +380,20 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     effect.spinVelocity = 0;
   }
 
+  /**
+   * @param {THREE.Vector3} worldPosition
+   * @param {number} coinScale
+   * @param {number} timeSeconds
+   */
   function emitCollectionEffect(worldPosition, coinScale, timeSeconds) {
     emitCollectionParticles(worldPosition);
     startCollectionEffect(worldPosition, coinScale, timeSeconds);
   }
 
+  /**
+   * @param {number} timeSeconds
+   * @param {THREE.Quaternion} cameraQuaternion
+   */
   function updateCollectionEffects(timeSeconds, cameraQuaternion) {
     for (const effect of effectPool) {
       if (!effect.active) {
@@ -347,7 +440,21 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     }
   }
 
-  function updateTokenSystem({ timeMs = 0, aircraftPosition, cameraPosition, cameraQuaternion }) {
+  /**
+   * @param {{
+   *   timeMs?: number,
+   *   aircraftPosition?: THREE.Vector3 | null,
+   *   cameraPosition?: THREE.Vector3 | null,
+   *   cameraQuaternion?: THREE.Quaternion | null
+   * }} [options]
+   */
+  function updateTokenSystem(options = {}) {
+    const {
+      timeMs = 0,
+      aircraftPosition,
+      cameraPosition,
+      cameraQuaternion
+    } = options;
     const timeSeconds = timeMs * 0.001;
     const visibleDistanceSq = TOKEN_VISIBLE_DISTANCE * TOKEN_VISIBLE_DISTANCE;
     const pickupRadiusSq = TOKEN_PICKUP_RADIUS * TOKEN_PICKUP_RADIUS;
@@ -423,6 +530,9 @@ export function createTokenSystem({ scene, getTerrainHeight, spawnParticle, lodS
     }
   }
 
+  /**
+   * @param {((event: TokenCollectionEvent) => void) | null | undefined} handler
+   */
   function setCollectionHandler(handler) {
     collectionHandler = typeof handler === 'function' ? handler : null;
   }

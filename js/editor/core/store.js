@@ -1,8 +1,25 @@
+// @ts-check
+
 import { applyEditorCommand } from './commands.js';
 import { createEditorDocument, getEntityById, serializeEditorDocument } from './document.js';
 import { isTerrainRegion } from '../../modules/editor/objectTypes.js';
-import { getDefaultAuthoredObjectAssetId } from '../../modules/world/AuthoredObjectCatalog.js';
+import { getDefaultAuthoredObjectAssetId } from '../../modules/world/AuthoredObjectCatalog';
 
+/** @typedef {import('./types.js').EditorCommand} EditorCommand */
+/** @typedef {import('./types.js').EditorCommandOptions} EditorCommandOptions */
+/** @typedef {import('./types.js').EditorCommandResult} EditorCommandResult */
+/** @typedef {import('./types.js').EditorDocument} EditorDocument */
+/** @typedef {import('./types.js').EditorHistorySnapshot} EditorHistorySnapshot */
+/** @typedef {import('./types.js').EditorStore} EditorStore */
+/** @typedef {import('./types.js').EditorStoreAction} EditorStoreAction */
+/** @typedef {import('./types.js').EditorStoreState} EditorStoreState */
+/** @typedef {import('./types.js').EditorTerrainGenerator} EditorTerrainGenerator */
+
+/**
+ * @param {EditorDocument} document
+ * @param {string | null} [selectedId]
+ * @returns {EditorTerrainGenerator}
+ */
 function getTerrainLabSourceConfig(document, selectedId = null) {
     const selected = getEntityById(document, selectedId);
     if (isTerrainRegion(selected)) {
@@ -11,6 +28,10 @@ function getTerrainLabSourceConfig(document, selectedId = null) {
     return structuredClone(document.worldData.terrainGenerator);
 }
 
+/**
+ * @param {EditorStoreState} state
+ * @returns {EditorHistorySnapshot}
+ */
 function cloneSnapshot(state) {
     return {
         document: structuredClone(state.document),
@@ -18,10 +39,18 @@ function cloneSnapshot(state) {
     };
 }
 
+/**
+ * @param {number} version
+ * @returns {number}
+ */
 function bumpVersion(version) {
     return (Number.isFinite(version) ? version : 0) + 1;
 }
 
+/**
+ * @param {EditorDocument} document
+ * @returns {EditorStoreState}
+ */
 function createInitialState(document) {
     return {
         document,
@@ -94,20 +123,35 @@ function createInitialState(document) {
     };
 }
 
+/**
+ * @param {EditorDocument} initialDocument
+ * @returns {EditorStore}
+ */
 export function createEditorStore(initialDocument) {
+    /** @type {EditorStoreState} */
     let state = createInitialState(initialDocument);
     const listeners = new Set();
 
+    /** @returns {void} */
     function notify() {
         for (const listener of listeners) listener();
     }
 
+    /**
+     * @param {EditorStoreState | ((state: EditorStoreState) => EditorStoreState)} updater
+     * @returns {void}
+     */
     function setState(updater) {
         const nextState = typeof updater === 'function' ? updater(state) : updater;
         state = nextState;
         notify();
     }
 
+    /**
+     * @param {EditorCommand} command
+     * @param {EditorCommandOptions} [options]
+     * @returns {EditorCommandResult}
+     */
     function runCommand(command, options = {}) {
         const snapshot = cloneSnapshot(state);
         const result = applyEditorCommand(state.document, command, options.context);
@@ -146,10 +190,18 @@ export function createEditorStore(initialDocument) {
         getState() {
             return state;
         },
+        /**
+         * @param {() => void} listener
+         * @returns {() => boolean}
+         */
         subscribe(listener) {
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
+        /**
+         * @param {EditorStoreAction} action
+         * @returns {unknown}
+         */
         dispatch(action) {
             if (action.type === 'run-command') {
                 return runCommand(action.command, action.options);
@@ -336,11 +388,12 @@ export function createEditorStore(initialDocument) {
                         return { ...current, ui: { ...current.ui, showHelp: action.value ?? !current.ui.showHelp } };
                     case 'set-terrain-generator-config': {
                         const nextDraft = structuredClone(current.ui.terrainLab.draftConfig);
-                        let target = nextDraft;
+                        /** @type {Record<string, any>} */
+                        let target = /** @type {Record<string, any>} */ (nextDraft);
                         const path = Array.isArray(action.path) ? action.path : [];
                         for (let index = 0; index < path.length - 1; index += 1) {
                             const key = path[index];
-                            target = target[key];
+                            target = /** @type {Record<string, any>} */ (target[key]);
                         }
                         target[path[path.length - 1]] = action.value;
                         if (path[0] === 'preview' && path[1] === 'overlay') {
@@ -350,9 +403,9 @@ export function createEditorStore(initialDocument) {
                                     ...current.ui,
                                     terrainLab: {
                                         ...current.ui.terrainLab,
-                                        draftConfig: nextDraft,
+                                        draftConfig: /** @type {EditorTerrainGenerator} */ (nextDraft),
                                         configVersion: bumpVersion(current.ui.terrainLab.configVersion),
-                                        selectedOverlay: action.value,
+                                        selectedOverlay: /** @type {string | undefined} */ (action.value),
                                         previewDirty: true
                                     }
                                 }
@@ -364,7 +417,7 @@ export function createEditorStore(initialDocument) {
                                 ...current.ui,
                                 terrainLab: {
                                     ...current.ui.terrainLab,
-                                    draftConfig: nextDraft,
+                                    draftConfig: /** @type {EditorTerrainGenerator} */ (nextDraft),
                                     configVersion: bumpVersion(current.ui.terrainLab.configVersion),
                                     previewDirty: true
                                 }

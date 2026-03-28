@@ -1,6 +1,6 @@
 import './styles.css';
 
-import { initEditor } from '../../js/editor/index.js';
+import { initEditor } from '../../js/editor/index';
 
 initEditor().catch((error) => {
     console.error('Failed to initialize editor', error);

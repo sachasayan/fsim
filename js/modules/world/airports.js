@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -10,15 +12,34 @@ import {
 } from './shaders/RunwayOwnedShaderSource.js';
 import { configureMaterialShaderPipeline, createOwnedShaderSourcePatch } from './shaders/MaterialShaderPipeline.js';
 
+/**
+ * @typedef AirportSystemLodSettings
+ * @property {{
+ *   distanceHysteresis: number,
+ *   thresholds: { mid: number, low: number, cull: number }
+ * }} airport
+ */
+
+/**
+ * @typedef AirportSystemArgs
+ * @property {THREE.Scene} scene
+ * @property {THREE.WebGLRenderer} renderer
+ * @property {(x: number, z: number) => number} getTerrainHeight
+ * @property {AirportSystemLodSettings} lodSettings
+ */
+
 function getRuntimeWorldData() {
     if (typeof window === 'undefined') return null;
-    return window.fsimWorld || null;
+    return /** @type {{ fsimWorld?: unknown }} */ (window).fsimWorld || null;
 }
 
 function buildRuntimeAirportDescriptors() {
     return listRuntimeAirports(getRuntimeWorldData()).map((airport) => buildAirportDescriptor(airport));
 }
 
+/**
+ * @param {AirportSystemArgs} args
+ */
 export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSettings }) {
     const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
     const RUNWAY_LIGHT_GLOW_SCALE = 0.28;
@@ -31,6 +52,9 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
     runwayCanvas.width = 1024;
     runwayCanvas.height = 4096;
     const runwayCtx = runwayCanvas.getContext('2d');
+    if (!runwayCtx) {
+        throw new Error('Failed to create airport runway canvas context');
+    }
     runwayCtx.fillStyle = '#30343b';
     runwayCtx.fillRect(0, 0, 1024, 4096);
     for (let i = 0; i < 15000; i += 1) {
@@ -79,6 +103,9 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
     apronCanvas.width = 512;
     apronCanvas.height = 512;
     const apronCtx = apronCanvas.getContext('2d');
+    if (!apronCtx) {
+        throw new Error('Failed to create airport apron canvas context');
+    }
     apronCtx.fillStyle = '#3c4149';
     apronCtx.fillRect(0, 0, 512, 512);
     for (let i = 0; i < 8000; i += 1) {
@@ -138,14 +165,16 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
     function applyOwnedShaderDescriptor(material, descriptor) {
         const [ownedSource] = descriptor.ownedSources || [];
         if (!ownedSource) return;
-        configureMaterialShaderPipeline(material, [
-            createOwnedShaderSourcePatch({
-                id: ownedSource.id,
-                cacheKey: ownedSource.cacheKey,
-                createSource: ownedSource.createSource,
-                getBindings: ownedSource.getBindings
-            })
-        ]);
+        configureMaterialShaderPipeline(material, {
+            patches: [
+                createOwnedShaderSourcePatch({
+                    id: ownedSource.id,
+                    cacheKey: ownedSource.cacheKey,
+                    source: ownedSource.createSource,
+                    uniformBindings: ownedSource.getBindings
+                })
+            ]
+        });
     }
 
     function createInstancedLightMaterial(baseEmissive, intensity) {
@@ -154,6 +183,9 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
         return material;
     }
 
+    /**
+     * @param {ReturnType<typeof buildAirportDescriptor>} airport
+     */
     function createAirportInstance(airport) {
         const root = new THREE.Group();
         root.position.set(airport.x, 0, airport.z);
@@ -371,6 +403,9 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
         }
     }
 
+    /**
+     * @param {THREE.Vector3} cameraPos
+     */
     function updateLOD(cameraPos) {
         const thresholds = getAirportThresholds(lodSettings);
         const [, lowThreshold, cullThreshold] = thresholds;

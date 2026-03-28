@@ -1,17 +1,36 @@
 import { applyTerrainEdits } from '../../modules/world/terrain/TerrainEdits.js';
 import { createRegionalTerrainSampler } from '../../modules/world/terrain/TerrainRegions.js';
-import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
-import { MAP_COLORS } from '../../modules/ui/MapColors.js';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig';
+import { MAP_COLORS } from '../../modules/ui/MapColors';
 import { Noise } from '../../modules/noise.js';
 
-function sampleTerrainHeight(synthesizer, terrainEdits, x, z) {
+type RenderTilePayload = {
+    terrainRegions?: unknown[];
+    terrainEdits?: unknown[];
+    canvasW: number;
+    canvasH: number;
+    tileSize: number;
+    lod: number;
+    tx: number;
+    tz: number;
+    pixelRatio: number;
+    useHillshading: boolean;
+};
+
+type RenderTileMessage = {
+    type: 'renderTile';
+    jobId: number;
+    payload: RenderTilePayload;
+};
+
+function sampleTerrainHeight(synthesizer: ReturnType<typeof createRegionalTerrainSampler>, terrainEdits: unknown[], x: number, z: number) {
     const baseHeight = synthesizer.sampleHeight(x, z);
     return applyTerrainEdits(baseHeight, x, z, terrainEdits);
 }
 
-self.onmessage = function (event) {
+self.onmessage = function (event: MessageEvent<RenderTileMessage>) {
     const { type, jobId, payload } = event.data || {};
-    if (type !== 'renderTile') return;
+    if (type !== 'renderTile' || !payload) return;
 
     try {
         const synthesizer = createRegionalTerrainSampler({
@@ -32,20 +51,20 @@ self.onmessage = function (event) {
                 const wz = startZ + (py / payload.pixelRatio) * payload.lod;
 
                 const h = sampleTerrainHeight(synthesizer, terrainEdits, wx, wz);
-                let color;
+                const color = payload.useHillshading
+                    ? MAP_COLORS.getTerrainColorArray(h, (sampleTerrainHeight(synthesizer, terrainEdits, wx + slopeDist, wz) - h) / slopeDist, (sampleTerrainHeight(synthesizer, terrainEdits, wx, wz + slopeDist) - h) / slopeDist)
+                    : MAP_COLORS.getTerrainColorArray(h, 0, 0);
 
-                if (payload.useHillshading) {
-                    const hRight = sampleTerrainHeight(synthesizer, terrainEdits, wx + slopeDist, wz);
-                    const hDown = sampleTerrainHeight(synthesizer, terrainEdits, wx, wz + slopeDist);
-                    color = MAP_COLORS.getTerrainColorArray(h, (hRight - h) / slopeDist, (hDown - h) / slopeDist);
-                } else {
-                    color = MAP_COLORS.getTerrainColorArray(h, 0, 0);
-                }
+                /*
+                 * JS inference currently exposes this as a generic array even though the
+                 * runtime always returns exactly three channels.
+                 */
+                const [r, g, b] = color as [number, number, number];
 
                 const index = (py * payload.canvasW + px) * 4;
-                pixels[index] = color[0];
-                pixels[index + 1] = color[1];
-                pixels[index + 2] = color[2];
+                pixels[index] = r;
+                pixels[index + 1] = g;
+                pixels[index + 2] = b;
                 pixels[index + 3] = 255;
             }
         }

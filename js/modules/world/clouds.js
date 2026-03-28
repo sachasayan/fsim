@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import {
   createFarCloudUniforms,
@@ -7,6 +9,57 @@ import {
 import { configureMaterialShaderPipeline } from './shaders/MaterialShaderPipeline.js';
 import { applyOwnedShaderDescriptor } from './shaders/ShaderDescriptor.js';
 
+/** @typedef {import('./ShaderVariantRegistry.js').ShaderVariantEntry} ShaderVariantEntry */
+
+/**
+ * @typedef {{
+ *   nearFadeStart: number,
+ *   nearFadeEnd: number,
+ *   minLight: number,
+ *   farFadeStart: number,
+ *   farFadeEnd: number,
+ *   farOpacityScale: number
+ * }} CloudTuning
+ */
+
+/**
+ * @typedef {{
+ *   cloudColorClear: THREE.ColorRepresentation,
+ *   cloudColorStorm: THREE.ColorRepresentation,
+ *   cloudOpacityBase: number,
+ *   cloudOpacityStorm: number,
+ *   transition: number
+ * }} CloudWeatherState
+ */
+
+/**
+ * @typedef {{
+ *   count: number,
+ *   positions: ArrayLike<number>,
+ *   scales: ArrayLike<number>,
+ *   rotations: ArrayLike<number>,
+ *   colors: ArrayLike<number>,
+ *   ox: number,
+ *   oz: number
+ * }} CloudWorkerTile
+ */
+
+/**
+ * @typedef {{
+ *   type: 'CLOUDS_GENERATED',
+ *   tiles: CloudWorkerTile[]
+ * }} CloudWorkerGeneratedMessage
+ */
+
+/**
+ * @typedef {{
+ *   scene: THREE.Scene
+ * }} CloudSystemArgs
+ */
+
+/**
+ * @param {CloudSystemArgs} args
+ */
 export function createCloudSystem({ scene }) {
   const voxelSize = 220;
   const worldHalfExtent = 22000;
@@ -48,6 +101,7 @@ export function createCloudSystem({ scene }) {
   voxelMat.depthWrite = false;
   voxelMat.premultipliedAlpha = false;
 
+  /** @type {CloudTuning} */
   const cloudTuning = {
     nearFadeStart: 13000.0,
     nearFadeEnd: 18000.0,
@@ -75,6 +129,9 @@ export function createCloudSystem({ scene }) {
   // Initialize Web Worker
   const cloudWorker = new Worker(new URL('./CloudWorker.js', import.meta.url), { type: 'module' });
 
+  /**
+   * @param {MessageEvent<CloudWorkerGeneratedMessage>} e
+   */
   cloudWorker.onmessage = function (e) {
     if (e.data.type === 'CLOUDS_GENERATED') {
       const dummy = new THREE.Object3D();
@@ -144,6 +201,13 @@ export function createCloudSystem({ scene }) {
   const clearFarColor = new THREE.Color();
   const stormFarColor = new THREE.Color();
 
+  /**
+   * @param {number} dt
+   * @param {THREE.Camera | null | undefined} camera
+   * @param {CloudWeatherState | null | undefined} [weather]
+   * @param {THREE.Color | null | undefined} [cloudTint]
+   * @param {THREE.Vector3 | null | undefined} [sunDir]
+   */
   function updateClouds(dt, camera, weather = null, cloudTint = null, sunDir = null) {
     if (camera) {
       sharedCloudUniforms.uCloudCameraPos.value.copy(camera.position);
@@ -173,11 +237,17 @@ export function createCloudSystem({ scene }) {
     }
   }
 
+  /**
+   * @returns {ShaderVariantEntry[]}
+   */
   function getShaderValidationVariants() {
     return [
       {
         id: 'cloud-near',
         metadata: { system: 'clouds', variant: 'near' },
+        /**
+         * @param {THREE.Camera | null} [camera]
+         */
         build(camera = null) {
           if (camera) {
             sharedCloudUniforms.uCloudCameraPos.value.copy(camera.position);
@@ -205,6 +275,9 @@ export function createCloudSystem({ scene }) {
       {
         id: 'cloud-far',
         metadata: { system: 'clouds', variant: 'far' },
+        /**
+         * @param {THREE.Camera | null} [camera]
+         */
         build(camera = null) {
           if (camera) {
             farCloudMat.uniforms.uCloudCameraPos.value.copy(camera.position);
@@ -231,6 +304,9 @@ export function createCloudSystem({ scene }) {
     return { ...cloudTuning };
   }
 
+  /**
+   * @param {Partial<CloudTuning>} [partial]
+   */
   function setCloudTuning(partial = {}) {
     if (typeof partial.nearFadeStart === 'number') cloudTuning.nearFadeStart = partial.nearFadeStart;
     if (typeof partial.nearFadeEnd === 'number') cloudTuning.nearFadeEnd = partial.nearFadeEnd;

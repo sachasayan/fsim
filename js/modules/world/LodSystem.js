@@ -32,7 +32,7 @@ export function createRuntimeLodSettings({ urlSearch = '' } = {}) {
       renderDistance,
       ringThresholds: [3, 6, 12],
       ringHysteresis: 1,
-        lodLevels: cloneLodLevels([
+      lodLevels: cloneLodLevels([
         {
           terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true,
           treeRenderMode: 'hybrid',
@@ -68,9 +68,9 @@ export function createRuntimeLodSettings({ urlSearch = '' } = {}) {
 
 export function normalizeDistanceThresholds(thresholds) {
   const normalized = [];
-  for (let index = 0; index < thresholds.length; index++) {
+  for (let index = 0; index < thresholds.length; index += 1) {
     const current = clampInteger(thresholds[index], normalized[index - 1] ?? 0);
-    normalized.push(index === 0 ? current : Math.max(normalized[index - 1], current));
+    normalized.push(index === 0 ? current : Math.max(normalized[index - 1] ?? 0, current));
   }
   return normalized;
 }
@@ -78,7 +78,7 @@ export function normalizeDistanceThresholds(thresholds) {
 export function resolveDistanceLod(distance, currentLod, thresholds, hysteresis = 0) {
   const normalizedThresholds = normalizeDistanceThresholds(thresholds);
   let baseLod = normalizedThresholds.length;
-  for (let index = 0; index < normalizedThresholds.length; index++) {
+  for (let index = 0; index < normalizedThresholds.length; index += 1) {
     if (distance <= normalizedThresholds[index]) {
       baseLod = index;
       break;

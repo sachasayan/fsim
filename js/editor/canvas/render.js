@@ -1,29 +1,113 @@
+// @ts-check
+
 import { COLORS, isTerrainBrushTool } from '../../modules/editor/constants.js';
 import { districtContainsPoint, getDistanceToSegment, roadContainsPoint, terrainEditContainsPoint, terrainRegionContainsPoint } from '../../modules/editor/geometry.js';
 import { isAirport, isAuthoredObject, isRoad, isDistrict, isTerrainEdit, isTerrainRegion } from '../../modules/editor/objectTypes.js';
-import { getAuthoredObjectAsset } from '../../modules/world/AuthoredObjectCatalog.js';
-import { AIRPORT_CONFIG } from '../../modules/world/config.js';
-import { airportContainsWorldPoint, transformAirportPoint } from '../../modules/world/AirportLayout.js';
-import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig.js';
+import { getAuthoredObjectAsset } from '../../modules/world/AuthoredObjectCatalog';
+import { AIRPORT_CONFIG } from '../../modules/world/config';
+import { airportContainsWorldPoint, transformAirportPoint } from '../../modules/world/AirportLayout';
+import { DEFAULT_WORLD_SIZE } from '../../modules/world/WorldConfig';
 import { getEntityById, getGroupEntityIds } from '../core/document.js';
 import { TERRAIN_REGION_GRID_SIZE, getTerrainRegionTileSize, getTerrainRegionTileWorldBounds } from '../../modules/world/terrain/TerrainRegions.js';
 
+/** @typedef {import('../core/types.js').EditorAirport} EditorAirport */
+/** @typedef {import('../core/types.js').EditorAuthoredObject} EditorAuthoredObject */
+/** @typedef {import('../core/types.js').EditorBounds} EditorBounds */
+/** @typedef {import('../core/types.js').EditorDocument} EditorDocument */
+/** @typedef {import('../core/types.js').EditorEntity} EditorEntity */
+/** @typedef {import('../core/types.js').EditorEntityId} EditorEntityId */
+/** @typedef {import('../core/types.js').EditorGroupId} EditorGroupId */
+/** @typedef {import('../core/types.js').EditorPoint2} EditorPoint2 */
+/** @typedef {import('../core/types.js').EditorStoreState} EditorStoreState */
+/** @typedef {import('../core/types.js').EditorTerrainEdit} EditorTerrainEdit */
+/** @typedef {import('../core/types.js').EditorVantageEntity} EditorVantageEntity */
+/** @typedef {import('../core/types.js').EditorTool} EditorTool */
+/** @typedef {import('../core/types.js').EditorViewport} EditorViewport */
+/** @typedef {import('../core/types.js').EditorWorldPoint} EditorWorldPoint */
+
+/**
+ * @typedef ScreenPoint
+ * @property {number} x
+ * @property {number} y
+ */
+
+/**
+ * @typedef ViewportRect
+ * @property {number} width
+ * @property {number} height
+ */
+
+/**
+ * @typedef WorldBounds
+ * @property {number} minX
+ * @property {number} maxX
+ * @property {number} minZ
+ * @property {number} maxZ
+ */
+
+/**
+ * @typedef InteractionState
+ * @property {EditorEntityId | null} hoverId
+ * @property {EditorWorldPoint | null} hoverWorldPos
+ * @property {{ tileX: number, tileZ: number, ownerId?: string | null } | null} terrainRegionHover
+ * @property {{ bounds: EditorBounds, tiles: Array<{ tileX: number, tileZ: number, blocked?: boolean }>, valid?: boolean } | null} terrainRegionSelection
+ */
+
+/**
+ * @typedef TerrainPreviewSnapshot
+ * @property {Uint8ClampedArray} pixels
+ * @property {number} width
+ * @property {number} height
+ * @property {EditorBounds} bounds
+ * @property {HTMLCanvasElement | undefined} [__canvas]
+ */
+
+/**
+ * @typedef CoordinateHelpers
+ * @property {(wx: number, wz: number) => ScreenPoint} worldToScreen
+ * @property {(sx: number, sy: number) => EditorWorldPoint} screenToWorld
+ */
+
+/**
+ * @typedef TileManagerLike
+ * @property {(ctx: CanvasRenderingContext2D, x: number, z: number, zoom: number, width: number, height: number) => void} draw
+ */
+
+/**
+ * @param {EditorStoreState} state
+ * @param {string} groupId
+ */
 function isGroupVisible(state, groupId) {
     return state.layers.groupVisibility[groupId] !== false;
 }
 
+/**
+ * @param {EditorStoreState} state
+ * @param {string} entityId
+ * @param {string} groupId
+ */
 function isObjectVisible(state, entityId, groupId) {
     return isGroupVisible(state, groupId) && state.layers.itemVisibility[entityId] !== false;
 }
 
+/**
+ * @param {ViewportRect} viewportRect
+ * @param {ScreenPoint} point
+ * @param {number} [pad]
+ */
 function isScreenPointVisible({ width, height }, point, pad = 24) {
     return point.x >= -pad && point.x <= width + pad && point.y >= -pad && point.y <= height + pad;
 }
 
+/** @param {number} zoom */
 function getTerrainRegionTileScreenSize(zoom) {
     return getTerrainRegionTileSize(DEFAULT_WORLD_SIZE) * zoom;
 }
 
+/**
+ * @param {EditorPoint2[] | undefined | null} points
+ * @param {(wx: number, wz: number) => ScreenPoint} worldToScreen
+ */
 function buildPolylinePath(points, worldToScreen) {
     if (!Array.isArray(points) || points.length === 0) return null;
     const path = new Path2D();
@@ -36,15 +120,25 @@ function buildPolylinePath(points, worldToScreen) {
     return path;
 }
 
+/**
+ * @param {EditorStoreState} state
+ * @param {Partial<InteractionState>} [interactionState]
+ * @returns {InteractionState}
+ */
 function getInteractionState(state, interactionState = {}) {
     return {
         hoverId: interactionState.hoverId ?? state.selection.hoverId ?? null,
         hoverWorldPos: interactionState.hoverWorldPos ?? state.viewport.hoverWorldPos ?? null,
-        terrainRegionHover: interactionState.terrainRegionHover ?? state.ui?.terrainRegionHover ?? null,
-        terrainRegionSelection: interactionState.terrainRegionSelection ?? state.ui?.terrainRegionSelection ?? null
+        terrainRegionHover: /** @type {InteractionState['terrainRegionHover']} */ (interactionState.terrainRegionHover ?? state.ui?.terrainRegionHover ?? null),
+        terrainRegionSelection: /** @type {InteractionState['terrainRegionSelection']} */ (interactionState.terrainRegionSelection ?? state.ui?.terrainRegionSelection ?? null)
     };
 }
 
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {EditorViewport} camera
+ * @returns {CoordinateHelpers}
+ */
 export function createCoordinateHelpers(canvas, camera) {
     return {
         worldToScreen(wx, wz) {
@@ -62,6 +156,13 @@ export function createCoordinateHelpers(canvas, camera) {
     };
 }
 
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {HTMLCanvasElement} canvas
+ * @param {TileManagerLike} tileManager
+ * @param {EditorStoreState} state
+ * @param {Partial<InteractionState> | null} [interactionState]
+ */
 export function renderEditorScene(ctx, canvas, tileManager, state, interactionState = null) {
     const { document, viewport, selection, tools } = state;
     const interactions = getInteractionState(state, interactionState);
@@ -91,9 +192,14 @@ export function renderEditorScene(ctx, canvas, tileManager, state, interactionSt
     drawAuthoredObjects(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawTerrain(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
     drawVantagePoints(ctx, state, interactions, document, worldToScreen, viewportRect, { minX, maxX, minZ, maxZ });
-    drawOverlays(ctx, state, interactions, worldToScreen, selection, tools);
+    drawOverlays(ctx, state, interactions, worldToScreen);
 }
 
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {EditorStoreState} state
+ * @param {(wx: number, wz: number) => ScreenPoint} worldToScreen
+ */
 function drawWorldBounds(ctx, state, worldToScreen) {
     const halfWorldSize = DEFAULT_WORLD_SIZE * 0.5;
     const min = worldToScreen(-halfWorldSize, -halfWorldSize);
@@ -109,8 +215,13 @@ function drawWorldBounds(ctx, state, worldToScreen) {
     ctx.restore();
 }
 
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {EditorStoreState} state
+ * @param {ViewportRect} viewportRect
+ */
 function drawTerrainLabPreview(ctx, state, viewportRect) {
-    const preview = state.ui?.terrainLab?.previewSnapshot;
+    const preview = /** @type {TerrainPreviewSnapshot | null} */ (state.ui?.terrainLab?.previewSnapshot || null);
     if (!preview?.pixels || !preview?.bounds) return;
 
     if (!preview.__canvas && typeof document !== 'undefined') {
@@ -211,9 +322,9 @@ function drawDistricts(ctx, state, interactions, document, worldToScreen, viewpo
     for (const entityId of getGroupEntityIds(document, 'districts')) {
         if (!isObjectVisible(state, entityId, 'districts')) continue;
         const district = getEntityById(document, entityId);
+        if (!isDistrict(district)) continue;
         const isSelected = state.selection.selectedId === entityId;
         const isHovered = interactions.hoverId === entityId && !isSelected;
-        if (!district) continue;
         if (district.center[0] < worldBounds.minX - 1000 || district.center[0] > worldBounds.maxX + 1000 || district.center[1] < worldBounds.minZ - 1000 || district.center[1] > worldBounds.maxZ + 1000) continue;
         const fillStyle = isSelected ? COLORS.districtSelected : isHovered ? 'rgba(255,255,140,0.35)' : COLORS.district;
         if (district.points?.length) {
@@ -234,6 +345,7 @@ function drawRoads(ctx, state, interactions, document, worldToScreen, viewportRe
     for (const entityId of getGroupEntityIds(document, 'roads')) {
         if (!isObjectVisible(state, entityId, 'roads')) continue;
         const road = getEntityById(document, entityId);
+        if (!isRoad(road)) continue;
         if (!road?.points?.length) continue;
         if (road.center[0] < worldBounds.minX - 1500 || road.center[0] > worldBounds.maxX + 1500 || road.center[1] < worldBounds.minZ - 1500 || road.center[1] > worldBounds.maxZ + 1500) continue;
         const isSelected = state.selection.selectedId === entityId;
@@ -266,6 +378,7 @@ function drawTerrainRegions(ctx, state, interactions, document, worldToScreen, v
     for (const entityId of getGroupEntityIds(document, 'terrainRegions')) {
         if (!isObjectVisible(state, entityId, 'terrainRegions')) continue;
         const region = getEntityById(document, entityId);
+        if (!isTerrainRegion(region)) continue;
         const bounds = region?.bounds;
         if (!bounds) continue;
         if (bounds.maxX < worldBounds.minX || bounds.minX > worldBounds.maxX || bounds.maxZ < worldBounds.minZ || bounds.minZ > worldBounds.maxZ) continue;
@@ -305,12 +418,12 @@ function drawTerrain(ctx, state, interactions, document, worldToScreen, viewport
     for (const entityId of getGroupEntityIds(document, 'terrain')) {
         if (!isObjectVisible(state, entityId, 'terrain')) continue;
         const edit = getEntityById(document, entityId);
-        if (!edit) continue;
+        if (!isTerrainEdit(edit)) continue;
         const bounds = edit.bounds || {
-            minX: edit.x - edit.radius,
-            maxX: edit.x + edit.radius,
-            minZ: edit.z - edit.radius,
-            maxZ: edit.z + edit.radius
+            minX: edit.x - (edit.radius || 0),
+            maxX: edit.x + (edit.radius || 0),
+            minZ: edit.z - (edit.radius || 0),
+            maxZ: edit.z + (edit.radius || 0)
         };
         if (bounds.maxX < worldBounds.minX || bounds.minX > worldBounds.maxX || bounds.maxZ < worldBounds.minZ || bounds.minZ > worldBounds.maxZ) continue;
         const isSelected = state.selection.selectedId === entityId;
@@ -435,7 +548,7 @@ function drawVantagePoints(ctx, state, interactions, document, worldToScreen, vi
     if (!isGroupVisible(state, 'vantage')) return;
     for (const entityId of getGroupEntityIds(document, 'vantage')) {
         if (!isObjectVisible(state, entityId, 'vantage')) continue;
-        const vp = getEntityById(document, entityId);
+        const vp = /** @type {EditorVantageEntity | null} */ (getEntityById(document, entityId));
         if (!vp) continue;
         if (vp.x < worldBounds.minX - 1200 || vp.x > worldBounds.maxX + 1200 || vp.z < worldBounds.minZ - 1200 || vp.z > worldBounds.maxZ + 1200) continue;
         const point = worldToScreen(vp.x, vp.z);
@@ -529,8 +642,10 @@ function isObjectLocked(state, entityId, groupId) {
 }
 
 function getCachedPointBounds(entity, points, pad = 0) {
-    if (entity.__editorHitBounds && entity.__editorHitBoundsPad === pad) {
-        return entity.__editorHitBounds;
+    /** @type {EditorEntity & { __editorHitBounds?: EditorBounds, __editorHitBoundsPad?: number }} */
+    const cachedEntity = /** @type {any} */ (entity);
+    if (cachedEntity.__editorHitBounds && cachedEntity.__editorHitBoundsPad === pad) {
+        return cachedEntity.__editorHitBounds;
     }
     let minX = Infinity;
     let maxX = -Infinity;
@@ -548,8 +663,8 @@ function getCachedPointBounds(entity, points, pad = 0) {
         minZ: minZ - pad,
         maxZ: maxZ + pad
     };
-    entity.__editorHitBounds = bounds;
-    entity.__editorHitBoundsPad = pad;
+    cachedEntity.__editorHitBounds = bounds;
+    cachedEntity.__editorHitBoundsPad = pad;
     return bounds;
 }
 
@@ -599,17 +714,23 @@ function mayContainWorldPos(groupId, entity, worldPos, zoom) {
     return true;
 }
 
+/**
+ * @param {EditorStoreState} state
+ * @param {EditorWorldPoint} worldPos
+ * @returns {EditorEntityId[]}
+ */
 export function findObjectsAtWorldPos(state, worldPos) {
     const found = [];
     const document = state.document;
+    /** @type {Array<[EditorGroupId, (entity: EditorEntity) => boolean]>} */
     const checkOrder = [
-        ['airports', entity => airportContainsWorldPoint(entity, worldPos.x, worldPos.z, Math.max(120, 24 / state.viewport.zoom))],
-        ['objects', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < Math.max(220, 14 / state.viewport.zoom)],
-        ['vantage', entity => Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < 500],
-        ['terrainRegions', entity => terrainRegionContainsPoint(entity, worldPos.x, worldPos.z)],
-        ['terrain', entity => terrainEditContainsPoint(entity, worldPos.x, worldPos.z)],
-        ['roads', entity => roadContainsPoint(entity, worldPos.x, worldPos.z, 6 / state.viewport.zoom)],
-        ['districts', entity => districtContainsPoint(entity, worldPos.x, worldPos.z)]
+        ['airports', entity => isAirport(entity) && airportContainsWorldPoint(entity, worldPos.x, worldPos.z, Math.max(120, 24 / state.viewport.zoom))],
+        ['objects', entity => isAuthoredObject(entity) && Math.hypot(worldPos.x - entity.x, worldPos.z - entity.z) < Math.max(220, 14 / state.viewport.zoom)],
+        ['vantage', entity => Math.hypot(worldPos.x - /** @type {EditorVantageEntity} */ (entity).x, worldPos.z - /** @type {EditorVantageEntity} */ (entity).z) < 500],
+        ['terrainRegions', entity => isTerrainRegion(entity) && terrainRegionContainsPoint(entity, worldPos.x, worldPos.z)],
+        ['terrain', entity => isTerrainEdit(entity) && terrainEditContainsPoint(entity, worldPos.x, worldPos.z)],
+        ['roads', entity => isRoad(entity) && roadContainsPoint(entity, worldPos.x, worldPos.z, 6 / state.viewport.zoom)],
+        ['districts', entity => isDistrict(entity) && districtContainsPoint(entity, worldPos.x, worldPos.z)]
     ];
 
     for (const [groupId, predicate] of checkOrder) {

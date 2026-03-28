@@ -2,7 +2,11 @@ import * as React from 'react';
 
 import { cn } from '../../utils';
 
-function Badge({ className, variant = 'default', ...props }) {
+type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & {
+    variant?: 'default' | 'outline';
+};
+
+function Badge({ className, variant = 'default', ...props }: BadgeProps) {
     return (
         <span
             className={cn(

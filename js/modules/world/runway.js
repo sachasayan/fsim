@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { AIRPORT_CONFIG } from './config.js';
 import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
@@ -6,6 +8,25 @@ import {
 } from './shaders/RunwayOwnedShaderSource.js';
 import { applyOwnedShaderDescriptor } from './shaders/ShaderDescriptor.js';
 
+/**
+ * @typedef RunwayLodSettings
+ * @property {{
+ *   distanceHysteresis: number,
+ *   thresholds: { mid: number, low: number, cull: number }
+ * }} airport
+ */
+
+/**
+ * @typedef RunwaySystemArgs
+ * @property {THREE.Scene} scene
+ * @property {THREE.WebGLRenderer} renderer
+ * @property {(x: number, z: number) => number} getTerrainHeight
+ * @property {RunwayLodSettings} lodSettings
+ */
+
+/**
+ * @param {RunwaySystemArgs} args
+ */
 export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSettings }) {
   const RUNWAY_LIGHT_SIZE_SCALE = 0.5;
   const RUNWAY_LIGHT_GLOW_SCALE = 0.28;
@@ -17,6 +38,9 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
     canvas.width = 1024;
     canvas.height = 4096;
     const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to create runway canvas context');
+    }
 
     // Asphalt base (lifted slightly so runway doesn't crush to black at low sun angles)
     ctx.fillStyle = '#30343b';
@@ -118,11 +142,17 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
       roughCanvas.width = outW;
       roughCanvas.height = outH;
       const roughCtx = roughCanvas.getContext('2d');
+      if (!roughCtx) {
+        throw new Error('Failed to create runway roughness canvas context');
+      }
       // Downsample source into a half-size offscreen canvas first
       const downCanvas = document.createElement('canvas');
       downCanvas.width = outW;
       downCanvas.height = outH;
       const downCtx = downCanvas.getContext('2d');
+      if (!downCtx) {
+        throw new Error('Failed to create runway downsample canvas context');
+      }
       downCtx.drawImage(sourceCanvas, 0, 0, outW, outH);
       const src = downCtx.getImageData(0, 0, outW, outH);
       const out = roughCtx.createImageData(outW, outH);
@@ -160,6 +190,9 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
       normalCanvas.width = width;
       normalCanvas.height = height;
       const normalCtx = normalCanvas.getContext('2d');
+      if (!normalCtx) {
+        throw new Error('Failed to create runway normal canvas context');
+      }
       const normalData = normalCtx.createImageData(width, height);
 
       // Temporary array to store heights before calculating normals
@@ -443,6 +476,10 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
   }
 
   let currentLOD = -1;
+  /**
+   * @param {THREE.Vector3} cameraPos
+   * @param {number} dist
+   */
   function updateLOD(cameraPos, dist) {
     const [, lowThreshold, cullThreshold] = getAirportThresholds(lodSettings);
     const newLOD = resolveDistanceLod(dist, currentLOD, [lowThreshold, cullThreshold], lodSettings.airport.distanceHysteresis);

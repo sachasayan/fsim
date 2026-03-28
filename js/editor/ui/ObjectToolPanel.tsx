@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog.js';
+import { listAuthoredObjectAssets } from '../../modules/world/AuthoredObjectCatalog';
 import type { EditorStore, EditorStoreState } from '../core/types.js';
 import { Panel, RangeNumberField, SelectField, shallowEqual, useStore } from './common';
 

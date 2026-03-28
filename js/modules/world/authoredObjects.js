@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -16,6 +18,57 @@ const tmpBoundsSphere = new THREE.Sphere();
 const tmpShadowOffset = new THREE.Vector3();
 const tmpShadowCenter = new THREE.Vector3();
 
+/**
+ * @typedef {{
+ *   assetId: string,
+ *   x: number,
+ *   z: number,
+ *   y?: number,
+ *   yaw?: number,
+ *   scale?: number,
+ *   heightMode?: string
+ * }} AuthoredObjectPlacement
+ */
+
+/**
+ * @typedef {{
+ *   builtin?: boolean,
+ *   x: number,
+ *   z: number,
+ *   yaw?: number
+ * }} RuntimeAirport
+ */
+
+/**
+ * @typedef {{
+ *   authoredObjects?: AuthoredObjectPlacement[]
+ * }} RuntimeWorldData
+ */
+
+/**
+ * @typedef {{
+ *   group: THREE.Object3D,
+ *   placement: AuthoredObjectPlacement
+ * }} AuthoredObjectInstanceEntry
+ */
+
+/**
+ * @typedef {{
+ *   center?: THREE.Vector3
+ * }} ShadowContributorTarget
+ */
+
+/**
+ * @typedef {{
+ *   center: THREE.Vector3,
+ *   radius: number,
+ *   distance: number
+ * } | null} ShadowContributor
+ */
+
+/**
+ * @param {THREE.Object3D} root
+ */
 function captureTemplateShadowBounds(root) {
     tmpBoundsBox.setFromObject(root);
     if (tmpBoundsBox.isEmpty()) {
@@ -28,19 +81,32 @@ function captureTemplateShadowBounds(root) {
     root.userData.shadowBoundsRadius = tmpBoundsSphere.radius;
 }
 
+/**
+ * @returns {RuntimeWorldData | null}
+ */
 function getRuntimeWorldData() {
     if (typeof window === 'undefined') return null;
-    return window.fsimWorld || null;
+    const worldWindow = /** @type {Window & { fsimWorld?: RuntimeWorldData }} */ (window);
+    return worldWindow.fsimWorld || null;
 }
 
+/**
+ * @param {AuthoredObjectPlacement} placement
+ * @param {number} index
+ */
 function buildPlacementKey(placement, index) {
     return `${placement.assetId}:${placement.x}:${placement.z}:${placement.heightMode || 'terrain'}:${index}`;
 }
 
+/**
+ * @param {RuntimeWorldData | null} worldData
+ * @returns {AuthoredObjectPlacement[]}
+ */
 function buildGeneratedAirportAuthoredObjects(worldData) {
-    const runtimeAirports = listRuntimeAirports(worldData);
+    const runtimeAirports = /** @type {RuntimeAirport[]} */ (listRuntimeAirports(worldData));
     const authoredTemplates = extractDefaultAirportAuthoredObjectTemplates(worldData);
     if (authoredTemplates.length === 0 || runtimeAirports.length <= 1) return [];
+    /** @type {AuthoredObjectPlacement[]} */
     const generated = [];
     for (const airport of runtimeAirports) {
         if (airport.builtin) continue;
@@ -60,6 +126,9 @@ function buildGeneratedAirportAuthoredObjects(worldData) {
     return generated;
 }
 
+/**
+ * @param {THREE.Object3D} root
+ */
 function configureTemplate(root) {
     root.traverse((child) => {
         if (!child.isMesh) return;
@@ -76,6 +145,14 @@ function configureTemplate(root) {
     captureTemplateShadowBounds(root);
 }
 
+/**
+ * @param {THREE.Vector3} baseCenter
+ * @param {number} baseExtent
+ * @param {THREE.Vector3} contributorCenter
+ * @param {number} contributorRadius
+ * @param {number} [padding]
+ * @param {THREE.Vector3} [targetCenter]
+ */
 export function mergeShadowCoverage(baseCenter, baseExtent, contributorCenter, contributorRadius, padding = 40, targetCenter = new THREE.Vector3()) {
     targetCenter.copy(baseCenter);
     const nextExtent = Math.max(baseExtent, contributorRadius + padding);
@@ -101,6 +178,9 @@ export function mergeShadowCoverage(baseCenter, baseExtent, contributorCenter, c
     };
 }
 
+/**
+ * @param {{ scene: THREE.Scene, getTerrainHeight?: ((x: number, z: number) => number) | null }} args
+ */
 export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
     const root = new THREE.Group();
     root.name = 'AuthoredObjects';
@@ -110,9 +190,15 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
     dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
+    /** @type {Map<string, Promise<THREE.Object3D | null>>} */
     const templatePromises = new Map();
+    /** @type {Map<string, AuthoredObjectInstanceEntry>} */
     const instances = new Map();
 
+    /**
+     * @param {string} assetId
+     * @returns {Promise<THREE.Object3D | null>}
+     */
     function loadTemplate(assetId) {
         const asset = getAuthoredObjectAsset(assetId);
         if (!asset) return Promise.resolve(null);
@@ -130,6 +216,10 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
         return templatePromises.get(asset.id);
     }
 
+    /**
+     * @param {THREE.Object3D} instance
+     * @param {AuthoredObjectPlacement} placement
+     */
     function applyPlacementTransform(instance, placement) {
         const boundsCenter = Array.isArray(instance.userData.shadowBoundsCenter)
             ? instance.userData.shadowBoundsCenter
@@ -155,6 +245,7 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
 
     async function syncToWorldData() {
         const worldData = getRuntimeWorldData();
+        /** @type {AuthoredObjectPlacement[]} */
         const placements = [
             ...(Array.isArray(worldData?.authoredObjects) ? worldData.authoredObjects : []),
             ...buildGeneratedAirportAuthoredObjects(worldData)
@@ -194,6 +285,12 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
         }
     }
 
+    /**
+     * @param {THREE.Vector3} referencePosition
+     * @param {number} [maxDistance]
+     * @param {ShadowContributorTarget} [target]
+     * @returns {ShadowContributor}
+     */
     function getNearestShadowContributor(referencePosition, maxDistance = 1600, target = {}) {
         let best = null;
         let bestDistanceSq = maxDistance * maxDistance;
