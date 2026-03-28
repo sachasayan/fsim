@@ -971,8 +971,8 @@
         },
         {
             "assetId": "mountain-statue",
-            "x": 800,
-            "z": -400,
+            "x": 700,
+            "z": -300,
             "y": 0,
             "yaw": 0,
             "scale": 1,

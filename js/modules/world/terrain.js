@@ -782,17 +782,7 @@ export function createTerrainSystem({
     resolution4MaxNodeSize: CHUNK_SIZE * 4,
     showTerrainWireframe: false,
     showTrees: true,
-    showBuildings: true,
-    showGrassTexture: true,
-    showGrassMask: false,
-    useGrassBumpMap: true,
-    useGrassNormalMap: false,
-    grassTextureScale: 0.08,
-    grassTextureStrength: 1.0,
-    grassTextureNearStart: 150,
-    grassTextureNearEnd: 3200,
-    grassBumpScale: 2.0,
-    grassNormalScale: 0.8
+    showBuildings: true
   };
   let lastTerrainSelection = {
     mode: 'grid_fallback',
@@ -990,6 +980,16 @@ export function createTerrainSystem({
   }
   const terrainDetailTex = createPackedTerrainDetailTexture();
   const terrainTextureLoader = new THREE.TextureLoader();
+  const GRASS_TEXTURE_SCALE = 0.08;
+  const GRASS_TEXTURE_STRENGTH = 1.0;
+  const GRASS_TEXTURE_NEAR_START = 150;
+  const GRASS_TEXTURE_NEAR_END = 3200;
+  const GRASS_TEXTURE_ENABLED = true;
+  const GRASS_DEBUG_MASK_ENABLED = false;
+  const GRASS_BUMP_ENABLED = true;
+  const GRASS_BUMP_SCALE = 2.0;
+  const GRASS_NORMAL_ENABLED = false;
+  const GRASS_NORMAL_SCALE = 0.8;
   const grassTexture = terrainTextureLoader.load('/world/textures/processed/grass/grass_albedo.jpg');
   const grassBumpTexture = terrainTextureLoader.load('/world/textures/processed/grass/grass_bump.png');
   let grassNormalTexture = null;
@@ -1022,12 +1022,12 @@ export function createTerrainSystem({
     uTerrainRockHeightStart: { value: 220.0 },
     uTerrainRockHeightEnd: { value: 560.0 },
     uTerrainAtmosStrength: { value: 0.25 },
-    uTerrainGrassTexScale: { value: terrainDebugSettings.grassTextureScale },
-    uTerrainGrassTexStrength: { value: terrainDebugSettings.grassTextureStrength },
-    uTerrainGrassTexNearStart: { value: terrainDebugSettings.grassTextureNearStart },
-    uTerrainGrassTexNearEnd: { value: terrainDebugSettings.grassTextureNearEnd },
-    uTerrainGrassShowTexture: { value: terrainDebugSettings.showGrassTexture ? 1.0 : 0.0 },
-    uTerrainGrassDebugMask: { value: terrainDebugSettings.showGrassMask ? 1.0 : 0.0 },
+    uTerrainGrassTexScale: { value: GRASS_TEXTURE_SCALE },
+    uTerrainGrassTexStrength: { value: GRASS_TEXTURE_STRENGTH },
+    uTerrainGrassTexNearStart: { value: GRASS_TEXTURE_NEAR_START },
+    uTerrainGrassTexNearEnd: { value: GRASS_TEXTURE_NEAR_END },
+    uTerrainGrassShowTexture: { value: GRASS_TEXTURE_ENABLED ? 1.0 : 0.0 },
+    uTerrainGrassDebugMask: { value: GRASS_DEBUG_MASK_ENABLED ? 1.0 : 0.0 },
     uTerrainSandColor: { value: new THREE.Color(194 / 255, 178 / 255, 128 / 255) },
     uTerrainGrassColor: { value: new THREE.Color(42 / 255, 75 / 255, 42 / 255) },
     uTerrainRockColor: { value: new THREE.Color(85 / 255, 85 / 255, 85 / 255) },
@@ -1193,12 +1193,6 @@ export function createTerrainSystem({
     terrainDebugSettings.selectionLookaheadRadiusPadding = Math.max(0, terrainDebugSettings.selectionLookaheadRadiusPadding);
     terrainDebugSettings.selectionMaxDepth = Math.max(0, Math.min(12, Math.round(terrainDebugSettings.selectionMaxDepth)));
     terrainDebugSettings.bootstrapRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.bootstrapRadius);
-    terrainDebugSettings.grassTextureScale = Math.max(0.001, Math.min(0.2, terrainDebugSettings.grassTextureScale));
-    terrainDebugSettings.grassTextureStrength = Math.max(0, Math.min(3, terrainDebugSettings.grassTextureStrength));
-    terrainDebugSettings.grassTextureNearStart = Math.max(0, terrainDebugSettings.grassTextureNearStart);
-    terrainDebugSettings.grassTextureNearEnd = Math.max(terrainDebugSettings.grassTextureNearStart + 1, terrainDebugSettings.grassTextureNearEnd);
-    terrainDebugSettings.grassBumpScale = Math.max(0, Math.min(2, terrainDebugSettings.grassBumpScale));
-    terrainDebugSettings.grassNormalScale = Math.max(0, Math.min(4, terrainDebugSettings.grassNormalScale));
 
     const thresholds = [
       Math.max(32, terrainDebugSettings.resolution64MaxNodeSize),
@@ -1224,14 +1218,14 @@ export function createTerrainSystem({
   }
 
   function applyTerrainGrassMapSettings() {
-    const uvRepeat = terrainDebugSettings.grassTextureScale * 512;
+    const uvRepeat = GRASS_TEXTURE_SCALE * 512;
     grassBumpTexture.repeat.set(uvRepeat, uvRepeat);
     grassNormalTexture?.repeat.set(uvRepeat, uvRepeat);
 
-    terrainMaterial.bumpMap = terrainDebugSettings.useGrassBumpMap ? grassBumpTexture : null;
-    terrainMaterial.bumpScale = terrainDebugSettings.grassBumpScale;
-    terrainMaterial.normalMap = terrainDebugSettings.useGrassNormalMap ? grassNormalTexture : null;
-    terrainMaterial.normalScale.set(terrainDebugSettings.grassNormalScale, terrainDebugSettings.grassNormalScale);
+    terrainMaterial.bumpMap = GRASS_BUMP_ENABLED ? grassBumpTexture : null;
+    terrainMaterial.bumpScale = GRASS_BUMP_SCALE;
+    terrainMaterial.normalMap = GRASS_NORMAL_ENABLED ? grassNormalTexture : null;
+    terrainMaterial.normalScale.set(GRASS_NORMAL_SCALE, GRASS_NORMAL_SCALE);
 
     terrainFarMaterial.bumpMap = null;
     terrainFarMaterial.normalMap = null;
@@ -1241,16 +1235,13 @@ export function createTerrainSystem({
   }
 
   function applyTerrainGrassShaderSettings() {
-    grassTexture.repeat.set(terrainDebugSettings.grassTextureScale * 512, terrainDebugSettings.grassTextureScale * 512);
-    terrainDetailUniforms.uTerrainGrassTexScale.value = terrainDebugSettings.grassTextureScale;
-    terrainDetailUniforms.uTerrainGrassTexStrength.value = terrainDebugSettings.grassTextureStrength;
-    terrainDetailUniforms.uTerrainGrassTexNearStart.value = terrainDebugSettings.grassTextureNearStart;
-    terrainDetailUniforms.uTerrainGrassTexNearEnd.value = Math.max(
-      terrainDebugSettings.grassTextureNearStart + 1,
-      terrainDebugSettings.grassTextureNearEnd
-    );
-    terrainDetailUniforms.uTerrainGrassShowTexture.value = terrainDebugSettings.showGrassTexture ? 1.0 : 0.0;
-    terrainDetailUniforms.uTerrainGrassDebugMask.value = terrainDebugSettings.showGrassMask ? 1.0 : 0.0;
+    grassTexture.repeat.set(GRASS_TEXTURE_SCALE * 512, GRASS_TEXTURE_SCALE * 512);
+    terrainDetailUniforms.uTerrainGrassTexScale.value = GRASS_TEXTURE_SCALE;
+    terrainDetailUniforms.uTerrainGrassTexStrength.value = GRASS_TEXTURE_STRENGTH;
+    terrainDetailUniforms.uTerrainGrassTexNearStart.value = GRASS_TEXTURE_NEAR_START;
+    terrainDetailUniforms.uTerrainGrassTexNearEnd.value = GRASS_TEXTURE_NEAR_END;
+    terrainDetailUniforms.uTerrainGrassShowTexture.value = GRASS_TEXTURE_ENABLED ? 1.0 : 0.0;
+    terrainDetailUniforms.uTerrainGrassDebugMask.value = GRASS_DEBUG_MASK_ENABLED ? 1.0 : 0.0;
   }
 
   function invalidateActiveLeafSurfaces() {
