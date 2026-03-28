@@ -58,7 +58,48 @@ function fbm2D(x, z, octaves, lacunarity, gain, seed = 0) {
   let norm = 0;
 
   for (let i = 0; i < octaves; i++) {
-    sum += valueNoise2D(x * frequency, z * frequency, seed + i * 17) * amplitude;
+    // ⚡ Bolt Performance Optimization:
+    // Inline valueNoise2D to eliminate function call overhead in hot loops
+    const nx = x * frequency;
+    const nz = z * frequency;
+
+    const x0 = Math.floor(nx);
+    const z0 = Math.floor(nz);
+    const x1 = x0 + 1;
+    const z1 = z0 + 1;
+
+    const tx0 = nx - x0;
+    const tz0 = nz - z0;
+    const tx = tx0 * tx0 * (3 - 2 * tx0);
+    const tz = tz0 * tz0 * (3 - 2 * tz0);
+
+    // ⚡ Bolt Performance Optimization:
+    // Precompute common coordinates to avoid redundant math
+    const s = seed + i * 17;
+    const cx0 = x0 * 127.1 + s * 74.7;
+    const cx1 = x1 * 127.1 + s * 74.7;
+    const cz0 = z0 * 311.7;
+    const cz1 = z1 * 311.7;
+
+    let n;
+
+    n = Math.sin(cx0 + cz0) * 43758.5453123;
+    const n00 = n - Math.floor(n);
+
+    n = Math.sin(cx1 + cz0) * 43758.5453123;
+    const n10 = n - Math.floor(n);
+
+    n = Math.sin(cx0 + cz1) * 43758.5453123;
+    const n01 = n - Math.floor(n);
+
+    n = Math.sin(cx1 + cz1) * 43758.5453123;
+    const n11 = n - Math.floor(n);
+
+    const nx0 = n00 + tx * (n10 - n00);
+    const nx1 = n01 + tx * (n11 - n01);
+
+    sum += (nx0 + tz * (nx1 - nx0)) * amplitude;
+
     norm += amplitude;
     frequency *= lacunarity;
     amplitude *= gain;
