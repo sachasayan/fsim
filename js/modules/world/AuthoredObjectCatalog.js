@@ -1,44 +1,50 @@
 const AUTHORED_OBJECT_ASSETS = [
     {
+        id: 'air-traffic-control-1',
+        label: 'Air Traffic Control Tower',
+        url: '/world/objects/airport/air-traffic-control-1.glb',
+        color: '#86efac'
+    },
+    {
         id: 'aircraft-carrier',
         label: 'Aircraft Carrier',
-        url: '/world/objects/aircraft-carrier.glb',
+        url: '/world/objects/scenery/aircraft-carrier.glb',
         color: '#93c5fd'
     },
     {
         id: 'ancient-greek-ruins',
         label: 'Ancient Greek Ruins',
-        url: '/world/objects/ancient-greek-ruins.glb',
+        url: '/world/objects/scenery/ancient-greek-ruins.glb',
         color: '#fcd34d'
     },
     {
         id: 'ancient-tribal-ruins',
         label: 'Ancient Tribal Ruins',
-        url: '/world/objects/ancient-tribal-ruins.glb',
+        url: '/world/objects/scenery/ancient-tribal-ruins.glb',
         color: '#f59e0b'
     },
     {
         id: 'balloon',
         label: 'Balloon',
-        url: '/world/objects/balloon.glb',
+        url: '/world/objects/scenery/balloon.glb',
         color: '#f472b6'
     },
     {
         id: 'lighthouse',
         label: 'Lighthouse',
-        url: '/world/objects/lighthouse.glb',
+        url: '/world/objects/scenery/lighthouse.glb',
         color: '#fde68a'
     },
     {
         id: 'mountain-statue',
         label: 'Mountain Statue',
-        url: '/world/objects/mountain-statue.glb',
+        url: '/world/objects/scenery/mountain-statue.glb',
         color: '#c4b5fd'
     },
     {
         id: 'oil-rig',
         label: 'Oil Rig',
-        url: '/world/objects/oil-rig.glb',
+        url: '/world/objects/scenery/oil-rig.glb',
         color: '#67e8f9'
     }
 ];
@@ -63,7 +69,9 @@ export function listAuthoredObjectAssets() {
 }
 
 export function getDefaultAuthoredObjectAssetId() {
-    return AUTHORED_OBJECT_ASSETS[0]?.id || 'lighthouse';
+    return AUTHORED_OBJECT_ASSET_BY_ID.has('aircraft-carrier')
+        ? 'aircraft-carrier'
+        : AUTHORED_OBJECT_ASSETS[0]?.id || 'lighthouse';
 }
 
 export function getAuthoredObjectAsset(assetId) {

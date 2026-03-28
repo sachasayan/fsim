@@ -11,27 +11,39 @@
     "targetTriangles": 12000
   },
   "assets": {
+    "air-traffic-control-1": {
+      "category": "airport",
+      "targetTriangles": 3500,
+      "joinMeshes": true
+    },
     "aircraft-carrier": {
+      "category": "scenery",
       "targetTriangles": 4500,
       "joinMeshes": true
     },
     "ancient-greek-ruins": {
+      "category": "scenery",
       "targetTriangles": 3500
     },
     "ancient-tribal-ruins": {
+      "category": "scenery",
       "targetTriangles": 3500
     },
     "balloon": {
+      "category": "scenery",
       "targetTriangles": 2000
     },
     "lighthouse": {
+      "category": "scenery",
       "targetTriangles": 2500,
       "joinMeshes": true
     },
     "mountain-statue": {
+      "category": "scenery",
       "targetTriangles": 3000
     },
     "oil-rig": {
+      "category": "scenery",
       "targetTriangles": 5000,
       "joinMeshes": true
     }

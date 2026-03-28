@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/mountain-statue.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/mountain-statue.glb",
+  "sourceTriangles": 49984,
+  "outputTriangles": 3000,
+  "triangleRatio": 0.06,
+  "requestedTargetTriangles": 3000,
+  "appliedRatio": 0.06,
+  "requestedTargetHeightMeters": 18.0,
+  "sourceHeightMeters": 0.9594,
+  "sourceWidthMeters": 0.6129,
+  "sourceLengthMeters": 0.6567,
+  "appliedScaleFactor": 18.761409,
+  "outputHeightMeters": 18.078,
+  "outputWidthMeters": 11.4975,
+  "outputLengthMeters": 12.35,
+  "joinMeshes": false,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 453452
+}

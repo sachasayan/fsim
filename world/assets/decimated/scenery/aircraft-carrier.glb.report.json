@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/aircraft-carrier.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/aircraft-carrier.glb",
+  "sourceTriangles": 49324,
+  "outputTriangles": 4500,
+  "triangleRatio": 0.0912,
+  "requestedTargetTriangles": 4500,
+  "appliedRatio": 0.0912,
+  "requestedTargetHeightMeters": 65.0,
+  "sourceHeightMeters": 0.268,
+  "sourceWidthMeters": 0.2911,
+  "sourceLengthMeters": 1.1862,
+  "appliedScaleFactor": 242.579686,
+  "outputHeightMeters": 65.5285,
+  "outputWidthMeters": 70.9972,
+  "outputLengthMeters": 288.4633,
+  "joinMeshes": true,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 853348
+}

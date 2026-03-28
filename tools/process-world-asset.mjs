@@ -13,6 +13,8 @@ function parseArgs(argv) {
   const args = {
     all: false,
     assetNames: [],
+    // On macOS, Blender is often installed at /Applications/Blender.app/Contents/MacOS/Blender
+    // even when `blender` is not on PATH.
     blenderPath: process.env.BLENDER_BIN || 'blender',
     stage: false,
     dryRun: false,
@@ -65,18 +67,26 @@ function toAbsolute(p) {
 }
 
 function mergePreset(defaults, name, assetConfig) {
-  return {
+  const merged = {
     name,
     inputFile: `${name}.glb`,
     ...defaults,
     ...assetConfig
   };
+  const category = typeof merged.category === 'string' && merged.category.length > 0 ? merged.category : '';
+  return {
+    ...merged,
+    category,
+    sourceDir: merged.sourceDir || defaults.sourceDir,
+    decimatedDir: merged.decimatedDir || defaults.decimatedDir,
+    gameReadyDir: merged.gameReadyDir || defaults.gameReadyDir
+  };
 }
 
 function resolveAssetPaths(preset) {
-  const sourceDir = toAbsolute(preset.sourceDir);
-  const decimatedDir = toAbsolute(preset.decimatedDir);
-  const gameReadyDir = toAbsolute(preset.gameReadyDir);
+  const sourceDir = toAbsolute(preset.category ? path.join(preset.sourceDir, preset.category) : preset.sourceDir);
+  const decimatedDir = toAbsolute(preset.category ? path.join(preset.decimatedDir, preset.category) : preset.decimatedDir);
+  const gameReadyDir = toAbsolute(preset.category ? path.join(preset.gameReadyDir, preset.category) : preset.gameReadyDir);
   const inputPath = toAbsolute(preset.inputPath || path.join(sourceDir, preset.inputFile));
   const decimatedPath = toAbsolute(preset.decimatedPath || path.join(decimatedDir, `${preset.name}.glb`));
   const gameReadyPath = toAbsolute(preset.gameReadyPath || path.join(gameReadyDir, `${preset.name}.glb`));

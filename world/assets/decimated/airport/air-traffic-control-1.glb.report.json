@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/airport/air-traffic-control-1.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/airport/air-traffic-control-1.glb",
+  "sourceTriangles": 49792,
+  "outputTriangles": 3499,
+  "triangleRatio": 0.0703,
+  "requestedTargetTriangles": 3500,
+  "appliedRatio": 0.0703,
+  "requestedTargetHeightMeters": 32.0,
+  "sourceHeightMeters": 0.9335,
+  "sourceWidthMeters": 0.722,
+  "sourceLengthMeters": 0.7443,
+  "appliedScaleFactor": 34.27907,
+  "outputHeightMeters": 31.9799,
+  "outputWidthMeters": 24.8041,
+  "outputLengthMeters": 25.6688,
+  "joinMeshes": true,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 681304
+}

@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/balloon.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/balloon.glb",
+  "sourceTriangles": 49884,
+  "outputTriangles": 2000,
+  "triangleRatio": 0.0401,
+  "requestedTargetTriangles": 2000,
+  "appliedRatio": 0.0401,
+  "requestedTargetHeightMeters": 28.0,
+  "sourceHeightMeters": 1.1936,
+  "sourceWidthMeters": 0.8196,
+  "sourceLengthMeters": 0.8082,
+  "appliedScaleFactor": 23.459286,
+  "outputHeightMeters": 28.0306,
+  "outputWidthMeters": 19.1421,
+  "outputLengthMeters": 19.2771,
+  "joinMeshes": false,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 793392
+}

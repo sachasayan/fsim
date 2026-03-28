@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/ancient-tribal-ruins.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/ancient-tribal-ruins.glb",
+  "sourceTriangles": 49934,
+  "outputTriangles": 3500,
+  "triangleRatio": 0.0701,
+  "requestedTargetTriangles": 3500,
+  "appliedRatio": 0.0701,
+  "requestedTargetHeightMeters": 8.0,
+  "sourceHeightMeters": 0.7825,
+  "sourceWidthMeters": 0.6548,
+  "sourceLengthMeters": 0.6594,
+  "appliedScaleFactor": 10.223417,
+  "outputHeightMeters": 8.0267,
+  "outputWidthMeters": 6.668,
+  "outputLengthMeters": 6.7774,
+  "joinMeshes": false,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 867044
+}

@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/oil-rig.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/oil-rig.glb",
+  "sourceTriangles": 49970,
+  "outputTriangles": 5000,
+  "triangleRatio": 0.1001,
+  "requestedTargetTriangles": 5000,
+  "appliedRatio": 0.1001,
+  "requestedTargetHeightMeters": 95.0,
+  "sourceHeightMeters": 1.0794,
+  "sourceWidthMeters": 0.9672,
+  "sourceLengthMeters": 0.5601,
+  "appliedScaleFactor": 88.012988,
+  "outputHeightMeters": 95.5542,
+  "outputWidthMeters": 85.1287,
+  "outputLengthMeters": 52.0359,
+  "joinMeshes": true,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 1308720
+}

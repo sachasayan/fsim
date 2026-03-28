@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/ancient-greek-ruins.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/ancient-greek-ruins.glb",
+  "sourceTriangles": 50000,
+  "outputTriangles": 3499,
+  "triangleRatio": 0.07,
+  "requestedTargetTriangles": 3500,
+  "appliedRatio": 0.07,
+  "requestedTargetHeightMeters": 10.0,
+  "sourceHeightMeters": 0.6296,
+  "sourceWidthMeters": 0.7724,
+  "sourceLengthMeters": 0.8302,
+  "appliedScaleFactor": 15.883778,
+  "outputHeightMeters": 10.1467,
+  "outputWidthMeters": 12.3028,
+  "outputLengthMeters": 13.3035,
+  "joinMeshes": false,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 822300
+}

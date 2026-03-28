@@ -16,8 +16,8 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function assetPath(baseDir, assetName) {
-  return path.join(repoRoot, baseDir, `${assetName}.glb`);
+function assetPath(baseDir, assetName, category = '') {
+  return path.join(repoRoot, baseDir, category, `${assetName}.glb`);
 }
 
 function statBytes(filePath) {
@@ -32,9 +32,10 @@ function main() {
   let hasFailure = false;
   for (const [name, assetConfig] of assets) {
     const merged = { ...defaults, ...assetConfig };
-    const sourceBytes = statBytes(assetPath(merged.sourceDir, name));
-    const decimatedBytes = statBytes(assetPath(merged.decimatedDir, name));
-    const gameReadyBytes = statBytes(assetPath(merged.gameReadyDir, name));
+    const category = typeof merged.category === 'string' ? merged.category : '';
+    const sourceBytes = statBytes(assetPath(merged.sourceDir, name, category));
+    const decimatedBytes = statBytes(assetPath(merged.decimatedDir, name, category));
+    const gameReadyBytes = statBytes(assetPath(merged.gameReadyDir, name, category));
     const budgetBytes = merged.sizeBudgetBytes;
 
     const sourceText = sourceBytes == null ? 'missing' : formatBytes(sourceBytes);
