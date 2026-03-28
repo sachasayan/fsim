@@ -1,3 +1,53 @@
+// @ts-check
+
+/** @typedef {typeof import('three')} ThreeNamespace */
+
+/**
+ * @typedef PhysicsTmpCache
+ * @property {import('three').Euler} euler
+ * @property {import('three').Vector3} forward
+ * @property {import('three').Vector3} right
+ * @property {import('three').Vector3} up
+ * @property {import('three').Quaternion} invQ
+ * @property {import('three').Vector3} localVel
+ * @property {import('three').Vector3} lift
+ * @property {import('three').Vector3} side
+ * @property {import('three').Vector3} drag
+ * @property {import('three').Vector3} thrust
+ * @property {import('three').Vector3} weight
+ * @property {import('three').Vector3} net
+ * @property {import('three').Vector3} accel
+ * @property {import('three').Vector3} specific
+ * @property {import('three').Vector3} gravityVec
+ * @property {import('three').Vector3} airVel
+ * @property {import('three').Vector3} torqueLocal
+ * @property {import('three').Vector3} torqueWorld
+ * @property {import('three').Vector3} angVelLocal
+ * @property {import('three').Vector3} worldUp
+ * @property {import('three').Vector3} wheelForce
+ * @property {import('three').Vector3} wheelForceSum
+ * @property {import('three').Vector3} wheelTorqueSum
+ * @property {import('three').Vector3} wheelOffset
+ * @property {import('three').Vector3} wheelPointVel
+ * @property {import('three').Vector3} wheelForwardBase
+ * @property {import('three').Vector3} wheelRightBase
+ * @property {import('three').Vector3} wheelForward
+ * @property {import('three').Vector3} wheelRight
+ * @property {import('three').Vector3} wheelLongForce
+ * @property {import('three').Vector3} wheelLatForce
+ * @property {import('three').Vector3} wheelTmpCross
+ * @property {import('three').Vector3} gearLocalL
+ * @property {import('three').Vector3} gearLocalR
+ * @property {import('three').Vector3} gearLocalN
+ * @property {import('three').Vector3} gearWorldL
+ * @property {import('three').Vector3} gearWorldR
+ * @property {import('three').Vector3} gearWorldN
+ */
+
+/**
+ * @param {ThreeNamespace} THREE
+ * @returns {PhysicsTmpCache}
+ */
 export function getPhysicsTmp(THREE) {
     if (globalThis._physicsTmp) return globalThis._physicsTmp;
     globalThis._physicsTmp = {

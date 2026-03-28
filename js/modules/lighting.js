@@ -1,5 +1,35 @@
 
+// @ts-check
 
+/**
+ * @typedef LightingPreset
+ * @property {number} clearColor
+ * @property {number} stormColor
+ * @property {number} hemiSkyColor
+ * @property {number} hemiGroundColor
+ * @property {number} dirColor
+ * @property {number} ambientBase
+ * @property {number} directBase
+ * @property {number} sunPhiDeg
+ * @property {number} sunThetaDeg
+ * @property {number} skyTurbidity
+ * @property {number} skyRayleigh
+ * @property {number} skyMieCoefficient
+ * @property {number} skyMieDirectionalG
+ * @property {number} exposure
+ * @property {{ threshold: number, strength: number, radius: number }} bloom
+ * @property {number} hazeColor
+ * @property {number} hazeOpacity
+ * @property {number} starOpacity
+ * @property {number} cloudColorClear
+ * @property {number} cloudColorStorm
+ * @property {number} cloudOpacityBase
+ * @property {number} cloudOpacityStorm
+ * @property {number} cloudEmissiveBase
+ * @property {number} cloudEmissiveStorm
+ */
+
+/** @type {Record<string, LightingPreset>} */
 export const LIGHTING_PRESETS = {
   daytime: {
     clearColor: 0x87bfdf,
@@ -106,9 +136,7 @@ export const LIGHTING_PRESETS = {
     cloudEmissiveStorm: 0.01
   }
 };
-
-
-
+/** @returns {string} */
 export function pickLightingPresetId() {
   const ids = Object.keys(LIGHTING_PRESETS);
   return ids[Math.floor(Math.random() * ids.length)];

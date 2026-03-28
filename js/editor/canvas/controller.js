@@ -471,7 +471,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
         lodDetailScale: 2,
         maxConcurrentRenders: 2,
         useHillshading: true,
-        renderTileAsync: ({ tx, tz, lod, canvasW, canvasH, tileSize, pixelRatio, useHillshading }) => mapTileWorker.renderTile({
+        renderTileAsync: ({ tx, tz, lod, canvasW, canvasH, tileSize, pixelRatio, useHillshading }) => /** @type {Promise<import('../../modules/ui/MapTileManager.js').TileImageResult>} */ (mapTileWorker.renderTile({
             tx,
             tz,
             lod,
@@ -483,7 +483,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             config: store.getState().ui.terrainLab.draftConfig,
             terrainRegions: getPreviewRegions(),
             terrainEdits: store.getState().document.worldData.terrainEdits || []
-        }),
+        })),
         onTileReady: scheduleRender
     });
 
@@ -781,7 +781,7 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
             if (!selected?.points || state.tools.currentTool !== 'edit-poly') return;
             const { world } = getWorldPoint(event);
             const insertIndex = getClosestTerrainSegmentIndex(
-                selected,
+                /** @type {import('../../modules/editor/geometry.js').TerrainEditLike} */ (selected),
                 world,
                 Math.max(isRoad(selected) ? selected.width + selected.feather : 80, 30 / state.viewport.zoom)
             );
@@ -812,7 +812,11 @@ export function createEditorCanvasController({ canvas, coordsElement, store }) {
 
             const selected = getEntityById(state.document, state.selection.selectedId);
             if (selected?.points) {
-                const hitIndex = getVertexHitIndex(selected.points, world, VERTEX_HIT_RADIUS_PX / state.viewport.zoom);
+                const hitIndex = getVertexHitIndex(
+                    /** @type {Array<number[]>} */ (selected.points),
+                    world,
+                    VERTEX_HIT_RADIUS_PX / state.viewport.zoom
+                );
                 if (hitIndex !== -1) {
                     const canEditVertex = state.tools.currentTool === 'edit-poly'
                         || (isTerrainBrushTool(state.tools.currentTool) && isTerrainEdit(selected));

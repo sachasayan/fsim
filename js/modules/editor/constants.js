@@ -1,3 +1,7 @@
+// @ts-check
+
+/** @typedef {'select' | 'add-airport' | 'add-district' | 'add-object' | 'add-road' | 'terrain-region' | 'edit-poly' | 'terrain-raise' | 'terrain-lower' | 'terrain-flatten'} EditorToolId */
+
 export const TOOL_SHORTCUTS = {
     v: 'select',
     h: 'select',
@@ -12,6 +16,10 @@ export const TOOL_SHORTCUTS = {
     f: 'terrain-flatten'
 };
 
+/**
+ * @param {string | null | undefined} tool
+ * @returns {tool is 'terrain-raise' | 'terrain-lower' | 'terrain-flatten'}
+ */
 export function isTerrainBrushTool(tool) {
     return tool === 'terrain-raise' || tool === 'terrain-lower' || tool === 'terrain-flatten';
 }

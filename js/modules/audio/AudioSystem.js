@@ -1,28 +1,61 @@
+// @ts-check
+
+/**
+ * @typedef AudioWindowLike
+ * @property {typeof AudioContext | undefined} [AudioContext]
+ * @property {typeof AudioContext | undefined} [webkitAudioContext]
+ */
+
 export const ProceduralAudio = {
+    /** @type {AudioContext | null} */
     ctx: null,
+    /** @type {GainNode | null} */
     masterGain: null,
+    /** @type {BiquadFilterNode | null} */
     perspectiveFilter: null,
+    /** @type {DynamicsCompressorNode | null} */
     limiter: null,
+    /** @type {GainNode | null} */
     engineBus: null,
+    /** @type {GainNode | null} */
     windBus: null,
+    /** @type {GainNode | null} */
     weatherBus: null,
+    /** @type {GainNode | null} */
     fxBus: null,
+    /** @type {ConvolverNode | null} */
     reverb: null,
+    /** @type {GainNode | null} */
     reverbSendEngine: null,
+    /** @type {GainNode | null} */
     reverbSendWind: null,
+    /** @type {GainNode | null} */
     reverbSendWeather: null,
+    /** @type {GainNode | null} */
     reverbReturn: null,
+    /** @type {GainNode | null} */
     engineRumbleGain: null,
+    /** @type {GainNode | null} */
     engineTurbineGain: null,
+    /** @type {BiquadFilterNode | null} */
     engineRumbleFilter: null,
+    /** @type {BiquadFilterNode | null} */
     engineTurbineFilter: null,
+    /** @type {GainNode | null} */
     windBodyGain: null,
+    /** @type {GainNode | null} */
     windRushGain: null,
+    /** @type {BiquadFilterNode | null} */
     windBodyFilter: null,
+    /** @type {BiquadFilterNode | null} */
     windRushFilter: null,
+    /** @type {BiquadFilterNode | null} */
     rainFilter: null,
+    /** @type {GainNode | null} */
     rainGain: null,
+    /** @type {GainNode | null} */
     cabinAirGain: null,
+    /** @type {BiquadFilterNode | null} */
     cabinAirFilter: null,
     lastCoinPickupTime: -Infinity,
     initialized: false,
@@ -31,9 +64,9 @@ export const ProceduralAudio = {
         if (this.initialized || this.ctx) return;
 
         try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContext) return;
-            this.ctx = new AudioContext();
+            const AudioContextCtor = /** @type {AudioWindowLike} */ (window).AudioContext || /** @type {AudioWindowLike} */ (window).webkitAudioContext;
+            if (!AudioContextCtor) return;
+            this.ctx = new AudioContextCtor();
 
             // 1. Create a shared White Noise Buffer
             const bufferSize = this.ctx.sampleRate * 2;
@@ -176,7 +209,17 @@ export const ProceduralAudio = {
         }
     },
 
-
+    /**
+     * @param {number} throttle
+     * @param {number} airspeed
+     * @param {boolean} spoilers
+     * @param {number} cameraMode
+     * @param {number} weatherMode
+     * @param {number} gForce
+     * @param {{ x: number, y: number, z: number }} angularVelocity
+     * @param {number} aoa
+     * @param {number} slip
+     */
     update: function (throttle, airspeed, spoilers, cameraMode, weatherMode, gForce, angularVelocity, aoa, slip) {
         if (!this.initialized || !this.ctx || this.ctx.state === 'suspended') return;
 

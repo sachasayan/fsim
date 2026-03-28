@@ -1,3 +1,8 @@
+// @ts-check
+
+/**
+ * @param {{ gravityY?: number }} [options]
+ */
 export async function createRapierWorld({ gravityY = -9.81 } = {}) {
   const RAPIER = await import('@dimforge/rapier3d-compat');
   await RAPIER.init();

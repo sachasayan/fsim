@@ -1,7 +1,73 @@
+// @ts-check
+
 import { getPhysicsTmp } from './PhysicsUtils.js';
 import { solveAerodynamics, solveStabilityTorques, FLIGHT_TUNING } from './AeroSolver.js';
 import { solveGroundPhysics, updateGearAnimation } from './GroundPhysics.js';
 import { getAirportRunwayThresholds } from '../world/AirportLayout.js';
+
+/**
+ * @typedef UpdatePhysicsState
+ * @property {import('three').Vector3} position
+ * @property {import('three').Quaternion} quaternion
+ * @property {import('three').Vector3} velocity
+ * @property {import('three').Vector3} angularVelocity
+ * @property {import('three').Vector3} externalForce
+ * @property {import('three').Vector3} externalTorque
+ * @property {number} gravity
+ * @property {number} dt
+ * @property {number} gearHeight
+ * @property {number} heightAgl
+ * @property {boolean} onGround
+ * @property {boolean} gearDown
+ * @property {number} gearTransition
+ * @property {number} targetFlaps
+ * @property {number} flaps
+ * @property {number} elevator
+ * @property {number} aileron
+ * @property {number} rudder
+ * @property {number} aoa
+ * @property {number} slip
+ * @property {number} rho
+ * @property {boolean} isStalling
+ * @property {boolean} spoilers
+ * @property {boolean} brakes
+ * @property {number} throttle
+ * @property {number} airspeed
+ * @property {number} gForce
+ */
+
+/**
+ * @typedef PhysicsWindowLike
+ * @property {Parameters<typeof getAirportRunwayThresholds>[0] | undefined} [fsimWorld]
+ */
+
+/**
+ * @typedef UpdateAircraftLike
+ * @property {number} gearHeight
+ * @property {number} mass
+ * @property {number} cdBase
+ * @property {number} clSlope
+ * @property {number} stallAngle
+ * @property {number} wingArea
+ * @property {number} maxThrust
+ * @property {{ gears?: Array<{ animGroup: import('three').Object3D & { userData: { hingeAxis: import('three').Vector3 } }, type: string }> }} movableSurfaces
+ */
+
+/**
+ * @typedef UpdateWeatherLike
+ * @property {number | undefined} [windX]
+ * @property {number | undefined} [windZ]
+ */
+
+/**
+ * @typedef UpdatePhysicsContext
+ * @property {typeof import('three')} THREE
+ * @property {UpdatePhysicsState} PHYSICS
+ * @property {UpdateAircraftLike} AIRCRAFT
+ * @property {UpdateWeatherLike} WEATHER
+ * @property {Record<string, boolean>} keys
+ * @property {(x: number, z: number) => number} getTerrainHeight
+ */
 
 // ── Approach-Cone constants ──────────────────────────────────────────────────
 // The runway sits at world origin, oriented along the Z axis (±Z).
@@ -15,9 +81,14 @@ function getApproachThresholds() {
     if (typeof window === 'undefined') {
         return getAirportRunwayThresholds({ airports: [] });
     }
-    return getAirportRunwayThresholds(window.fsimWorld || { airports: [] });
+    const worldData = /** @type {PhysicsWindowLike} */ (window).fsimWorld || { airports: [] };
+    return getAirportRunwayThresholds(worldData);
 }
 
+/**
+ * @param {UpdatePhysicsContext} ctx
+ * @returns {void}
+ */
 export function calculateAerodynamics(ctx) {
     const { THREE, PHYSICS, AIRCRAFT, WEATHER, keys, getTerrainHeight } = ctx;
     const p = PHYSICS;

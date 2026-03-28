@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Manages rotating "loading" messages for the loader screen.
  */
@@ -19,7 +21,7 @@ const TIPS = [
  * Starts rotating tips in the specified element.
  * @param {string} elementId - The ID of the DOM element to update.
  * @param {number} intervalMs - Interval between tips in milliseconds.
- * @returns {number} The interval ID.
+ * @returns {ReturnType<typeof setInterval> | null} The interval ID.
  */
 export function startLoaderTips(elementId, intervalMs = 2200) {
     const element = document.getElementById(elementId);

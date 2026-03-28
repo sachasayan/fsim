@@ -1,4 +1,46 @@
+// @ts-check
+
 import { getPhysicsTmp } from './PhysicsUtils.js';
+
+/** @typedef {typeof import('three')} ThreeNamespace */
+/** @typedef {import('./PhysicsUtils.js').PhysicsTmpCache} PhysicsTmpCache */
+
+/**
+ * @typedef FlightPhysicsState
+ * @property {import('three').Quaternion} quaternion
+ * @property {number} airspeed
+ * @property {number} aoa
+ * @property {number} slip
+ * @property {number} flaps
+ * @property {boolean} spoilers
+ * @property {number} gearTransition
+ * @property {number} heightAgl
+ * @property {number} rho
+ * @property {boolean} isStalling
+ * @property {number} throttle
+ * @property {number} gravity
+ * @property {boolean} onGround
+ * @property {number} elevator
+ * @property {number} rudder
+ * @property {number} aileron
+ */
+
+/**
+ * @typedef FlightAircraftState
+ * @property {number} cdBase
+ * @property {number} clSlope
+ * @property {number} stallAngle
+ * @property {number} wingArea
+ * @property {number} mass
+ * @property {number} maxThrust
+ */
+
+/**
+ * @typedef AeroContext
+ * @property {FlightPhysicsState} PHYSICS
+ * @property {FlightAircraftState} AIRCRAFT
+ * @property {ThreeNamespace} THREE
+ */
 
 export const FLIGHT_TUNING = {
     controlAuthorityMultiplier: 3.2,
@@ -18,10 +60,21 @@ export const FLIGHT_TUNING = {
 
 const GROUND_EFFECT_WINGSPAN = 30.0;
 
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * @param {number} airspeed
+ * @param {number} aileron
+ * @returns {number}
+ */
 function getTargetRollRate(airspeed, aileron) {
     const speedNorm = clamp((airspeed - 20) / 150, 0, 1);
     const maxRollRateDeg = FLIGHT_TUNING.maxRollRateDegLow
@@ -29,6 +82,11 @@ function getTargetRollRate(airspeed, aileron) {
     return -aileron * maxRollRateDeg * (Math.PI / 180);
 }
 
+/**
+ * @param {AeroContext} ctx
+ * @param {import('three').Vector3} airVel
+ * @param {import('three').Vector3} localVel
+ */
 export function solveAerodynamics(ctx, airVel, localVel) {
     const { PHYSICS, AIRCRAFT, THREE } = ctx;
     const p = PHYSICS;
@@ -82,6 +140,13 @@ export function solveAerodynamics(ctx, airVel, localVel) {
     return { liftForce, sideForce, dragForce, thrustForce, liftRatio };
 }
 
+/**
+ * @param {AeroContext} ctx
+ * @param {import('three').Vector3} localVel
+ * @param {import('three').Vector3} angVelLocal
+ * @param {number} speedFactor
+ * @returns {import('three').Vector3}
+ */
 export function solveStabilityTorques(ctx, localVel, angVelLocal, speedFactor) {
     const { PHYSICS, THREE } = ctx;
     const p = PHYSICS;

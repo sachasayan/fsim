@@ -1,11 +1,59 @@
+// @ts-check
+
 import { MAP_COLORS } from './MapColors.js';
+
+/**
+ * @typedef TileEntry
+ * @property {HTMLCanvasElement} canvas
+ * @property {'ready' | 'pending' | 'stale'} status
+ * @property {number} lastUsed
+ * @property {number} version
+ * @property {boolean} hasPixels
+ * @property {HTMLCanvasElement | null} transitionCanvas
+ * @property {number} transitionStartAt
+ * @property {number} transitionEndAt
+ */
+
+/**
+ * @typedef TileJob
+ * @property {number} tx
+ * @property {number} tz
+ * @property {number} lod
+ * @property {string} key
+ * @property {number} version
+ * @property {number} priorityBand
+ */
+
+/**
+ * @typedef TileImageResult
+ * @property {Uint8ClampedArray} pixels
+ * @property {number} width
+ * @property {number} height
+ */
 
 /**
  * Manages map tiles for the minimap and editor.
  * Uses async tile rendering with placeholder fallback so zoom/pan never stutter.
  */
 export class MapTileManager {
-    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null, renderTileAsync = null, lodLevels = null, lodHysteresisRatio = 0.15, tileFadeDurationMs = 120, lodDetailScale = 1, maxConcurrentRenders = 1 }) {
+    /**
+     * @param {{
+     *   sampleTerrainHeight?: ((x: number, z: number) => number) | null,
+     *   getTerrainHeight?: ((x: number, z: number, Noise?: unknown) => number) | null,
+     *   tileSize?: number,
+     *   pixelRatio?: number,
+     *   useHillshading?: boolean,
+     *   Noise?: unknown,
+     *   onTileReady?: (() => void) | null,
+     *   renderTileAsync?: ((options: { tx: number, tz: number, lod: number, canvasW: number, canvasH: number, tileSize: number, pixelRatio: number, useHillshading: boolean }) => Promise<TileImageResult>) | null,
+     *   lodLevels?: number[] | null,
+     *   lodHysteresisRatio?: number,
+     *   tileFadeDurationMs?: number,
+     *   lodDetailScale?: number,
+     *   maxConcurrentRenders?: number
+     * }} [options]
+     */
+    constructor({ sampleTerrainHeight = null, getTerrainHeight = null, tileSize = 256, pixelRatio = 1, useHillshading = false, Noise = null, onTileReady = null, renderTileAsync = null, lodLevels = null, lodHysteresisRatio = 0.15, tileFadeDurationMs = 120, lodDetailScale = 1, maxConcurrentRenders = 1 } = {}) {
         this.sampleTerrainHeight = this.resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise });
         this.tileSize = tileSize;
         this.pixelRatio = pixelRatio;
@@ -19,7 +67,9 @@ export class MapTileManager {
         this.lodDetailScale = Math.max(0.25, Number.isFinite(lodDetailScale) ? lodDetailScale : 1);
         this.maxConcurrentRenders = Math.max(1, Math.floor(Number.isFinite(maxConcurrentRenders) ? maxConcurrentRenders : 1));
 
+        /** @type {Map<string, TileEntry>} */
         this.tiles = new Map();       // key -> { canvas, status: 'ready'|'pending' }
+        /** @type {TileJob[]} */
         this.renderQueue = [];        // tiles waiting to render
         this.queuedKeys = new Set();
         this.isProcessingQueue = false;
@@ -41,6 +91,10 @@ export class MapTileManager {
         };
     }
 
+    /**
+     * @param {{ sampleTerrainHeight: ((x: number, z: number) => number) | null, getTerrainHeight: ((x: number, z: number, Noise?: unknown) => number) | null, Noise: unknown }} options
+     * @returns {(x: number, z: number) => number}
+     */
     resolveTerrainSampler({ sampleTerrainHeight, getTerrainHeight, Noise }) {
         if (typeof sampleTerrainHeight === 'function') return sampleTerrainHeight;
         if (typeof getTerrainHeight !== 'function') {
@@ -54,6 +108,7 @@ export class MapTileManager {
         return (x, z) => getTerrainHeight(x, z);
     }
 
+    /** @param {number[] | null} levels */
     normalizeLodLevels(levels) {
         // Tuned around the editor's practical zoom bands:
         // close inspection (~0.4 zoom), normal editing (~0.1-0.2),
@@ -67,6 +122,7 @@ export class MapTileManager {
         return normalized.length > 0 ? [...new Set(normalized)] : defaults;
     }
 
+    /** @returns {HTMLCanvasElement} */
     acquireCanvas() {
         const canvas = this.canvasPool.pop() || document.createElement('canvas');
         const cw = Math.max(1, Math.round(this.tileSize * this.pixelRatio));
@@ -75,11 +131,13 @@ export class MapTileManager {
         return canvas;
     }
 
+    /** @param {HTMLCanvasElement | null | undefined} canvas */
     releaseCanvas(canvas) {
         if (!canvas) return;
         this.canvasPool.push(canvas);
     }
 
+    /** @param {TileEntry | undefined | null} entry */
     releaseTileEntry(entry) {
         if (!entry) return;
         if (entry.canvas) this.releaseCanvas(entry.canvas);
@@ -87,6 +145,10 @@ export class MapTileManager {
         entry.transitionCanvas = null;
     }
 
+    /**
+     * @param {TileEntry} entry
+     * @param {HTMLCanvasElement} nextCanvas
+     */
     beginTileTransition(entry, nextCanvas) {
         if (!entry) return;
         if (entry.transitionCanvas) {
@@ -106,6 +168,7 @@ export class MapTileManager {
         entry.transitionEndAt = now + this.tileFadeDurationMs;
     }
 
+    /** @param {TileEntry | undefined | null} entry */
     finalizeTileTransition(entry) {
         if (!entry?.transitionCanvas) return;
         this.releaseCanvas(entry.transitionCanvas);
@@ -114,15 +177,21 @@ export class MapTileManager {
         entry.transitionEndAt = 0;
     }
 
+    /** @returns {number} */
     nextTileVersion() {
         this.tileVersionSerial += 1;
         return this.tileVersionSerial;
     }
 
+    /** @param {'active' | 'warm'} priority */
     getJobPriorityBand(priority) {
         return priority === 'warm' ? 1 : 0;
     }
 
+    /**
+     * @param {string} key
+     * @param {'active' | 'warm'} priority
+     */
     updateQueuedJobPriority(key, priority) {
         if (!this.queuedKeys.has(key)) return;
         const nextBand = this.getJobPriorityBand(priority);
@@ -136,6 +205,14 @@ export class MapTileManager {
         }
     }
 
+    /**
+     * @param {number} tx
+     * @param {number} tz
+     * @param {number} lod
+     * @param {string} key
+     * @param {number} version
+     * @param {'active' | 'warm'} [priority]
+     */
     enqueueTileRender(tx, tz, lod, key, version, priority = 'active') {
         if (this.queuedKeys.has(key)) {
             this.updateQueuedJobPriority(key, priority);
@@ -161,6 +238,11 @@ export class MapTileManager {
         }
     }
 
+    /**
+     * @param {string} key
+     * @param {TileEntry | undefined} entry
+     * @param {number} version
+     */
     markTileStale(key, entry, version) {
         if (!entry) return;
         entry.version = version;
@@ -172,6 +254,13 @@ export class MapTileManager {
     /**
      * Get or schedule a tile. Returns canvas if ready, null if pending.
      * tx, tz: tile coordinates, lod: meters per pixel
+     */
+    /**
+     * @param {number} tx
+     * @param {number} tz
+     * @param {number} lod
+     * @param {'active' | 'warm'} [priority]
+     * @returns {HTMLCanvasElement | null}
      */
     getTile(tx, tz, lod, priority = 'active') {
         const key = `${lod}_${tx}_${tz}`;
@@ -190,6 +279,7 @@ export class MapTileManager {
         // Create placeholder and schedule render
         const canvas = this.acquireCanvas();
 
+        /** @type {TileEntry} */
         const newEntry = {
             canvas,
             status: 'pending',
@@ -208,6 +298,7 @@ export class MapTileManager {
         return null; // Not ready yet
     }
 
+    /** @returns {void} */
     processQueue() {
         if (this.collectingFrameRequests) return;
         if (this.renderQueue.length === 0 && this.activeRenderCount === 0) {
@@ -238,6 +329,9 @@ export class MapTileManager {
         }
     }
 
+    /**
+     * @param {{ tx: number, tz: number, lod: number, key: string, version: number, entry: TileEntry }} job
+     */
     async renderTileJob({ tx, tz, lod, key, version, entry }) {
         try {
             if (this.renderTileAsync) {
@@ -292,6 +386,14 @@ export class MapTileManager {
         }
     }
 
+    /**
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} tx
+     * @param {number} tz
+     * @param {number} lod
+     * @param {number} canvasW
+     * @param {number} canvasH
+     */
     renderTile(ctx, tx, tz, lod, canvasW, canvasH) {
         const worldTileSize = this.tileSize * lod;
         const startX = tx * worldTileSize;
@@ -328,6 +430,12 @@ export class MapTileManager {
         ctx.putImageData(imgData, 0, 0);
     }
 
+    /**
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {Uint8ClampedArray} pixels
+     * @param {number} width
+     * @param {number} height
+     */
     paintTileImage(ctx, pixels, width, height) {
         const imgData = ctx.createImageData(width, height);
         imgData.data.set(pixels);
@@ -338,6 +446,7 @@ export class MapTileManager {
      * Find the best available placeholder for a tile that isn't ready yet.
      * Tries one LOD coarser first (scales up a 2x smaller tile), then uses nothing.
      */
+    /** @param {number} tx @param {number} tz @param {number} lod */
     getPlaceholderTile(tx, tz, lod) {
         const coarseLod = this.getAdjacentLod(lod, 1);
         if (coarseLod != null) {
@@ -380,6 +489,7 @@ export class MapTileManager {
         return null;
     }
 
+    /** @returns {void} */
     clearCache() {
         for (const entry of this.tiles.values()) {
             this.releaseTileEntry(entry);
@@ -394,10 +504,12 @@ export class MapTileManager {
         this.collectingFrameRequests = false;
     }
 
+    /** @returns {void} */
     destroy() {
         this.clearCache();
     }
 
+    /** @returns {void} */
     invalidateWorldRect(minX, minZ, maxX, maxZ) {
         const version = this.nextTileVersion();
         for (const [key] of this.tiles.entries()) {
@@ -428,6 +540,7 @@ export class MapTileManager {
         this.lastPriorityKey = null;
     }
 
+    /** @returns {void} */
     invalidateAll() {
         const version = this.nextTileVersion();
         for (const [key, entry] of this.tiles.entries()) {
@@ -438,6 +551,7 @@ export class MapTileManager {
         this.lastPriorityKey = null;
     }
 
+    /** @returns {void} */
     warmLodRange(startX, endX, startZ, endZ, lod) {
         for (let tz = startZ; tz <= endZ; tz++) {
             for (let tx = startX; tx <= endX; tx++) {
@@ -446,6 +560,7 @@ export class MapTileManager {
         }
     }
 
+    /** @returns {void} */
     warmAdjacentLods(cameraX, cameraZ, zoom, canvasWidth, canvasHeight, targetLod) {
         const coarseLod = this.getAdjacentLod(targetLod, 1);
         if (coarseLod != null) {
@@ -471,6 +586,7 @@ export class MapTileManager {
         }
     }
 
+    /** @returns {void} */
     evictIfNeeded() {
         if (this.tiles.size < this.maxCacheSize) return;
         let oldestKey = null;
@@ -487,6 +603,14 @@ export class MapTileManager {
         }
     }
 
+    /**
+     * @param {CanvasRenderingContext2D} mainCtx
+     * @param {TileEntry | undefined} entry
+     * @param {number} sx
+     * @param {number} sy
+     * @param {number} sSize
+     * @returns {boolean}
+     */
     drawTileEntry(mainCtx, entry, sx, sy, sSize) {
         if (!entry?.canvas) return false;
         const now = performance.now();
@@ -511,6 +635,14 @@ export class MapTileManager {
     /**
      * Draw all visible tiles to a canvas context.
      * Smoothly handles missing tiles using placeholder scaling.
+     */
+    /**
+     * @param {CanvasRenderingContext2D} mainCtx
+     * @param {number} cameraX
+     * @param {number} cameraZ
+     * @param {number} zoom
+     * @param {number} canvasWidth
+     * @param {number} canvasHeight
      */
     draw(mainCtx, cameraX, cameraZ, zoom, canvasWidth, canvasHeight) {
         const lod = (1 / zoom) * this.lodDetailScale;
@@ -564,6 +696,7 @@ export class MapTileManager {
         this.processQueue();
     }
 
+    /** @returns {Record<string, unknown>} */
     getDebugStats() {
         let ready = 0;
         let stale = 0;
@@ -585,6 +718,11 @@ export class MapTileManager {
         };
     }
 
+    /**
+     * @param {number} lod
+     * @param {number | null} [currentLod]
+     * @returns {number}
+     */
     getNearestLod(lod, currentLod = null) {
         let nearest = this.lodLevels[0];
         let nearestDistance = Math.abs(lod - nearest);
@@ -616,6 +754,11 @@ export class MapTileManager {
         return nearest;
     }
 
+    /**
+     * @param {number} lod
+     * @param {number} direction
+     * @returns {number | null}
+     */
     getAdjacentLod(lod, direction) {
         const index = this.lodLevels.indexOf(lod);
         if (index === -1) return null;
@@ -624,6 +767,12 @@ export class MapTileManager {
         return this.lodLevels[nextIndex];
     }
 
+    /**
+     * @param {number} cameraX
+     * @param {number} cameraZ
+     * @param {number} lod
+     * @returns {void}
+     */
     prioritizeQueue(cameraX, cameraZ, lod) {
         if (this.renderQueue.length <= 1) {
             this.queuePriorityDirty = false;

@@ -1,6 +1,33 @@
+// @ts-check
+
 import * as THREE from 'three';
 
+/**
+ * @typedef CameraPhysicsLike
+ * @property {number} airspeed
+ * @property {boolean} onGround
+ * @property {boolean} spoilers
+ * @property {number} aoa
+ * @property {import('three').Quaternion} quaternion
+ */
+
+/**
+ * @typedef CameraAircraftLike
+ * @property {number} stallAngle
+ */
+
+/**
+ * @param {{
+ *   camera: import('three').PerspectiveCamera,
+ *   planeGroup: import('three').Object3D,
+ *   clouds?: unknown,
+ *   PHYSICS: CameraPhysicsLike,
+ *   AIRCRAFT: CameraAircraftLike,
+ *   getTerrainHeight: (x: number, z: number) => number
+ * }} options
+ */
 export function createCameraController({ camera, planeGroup, clouds, PHYSICS, AIRCRAFT, getTerrainHeight }) {
+  /** @param {MouseEvent | WheelEvent} event */
   function isGuiEvent(event) {
     return event.target instanceof Element && event.target.closest('.lil-gui');
   }

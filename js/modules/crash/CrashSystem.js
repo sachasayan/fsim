@@ -1,4 +1,15 @@
+// @ts-check
+
 import * as THREE from 'three';
+
+/**
+ * @typedef CrashThresholds
+ * @property {number} verticalSpeed
+ * @property {number} totalSpeed
+ * @property {number} angularSpeed
+ * @property {number} bankRadians
+ * @property {number} pitchRadians
+ */
 
 export const DEFAULT_CRASH_THRESHOLDS = {
   verticalSpeed: 7.5,
@@ -8,6 +19,16 @@ export const DEFAULT_CRASH_THRESHOLDS = {
   pitchRadians: 0.7
 };
 
+/**
+ * @param {{
+ *   wasOnGround: boolean,
+ *   isOnGround: boolean,
+ *   velocity: import('three').Vector3,
+ *   angularVelocity: import('three').Vector3,
+ *   quaternion: import('three').Quaternion,
+ *   thresholds?: CrashThresholds
+ * }} options
+ */
 export function evaluateCrashImpact({
   wasOnGround,
   isOnGround,
@@ -68,6 +89,53 @@ const tmpInheritedLinear = new THREE.Vector3();
 const tmpOffsetVelocity = new THREE.Vector3();
 const tmpTerrainVelocity = new THREE.Vector3();
 const tmpTangentVelocity = new THREE.Vector3();
+
+/**
+ * @typedef CrashPhysicsLike
+ * @property {boolean} crashed
+ * @property {'active' | 'breaking' | 'reset_pending'} crashState
+ * @property {number} crashTimer
+ * @property {string} crashReason
+ * @property {number} resetDelaySeconds
+ * @property {number} throttle
+ * @property {boolean} spoilers
+ * @property {boolean} brakes
+ * @property {import('three').Vector3} velocity
+ * @property {import('three').Vector3} angularVelocity
+ * @property {import('three').Vector3} position
+ * @property {import('three').Quaternion} quaternion
+ */
+
+/**
+ * @typedef CrashSpec
+ * @property {string} id
+ * @property {THREE.Object3D[]} sourceObjects
+ * @property {{ type: 'cuboid', halfExtents: [number, number, number] } | { type: 'capsule', radius: number, halfHeight: number }} collider
+ * @property {number} massFraction
+ * @property {[number, number, number]} localImpulse
+ * @property {[number, number, number]} angularImpulse
+ * @property {number} clearance
+ * @property {'fire' | 'smoke'} fxProfile
+ * @property {THREE.Vector3} localPosition
+ * @property {THREE.Quaternion} localQuaternion
+ */
+
+/**
+ * @param {{
+ *   scene: import('three').Scene,
+ *   physicsAdapter: {
+ *     getRapier: () => { RAPIER: any, world: any } | null,
+ *     setMainBodyActive: (active: boolean) => void
+ *   },
+ *   getTerrainHeight: (x: number, z: number) => number,
+ *   planeGroup: import('three').Object3D,
+ *   AIRCRAFT: { mass: number },
+ *   PHYSICS: CrashPhysicsLike,
+ *   spawnParticle: (position: import('three').Vector3, velocity: import('three').Vector3, size: number, life: number, r: number, g: number, b: number, a?: number) => void,
+ *   getBreakupPieceSpecs?: (() => CrashSpec[]) | null,
+ *   onResetRequested?: (() => void) | null
+ * }} options
+ */
 export function createCrashSystem({
   scene,
   physicsAdapter,
@@ -88,6 +156,10 @@ export function createCrashSystem({
   let poolReady = false;
   let debrisActiveCount = 0;
 
+  /**
+   * @param {any} RAPIER
+   * @param {CrashSpec['collider']} collider
+   */
   function createColliderDesc(RAPIER, collider) {
     if (collider.type === 'capsule') {
       return RAPIER.ColliderDesc.capsule(collider.halfHeight, collider.radius);
@@ -96,6 +168,7 @@ export function createCrashSystem({
     return RAPIER.ColliderDesc.cuboid(hx, hy, hz);
   }
 
+  /** @param {CrashSpec} spec */
   function buildPieceVisual(spec) {
     const root = new THREE.Group();
     root.name = `CrashPiece:${spec.id}`;
@@ -123,6 +196,7 @@ export function createCrashSystem({
     return root;
   }
 
+  /** @returns {boolean} */
   function ensurePool() {
     if (poolReady) return true;
     const rapier = physicsAdapter.getRapier();
@@ -163,6 +237,11 @@ export function createCrashSystem({
     return true;
   }
 
+  /**
+   * @param {import('three').Vector3} position
+   * @param {'fire' | 'smoke'} fxProfile
+   * @param {number} velocityScale
+   */
   function emitImpactFx(position, fxProfile, velocityScale) {
     const burstCount = fxProfile === 'fire' ? 16 : 8;
     for (let i = 0; i < burstCount; i++) {
@@ -179,6 +258,10 @@ export function createCrashSystem({
     }
   }
 
+  /**
+   * @param {{ reason?: string, baseVelocity?: import('three').Vector3 | null, baseAngularVelocity?: import('three').Vector3 | null }} [options]
+   * @returns {boolean}
+   */
   function beginCrash({
     reason = 'AIRFRAME FAILURE',
     baseVelocity = null,
@@ -241,6 +324,7 @@ export function createCrashSystem({
     return true;
   }
 
+  /** @returns {void} */
   function syncFocusFromDebris() {
     if (!debrisActiveCount) return;
     let focusPiece = null;
@@ -257,6 +341,7 @@ export function createCrashSystem({
     PHYSICS.angularVelocity.set(0, 0, 0);
   }
 
+  /** @param {number} dt */
   function updateDebrisStep(dt) {
     if (PHYSICS.crashState !== 'breaking') return;
     if (!poolReady) {
@@ -318,6 +403,7 @@ export function createCrashSystem({
     }
   }
 
+  /** @param {number} dt */
   function updateResetPending(dt) {
     if (PHYSICS.crashState !== 'reset_pending') return;
     PHYSICS.crashTimer += dt;
@@ -326,6 +412,7 @@ export function createCrashSystem({
     }
   }
 
+  /** @returns {void} */
   function endCrash() {
     PHYSICS.crashed = false;
     PHYSICS.crashState = 'active';
@@ -349,6 +436,7 @@ export function createCrashSystem({
     physicsAdapter.setMainBodyActive(true);
   }
 
+  /** @param {number} dt */
   function update(dt) {
     if (PHYSICS.crashState === 'breaking') {
       updateDebrisStep(dt);
@@ -357,6 +445,10 @@ export function createCrashSystem({
     }
   }
 
+  /**
+   * @param {import('three').Vector3} [target]
+   * @returns {import('three').Vector3}
+   */
   function getFocusPosition(target = new THREE.Vector3()) {
     if (PHYSICS.crashState === 'active') return target.copy(planeGroup.position);
     return target.copy(PHYSICS.position);

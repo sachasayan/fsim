@@ -1,7 +1,35 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { fetchDistrictIndex } from '../world/terrain/CityChunkLoader.js';
 import { MapTileManager } from './MapTileManager.js';
 
+/**
+ * @typedef HudPhysicsLike
+ * @property {number} airspeed
+ * @property {import('three').Vector3} position
+ * @property {import('three').Vector3} velocity
+ * @property {import('three').Quaternion} quaternion
+ * @property {number} heightAgl
+ * @property {number} throttle
+ * @property {number} aoa
+ * @property {number} gForce
+ * @property {number} gearTransition
+ * @property {number} flaps
+ * @property {boolean} spoilers
+ * @property {boolean} brakes
+ * @property {number} slip
+ * @property {number} gearHeight
+ * @property {number} [radAlt]
+ */
+
+/**
+ * @param {{
+ *   PHYSICS: HudPhysicsLike,
+ *   WEATHER: unknown,
+ *   getTerrainHeight: (x: number, z: number) => number
+ * }} options
+ */
 export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
     const UI = {
         speedReadout: document.getElementById('speed-readout'),
@@ -26,7 +54,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         tokenBurst: document.querySelector('#token-counter .token-counter-burst')
     };
 
-    const minimapCanvas = document.getElementById('minimap');
+    const minimapCanvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('minimap'));
     if (!minimapCanvas) {
         return {
             updateHUD: () => { },
@@ -71,7 +99,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
                 if (i === 0) continue;
                 let line = document.createElement('div');
                 line.className = 'pitch-line';
-                line.dataset.pitch = Math.abs(i);
+                line.dataset.pitch = String(Math.abs(i));
                 // 1 degree = 4px spacing
                 line.style.position = 'absolute';
                 line.style.top = `calc(50% - ${i * 4}px)`;
@@ -94,7 +122,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             for (let i = 500; i >= 0; i -= 10) {
                 let mark = document.createElement('div');
                 mark.className = 'tape-mark' + (i % 50 === 0 ? ' major' : '');
-                mark.innerText = i % 50 === 0 ? i : '';
+                mark.innerText = i % 50 === 0 ? String(i) : '';
                 UI.speedTape.appendChild(mark);
             }
         }
@@ -102,7 +130,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
             for (let i = 40000; i >= -1000; i -= 100) {
                 let mark = document.createElement('div');
                 mark.className = 'tape-mark' + (i % 500 === 0 ? ' major' : '');
-                mark.innerText = i % 500 === 0 ? i : '';
+                mark.innerText = i % 500 === 0 ? String(i) : '';
                 UI.altTape.appendChild(mark);
             }
         }
@@ -208,7 +236,7 @@ export function createHUD({ PHYSICS, WEATHER, getTerrainHeight }) {
         if (UI.thrust) UI.thrust.innerText = (PHYSICS.throttle * 100).toFixed(0) + '%';
         if (UI.aoa) UI.aoa.innerText = aoaDeg.toFixed(1) + '°';
         if (UI.gforce) UI.gforce.innerText = PHYSICS.gForce.toFixed(1);
-        if (UI.vs) UI.vs.innerText = Math.round(vsFpm);
+        if (UI.vs) UI.vs.innerText = String(Math.round(vsFpm));
 
         if (UI.gear) {
             if (PHYSICS.gearTransition === 1) { UI.gear.innerText = 'DOWN'; UI.gear.style.color = '#0f0'; }

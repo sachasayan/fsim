@@ -1,6 +1,11 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { LIGHTING_PRESETS, pickLightingPresetId } from './lighting.js';
 
+/**
+ * @param {{ scene: import('three').Scene }} _options
+ */
 export function createSimulationState({ scene }) {
   const AIRCRAFT = {
     mass: 50000,

@@ -1,18 +1,66 @@
+// @ts-check
+
 import { getPhysicsTmp } from './PhysicsUtils.js';
+
+/**
+ * @typedef GroundPhysicsLike
+ * @property {boolean} gearDown
+ * @property {number} gearTransition
+ * @property {import('three').Quaternion} quaternion
+ * @property {import('three').Vector3} position
+ * @property {import('three').Vector3} angularVelocity
+ * @property {import('three').Vector3} velocity
+ * @property {number} airspeed
+ * @property {boolean} brakes
+ * @property {number} rudder
+ */
+
+/**
+ * @typedef GroundAircraftLike
+ * @property {{ gears?: Array<{ animGroup: import('three').Object3D & { userData: { hingeAxis: import('three').Vector3 } }, type: string }> }} movableSurfaces
+ */
+
+/**
+ * @typedef GroundContext
+ * @property {GroundPhysicsLike} PHYSICS
+ * @property {GroundAircraftLike} AIRCRAFT
+ * @property {typeof import('three')} THREE
+ * @property {(x: number, z: number) => number} getTerrainHeight
+ */
+
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+/** @param {number} t */
 function smoothstep01(t) {
     const x = clamp(t, 0, 1);
     return x * x * (3 - 2 * x);
 }
 
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} t
+ * @returns {number}
+ */
 function lerp(a, b, t) {
     return a + (b - a) * t;
 }
 
+/**
+ * @param {GroundPhysicsLike} p
+ * @param {GroundAircraftLike} AIRCRAFT
+ * @param {number} dt
+ * @returns {void}
+ */
 export function updateGearAnimation(p, AIRCRAFT, dt) {
     if (p.gearDown && p.gearTransition < 1.0) p.gearTransition = Math.min(1.0, p.gearTransition + dt * 0.2);
     if (!p.gearDown && p.gearTransition > 0.0) p.gearTransition = Math.max(0.0, p.gearTransition - dt * 0.2);
@@ -33,6 +81,10 @@ export function updateGearAnimation(p, AIRCRAFT, dt) {
     }
 }
 
+/**
+ * @param {GroundContext} ctx
+ * @param {number} liftRatio
+ */
 export function solveGroundPhysics(ctx, liftRatio) {
     const { PHYSICS, AIRCRAFT, THREE, getTerrainHeight } = ctx;
     const p = PHYSICS;

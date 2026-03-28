@@ -1,7 +1,38 @@
+// @ts-check
+
 import { createRapierWorld } from './rapierWorld.js';
 import { debugInfo } from '../core/logging.js';
 import { listRuntimeAirports } from '../world/AirportLayout.js';
 
+/**
+ * @typedef AdapterPhysicsLike
+ * @property {number} gravity
+ * @property {import('three').Vector3} position
+ * @property {import('three').Quaternion} quaternion
+ * @property {import('three').Vector3} velocity
+ * @property {import('three').Vector3} angularVelocity
+ * @property {import('three').Vector3} externalForce
+ * @property {import('three').Vector3} externalTorque
+ */
+
+/**
+ * @typedef AdapterAircraftLike
+ * @property {number} mass
+ */
+
+/** @typedef {Parameters<typeof listRuntimeAirports>[0]} RuntimeAirportWorldData */
+
+/**
+ * @typedef PhysicsWindowLike
+ * @property {RuntimeAirportWorldData | undefined} [fsimWorld]
+ */
+
+/**
+ * @param {{
+ *   PHYSICS: AdapterPhysicsLike,
+ *   AIRCRAFT: AdapterAircraftLike
+ * }} options
+ */
 export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
   let rapier = null;
   let RAPIER = null;
@@ -21,7 +52,9 @@ export function createPhysicsAdapter({ PHYSICS, AIRCRAFT }) {
     }
     runwayColliders = [];
 
-    const worldData = (typeof window !== 'undefined' ? window.fsimWorld : null) || { airports: [] };
+    const worldData = /** @type {RuntimeAirportWorldData} */ (
+      /** @type {PhysicsWindowLike | null} */ (typeof window !== 'undefined' ? window : null)?.fsimWorld || { airports: [] }
+    );
     for (const airport of listRuntimeAirports(worldData)) {
       const yawRad = (airport.yaw || 0) * Math.PI / 180;
       const halfYaw = yawRad * 0.5;
