@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import {
     configureMaterialShaderPipeline,

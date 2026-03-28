@@ -1,3 +1,5 @@
+// @ts-check
+
 import { TERRAIN_HEIGHT_BANDS } from './TerrainPalette.js';
 
 function clamp01(value) {

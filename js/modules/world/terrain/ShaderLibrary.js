@@ -1,3 +1,5 @@
+// @ts-check
+
 export const ShaderLibrary = {
     terrain_city_pars_fragment: ``,
     terrain_city_fragment: `

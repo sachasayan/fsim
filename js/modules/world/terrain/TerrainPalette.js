@@ -1,3 +1,5 @@
+// @ts-check
+
 export const SEA_LEVEL = -10;
 
 export const TERRAIN_HEIGHT_BANDS = {

@@ -1,3 +1,5 @@
+// @ts-check
+
 function getRadialInfluence(dist, radius) {
     if (dist >= radius) return 0;
     const t = 1 - dist / radius;

@@ -1,3 +1,5 @@
+// @ts-check
+
 function clampPositive(value, fallback) {
     return Number.isFinite(value) && value > 0 ? value : fallback;
 }

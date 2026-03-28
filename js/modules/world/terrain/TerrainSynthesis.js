@@ -1,6 +1,24 @@
+// @ts-check
+
 import { DEFAULT_WORLD_SIZE } from '../WorldConfig.js';
 import { applyAirportRunwayFlattening } from '../AirportLayout.js';
 import { SEA_LEVEL } from './TerrainPalette.js';
+
+/**
+ * @typedef {import('../../../editor/core/types').EditorBounds} TerrainSynthesizerBounds
+ * @typedef {import('../../../editor/core/types').EditorTerrainGenerator} TerrainGeneratorConfigInput
+ * @typedef {Parameters<typeof applyAirportRunwayFlattening>[3]} TerrainSynthesizerWorldData
+ */
+
+/**
+ * @typedef TerrainSynthesizerOptions
+ * @property {{ noise(x: number, y: number, z: number): number, fractal(x: number, z: number, octaves: number, persistence: number, scale: number): number }} [Noise]
+ * @property {number} [worldSize]
+ * @property {TerrainGeneratorConfigInput} [config]
+ * @property {TerrainSynthesizerBounds | null} [authoredBounds]
+ * @property {TerrainSynthesizerWorldData | null} [worldData]
+ * @property {boolean} [applyRunwayFlattening]
+ */
 
 function clamp01(value) {
     return Math.max(0, Math.min(1, value));
@@ -1349,6 +1367,9 @@ function getOverlayColor(overlayKind, value, heightValue, showContours) {
     return [rgb[0], rgb[1], rgb[2], 170];
 }
 
+/**
+ * @param {TerrainSynthesizerOptions} [options]
+ */
 export function createTerrainSynthesizer({
     Noise,
     worldSize = DEFAULT_WORLD_SIZE,

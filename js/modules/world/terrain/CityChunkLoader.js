@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * CityChunkLoader.js
  *
@@ -19,6 +21,12 @@
  */
 
 import { buildDistrictRecords } from '../MapDataUtils.js';
+
+/**
+ * @typedef {Window & typeof globalThis & {
+ *   fsimWorld?: Parameters<typeof buildDistrictRecords>[0]
+ * }} DistrictLoaderWindow
+ */
 
 const MAGIC = 0x46574C44;
 const BLDG_FLOATS = 10;
@@ -94,8 +102,9 @@ function districtContainsPoint(record, x, z) {
  */
 let districtIndexPromise = null;
 export async function fetchDistrictIndex() {
-    if (window.fsimWorld) {
-        return buildDistrictRecords(window.fsimWorld).map(normalizeDistrictIndexEntry);
+    const runtimeWindow = /** @type {DistrictLoaderWindow} */ (window);
+    if (runtimeWindow.fsimWorld) {
+        return buildDistrictRecords(runtimeWindow.fsimWorld).map(normalizeDistrictIndexEntry);
     }
     if (!districtIndexPromise) {
         const url = `/world/chunks/index.json?t=${Date.now()}`;

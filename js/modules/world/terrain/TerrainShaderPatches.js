@@ -1,9 +1,28 @@
+// @ts-check
+
 import { ShaderLibrary } from './ShaderLibrary.js';
 import {
     prependShaderDefine,
     replaceShaderInclude,
     replaceShaderSnippet
 } from '../shaders/ShaderPatchUtils.js';
+
+/**
+ * @typedef TreeDepthShaderPatchOptions
+ * @property {{ value: import('three').Vector3 | null }} mainCameraPosUniform
+ * @property {boolean} [cameraFacing]
+ * @property {boolean} [lockYAxis]
+ * @property {number} [shadowFadeNear]
+ * @property {number} [shadowFadeFar]
+ */
+
+/**
+ * @typedef DetailedBuildingShaderPatchOptions
+ * @property {string} style
+ * @property {{ value: import('three').Vector3 | null } | null} [cameraPosUniform]
+ * @property {number} [fadeNear]
+ * @property {number} [fadeFar]
+ */
 
 const DIFFUSE_COLOR_SNIPPET = 'vec4 diffuseColor = vec4( diffuse, opacity );';
 
@@ -460,13 +479,19 @@ roughnessFactor = mix(roughnessFactor * 0.82, min(1.0, roughnessFactor * 1.08), 
     return shader;
 }
 
+/**
+ * @param {{ uniforms: Record<string, unknown>, defines?: Record<string, unknown>, vertexShader: string, fragmentShader: string }} shader
+ * @param {TreeDepthShaderPatchOptions} [options]
+ */
 export function applyTreeDepthShaderPatch(shader, {
     mainCameraPosUniform,
     cameraFacing = true,
     lockYAxis = true,
     shadowFadeNear = 1200,
     shadowFadeFar = 1800
-} = {}) {
+} = /** @type {TreeDepthShaderPatchOptions} */ ({
+    mainCameraPosUniform: { value: null }
+})) {
     shader.defines = shader.defines || {};
     shader.defines.DEPTH_PACKING = 3201;
     Object.assign(shader.uniforms, createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear, shadowFadeFar));
@@ -629,6 +654,10 @@ if (abs(vBldgNormal.y) < 0.9) {
     return { colorFragment: '', roughFragment: '' };
 }
 
+/**
+ * @param {{ uniforms: Record<string, unknown>, defines?: Record<string, unknown>, vertexShader: string, fragmentShader: string }} shader
+ * @param {DetailedBuildingShaderPatchOptions} options
+ */
 export function applyDetailedBuildingShaderPatch(shader, { style, cameraPosUniform = null, fadeNear = 6800, fadeFar = 7800 }) {
     if (cameraPosUniform) {
         Object.assign(shader.uniforms, createBuildingPopInUniformBindings(cameraPosUniform, fadeNear, fadeFar));

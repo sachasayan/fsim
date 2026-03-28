@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import Stats from 'three/addons/libs/stats.module.js';
 import GUI from 'lil-gui';
@@ -23,19 +25,66 @@ import { startLoaderTips } from './ui/LoaderTips.js';
 import { debugLog } from './core/logging.js';
 import { createCrashSystem, evaluateCrashImpact } from './crash/CrashSystem.js';
 
+/**
+ * @typedef {Window & typeof globalThis & {
+ *   __FSIM_RUNTIME__?: { showDebugUi?: boolean },
+ *   fsimWorld?: Record<string, any>,
+ *   fsimPerf?: Record<string, unknown>,
+ *   triggerCrash?: (reason?: string) => void,
+ *   resetFlight?: () => void
+ * }} FsimRuntimeWindow
+ */
+
+/**
+ * @typedef LoaderElements
+ * @property {HTMLElement | null} phaseText
+ * @property {HTMLElement | null} phaseDetailText
+ * @property {HTMLElement | null} terrainBar
+ * @property {HTMLElement | null} terrainText
+ * @property {HTMLElement | null} assetsBar
+ * @property {HTMLElement | null} assetsText
+ */
+
+/**
+ * @typedef TerrainSelectionDiagnostics
+ * @property {number | undefined} [blockingLeafCount]
+ * @property {number | undefined} [pendingBlockingLeafCount]
+ * @property {{
+ *   selectionBuildMs?: number,
+ *   queueSchedulingMs?: number,
+ *   queuePruneMs?: number,
+ *   leafBuildMs?: number,
+ *   leafBuildDispatchMs?: number,
+ *   leafBuildApplyMs?: number,
+ *   chunkBuildQueueMs?: number,
+ *   propBuildQueueMs?: number
+ * } | undefined} [timings]
+ */
+
+/**
+ * @typedef WarmupProgress
+ * @property {number | undefined} [ratio]
+ * @property {'building' | 'compiling' | 'complete' | 'skipped' | undefined} [stage]
+ * @property {number | undefined} [completed]
+ * @property {number | undefined} [total]
+ */
+
+/** @type {FsimRuntimeWindow} */
+const runtimeWindow = /** @type {FsimRuntimeWindow} */ (window);
+
 // Initialize audio nodes early (will be suspended until gesture)
 ProceduralAudio.init();
 
 // Handle browser audio suspension policy
 const resumeAudio = () => {
   ProceduralAudio.resume();
-  window.removeEventListener('mousedown', resumeAudio);
-  window.removeEventListener('keydown', resumeAudio);
-  window.removeEventListener('touchstart', resumeAudio);
+  runtimeWindow.removeEventListener('mousedown', resumeAudio);
+  runtimeWindow.removeEventListener('keydown', resumeAudio);
+  runtimeWindow.removeEventListener('touchstart', resumeAudio);
 };
-window.addEventListener('mousedown', resumeAudio);
-window.addEventListener('keydown', resumeAudio);
-window.addEventListener('touchstart', resumeAudio);
+runtimeWindow.addEventListener('mousedown', resumeAudio);
+runtimeWindow.addEventListener('keydown', resumeAudio);
+runtimeWindow.addEventListener('touchstart', resumeAudio);
 
 // ==========================================
 // 1. CORE SETUP & GLOBALS
@@ -44,15 +93,15 @@ const container = document.getElementById('game-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x3a2e3f);
 scene.fog = new THREE.FogExp2(0x3a2e3f, 0.00015);
-const urlParamsForInit = new URLSearchParams(window.location.search);
-const runtimeConfig = window.__FSIM_RUNTIME__ || {};
+const urlParamsForInit = new URLSearchParams(runtimeWindow.location.search);
+const runtimeConfig = runtimeWindow.__FSIM_RUNTIME__ || {};
 const shouldShowDebugUi = runtimeConfig.showDebugUi === true || urlParamsForInit.get('debug') === '1';
 const debugView = {
   slewMode: false,
   slewSpeed: 1000,
   showShadowCameraHelper: false
 };
-const lodSettings = createRuntimeLodSettings({ urlSearch: window.location.search });
+const lodSettings = createRuntimeLodSettings({ urlSearch: runtimeWindow.location.search });
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
 
@@ -103,9 +152,9 @@ const perfCollector = createPerformanceCollector({
   getProfilingSnapshot: () => {
     const now = performance.now();
     return {
-      bootstrapComplete: window.fsimWorld?.bootstrapComplete ?? false,
-      loaderHidden: window.fsimWorld?.loaderHidden ?? false,
-      worldReady: window.fsimWorld?.worldReady ?? false,
+      bootstrapComplete: runtimeWindow.fsimWorld?.bootstrapComplete ?? false,
+      loaderHidden: runtimeWindow.fsimWorld?.loaderHidden ?? false,
+      worldReady: runtimeWindow.fsimWorld?.worldReady ?? false,
       profilingReady: profilingState.profilingReady,
       profilingReadinessReason: profilingState.profilingReadinessReason,
       lastProgramsChangeMsAgo: now - profilingState.lastProgramsChangeAtMs,
@@ -329,14 +378,14 @@ const cameraController = createCameraController({
 const inputHandler = createInputHandler({ keys, PHYSICS, cameraController });
 inputHandler.init();
 
-const hud = createHUD({ PHYSICS, WEATHER, getTerrainHeight });
+const hud = createHUD({ PHYSICS: /** @type {any} */ (PHYSICS), WEATHER, getTerrainHeight });
 setTokenCollectionHandler(({ count, worldPosition, collectedAtMs }) => {
   ProceduralAudio.coinPickup();
   hud.showTokenPickup({ count, worldPosition, collectedAtMs });
 });
 const shouldLogShaderValidation = urlParamsForInit.get('validateShaders') === '1';
 
-window.fsimWorld = {
+runtimeWindow.fsimWorld = {
   isReady,
   reloadCity,
   PHYSICS,
@@ -381,8 +430,9 @@ window.fsimWorld = {
   shaderValidationSummary: getShaderValidationSummary(),
   startupTimeline
 };
-window.fsimPerf = perfCollector;
+runtimeWindow.fsimPerf = perfCollector;
 
+/** @type {LoaderElements} */
 const loaderElements = {
   phaseText: document.getElementById('loader-phase'),
   phaseDetailText: document.getElementById('loader-phase-detail'),
@@ -411,7 +461,8 @@ function setLoaderPhaseText(phaseText, detailText) {
 }
 
 function updateLoaderProgress() {
-  const terrainSelection = getTerrainSelectionDiagnostics?.() || null;
+  /** @type {TerrainSelectionDiagnostics | null} */
+  const terrainSelection = /** @type {TerrainSelectionDiagnostics | null} */ (getTerrainSelectionDiagnostics?.() || null);
   const blockingLeafCount = terrainSelection?.blockingLeafCount ?? 0;
   const pendingBlockingLeafCount = terrainSelection?.pendingBlockingLeafCount ?? 0;
   const readyBlockingLeafCount = Math.max(0, blockingLeafCount - pendingBlockingLeafCount);
@@ -451,14 +502,14 @@ function updateLoaderProgress() {
     setLoaderPhaseText('Bringing the flight deck online', 'Awaiting terrain selection and shader warmup');
   }
 
-  window.fsimWorld.loaderProgress = {
+  runtimeWindow.fsimWorld.loaderProgress = {
     terrain: { ...loaderProgressState.terrain },
     assets: { ...loaderProgressState.assets }
   };
 }
 
 // Initialize LiveReload functionality
-initLiveReload(window.fsimWorld);
+initLiveReload(/** @type {any} */ (runtimeWindow.fsimWorld));
 
 // Bind visual surfaces back to physics configuration
 AIRCRAFT.movableSurfaces = movableSurfaces;
@@ -512,11 +563,11 @@ const crashSystem = createCrashSystem({
   getTerrainHeight,
   planeGroup,
   AIRCRAFT,
-  PHYSICS,
+  PHYSICS: /** @type {any} */ (PHYSICS),
   spawnParticle,
-  getBreakupPieceSpecs,
+  getBreakupPieceSpecs: /** @type {any} */ (getBreakupPieceSpecs),
   onResetRequested: () => {
-    window.resetFlight();
+    runtimeWindow.resetFlight?.();
   }
 });
 
@@ -554,7 +605,7 @@ function updateSlewMode(dt) {
 }
 
 // --- CRASH LOGIC & RESET ---
-window.triggerCrash = function (reason) {
+runtimeWindow.triggerCrash = function (reason) {
   if (PHYSICS.crashState !== 'active') return;
   crashSystem.beginCrash({
     reason,
@@ -563,7 +614,7 @@ window.triggerCrash = function (reason) {
   });
 };
 
-window.resetFlight = function () {
+runtimeWindow.resetFlight = function () {
   crashSystem.endCrash();
   PHYSICS.position.set(spawnState.x, spawnState.y, spawnState.z);
   PHYSICS.velocity.set(0, 0, 0);
@@ -596,7 +647,7 @@ window.resetFlight = function () {
   physicsAdapter.syncFromState();
 };
 
-window.addEventListener('resize', handleResize);
+runtimeWindow.addEventListener('resize', handleResize);
 
 function updateProfilingReadiness(now) {
   const info = renderer.info;
@@ -618,12 +669,12 @@ function updateProfilingReadiness(now) {
     profilingState.lastGeometriesChangeAtMs = now;
   }
 
-  window.fsimWorld.worldReady = worldReady;
+  runtimeWindow.fsimWorld.worldReady = worldReady;
 
   let reason = 'stable';
-  if (!window.fsimWorld.bootstrapComplete) {
+  if (!runtimeWindow.fsimWorld.bootstrapComplete) {
     reason = 'bootstrap_incomplete';
-  } else if (!window.fsimWorld.loaderHidden) {
+  } else if (!runtimeWindow.fsimWorld.loaderHidden) {
     reason = 'loader_visible';
   } else if (!worldReady) {
     reason = 'world_not_ready';
@@ -656,10 +707,10 @@ function updateProfilingReadiness(now) {
     profilingState.profilingReadyAtMs = null;
   }
 
-  window.fsimWorld.profilingReady = profilingState.profilingReady;
-  window.fsimWorld.profilingReadinessReason = reason;
-  window.fsimWorld.terrainSelection = getTerrainSelectionDiagnostics?.() || null;
-  window.fsimWorld.surfaceShadows = getSurfaceShadowDiagnostics?.() || null;
+  runtimeWindow.fsimWorld.profilingReady = profilingState.profilingReady;
+  runtimeWindow.fsimWorld.profilingReadinessReason = reason;
+  runtimeWindow.fsimWorld.terrainSelection = getTerrainSelectionDiagnostics?.() || null;
+  runtimeWindow.fsimWorld.surfaceShadows = getSurfaceShadowDiagnostics?.() || null;
 }
 
 function animate() {
@@ -814,8 +865,8 @@ function animate() {
     PHYSICS.dt = PHYSICS_STEP;
     if (PHYSICS.crashState === 'active') {
       calculateAerodynamics({
-        THREE, PHYSICS, AIRCRAFT, WEATHER, keys,
-        getTerrainHeight, gearGroup, planeGroup, Noise
+        THREE, PHYSICS: /** @type {any} */ (PHYSICS), AIRCRAFT: /** @type {any} */ (AIRCRAFT), WEATHER, keys,
+        getTerrainHeight
       });
     }
 
@@ -957,7 +1008,8 @@ function animate() {
   let terrainUpdated = false;
   let worldLodUpdated = false;
   if (shouldUpdateTerrain) {
-    const terrainDiagnostics = updateTerrain();
+    /** @type {TerrainSelectionDiagnostics | null} */
+    const terrainDiagnostics = /** @type {TerrainSelectionDiagnostics | null} */ (updateTerrain());
     lastTerrainUpdateMs = now;
     lastTerrainChunkX = chunkX;
     lastTerrainChunkZ = chunkZ;
@@ -1032,7 +1084,7 @@ function hideLoader() {
   if (loaderHidden) return;
   loaderHidden = true;
   startupTimeline.loaderHiddenAtMs ??= performance.now();
-  window.fsimWorld.loaderHidden = true;
+  runtimeWindow.fsimWorld.loaderHidden = true;
   const loader = document.getElementById('loader');
   if (!loader) return;
   debugLog('Hiding loader...');
@@ -1067,7 +1119,7 @@ setTimeout(() => {
   ProceduralAudio.resume();
 
   debugLog('Finalizing initialization...');
-  const urlParams = new URLSearchParams(window.location.search);
+  const urlParams = new URLSearchParams(runtimeWindow.location.search);
   const spawnX = urlParams.has('x') ? parseFloat(urlParams.get('x')) : 0;
   const spawnY = urlParams.has('y') ? parseFloat(urlParams.get('y')) : AIRCRAFT.gearHeight;
   const spawnZ = urlParams.has('z') ? parseFloat(urlParams.get('z')) : 1900;
@@ -1112,6 +1164,7 @@ setTimeout(() => {
 
   startupTimeline.shaderWarmupStartedAtMs ??= performance.now();
   const warmupPromise = warmupShaders(camera, {
+    /** @param {WarmupProgress} progress */
     onProgress: (progress) => {
       const ratio = Number.isFinite(progress?.ratio) ? progress.ratio : 0;
       let text = 'Preparing asset warmup...';
@@ -1130,8 +1183,8 @@ setTimeout(() => {
     }
   }).then((report) => {
     startupTimeline.shaderWarmupCompletedAtMs ??= performance.now();
-    window.fsimWorld.shaderValidation = report;
-    window.fsimWorld.shaderValidationSummary = report.summary;
+    runtimeWindow.fsimWorld.shaderValidation = report;
+    runtimeWindow.fsimWorld.shaderValidationSummary = report.summary;
     loaderProgressState.assets.ratio = 1;
     loaderProgressState.assets.text = 'Asset warmup ready';
     updateLoaderProgress();
@@ -1144,7 +1197,7 @@ setTimeout(() => {
     startupTimeline.startupReadyAtMs ??= performance.now();
     completeBootstrap();
     startupTimeline.bootstrapCompletedAtMs ??= performance.now();
-    window.fsimWorld.bootstrapComplete = true;
+    runtimeWindow.fsimWorld.bootstrapComplete = true;
     updateTerrain();
     hideLoader();
   });

@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 import { CLASS_NAMES, DISTRICT_PROP_NAMES } from './CityChunkLoader.js';
 import { hash2Local } from './TerrainUtils.js';

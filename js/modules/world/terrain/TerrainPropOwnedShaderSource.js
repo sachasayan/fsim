@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 
 import {
@@ -8,6 +10,22 @@ import {
     createBuildingPopInUniformBindings,
     createTreeDepthUniformBindings
 } from './TerrainShaderPatches.js';
+
+/**
+ * @typedef TreeDepthOwnedShaderSourceOptions
+ * @property {boolean} [cameraFacing]
+ * @property {boolean} [lockYAxis]
+ * @property {number} [shadowFadeNear]
+ * @property {number} [shadowFadeFar]
+ */
+
+/**
+ * @typedef DetailedBuildingOwnedShaderSourceOptions
+ * @property {string} style
+ * @property {boolean} [cameraPopIn]
+ * @property {number} [fadeNear]
+ * @property {number} [fadeFar]
+ */
 
 const SOURCE_CACHE = new Map();
 
@@ -28,6 +46,9 @@ function buildTreeBillboardOwnedShaderSource({ cameraFacing = true, lockYAxis = 
     };
 }
 
+/**
+ * @param {TreeDepthOwnedShaderSourceOptions} [options]
+ */
 function buildTreeDepthOwnedShaderSource({ cameraFacing = true, lockYAxis = true, shadowFadeNear = 1200, shadowFadeFar = 1800 } = {}) {
     const shader = {
         uniforms: {},
@@ -72,7 +93,10 @@ function buildBuildingPopInOwnedShaderSource({ fadeNear = 6800, fadeFar = 7800 }
     };
 }
 
-function buildDetailedBuildingOwnedShaderSource({ style, cameraPopIn = false, fadeNear = 6800, fadeFar = 7800 } = {}) {
+/**
+ * @param {DetailedBuildingOwnedShaderSourceOptions} options
+ */
+function buildDetailedBuildingOwnedShaderSource({ style, cameraPopIn = false, fadeNear = 6800, fadeFar = 7800 }) {
     const shader = {
         uniforms: {},
         defines: {},
@@ -102,6 +126,9 @@ export function getTreeBillboardOwnedShaderSource({ cameraFacing = true, lockYAx
     return SOURCE_CACHE.get(cacheKey);
 }
 
+/**
+ * @param {TreeDepthOwnedShaderSourceOptions} [options]
+ */
 export function getTreeDepthOwnedShaderSource({ cameraFacing = true, lockYAxis = true, shadowFadeNear = 1200, shadowFadeFar = 1800 } = {}) {
     const cacheKey = `tree-depth:${cameraFacing ? 'camera-facing' : 'static'}:${lockYAxis ? 'y-locked' : 'full-facing'}:${shadowFadeNear}:${shadowFadeFar}`;
     if (!SOURCE_CACHE.has(cacheKey)) {
@@ -118,7 +145,10 @@ export function getBuildingPopInOwnedShaderSource({ fadeNear = 6800, fadeFar = 7
     return SOURCE_CACHE.get(cacheKey);
 }
 
-export function getDetailedBuildingOwnedShaderSource({ style, cameraPopIn = false, fadeNear = 6800, fadeFar = 7800 } = {}) {
+/**
+ * @param {DetailedBuildingOwnedShaderSourceOptions} options
+ */
+export function getDetailedBuildingOwnedShaderSource({ style, cameraPopIn = false, fadeNear = 6800, fadeFar = 7800 }) {
     const cacheKey = `detailed-building:${style}:${cameraPopIn ? 'popin' : 'static'}:${fadeNear}:${fadeFar}`;
     if (!SOURCE_CACHE.has(cacheKey)) {
         SOURCE_CACHE.set(cacheKey, buildDetailedBuildingOwnedShaderSource({ style, cameraPopIn, fadeNear, fadeFar }));

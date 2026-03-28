@@ -199,17 +199,20 @@
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainWorkerManager.js` and verified it with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain.js`, typed its public terrain-system contract first, then tightened local browser-global, physics-state, and generation-context adapters until both `npm run typecheck` and `npm run editor:build` passed again.
 - [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/CloudWorker.js` and a matching helper pass to `js/modules/world/cloudNoise.js`, typing the cloud worker request/result payloads and transfer-ready tile arrays, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added JSDoc-first `@ts-check` passes across the terrain shader/material support slice, covering `ShaderLibrary.js`, `TerrainMaterials.js`, `TerrainOwnedShaderSource.js`, `TerrainPalette.js`, `TerrainPropOwnedShaderSource.js`, `TerrainShaderPatches.js`, `TerrainSurfaceWeights.js`, `TerrainTextures.js`, and `WaterOwnedShaderSource.js`, then aligned the shared option-object contracts between the owned-source builders and shader-patch helpers, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added JSDoc-first `@ts-check` passes across the next terrain support folder slice, covering `BuildingSpawner.js`, `CityChunkLoader.js`, `QuadtreeSelectionController.js`, `RoadMarkingOverlay.js`, `RoadNetworkGeometry.js`, and `TerrainEdits.js`, then typed the loader's browser-global runtime window seam directly instead of widening the rest of the batch, and verified the folder batch with both `npm run typecheck` and `npm run editor:build`.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/world/terrain/TerrainSynthesis.js`, then formalized the top-level synthesizer options contract around the real runtime runway-flattening world-data shape instead of forcing it through the narrower editor-world type, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 - [ ] Decide when to extract shared worker request/response types instead of keeping local worker-message shapes inside each manager.
 
 ## Phase 6: Convert Large Orchestrator Files Late
 
-- [ ] Leave the central bootstrap/orchestration files until imported modules and shared types are in place.
-- [ ] Convert `js/modules/sim.js` only after major runtime dependencies have better type coverage.
-- [ ] Use the late-stage conversion to shrink implicit globals and undocumented contracts.
+- [x] Leave the central bootstrap/orchestration files until imported modules and shared types are in place.
+- [x] Convert `js/modules/sim.js` only after major runtime dependencies have better type coverage.
+- [x] Use the late-stage conversion to shrink implicit globals and undocumented contracts.
 
 ### Late-Stage Targets
 
-- [ ] `js/modules/sim.js`
+- [x] `js/modules/sim.js`
 - [ ] Large world assembly/orchestration modules
 - [ ] Any file that currently acts as a catch-all integration layer
 
@@ -231,6 +234,7 @@
 - [x] Added JSDoc-first `@ts-check` passes across the app-shell support slice around the bootstrap, covering `js/modules/ui/LoaderTips.js`, `js/modules/ui/MapTileManager.js`, `js/modules/ui/hud.js`, `js/modules/camera/updateCamera.js`, `js/modules/state.js`, and `js/modules/lighting.js`, then aligned the remaining async tile-render and DOM/canvas boundary call sites, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Added JSDoc-first `@ts-check` passes across the remaining pre-bootstrap support slice, covering `js/modules/sim/AirportSystems.js`, `js/modules/audio/AudioSystem.js`, and `js/modules/crash/CrashSystem.js`, and verified the batch with both `npm run typecheck` and `npm run editor:build`.
 - [x] Restored native-browser runtime compatibility for shared converted helpers by adding `.js` companion modules for `logging`, `LodSystem`, `config`, `AirportLayout`, `AuthoredObjectCatalog`, `WorldConfig`, and `MapColors`, and by updating direct-runtime JS imports to use explicit `.js` specifiers.
+- [x] Added a JSDoc-first `@ts-check` pass to `js/modules/sim.js`, typed the owned browser-global/runtime-window seam plus loader and warmup diagnostics, then tightened a small set of compatibility casts at legacy physics, HUD, crash, and live-reload boundaries, and verified the bootstrap with both `npm run typecheck` and `npm run editor:build`.
 
 ## Phase 7: Tighten Compiler Strictness Gradually
 
@@ -328,3 +332,7 @@
 - [x] Forty-eighth migration pattern: editor bridge/helper folders often need intentionally broader public contracts than their internal logic uses, because the surrounding controller and command layers still pass heterogeneous entity shapes; the cleanest finish is usually to widen the helper boundary and add one or two explicit casts at the call sites that genuinely know more.
 - [x] Forty-ninth migration pattern: support rings around a large bootstrap file are strong folder-batch targets because they mostly expose DOM, canvas, and async callback boundaries; once those seams are typed, the remaining fixes are usually local element narrowing and one or two explicit Promise/result casts where a looser caller API still sits between modules.
 - [x] Fiftieth migration pattern: once most surrounding support layers are typed, the last pre-bootstrap slices often go green quickly because their dependencies are already constrained; at that stage, local browser/audio/physics typedefs are usually enough, and broad shared runtime types add less value than just finishing the ring around the bootstrap.
+- [x] Fifty-first migration pattern: once the dependency ring around a large bootstrap is typed, the bootstrap itself is usually best approached by first naming the globals and diagnostics it owns, then applying a few narrow compatibility casts at older subsystem boundaries; trying to invent one giant shared runtime type up front creates more churn than value at that stage.
+- [x] Fifty-second migration pattern: terrain shader/material folders are good large-batch `@ts-check` candidates once the shared shader pipeline is already typed, but they usually need one explicit round of named option-object typedefs so the owned-source builders and shader-patch helpers stop inferring incompatible anonymous object shapes.
+- [x] Fifty-third migration pattern: once a terrain support folder is mostly surrounded by typed modules, the remaining errors often collapse to one browser-global seam in a loader or cache file; typing that runtime window locally is usually cheaper and safer than inventing a broader shared global contract for the whole folder.
+- [x] Fifty-fourth migration pattern: for large procedural generator modules, the highest-leverage boundary to type is usually the top-level options object, but that contract needs to reflect the runtime data the generator actually consumes; reusing a narrower editor-facing type too early tends to create avoidable friction at helper call sites.

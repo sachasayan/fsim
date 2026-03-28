@@ -1,3 +1,5 @@
+// @ts-check
+
 import * as THREE from 'three';
 
 const DEFAULT_OVERLAY_WORLD_SIZE = 2048;
