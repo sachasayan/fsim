@@ -10,6 +10,7 @@ const DESCRIPTOR_CACHE = new Map();
 
 const TERRAIN_DETAIL_UNIFORM_KEYS = [
     'uTerrainDetailTex',
+    'uTerrainGrassTex',
     'uTerrainDetailScale',
     'uTerrainDetailStrength',
     'uTerrainSlopeStart',
@@ -17,9 +18,12 @@ const TERRAIN_DETAIL_UNIFORM_KEYS = [
     'uTerrainRockHeightStart',
     'uTerrainRockHeightEnd',
     'uTerrainAtmosStrength',
-    'uTerrainFoliageNearStart',
-    'uTerrainFoliageNearEnd',
-    'uTerrainFoliageStrength',
+    'uTerrainGrassTexScale',
+    'uTerrainGrassTexStrength',
+    'uTerrainGrassTexNearStart',
+    'uTerrainGrassTexNearEnd',
+    'uTerrainGrassShowTexture',
+    'uTerrainGrassDebugMask',
     'uTerrainSandColor',
     'uTerrainGrassColor',
     'uTerrainRockColor',

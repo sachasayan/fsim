@@ -127,6 +127,7 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
     const shader = makeShader();
     const terrainDetailUniforms = {
         uTerrainDetailTex: { value: 'detail' },
+        uTerrainGrassTex: { value: 'grass-tex' },
         uTerrainDetailScale: { value: 1 },
         uTerrainDetailStrength: { value: 1 },
         uTerrainSlopeStart: { value: 1 },
@@ -134,9 +135,12 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
         uTerrainRockHeightStart: { value: 1 },
         uTerrainRockHeightEnd: { value: 1 },
         uTerrainAtmosStrength: { value: 1 },
-        uTerrainFoliageNearStart: { value: 1 },
-        uTerrainFoliageNearEnd: { value: 1 },
-        uTerrainFoliageStrength: { value: 1 },
+        uTerrainGrassTexScale: { value: 1 },
+        uTerrainGrassTexStrength: { value: 1 },
+        uTerrainGrassTexNearStart: { value: 1 },
+        uTerrainGrassTexNearEnd: { value: 1 },
+        uTerrainGrassShowTexture: { value: 1 },
+        uTerrainGrassDebugMask: { value: 0 },
         uTerrainSandColor: { value: 'sand' },
         uTerrainGrassColor: { value: 'grass' },
         uTerrainRockColor: { value: 'rock' },
@@ -161,6 +165,20 @@ test('applyTerrainDetailShaderPatch injects terrain uniforms and far-lod define'
     assert.match(shader.vertexShader, /attribute vec4 surfaceWeights;/);
     assert.match(shader.fragmentShader, /baseTerrainColor \*= naturalTerrainVertexTint;/);
     assert.match(shader.fragmentShader, /diffuseColor\.rgb = baseTerrainColor;/);
+    assert.match(shader.fragmentShader, /float farDetailScale = 1\.0;/);
+    assert.match(shader.fragmentShader, /farDetailScale = 0\.0;/);
+    assert.match(shader.fragmentShader, /uniform sampler2D uTerrainGrassTex;/);
+    assert.match(shader.fragmentShader, /uTerrainGrassTexScale/);
+    assert.match(shader.fragmentShader, /uTerrainGrassTexStrength/);
+    assert.match(shader.fragmentShader, /uTerrainGrassShowTexture/);
+    assert.match(shader.fragmentShader, /uTerrainGrassDebugMask/);
+    assert.match(shader.fragmentShader, /float grassTextureFade = \(1\.0 - smoothstep\(uTerrainGrassTexNearStart, uTerrainGrassTexNearEnd, vTerrainDist\)\)/);
+    assert.match(shader.fragmentShader, /vec2 grassUvA = vTerrainWorldPos\.xz \* uTerrainGrassTexScale;/);
+    assert.match(shader.fragmentShader, /mat2 grassRotation = mat2\(0\.819152, -0\.573576, 0\.573576, 0\.819152\);/);
+    assert.match(shader.fragmentShader, /vec2 grassUvB = grassRotation \* \(grassUvA \* 0\.83\);/);
+    assert.match(shader.fragmentShader, /vec3 grassTexColor = mix\(grassTexA, grassTexB, 0\.45\);/);
+    assert.match(shader.fragmentShader, /diffuseColor\.rgb = mix\(diffuseColor\.rgb, grassTexColor, clamp\(grassTextureFade, 0\.0, 1\.0\)\);/);
+    assert.match(shader.fragmentShader, /if \(uTerrainGrassDebugMask > 0\.5\)/);
     assert.doesNotMatch(shader.fragmentShader, /#include <color_fragment>/);
     assert.match(shader.fragmentShader, /float cityAlpha = 0\.0;/);
     assert.match(shader.fragmentShader, /#define IS_FAR_LOD/);

@@ -20,6 +20,7 @@ export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosp
     return {
         uTime: timeUniform,
         uTerrainDetailTex: terrainDetailUniforms.uTerrainDetailTex,
+        uTerrainGrassTex: terrainDetailUniforms.uTerrainGrassTex,
         uTerrainDetailScale: terrainDetailUniforms.uTerrainDetailScale,
         uTerrainDetailStrength: terrainDetailUniforms.uTerrainDetailStrength,
         uTerrainSlopeStart: terrainDetailUniforms.uTerrainSlopeStart,
@@ -31,9 +32,12 @@ export function createTerrainDetailUniformBindings(terrainDetailUniforms, atmosp
         uAtmosNear: atmosphereUniforms.uAtmosNear,
         uAtmosFar: atmosphereUniforms.uAtmosFar,
         uTerrainAtmosStrength: terrainDetailUniforms.uTerrainAtmosStrength,
-        uTerrainFoliageNearStart: terrainDetailUniforms.uTerrainFoliageNearStart,
-        uTerrainFoliageNearEnd: terrainDetailUniforms.uTerrainFoliageNearEnd,
-        uTerrainFoliageStrength: terrainDetailUniforms.uTerrainFoliageStrength,
+        uTerrainGrassTexScale: terrainDetailUniforms.uTerrainGrassTexScale,
+        uTerrainGrassTexStrength: terrainDetailUniforms.uTerrainGrassTexStrength,
+        uTerrainGrassTexNearStart: terrainDetailUniforms.uTerrainGrassTexNearStart,
+        uTerrainGrassTexNearEnd: terrainDetailUniforms.uTerrainGrassTexNearEnd,
+        uTerrainGrassShowTexture: terrainDetailUniforms.uTerrainGrassShowTexture,
+        uTerrainGrassDebugMask: terrainDetailUniforms.uTerrainGrassDebugMask,
         uTerrainSandColor: terrainDetailUniforms.uTerrainSandColor,
         uTerrainGrassColor: terrainDetailUniforms.uTerrainGrassColor,
         uTerrainRockColor: terrainDetailUniforms.uTerrainRockColor,
@@ -672,6 +676,7 @@ vTerrainSlope = 1.0 - clamp(abs(vTerrainWorldNormal.y), 0.0, 1.0);`
 varying float vTerrainDist;
 varying float vTerrainSlope;
 uniform sampler2D uTerrainDetailTex;
+uniform sampler2D uTerrainGrassTex;
 uniform float uTerrainDetailScale;
 uniform float uTerrainDetailStrength;
 uniform float uTerrainSlopeStart;
@@ -683,9 +688,12 @@ uniform vec3 uAtmosColor;
 uniform float uAtmosNear;
 uniform float uAtmosFar;
 uniform float uTerrainAtmosStrength;
-uniform float uTerrainFoliageNearStart;
-uniform float uTerrainFoliageNearEnd;
-uniform float uTerrainFoliageStrength;
+uniform float uTerrainGrassTexScale;
+uniform float uTerrainGrassTexStrength;
+uniform float uTerrainGrassTexNearStart;
+uniform float uTerrainGrassTexNearEnd;
+uniform float uTerrainGrassShowTexture;
+uniform float uTerrainGrassDebugMask;
 uniform float uTime;
 uniform vec3 uTerrainSandColor;
 uniform vec3 uTerrainGrassColor;
@@ -716,41 +724,38 @@ ${ShaderLibrary.terrain_city_fragment}
 #endif
     diffuseColor.rgb = baseTerrainColor;
 
-#ifndef IS_FAR_LOD
     vec2 baseUv = vTerrainWorldPos.xz * uTerrainDetailScale;
     vec4 pNoise = texture2D(uTerrainDetailTex, baseUv * 0.12);
-    vec2 perturbedUv = baseUv + (pNoise.ba * 2.0 - 1.0) * 1.25;
-    vec4 detailA = texture2D(uTerrainDetailTex, perturbedUv);
-    vec4 detailB = texture2D(uTerrainDetailTex, perturbedUv * 2.61 + pNoise.rg * 0.2);
-    float grassDetail = mix(detailA.r, detailB.r, 0.4);
-    float rockDetail = mix(detailA.g, detailB.g, 0.5);
+    float farDetailScale = 1.0;
+#ifdef IS_FAR_LOD
+    farDetailScale = 0.0;
+#endif
     float slopeMask = smoothstep(uTerrainSlopeStart, uTerrainSlopeEnd, vTerrainSlope);
     float heightMask = smoothstep(uTerrainRockHeightStart, uTerrainRockHeightEnd, vTerrainWorldPos.y);
     float rockMask = max(max(slopeMask, heightMask), terrainWeights.z);
-    float detailLuma = mix(grassDetail, rockDetail, rockMask);
-    float detailBoost = mix(0.2, 2.0, detailLuma);
-diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * detailBoost, uTerrainDetailStrength);
-
-    // Suppress macro and foliage in city zones
     float isCity = smoothstep(0.01, 0.1, cityAlpha);
-    
-    float nearMid = 1.0 - smoothstep(140.0, 1700.0, vTerrainDist);
-    float macroA = sin(vTerrainWorldPos.x * 0.0012 + pNoise.b * 3.0) * sin(vTerrainWorldPos.z * 0.0015 - pNoise.a * 2.0);
-    float macroB = sin(vTerrainWorldPos.x * 0.0028 - pNoise.r * 2.0) * sin(vTerrainWorldPos.z * 0.0024 + pNoise.g * 3.0);
-    float macro = 0.5 + 0.3 * macroA + 0.2 * macroB;
-diffuseColor.rgb *= mix(1.0, mix(0.82, 1.18, macro), nearMid * (1.0 - rockMask * 0.4) * (1.0 - isCity));
-    
-    float foliageFade = 1.0 - smoothstep(uTerrainFoliageNearStart, uTerrainFoliageNearEnd, vTerrainDist);
-    float foliage = terrainWeights.y * (1.0 - rockMask * 0.65) * (1.0 - isCity) * foliageFade * smoothstep(0.48, 0.86, grassDetail);
-    
-    float phase = vTerrainWorldPos.x * 24.0 + vTerrainWorldPos.z * 21.0 + pNoise.r * 6.0;
-    float delta = fwidth(phase);
-    float micro = abs(fract(phase * 0.15915 - 0.5) * 4.0 - 2.0) - 1.0; 
-    float blade = smoothstep(0.01 + delta * 0.5, 0.99, abs(micro));
-    float bladeWeight = foliage * (1.0 - smoothstep(0.6, 2.0, delta));
-diffuseColor.rgb *= mix(1.0, 0.2 + 1.2 * blade, bladeWeight);
-diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb + vec3(0.02, 0.06, 0.015), bladeWeight * 0.82);
-#endif
+    float grassTextureFade = (1.0 - smoothstep(uTerrainGrassTexNearStart, uTerrainGrassTexNearEnd, vTerrainDist))
+        * terrainWeights.y
+        * (1.0 - rockMask * 0.6)
+        * (1.0 - isCity)
+        * farDetailScale
+        * uTerrainGrassShowTexture
+        * uTerrainGrassTexStrength;
+    vec2 grassUvA = vTerrainWorldPos.xz * uTerrainGrassTexScale;
+    mat2 grassRotation = mat2(0.819152, -0.573576, 0.573576, 0.819152);
+    vec2 grassUvB = grassRotation * (grassUvA * 0.83);
+    vec3 grassTexA = texture2D(uTerrainGrassTex, grassUvA).rgb;
+    vec3 grassTexB = texture2D(uTerrainGrassTex, grassUvB).rgb;
+    vec3 grassTexColor = mix(grassTexA, grassTexB, 0.45);
+    diffuseColor.rgb = mix(diffuseColor.rgb, grassTexColor, clamp(grassTextureFade, 0.0, 1.0));
+    if (uTerrainGrassDebugMask > 0.5) {
+        vec3 grassMaskDebug = mix(
+            vec3(0.04, 0.0, 0.0),
+            vec3(0.08, 0.95, 0.12),
+            clamp(grassTextureFade * 1.2, 0.0, 1.0)
+        );
+        diffuseColor.rgb = mix(diffuseColor.rgb, grassMaskDebug, 0.9);
+    }
 
 ${ShaderLibrary.terrain_city_pavement_fragment}
         float terrainAtmos = smoothstep(uAtmosNear, uAtmosFar, vTerrainDist) * uTerrainAtmosStrength;

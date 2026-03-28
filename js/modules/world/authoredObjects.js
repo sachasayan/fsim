@@ -6,6 +6,22 @@ import { getAuthoredObjectAsset, listAuthoredObjectAssets } from './AuthoredObje
 import { SEA_LEVEL } from './terrain/TerrainPalette.js';
 
 const DRACO_DECODER_PATH = '/node_modules/three/examples/jsm/libs/draco/gltf/';
+const tmpBoundsBox = new THREE.Box3();
+const tmpBoundsSphere = new THREE.Sphere();
+const tmpShadowOffset = new THREE.Vector3();
+const tmpShadowCenter = new THREE.Vector3();
+
+function captureTemplateShadowBounds(root) {
+    tmpBoundsBox.setFromObject(root);
+    if (tmpBoundsBox.isEmpty()) {
+        root.userData.shadowBoundsCenter = [0, 0, 0];
+        root.userData.shadowBoundsRadius = 0;
+        return;
+    }
+    tmpBoundsBox.getBoundingSphere(tmpBoundsSphere);
+    root.userData.shadowBoundsCenter = tmpBoundsSphere.center.toArray();
+    root.userData.shadowBoundsRadius = tmpBoundsSphere.radius;
+}
 
 function getRuntimeWorldData() {
     if (typeof window === 'undefined') return null;
@@ -29,6 +45,32 @@ function configureTemplate(root) {
             child.material.shadowSide = THREE.FrontSide;
         }
     });
+    captureTemplateShadowBounds(root);
+}
+
+export function mergeShadowCoverage(baseCenter, baseExtent, contributorCenter, contributorRadius, padding = 40, targetCenter = new THREE.Vector3()) {
+    targetCenter.copy(baseCenter);
+    const nextExtent = Math.max(baseExtent, contributorRadius + padding);
+    if (!Number.isFinite(contributorRadius) || contributorRadius <= 0) {
+        return {
+            center: targetCenter,
+            extent: nextExtent
+        };
+    }
+
+    const requiredExtent = baseCenter.distanceTo(contributorCenter) * 0.5 + contributorRadius + padding;
+    if (requiredExtent <= baseExtent) {
+        return {
+            center: targetCenter,
+            extent: baseExtent
+        };
+    }
+
+    targetCenter.lerp(contributorCenter, 0.5);
+    return {
+        center: targetCenter,
+        extent: Math.max(nextExtent, requiredExtent)
+    };
 }
 
 export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
@@ -61,6 +103,12 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
     }
 
     function applyPlacementTransform(instance, placement) {
+        const boundsCenter = Array.isArray(instance.userData.shadowBoundsCenter)
+            ? instance.userData.shadowBoundsCenter
+            : [0, 0, 0];
+        const shadowBoundsRadius = Number.isFinite(instance.userData.shadowBoundsRadius)
+            ? instance.userData.shadowBoundsRadius
+            : 0;
         const terrainHeight = typeof getTerrainHeight === 'function'
             ? getTerrainHeight(placement.x, placement.z)
             : 0;
@@ -72,6 +120,9 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
         instance.position.set(placement.x, y, placement.z);
         instance.rotation.set(0, THREE.MathUtils.degToRad(placement.yaw || 0), 0);
         instance.scale.setScalar(placement.scale || 1);
+        tmpShadowOffset.fromArray(boundsCenter).multiplyScalar(placement.scale || 1).applyEuler(instance.rotation);
+        instance.userData.shadowWorldCenter = tmpShadowCenter.copy(instance.position).add(tmpShadowOffset).toArray();
+        instance.userData.shadowWorldRadius = shadowBoundsRadius * (placement.scale || 1);
     }
 
     async function syncToWorldData() {
@@ -112,6 +163,27 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
         }
     }
 
+    function getNearestShadowContributor(referencePosition, maxDistance = 1600, target = {}) {
+        let best = null;
+        let bestDistanceSq = maxDistance * maxDistance;
+        for (const { group } of instances.values()) {
+            const center = group.userData.shadowWorldCenter;
+            const radius = group.userData.shadowWorldRadius;
+            if (!Array.isArray(center) || !Number.isFinite(radius) || radius <= 0) continue;
+            tmpShadowCenter.fromArray(center);
+            const distanceSq = referencePosition.distanceToSquared(tmpShadowCenter);
+            if (distanceSq > bestDistanceSq) continue;
+            bestDistanceSq = distanceSq;
+            best = {
+                center: (target.center || new THREE.Vector3()).copy(tmpShadowCenter),
+                radius,
+                distance: Math.sqrt(distanceSq)
+            };
+            target.center = best.center;
+        }
+        return best;
+    }
+
     const handleWorldDataUpdated = () => {
         syncToWorldData().catch((error) => {
             console.error('[authored-objects] Failed to sync world objects', error);
@@ -126,6 +198,7 @@ export function createAuthoredObjectSystem({ scene, getTerrainHeight }) {
     return {
         authoredObjectAssets: listAuthoredObjectAssets(),
         refreshTerrainAlignment,
-        syncAuthoredObjects: syncToWorldData
+        syncAuthoredObjects: syncToWorldData,
+        getNearestShadowContributor
     };
 }

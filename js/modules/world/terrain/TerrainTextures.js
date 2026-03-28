@@ -232,3 +232,65 @@ export function createPackedTerrainDetailTexture() {
     tex.generateMipmaps = true;
     return tex;
 }
+
+export function createNormalMapFromHeightImage(image, strength = 2.0) {
+    const width = image?.naturalWidth || image?.videoWidth || image?.width;
+    const height = image?.naturalHeight || image?.videoHeight || image?.height;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return null;
+    }
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = width;
+    sourceCanvas.height = height;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    sourceCtx.drawImage(image, 0, 0, width, height);
+    const sourceData = sourceCtx.getImageData(0, 0, width, height).data;
+
+    const normalCanvas = document.createElement('canvas');
+    normalCanvas.width = width;
+    normalCanvas.height = height;
+    const normalCtx = normalCanvas.getContext('2d');
+    const normalImage = normalCtx.createImageData(width, height);
+    const out = normalImage.data;
+
+    function sampleHeight(x, y) {
+        const sx = (x + width) % width;
+        const sy = (y + height) % height;
+        const idx = (sy * width + sx) * 4;
+        return sourceData[idx] / 255;
+    }
+
+    for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+            const left = sampleHeight(x - 1, y);
+            const right = sampleHeight(x + 1, y);
+            const up = sampleHeight(x, y - 1);
+            const down = sampleHeight(x, y + 1);
+
+            const dx = (right - left) * strength;
+            const dy = (down - up) * strength;
+            const dz = 1.0;
+            const invLen = 1 / Math.max(1e-6, Math.hypot(dx, dy, dz));
+
+            const nx = dx * invLen;
+            const ny = dy * invLen;
+            const nz = dz * invLen;
+            const idx = (y * width + x) * 4;
+            out[idx] = Math.round((nx * 0.5 + 0.5) * 255);
+            out[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+            out[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+            out[idx + 3] = 255;
+        }
+    }
+
+    normalCtx.putImageData(normalImage, 0, 0);
+    const texture = new THREE.CanvasTexture(normalCanvas);
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = true;
+    return texture;
+}

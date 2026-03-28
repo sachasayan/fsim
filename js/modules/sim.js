@@ -4,6 +4,7 @@ import GUI from 'lil-gui';
 import { Noise } from './noise.js';
 import { createSimulationState } from './state.js';
 import { createWorldObjects } from './world/objects.js';
+import { mergeShadowCoverage } from './world/authoredObjects.js';
 import { createRuntimeLodSettings, normalizeLodSettings } from './world/LodSystem.js';
 import { calculateAerodynamics } from './physics/updatePhysics.js';
 import { createPhysicsAdapter } from './physics/physicsAdapter.js';
@@ -189,6 +190,7 @@ const {
   updateTokenSystem,
   updateWorldObjects,
   refreshTerrainAlignment,
+  getNearestShadowContributor,
   invalidateWorldLod,
   updateWorldLOD
 } = createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, WEATHER, lodSettings });
@@ -224,6 +226,39 @@ if (debugGui) {
     nativeFolder.add(terrainDebugSettings, 'showTerrainWireframe')
       .name('Wireframe')
       .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+
+    const grassFolder = nativeFolder.addFolder('Grass');
+    grassFolder.add(terrainDebugSettings, 'showGrassMask')
+      .name('Debug Grass Mask')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'showGrassTexture')
+      .name('Show Texture')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'grassTextureScale', 0.001, 0.08, 0.001)
+      .name('Texture Scale')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'grassTextureStrength', 0, 3, 0.05)
+      .name('Texture Strength')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'grassTextureNearStart', 0, 5000, 25)
+      .name('Fade Start')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'grassTextureNearEnd', 1, 12000, 50)
+      .name('Fade End')
+      .onFinishChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'useGrassBumpMap')
+      .name('Use Bump Map')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'grassBumpScale', 0, 2, 0.02)
+      .name('Bump Scale')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'useGrassNormalMap')
+      .name('Use Normal Map')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    grassFolder.add(terrainDebugSettings, 'grassNormalScale', 0, 4, 0.05)
+      .name('Normal Scale')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+
     const objectsFolder = nativeFolder.addFolder('Objects');
     objectsFolder.add(terrainDebugSettings, 'showTrees')
       .name('Trees')
@@ -420,6 +455,7 @@ const tmpSlewUp = new THREE.Vector3();
 const tmpImpactVel = new THREE.Vector3();
 const tmpImpactAngVel = new THREE.Vector3();
 const tmpFocusPos = new THREE.Vector3();
+const tmpShadowFitCenter = new THREE.Vector3();
 
 const prevPhysicsPos = new THREE.Vector3();
 const prevPhysicsQuat = new THREE.Quaternion();
@@ -834,12 +870,26 @@ function animate() {
     // Shadow centering
     tmpShadowSunDir.copy(dirLight.position).sub(dirLight.target.position).normalize();
     const shadowCenter = crashSystem.getFocusPosition(tmpFocusPos);
-    dirLight.target.position.copy(shadowCenter);
+    let shadowTarget = shadowCenter;
+    let shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
+    const shadowContributor = getNearestShadowContributor?.(shadowCenter, 1800);
+    if (shadowContributor) {
+      const mergedShadowFit = mergeShadowCoverage(
+        shadowCenter,
+        shadowExtent,
+        shadowContributor.center,
+        shadowContributor.radius,
+        60,
+        tmpShadowFitCenter
+      );
+      shadowTarget = mergedShadowFit.center;
+      shadowExtent = mergedShadowFit.extent;
+    }
+    dirLight.target.position.copy(shadowTarget);
     dirLight.target.updateMatrixWorld();
-    dirLight.position.copy(shadowCenter).addScaledVector(tmpShadowSunDir, 2000);
+    dirLight.position.copy(shadowTarget).addScaledVector(tmpShadowSunDir, 2000);
 
-    const shadowExtent = 260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16);
-    const shadowMoved = Math.abs(shadowCenter.x - prevShadowCenter.x) > 20 || Math.abs(shadowCenter.y - prevShadowCenter.y) > 20 || Math.abs(shadowCenter.z - prevShadowCenter.z) > 20;
+    const shadowMoved = Math.abs(shadowTarget.x - prevShadowCenter.x) > 20 || Math.abs(shadowTarget.y - prevShadowCenter.y) > 20 || Math.abs(shadowTarget.z - prevShadowCenter.z) > 20;
     const shadowExtentChanged = Math.abs(shadowExtent - prevShadowExtent) > 15;
     if (shadowMoved || shadowExtentChanged) {
       const shadowCam = dirLight.shadow.camera;
@@ -850,7 +900,7 @@ function animate() {
       shadowCam.near = 40;
       shadowCam.far = 5200;
       shadowCam.updateProjectionMatrix();
-      prevShadowCenter.copy(shadowCenter);
+      prevShadowCenter.copy(shadowTarget);
       prevShadowExtent = shadowExtent;
     }
   }
