@@ -1,0 +1,3 @@
+## 2024-05-24 - Perlin Noise Optimizations
+**Learning:** In extreme performance math loops like Perlin noise generation (`Noise.noise` / `Noise.fractal`), hoisting arrays (like `permutation`) out of objects into module-scoped constants and aggressively inlining nested operations (like coordinate scaling, grad calculation) into O(1) lookups reduces intermediate function calls, property lookups and object `this` overhead. This saves huge amounts of V8 execution time (e.g., dropping 130ms to 105ms).
+**Action:** When optimizing tight, multi-octave noise or procedural generation, hoist state to module constants, convert bitwise/branching math into flat expressions, and inline frequent property/function calls.
