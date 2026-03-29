@@ -16,13 +16,14 @@ const MAP_JSON_PATH = path.join(ROOT, 'tools', 'map.json');
 
 import { readFileSync as readFileSyncSync } from 'node:fs';
 import { applyTerrainEdits } from '../js/modules/world/terrain/TerrainEdits.js';
-import { DEFAULT_WORLD_SIZE } from '../js/modules/world/WorldConfig.js';
 import { createTerrainSynthesizer, normalizeTerrainGeneratorConfig } from '../js/modules/world/terrain/TerrainSynthesis.js';
 import { createRegionalTerrainSampler } from '../js/modules/world/terrain/TerrainRegions.js';
 import { normalizeMapData } from '../js/modules/world/MapDataUtils.js';
 import { loadExistingTerrainSampler } from './lib/ExistingTerrainSampler.mjs';
 import { createTerrainFingerprint } from './lib/TerrainFingerprint.mjs';
 import { buildWorldMetadata } from './lib/WorldBinMetadata.mjs';
+
+const DEFAULT_WORLD_SIZE = 100000;
 let mapData = null;
 try {
     mapData = normalizeMapData(JSON.parse(readFileSyncSync(MAP_JSON_PATH, 'utf8')));

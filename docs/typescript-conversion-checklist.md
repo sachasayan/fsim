@@ -411,7 +411,7 @@
 ## Remaining High-Priority JS Holdouts
 
 - [x] Convert the remaining sim/runtime source JS files that were still part of the app code: `js/modules/noise.js`, `js/modules/world/MapDataUtils.js`, `js/modules/world/runway.js`, and `js/modules/world/aircraft_breakup.js`.
-- [ ] Retire the legacy browser-companion JS seams now that the sim runtime has a Vite boundary: `js/modules/core/logging.js`, `js/modules/ui/MapColors.js`, `js/modules/world/AirportLayout.js`, `js/modules/world/AuthoredObjectCatalog.js`, `js/modules/world/LodSystem.js`, `js/modules/world/WorldConfig.js`, and `js/modules/world/config.js`.
+- [x] Retire the legacy browser-companion JS seams now that the sim runtime has a Vite boundary: `js/modules/core/logging.js`, `js/modules/ui/MapColors.js`, `js/modules/world/AirportLayout.js`, `js/modules/world/AuthoredObjectCatalog.js`, `js/modules/world/LodSystem.js`, `js/modules/world/WorldConfig.js`, and `js/modules/world/config.js`.
 - [x] Convert `js/vendor/react-loader.js` to `.ts` as part of the final cleanup.
 - [x] Convert the remaining Playwright E2E/perf JS files, along with `playwright.config.js`, to TypeScript.
 
@@ -426,3 +426,8 @@
 - [x] Completed the tooling-tail rename batch by moving `js/vendor/react-loader.js`, `playwright.config.js`, `tests/e2e/editor/editor.spec.js`, `tests/e2e/editor/helpers.js`, `tests/e2e/perf/fsim.perf.spec.js`, and `tests/e2e/perf/terrain.perf.spec.js` to TypeScript.
 - [x] Verified the tooling-tail batch with `npm run typecheck`, `npm run sim:build`, `npm run editor:build`, `npm run test:unit`, `npm run smoke`, and `npx playwright test --list`.
 - [x] New tooling-tail pattern: once config and spec files move from checked JS to TS, the last fixes are usually path/config fallout and one or two real test-owned helper types, not runtime behavior changes.
+- [x] Completed the final companion-seam cleanup by removing `js/modules/core/logging.js`, `js/modules/ui/MapColors.js`, `js/modules/world/AirportLayout.js`, `js/modules/world/AuthoredObjectCatalog.js`, `js/modules/world/LodSystem.js`, `js/modules/world/WorldConfig.js`, and `js/modules/world/config.js`, updating the static servers to require a built `sim-dist` instead of falling back to raw-browser module loading, and removing the last plain-`node` dependency on a companion file from `tools/bake-map.mjs`.
+- [x] Updated `scripts/smoke.mjs` to validate the Vite sim source entry (`src/sim-app/index.html`) instead of the retired raw `fsim.html` bootstrap shell.
+- [x] Verified the companion-seam cleanup with `npm run typecheck`, `npm run sim:build`, `npm run editor:build`, `npm run test:unit`, `npm run smoke`, and `node --check tools/bake-map.mjs`.
+- [x] Zero-app-JS milestone: there are now no remaining `.js` or `.jsx` files under `js/`, `src/`, or `tests/`; the migration is now fully on `.ts` / `.tsx` for application, editor, runtime, and test code.
+- [x] New final-seam pattern: the last compatibility files usually do not disappear just because the app code is typed; they disappear only after the serving path and any plain-`node` tooling imports stop depending on native `.js` module resolution.

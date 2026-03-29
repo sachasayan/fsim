@@ -96,9 +96,9 @@ async function main() {
   jsFiles.push(path.join(ROOT, 'server.js'));
   for (const file of jsFiles) checkSyntax(file);
 
-  const html = await readFile(path.join(ROOT, 'fsim.html'), 'utf8');
+  const html = await readFile(path.join(ROOT, 'src', 'sim-app', 'index.html'), 'utf8');
   if (/style\s*=/.test(html)) {
-    throw new Error('Inline style attributes still exist in fsim.html');
+    throw new Error('Inline style attributes still exist in src/sim-app/index.html');
   }
 
   const server = spawn(process.execPath, ['server.js'], {

@@ -4,11 +4,14 @@ import http from 'node:http';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 5173);
+const SIM_DIST_INDEX = path.resolve(ROOT, 'sim-dist', 'index.html');
+const VITE_BIN = path.resolve(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -39,12 +42,23 @@ function injectRuntimeFlags(filePath, content) {
   return content.replace('</head>', `    ${scripts.join('\n    ')}\n</head>`);
 }
 
+function ensureBuiltSim() {
+  if (existsSync(SIM_DIST_INDEX)) return SIM_DIST_INDEX;
+  const result = spawnSync(process.execPath, [VITE_BIN, 'build', '--config', 'vite.sim.config.mjs'], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: 'inherit'
+  });
+  if (result.status !== 0 || !existsSync(SIM_DIST_INDEX)) {
+    throw new Error('Failed to build sim-dist before serving the sim runtime');
+  }
+  return SIM_DIST_INDEX;
+}
+
 function safeResolve(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
   if (decoded === '/' || decoded === '/fsim.html' || decoded === '/fsim.html/') {
-    const builtSimPath = path.resolve(ROOT, 'sim-dist', 'index.html');
-    if (existsSync(builtSimPath)) return builtSimPath;
-    return path.resolve(ROOT, 'fsim.html');
+    return ensureBuiltSim();
   }
   if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
     const builtEditorPath = path.resolve(ROOT, 'editor-dist', 'index.html');
