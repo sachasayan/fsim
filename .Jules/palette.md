@@ -1,0 +1,3 @@
+## 2024-05-24 - Semantic Grouping for Flight Simulator Dashboard
+**Learning:** Complex dashboard interfaces with multiple screen regions (e.g., flight simulator panels like ND or EICAS) need `role="group"` combined with descriptive `aria-label`s to provide semantic navigation landmarks for assistive technologies. Canvas elements also inherently lack semantic meaning and need `role="img"` with an `aria-label`.
+**Action:** When adding accessibility to WebGL/Three.js applications, apply `role="img"` and a descriptive `aria-label` directly to the `<canvas>` element itself. Use `role="group"` for complex dashboard sections.
