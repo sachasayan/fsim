@@ -145,6 +145,12 @@
             background: #cc0000;
         }
 
+        .crash-reset-btn:focus-visible {
+            outline: 3px solid white;
+            outline-offset: 2px;
+            background: #cc0000;
+        }
+
         /* Glass Cockpit Screens */
         .screen {
             height: 100%;
