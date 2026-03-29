@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/scenery/train-1.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/scenery/train-1.glb",
+  "sourceTriangles": 9159,
+  "outputTriangles": 9159,
+  "triangleRatio": 1.0,
+  "requestedTargetTriangles": 12000,
+  "appliedRatio": 1.0,
+  "requestedTargetHeightMeters": null,
+  "sourceHeightMeters": 0.3516,
+  "sourceWidthMeters": 0.3047,
+  "sourceLengthMeters": 1.8984,
+  "appliedScaleFactor": 1.0,
+  "outputHeightMeters": 0.3516,
+  "outputWidthMeters": 0.3047,
+  "outputLengthMeters": 1.8984,
+  "joinMeshes": false,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 646984
+}

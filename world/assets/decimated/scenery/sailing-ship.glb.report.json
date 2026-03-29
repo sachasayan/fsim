@@ -1,0 +1,21 @@
+{
+  "inputPath": "/Users/sacha/Projects/fsim/world/assets/source/scenery/sailing-ship.glb",
+  "outputPath": "/Users/sacha/Projects/fsim/world/assets/decimated/scenery/sailing-ship.glb",
+  "sourceTriangles": 49656,
+  "outputTriangles": 12000,
+  "triangleRatio": 0.2417,
+  "requestedTargetTriangles": 12000,
+  "appliedRatio": 0.2417,
+  "requestedTargetHeightMeters": null,
+  "sourceHeightMeters": 0.9324,
+  "sourceWidthMeters": 1.0921,
+  "sourceLengthMeters": 0.3758,
+  "appliedScaleFactor": 1.0,
+  "outputHeightMeters": 0.9333,
+  "outputWidthMeters": 1.0924,
+  "outputLengthMeters": 0.3755,
+  "joinMeshes": false,
+  "preserveUVs": true,
+  "decimateMethod": "COLLAPSE",
+  "outputBytes": 906124
+}
