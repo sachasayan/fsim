@@ -8,8 +8,15 @@
   "ancient-greek-ruins": 10,
   "ancient-tribal-ruins": 8,
   "balloon": 28,
+  "barn": 0.84,
+  "church": 0.9026,
+  "kaiju": 0.7005,
   "lighthouse": 32,
+  "missile": 0.9121,
   "mountain-statue": 18,
   "oil-rig": 95,
-  "prop-biplane": 4
+  "prop-biplane": 4,
+  "sailing-ship": 0.9324,
+  "train-1": 0.3516,
+  "tree-1": 1.0295
 }

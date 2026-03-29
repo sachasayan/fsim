@@ -59,10 +59,26 @@
       "category": "scenery",
       "targetTriangles": 2000
     },
+    "barn": {
+      "category": "scenery",
+      "targetTriangles": 12000
+    },
+    "church": {
+      "category": "scenery",
+      "targetTriangles": 12000
+    },
+    "kaiju": {
+      "category": "scenery",
+      "targetTriangles": 12000
+    },
     "lighthouse": {
       "category": "scenery",
       "targetTriangles": 2500,
       "joinMeshes": true
+    },
+    "missile": {
+      "category": "scenery",
+      "targetTriangles": 12000
     },
     "mountain-statue": {
       "category": "scenery",
@@ -72,6 +88,18 @@
       "category": "scenery",
       "targetTriangles": 5000,
       "joinMeshes": true
+    },
+    "sailing-ship": {
+      "category": "scenery",
+      "targetTriangles": 12000
+    },
+    "train-1": {
+      "category": "scenery",
+      "targetTriangles": 12000
+    },
+    "tree-1": {
+      "category": "scenery",
+      "targetTriangles": 12000
     }
   }
 }
