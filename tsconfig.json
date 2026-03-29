@@ -29,7 +29,7 @@
     "tests/**/*.js",
     "tests/**/*.jsx",
     "server.js",
-    "playwright.config.js",
+    "playwright.config.ts",
     "vite.editor.config.mjs",
     "vite.sim.config.mjs"
   ],

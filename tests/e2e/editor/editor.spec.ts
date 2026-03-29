@@ -1,24 +1,26 @@
-// @ts-check
+import { test, expect, type Page } from 'playwright/test';
+import { attachEditorErrorWatch, clickCanvas, getEditorState, gotoEditor, hoverCanvas } from './helpers';
 
-import { test, expect } from 'playwright/test';
-import { attachEditorErrorWatch, clickCanvas, getEditorState, gotoEditor, hoverCanvas } from './helpers.js';
+type EditorErrorWatch = {
+    allowConsoleError(pattern: RegExp): void;
+    assertNoErrors(): void;
+};
 
-/**
- * @typedef {{ allowConsoleError(pattern: RegExp): void, assertNoErrors(): void }} EditorErrorWatch
- * @typedef {import('playwright/test').Page & { __editorErrorWatch?: EditorErrorWatch }} EditorTestPage
- */
+type EditorTestPage = Page & {
+    __editorErrorWatch?: EditorErrorWatch;
+};
 
 test.describe('editor e2e', () => {
     test.describe.configure({ mode: 'serial' });
 
     test.beforeEach(async ({ page }, testInfo) => {
-        const editorPage = /** @type {EditorTestPage} */ (page);
+        const editorPage = page as EditorTestPage;
         testInfo.annotations.push({ type: 'editor-error-watch', description: 'Fails on browser console.error and pageerror' });
         editorPage.__editorErrorWatch = attachEditorErrorWatch(page);
     });
 
     test.afterEach(async ({ page }) => {
-        /** @type {EditorTestPage} */ (page).__editorErrorWatch?.assertNoErrors();
+        (page as EditorTestPage).__editorErrorWatch?.assertNoErrors();
     });
 
     test('loads the editor and exposes initial clean state', async ({ page }) => {
@@ -310,7 +312,7 @@ test.describe('editor e2e', () => {
             }
             await route.continue();
         });
-        /** @type {EditorTestPage} */ (page).__editorErrorWatch?.allowConsoleError(/Failed to load resource: the server responded with a status of 500/);
+        (page as EditorTestPage).__editorErrorWatch?.allowConsoleError(/Failed to load resource: the server responded with a status of 500/);
 
         await page.getByTestId('field-coord-z').fill('1120');
         await page.getByTestId('field-coord-z').blur();
