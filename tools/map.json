@@ -344,7 +344,7 @@
     "terrainRegions": [
         {
             "tileX": 30,
-            "tileZ": 29,
+            "tileZ": 28,
             "tileWidth": 4,
             "tileHeight": 6,
             "terrainGenerator": {
@@ -865,7 +865,7 @@
             }
         },
         {
-            "tileX": 13,
+            "tileX": 14,
             "tileZ": 30,
             "tileWidth": 12,
             "tileHeight": 16,

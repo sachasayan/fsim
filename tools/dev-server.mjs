@@ -10,6 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 5173);
 const SIM_DIST_INDEX = path.resolve(ROOT, 'sim-dist', 'index.html');
+const EDITOR_DIST_INDEX = path.resolve(ROOT, 'editor-dist', 'index.html');
 const VITE_BIN = path.resolve(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
 const IS_EDITOR_E2E = process.env.FSIM_EDITOR_E2E === '1';
 const EDITOR_E2E_FIXTURES = {
@@ -21,6 +22,8 @@ const editorE2eData = new Map();
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
+    '.ts': 'text/javascript; charset=utf-8',
+    '.tsx': 'text/javascript; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
     '.mjs': 'text/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
@@ -67,15 +70,26 @@ function ensureBuiltSim() {
     return SIM_DIST_INDEX;
 }
 
+function ensureBuiltEditor() {
+    if (existsSync(EDITOR_DIST_INDEX)) return EDITOR_DIST_INDEX;
+    const result = spawnSync(process.execPath, [VITE_BIN, 'build', '--config', 'vite.editor.config.mjs'], {
+        cwd: ROOT,
+        env: process.env,
+        stdio: 'inherit'
+    });
+    if (result.status !== 0 || !existsSync(EDITOR_DIST_INDEX)) {
+        throw new Error('Failed to build editor-dist before serving the editor runtime');
+    }
+    return EDITOR_DIST_INDEX;
+}
+
 function safeResolve(urlPath) {
     const decoded = decodeURIComponent(urlPath.split('?')[0]);
     if (decoded === '/' || decoded === '/fsim.html' || decoded === '/fsim.html/') {
         return ensureBuiltSim();
     }
     if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
-        const builtEditorPath = path.resolve(ROOT, 'editor-dist', 'index.html');
-        if (existsSync(builtEditorPath)) return builtEditorPath;
-        return path.resolve(ROOT, 'editor.html');
+        return ensureBuiltEditor();
     }
     if (decoded === '/favicon.ico') {
         return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');

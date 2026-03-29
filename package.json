@@ -64,5 +64,6 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vite": "^7.1.9"
-  }
+  },
+  "packageManager": "npm@11.12.1"
 }
