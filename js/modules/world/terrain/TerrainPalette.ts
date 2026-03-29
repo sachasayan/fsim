@@ -28,8 +28,8 @@ const TERRAIN_COLORS = {
 
 const WATER_COLORS = {
     foam: [255, 255, 255],
-    blue: [47, 134, 222],
-    deep: [26, 98, 196]
+    blue: [48, 79, 107],
+    deep: [5, 13, 32]
 };
 
 function lerp(a, b, t) {
