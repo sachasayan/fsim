@@ -25,7 +25,7 @@ function emitProgress(step, total, label) {
 }
 
 async function runNodeScript(scriptPath, extraEnv = {}) {
-    const { stdout, stderr } = await execFileAsync(process.execPath, [scriptPath], {
+    const { stdout, stderr } = await execFileAsync(process.execPath, ['--import', 'tsx/esm', scriptPath], {
         cwd: ROOT,
         env: { ...process.env, ...extraEnv }
     });

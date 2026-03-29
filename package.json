@@ -16,7 +16,7 @@
     "typecheck": "tsc --project tsconfig.json",
     "start": "node server.js",
     "serve": "node server.js",
-    "build:world": "node tools/bake-map.mjs && node tools/build-world.mjs",
+    "build:world": "node --import tsx/esm tools/bake-map.mjs && node --import tsx/esm tools/build-world.mjs",
     "server": "node server.js",
     "smoke": "node scripts/smoke.mjs",
     "screenshot": "node scripts/screenshot.mjs",

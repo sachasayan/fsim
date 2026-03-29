@@ -344,7 +344,7 @@
     "terrainRegions": [
         {
             "tileX": 30,
-            "tileZ": 28,
+            "tileZ": 29,
             "tileWidth": 4,
             "tileHeight": 6,
             "terrainGenerator": {
@@ -971,8 +971,8 @@
         },
         {
             "assetId": "lighthouse",
-            "x": -1800,
-            "z": -700,
+            "x": -1700,
+            "z": -600,
             "y": 0,
             "yaw": 0,
             "scale": 1,

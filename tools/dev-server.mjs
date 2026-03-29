@@ -171,7 +171,7 @@ async function runBuildJob(job) {
         const env = { ...process.env };
         if (job.forceClean) env.FSIM_CLEAN_REBUILD = '1';
 
-        const child = spawn(process.execPath, ['tools/commit-map-save.mjs'], {
+        const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tools/commit-map-save.mjs'], {
             cwd: ROOT,
             env,
             stdio: ['ignore', 'pipe', 'pipe']
