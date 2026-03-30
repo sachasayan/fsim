@@ -358,6 +358,8 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
       dummy.updateMatrix();
       baseMesh.setMatrixAt(baseIdx++, dummy.matrix);
     }
+    centerMesh.instanceMatrix.needsUpdate = true;
+    baseMesh.instanceMatrix.needsUpdate = true;
 
     lightGroup.add(centerMesh, baseMesh);
 
@@ -421,6 +423,10 @@ export function createRunwaySystem({ scene, renderer, getTerrainHeight, lodSetti
     alsWhiteMesh.count = awIdx;
     strobeMesh.count = asIdx;
     poleMesh.count = apIdx;
+    alsWhiteMesh.instanceMatrix.needsUpdate = true;
+    strobeMesh.instanceMatrix.needsUpdate = true;
+    poleMesh.instanceMatrix.needsUpdate = true;
+    if (strobeMesh.instanceColor) strobeMesh.instanceColor.needsUpdate = true;
 
     lightGroup.add(alsWhiteMesh, strobeMesh, poleMesh);
     scene.add(lightGroup);

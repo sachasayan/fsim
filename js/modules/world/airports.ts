@@ -7,10 +7,9 @@ import { AIRPORT_CONFIG } from './config.js';
 import { buildAirportDescriptor, listRuntimeAirports, transformAirportPoint } from './AirportLayout.js';
 import { getAirportThresholds, resolveDistanceLod } from './LodSystem.js';
 import {
-    getRunwayLightOwnedShaderSource,
-    getRunwayLightUniformBindings
+    getRunwayLightShaderDescriptor
 } from './shaders/RunwayOwnedShaderSource.js';
-import { configureMaterialShaderPipeline, createOwnedShaderSourcePatch } from './shaders/MaterialShaderPipeline.js';
+import { applyOwnedShaderDescriptor } from './shaders/ShaderDescriptor.js';
 
 /**
  * @typedef AirportSystemLodSettings
@@ -147,36 +146,6 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
     const alsStrobes = [];
     let warmupLightMaterial = null;
 
-    function getRunwayLightShaderDescriptor({ intensity }) {
-        return {
-            baseCacheKey: `runway-light-owned-v1-${intensity}`,
-            uniforms: {
-                intensity
-            },
-            ownedSources: [{
-                id: 'runway-light-owned-source',
-                cacheKey: `runway-light-owned-source-${intensity}`,
-                createSource: () => getRunwayLightOwnedShaderSource({ intensity }),
-                getBindings: getRunwayLightUniformBindings
-            }]
-        };
-    }
-
-    function applyOwnedShaderDescriptor(material, descriptor) {
-        const [ownedSource] = descriptor.ownedSources || [];
-        if (!ownedSource) return;
-        configureMaterialShaderPipeline(material, {
-            patches: [
-                createOwnedShaderSourcePatch({
-                    id: ownedSource.id,
-                    cacheKey: ownedSource.cacheKey,
-                    source: ownedSource.createSource,
-                    uniformBindings: ownedSource.getBindings
-                })
-            ]
-        });
-    }
-
     function createInstancedLightMaterial(baseEmissive, intensity) {
         const material = new THREE.MeshBasicMaterial({ color: baseEmissive });
         applyOwnedShaderDescriptor(material, getRunwayLightShaderDescriptor({ intensity }));
@@ -238,6 +207,8 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
             baseMesh.setMatrixAt(baseIdx, dummy.matrix);
             baseIdx += 1;
         }
+        centerMesh.instanceMatrix.needsUpdate = true;
+        baseMesh.instanceMatrix.needsUpdate = true;
         lightGroup.add(centerMesh, baseMesh);
 
         const alsWhiteMesh = new THREE.InstancedMesh(lightGeo, alsWhiteMat, 400);
@@ -292,6 +263,10 @@ export function createAirportSystem({ scene, renderer, getTerrainHeight, lodSett
         alsWhiteMesh.count = alsWhiteIdx;
         strobeMesh.count = strobeIdx;
         poleMesh.count = poleIdx;
+        alsWhiteMesh.instanceMatrix.needsUpdate = true;
+        strobeMesh.instanceMatrix.needsUpdate = true;
+        poleMesh.instanceMatrix.needsUpdate = true;
+        if (strobeMesh.instanceColor) strobeMesh.instanceColor.needsUpdate = true;
         lightGroup.add(alsWhiteMesh, strobeMesh, poleMesh);
         root.add(lightGroup);
 
