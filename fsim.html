@@ -103,7 +103,7 @@
     </div>
 
     <!-- NEW UNIFIED DASHBOARD -->
-    <div id="dashboard">
+    <div id="dashboard" role="group" aria-label="Flight Instruments Dashboard">
         <div id="token-counter" aria-live="polite">
             <span class="token-counter-burst" aria-hidden="true"></span>
             <span class="token-counter-label">TOKENS</span>
@@ -113,12 +113,12 @@
 
 
         <!-- ND (Navigation Display / Minimap) -->
-        <div id="nd" class="screen">
+        <div id="nd" class="screen" role="group" aria-label="Navigation Display">
             <canvas id="minimap" width="300" height="300"></canvas>
         </div>
 
         <!-- EICAS (Telemetry) -->
-        <div id="eicas" class="screen">
+        <div id="eicas" class="screen" role="group" aria-label="Engine Indicating and Crew Alerting System">
             <div class="instrument-row"><span>THRUST</span><span class="instrument-value" id="hud-thrust">0%</span>
             </div>
             <div class="instrument-row"><span>AOA</span><span class="instrument-value" id="hud-aoa">0.0°</span></div>
