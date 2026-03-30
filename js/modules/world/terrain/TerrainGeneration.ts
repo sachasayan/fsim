@@ -361,6 +361,7 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
         geometry.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 4), 4));
         terrainMesh = new THREE.Mesh(geometry, lod === 0 ? terrainMaterial : terrainFarMaterial);
+        terrainMesh.castShadow = false;
         terrainMesh.receiveShadow = false;
         insertChunkBaseSurfaceMesh(chunkGroup, terrainMesh, 0);
 
@@ -373,6 +374,7 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
         setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh);
     }
 
+    terrainMesh.castShadow = false;
     terrainMesh.receiveShadow = false;
     waterMesh.receiveShadow = false;
 

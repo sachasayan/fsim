@@ -287,9 +287,9 @@ test('terrain tests', async (t) => {
 
         assert.equal(system.terrainDebugSettings.surfaceShadowDistance, 20000);
         assert.equal(diagnostics.settings.surfaceShadowDistance, 20000);
-        assert.equal(diagnostics.settings.surfaceShadowFadeStart, 12000);
-        assert.equal(diagnostics.settings.shadowCoverageExtent, 2200);
-        assert.equal(diagnostics.settings.shadowCoverageFadeStart, 1760);
+        assert.equal(diagnostics.settings.surfaceShadowFadeStart, 16000);
+        assert.equal(diagnostics.settings.shadowCoverageExtent, 16000);
+        assert.equal(diagnostics.settings.shadowCoverageFadeStart, 12800);
     });
 
     await t.test('surface shadow diagnostics expose nearest surface state', () => {
@@ -304,12 +304,28 @@ test('terrain tests', async (t) => {
 
         assert.deepEqual(diagnostics.focus, { x: 120, y: 300, z: 240 });
         assert.equal(diagnostics.settings.surfaceShadowDistance, system.terrainDebugSettings.surfaceShadowDistance);
-        assert.equal(diagnostics.settings.surfaceShadowFadeStart, system.terrainDebugSettings.surfaceShadowDistance * 0.6);
-        assert.equal(diagnostics.settings.shadowCoverageExtent, 2200);
-        assert.equal(diagnostics.settings.shadowCoverageFadeStart, 1760);
+        assert.equal(diagnostics.settings.surfaceShadowFadeStart, system.terrainDebugSettings.surfaceShadowDistance * 0.8);
+        assert.equal(diagnostics.settings.shadowCoverageExtent, 16000);
+        assert.equal(diagnostics.settings.shadowCoverageFadeStart, 12800);
         assert.equal(diagnostics.settings.waterShadowMode, system.terrainDebugSettings.waterShadowMode);
         assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestTerrain'), true);
         assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestWater'), true);
+    });
+
+    await t.test('near terrain chunk bases receive shadows by default', async () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+        lodSettings.terrain.renderDistance = 0;
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        await waitForChunkWorkIdle(system);
+
+        const visibleChunk = findVisibleChunkGroup(scene);
+        assert.ok(visibleChunk);
+        assert.equal(visibleChunk.userData.lod, 0);
+        assert.equal(visibleChunk.children[0].castShadow, true);
+        assert.equal(visibleChunk.children[0].receiveShadow, true);
     });
 
     await t.test('terrain base becomes visible before deferred props finish', async () => {

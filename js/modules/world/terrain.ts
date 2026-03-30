@@ -491,10 +491,10 @@ export function createTerrainSystem({
     uAtmosNear: { value: 9000.0 },
     uAtmosFar: { value: 68000.0 },
     uSurfaceShadowDistance: { value: 20000.0 },
-    uSurfaceShadowFadeStart: { value: 12000.0 },
+    uSurfaceShadowFadeStart: { value: 16000.0 },
     uShadowCoverageCenter: { value: new THREE.Vector3() },
-    uShadowCoverageExtent: { value: 2200.0 },
-    uShadowCoverageFadeStart: { value: 1760.0 }
+    uShadowCoverageExtent: { value: 16000.0 },
+    uShadowCoverageFadeStart: { value: 12800.0 }
   };
   const waterSurfaceUniforms = {
     uWaterDepthTex: { value: null },
@@ -1340,7 +1340,7 @@ export function createTerrainSystem({
       terrainDebugSettings.waterShadowMode = 'auto';
     }
     terrainDebugSettings.surfaceShadowDistance = Math.max(0, terrainDebugSettings.surfaceShadowDistance);
-    const shadowFadeRatio = 0.6;
+    const shadowFadeRatio = 0.8;
     atmosphereUniforms.uSurfaceShadowDistance.value = terrainDebugSettings.surfaceShadowDistance;
     atmosphereUniforms.uSurfaceShadowFadeStart.value = terrainDebugSettings.surfaceShadowDistance * shadowFadeRatio;
     terrainDebugSettings.terrainShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.terrainShadowContrast));
@@ -1387,6 +1387,10 @@ export function createTerrainSystem({
     const focusX = atmosphereCameraPos.x;
     const focusZ = atmosphereCameraPos.z;
     return distanceToLeafBoundsSq(bounds, focusX, focusZ) <= threshold * threshold;
+  }
+
+  function shouldSurfaceCastShadow(bounds = null) {
+    return shouldSurfaceReceiveShadow(bounds);
   }
 
   function shouldWaterReceiveShadow(bounds = null) {
@@ -1898,6 +1902,7 @@ export function createTerrainSystem({
     const terrainGeometry = createLeafSurfaceGeometryFromBuffers(result.terrain, 'terrain');
     const terrainGeometryMs = performance.now() - materialSetupStartedAtMs;
     const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
+    terrainMesh.castShadow = shouldSurfaceCastShadow(leafState.bounds);
     terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(leafState.bounds);
     terrainMesh.position.set(result.node.minX, 0, result.node.minZ);
 
@@ -2233,6 +2238,7 @@ export function createTerrainSystem({
     const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
     if (terrainMesh) {
       terrainMesh.visible = true;
+      terrainMesh.castShadow = shouldSurfaceCastShadow(bounds);
       terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(bounds);
     }
     if (waterMesh) {
@@ -2312,6 +2318,7 @@ export function createTerrainSystem({
   function syncSurfaceShadowReception() {
     for (const leafState of activeLeaves.values()) {
       if (leafState?.terrainMesh) {
+        leafState.terrainMesh.castShadow = shouldSurfaceCastShadow(leafState.bounds);
         leafState.terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(leafState.bounds);
       }
       if (leafState?.waterMesh) {
@@ -2324,7 +2331,10 @@ export function createTerrainSystem({
       const chunkBounds = state?.bounds || createChunkBounds(Number(rawChunkX.trim()), Number(rawChunkZ.trim()));
       const terrainMesh = state?.group?.userData?.chunkBaseTerrainMesh || null;
       const waterMesh = state?.group?.userData?.chunkBaseWaterMesh || null;
-      if (terrainMesh) terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(chunkBounds);
+      if (terrainMesh) {
+        terrainMesh.castShadow = shouldSurfaceCastShadow(chunkBounds);
+        terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(chunkBounds);
+      }
       if (waterMesh) waterMesh.receiveShadow = shouldWaterReceiveShadow(chunkBounds);
     }
   }

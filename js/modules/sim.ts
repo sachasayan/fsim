@@ -949,7 +949,7 @@ function animate() {
     const shadowCenter = crashSystem.getFocusPosition(tmpFocusPos);
     let shadowTarget = shadowCenter;
     let shadowExtent = Math.max(
-      2200,
+      16000,
       (260 + Math.min(460, PHYSICS.airspeed * 1.35 + Math.max(0, PHYSICS.position.y) * 0.16)) * 3.0
     );
     const shadowContributor = getNearestShadowContributor?.(shadowCenter, 1800);
