@@ -34,3 +34,4 @@ playwright-report
 test-results
 artifacts
 editor-dist
+sim-dist
