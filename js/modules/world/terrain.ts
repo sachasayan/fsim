@@ -39,6 +39,7 @@ import {
 } from './terrain/TerrainGeneration.js';
 import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsForChunk } from './terrain/BuildingSpawner.js';
 import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionController.js';
+import { createTerrainChunkRuntime } from './terrain/TerrainChunkRuntime.js';
 import {
   buildTerrainSelection,
   smoothActiveChunkLods,
@@ -841,25 +842,15 @@ export function createTerrainSystem({
 
   const LOD_LEVELS = lodSettings.terrain.lodLevels;
 
-  const terrainChunks = new Map();
-  const warmChunkCache = new Map();
   const activeLeaves = new Map();
   const chunkLeafOwners = new Map();
   const readyLeafSurfaceChunkCounts = new Map();
-  const pendingChunkBuilds = [];
-  const pendingChunkKeys = new Set();
-  let pendingQueueDirty = false;
-  const pendingPropBuilds = [];
-  const pendingPropKeys = new Set();
-  let pendingPropQueueDirty = false;
-  const chunkPools = [[], [], [], []];
-  const instancedMeshPools = new Map();
   const WARM_CHUNK_CACHE_MAX = 24;
   const BOOTSTRAP_MAX_LEAVES = 28;
   let bootstrapMode = true;
   let quadtreeSelectionController = null;
-  let blockingLeafIds = new Set();
-  let currentBlockingChunkKeys = new Set();
+  let blockingLeafIds = new Set<string>();
+  let currentBlockingChunkKeys = new Set<string>();
   const HIGH_LOD_SURFACE_RESOLUTION = 64;
   const terrainDebugSettings = {
     selectionInterestRadius: CHUNK_SIZE * Math.max(3, lodSettings.terrain.renderDistance + 1),
@@ -952,6 +943,33 @@ export function createTerrainSystem({
       maxTotalMs: 0
     }
   };
+
+  const chunkRuntime = createTerrainChunkRuntime({
+    scene,
+    CHUNK_SIZE,
+    WARM_CHUNK_CACHE_MAX,
+    terrainPerfState,
+    readyLeafSurfaceChunkCounts,
+    createChunkBounds,
+    shouldSurfaceCastShadow,
+    shouldSurfaceReceiveShadow,
+    shouldWaterReceiveShadow,
+    trackChunkBaseVisibility,
+    isBootstrapMode: () => bootstrapMode,
+    getCurrentBlockingChunkKeys: () => currentBlockingChunkKeys,
+    getChunkPriorityBoost,
+    generateChunkBase,
+    generateChunkProps
+  });
+  const {
+    terrainChunks,
+    warmChunkCache,
+    pendingChunkBuilds,
+    pendingChunkKeys,
+    pendingPropBuilds,
+    pendingPropKeys,
+    chunkPools
+  } = chunkRuntime;
 
   function resetLeafBuildBreakdown() {
     terrainPerfState.leafBuildBreakdown = {
@@ -1519,107 +1537,20 @@ export function createTerrainSystem({
     updateTerrain();
   }
 
-  function clearChunkPropMeshes(chunkGroup) {
-    if (!chunkGroup) return;
-    chunkGroup.userData.windmillBladeMeshes = null;
-    while (chunkGroup.children.length > 2) {
-      const child = chunkGroup.children[chunkGroup.children.length - 1];
-      chunkGroup.remove(child);
-      if (child.isInstancedMesh) {
-        child.count = 0;
-        if (child.instanceMatrix) child.instanceMatrix.needsUpdate = false;
-        if (child.instanceColor) child.instanceColor.needsUpdate = false;
-        if (child.userData?.windmillBladeInstances) child.userData.windmillBladeInstances = null;
-        child.userData = {};
-        const key = child.geometry.uuid + '_' + child.material.uuid;
-        let pool = instancedMeshPools.get(key);
-        if (!pool) {
-          pool = [];
-          instancedMeshPools.set(key, pool);
-        }
-        pool.push(child);
-      }
-    }
-  }
-
   function clearWarmChunkCache() {
-    for (const cached of warmChunkCache.values()) {
-      if (cached?.group) disposeChunkGroup(cached.group);
-    }
-    warmChunkCache.clear();
+    chunkRuntime.clearWarmChunkCache();
   }
 
   function cacheWarmChunkState(key, chunkState) {
-    if (!key || !chunkState?.group || chunkState.state !== 'done' || !chunkState.propsBuilt) {
-      return false;
-    }
-
-    const cacheKey = `${key}|${chunkState.lod}`;
-    const existing = warmChunkCache.get(cacheKey);
-    if (existing?.group && existing.group !== chunkState.group) {
-      disposeChunkGroup(existing.group);
-    }
-
-    scene.remove(chunkState.group);
-    warmChunkCache.delete(cacheKey);
-    warmChunkCache.set(cacheKey, {
-      key,
-      cx: chunkState.cx,
-      cz: chunkState.cz,
-      lod: chunkState.lod,
-      group: chunkState.group,
-      cachedAt: performance.now()
-    });
-
-    while (warmChunkCache.size > WARM_CHUNK_CACHE_MAX) {
-      const oldestKey = warmChunkCache.keys().next().value;
-      const oldest = warmChunkCache.get(oldestKey);
-      warmChunkCache.delete(oldestKey);
-      if (oldest?.group) disposeChunkGroup(oldest.group);
-      terrainPerfState.warmChunkCache.evictions += 1;
-    }
-
-    return true;
+    return chunkRuntime.cacheWarmChunkState(key, chunkState);
   }
 
   function restoreWarmChunkState(key, lod) {
-    const cacheKey = `${key}|${lod}`;
-    const cached = warmChunkCache.get(cacheKey);
-    if (!cached?.group) {
-      terrainPerfState.warmChunkCache.misses += 1;
-      return null;
-    }
-
-    warmChunkCache.delete(cacheKey);
-    if (!cached.group.parent) scene.add(cached.group);
-    terrainPerfState.warmChunkCache.hits += 1;
-    return {
-      group: cached.group,
-      pendingGroup: null,
-      cx: cached.cx,
-      cz: cached.cz,
-      bounds: Number.isFinite(cached.cx) && Number.isFinite(cached.cz)
-        ? createChunkBounds(cached.cx, cached.cz)
-        : null,
-      lod,
-      propsBuilt: true,
-      state: 'done'
-    };
+    return chunkRuntime.restoreWarmChunkState(key, lod);
   }
 
   function invalidateChunkProps() {
-    clearWarmChunkCache();
-    for (const [key, state] of terrainChunks.entries()) {
-      removePendingPropJobs(key);
-      const targetGroup = state.pendingGroup || state.group;
-      if (!targetGroup) continue;
-      clearChunkPropMeshes(targetGroup);
-      state.propsBuilt = false;
-      if (state.state !== 'building_base' && state.state !== 'error') {
-        state.state = 'base_done';
-        enqueuePropBuild(state.cx, state.cz, state.lod, -getChunkPriorityBoost(key), key, targetGroup);
-      }
-    }
+    chunkRuntime.invalidateChunkProps();
   }
 
   /**
@@ -2184,127 +2115,20 @@ export function createTerrainSystem({
 
   const dummy = new THREE.Object3D();
 
-  function getPooledInstancedMesh(geometry, material, count, { colorable = false } = {}) {
-    const key = geometry.uuid + '_' + material.uuid;
-    let pool = instancedMeshPools.get(key);
-    if (!pool) { pool = []; instancedMeshPools.set(key, pool); }
-    const isColorable = colorable || geometry === baseBuildingGeo || geometry === roofCapGeo || geometry === podiumGeo || geometry === spireGeo;
-    
-    let bestIdx = -1;
-    for (let i = 0; i < pool.length; i++) {
-        const mesh = pool[i];
-        if (mesh.instanceMatrix.count >= count) {
-            // If we need color but the pooled mesh doesn't have it, we'll need to add it later
-            if (bestIdx === -1 || mesh.instanceMatrix.count < pool[bestIdx].instanceMatrix.count) bestIdx = i;
-        }
-    }
-    
-    let mesh;
-    if (bestIdx !== -1) {
-      mesh = pool.splice(bestIdx, 1)[0];
-    } else {
-      const capacity = Math.max(count, 32);
-      mesh = new THREE.InstancedMesh(geometry, material, capacity);
-    }
-
-    if (isColorable && (!mesh.instanceColor || mesh.instanceColor.count < mesh.instanceMatrix.count)) {
-      const colorArray = new Float32Array(mesh.instanceMatrix.count * 3);
-      mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
-    }
-    
-    mesh.count = count;
-    return mesh;
+  function getPooledInstancedMesh(geometry, material, count, options = {}) {
+    return chunkRuntime.getPooledInstancedMesh(geometry, material, count, options);
   }
 
   function disposeChunkGroup(chunkGroup) {
-    if (!chunkGroup) return;
-    scene.remove(chunkGroup);
-    chunkGroup.userData.windmillBladeMeshes = null;
-    const lod = chunkGroup.userData.lod;
-    const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
-    const preservedMeshes = new Set([terrainMesh, waterMesh].filter(Boolean));
-    if (lod !== undefined && chunkPools[lod]) {
-      for (let index = chunkGroup.children.length - 1; index >= 0; index -= 1) {
-        const child = chunkGroup.children[index];
-        if (preservedMeshes.has(child)) continue;
-        chunkGroup.remove(child);
-        if (child.isInstancedMesh) {
-          child.count = 0;
-          if (child.instanceMatrix) child.instanceMatrix.needsUpdate = false;
-          if (child.instanceColor) child.instanceColor.needsUpdate = false;
-          if (child.userData?.windmillBladeInstances) child.userData.windmillBladeInstances = null;
-          child.userData = {};
-          const key = child.geometry.uuid + '_' + child.material.uuid;
-          let pool = instancedMeshPools.get(key);
-          if (!pool) {
-            pool = [];
-            instancedMeshPools.set(key, pool);
-          }
-          pool.push(child);
-        }
-      }
-      if (terrainMesh && waterMesh) {
-        chunkPools[lod].push(chunkGroup);
-      } else {
-        setChunkBaseSurfaceMeshes(chunkGroup, null, null);
-      }
-    } else {
-      chunkGroup.traverse((child) => { if (child.isMesh || child.isInstancedMesh) child.geometry.dispose(); });
-    }
+    chunkRuntime.disposeChunkGroup(chunkGroup);
   }
 
   function getChunkBaseSurfaceMeshes(chunkGroup) {
-    return {
-      terrainMesh: chunkGroup?.userData?.chunkBaseTerrainMesh || null,
-      waterMesh: chunkGroup?.userData?.chunkBaseWaterMesh || null
-    };
+    return chunkRuntime.getChunkBaseSurfaceMeshes(chunkGroup);
   }
 
   function setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh) {
-    if (!chunkGroup) return;
-    chunkGroup.userData.chunkBaseTerrainMesh = terrainMesh || null;
-    chunkGroup.userData.chunkBaseWaterMesh = waterMesh || null;
-  }
-
-  function pruneChunkBaseSurface(chunkGroup) {
-    if (!chunkGroup) return;
-    const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
-    if (terrainMesh) {
-      chunkGroup.remove(terrainMesh);
-      terrainMesh.geometry?.dispose?.();
-    }
-    if (waterMesh) {
-      chunkGroup.remove(waterMesh);
-      waterMesh.geometry?.dispose?.();
-    }
-    setChunkBaseSurfaceMeshes(chunkGroup, null, null);
-  }
-
-  function activateChunkBaseGroup(chunkGroup) {
-    if (!chunkGroup) return;
-    const bounds = chunkGroup?.userData?.bounds || null;
-    const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
-    if (terrainMesh) {
-      terrainMesh.visible = true;
-      terrainMesh.castShadow = shouldSurfaceCastShadow(bounds);
-      terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(bounds);
-    }
-    if (waterMesh) {
-      waterMesh.visible = false;
-      waterMesh.receiveShadow = shouldWaterReceiveShadow(bounds);
-    }
-  }
-
-  function ensureChunkHostGroup(chunkGroup, cx, cz, lod) {
-    const group = chunkGroup || new THREE.Group();
-    group.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
-    group.userData.lod = lod;
-    group.userData.chunkKey = `${cx},${cz}`;
-    group.userData.bounds = createChunkBounds(cx, cz);
-    if (!group.parent) {
-      scene.add(group);
-    }
-    return group;
+    chunkRuntime.setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh);
   }
 
   function addChunkKeysToSet(target, chunkKeys) {
@@ -2314,53 +2138,8 @@ export function createTerrainSystem({
     }
   }
 
-  function chunkHasReadyLeafSurface(chunkKey) {
-    return (readyLeafSurfaceChunkCounts.get(chunkKey) || 0) > 0;
-  }
-
-  function chunkNeedsVisibleBaseTerrain(chunkKey) {
-    return bootstrapMode && currentBlockingChunkKeys.has(chunkKey);
-  }
-
   function syncChunkBaseSurfaceVisibility(chunkKeys = null) {
-    const keys = chunkKeys ? Array.from(chunkKeys) : Array.from(terrainChunks.keys());
-    let currentVisibleChunkCount = 0;
-    let currentHiddenByReadyLeafCount = 0;
-    const now = performance.now();
-    for (const chunkKey of keys) {
-      const state = terrainChunks.get(chunkKey);
-      const chunkGroup = state?.group;
-      if (!chunkGroup) continue;
-      const showBaseTerrain = chunkNeedsVisibleBaseTerrain(chunkKey) && !chunkHasReadyLeafSurface(chunkKey);
-      const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
-      if (!showBaseTerrain && !chunkNeedsVisibleBaseTerrain(chunkKey) && (terrainMesh || waterMesh)) {
-        pruneChunkBaseSurface(chunkGroup);
-      }
-      const refreshedMeshes = getChunkBaseSurfaceMeshes(chunkGroup);
-      const activeTerrainMesh = refreshedMeshes.terrainMesh;
-      const activeWaterMesh = refreshedMeshes.waterMesh;
-      if (activeTerrainMesh && activeTerrainMesh.visible !== showBaseTerrain) activeTerrainMesh.visible = showBaseTerrain;
-      if (activeWaterMesh && activeWaterMesh.visible !== false) activeWaterMesh.visible = false;
-      if (activeTerrainMesh?.visible) currentVisibleChunkCount += 1;
-      if (activeTerrainMesh && !activeTerrainMesh.visible && !showBaseTerrain) currentHiddenByReadyLeafCount += 1;
-      trackChunkBaseVisibility(chunkKey, activeTerrainMesh?.visible === true, showBaseTerrain === false, now);
-    }
-
-    if (!chunkKeys) {
-      terrainPerfState.chunkBaseRole.currentVisibleChunkCount = currentVisibleChunkCount;
-      terrainPerfState.chunkBaseRole.currentHiddenByReadyLeafCount = currentHiddenByReadyLeafCount;
-      return;
-    }
-
-    currentVisibleChunkCount = 0;
-    currentHiddenByReadyLeafCount = 0;
-    for (const [chunkKey, state] of terrainChunks.entries()) {
-      const terrainMesh = state?.group?.userData?.chunkBaseTerrainMesh || null;
-      if (terrainMesh?.visible) currentVisibleChunkCount += 1;
-      if (terrainMesh && chunkHasReadyLeafSurface(chunkKey) && !terrainMesh.visible) currentHiddenByReadyLeafCount += 1;
-    }
-    terrainPerfState.chunkBaseRole.currentVisibleChunkCount = currentVisibleChunkCount;
-    terrainPerfState.chunkBaseRole.currentHiddenByReadyLeafCount = currentHiddenByReadyLeafCount;
+    chunkRuntime.syncChunkBaseSurfaceVisibility(chunkKeys);
   }
 
   function syncSurfaceShadowReception() {
@@ -2521,11 +2300,7 @@ export function createTerrainSystem({
   }
 
   function enqueueChunkBuild(cx, cz, lod, priority) {
-    const key = `${cx}, ${cz}`;
-    if (pendingChunkKeys.has(key)) return;
-    pendingChunkKeys.add(key);
-    pendingChunkBuilds.push({ cx, cz, lod, key, priority });
-    pendingQueueDirty = true;
+    chunkRuntime.enqueueChunkBuild(cx, cz, lod, priority);
   }
 
   function getChunkPriorityBoost(key) {
@@ -2801,201 +2576,15 @@ export function createTerrainSystem({
   }
 
   function removePendingPropJobs(key) {
-    if (!pendingPropKeys.has(key)) return;
-    for (let i = pendingPropBuilds.length - 1; i >= 0; i--) {
-      if (pendingPropBuilds[i].key === key) pendingPropBuilds.splice(i, 1);
-    }
-    pendingPropKeys.delete(key);
-    pendingPropQueueDirty = true;
-  }
-
-  function enqueuePropBuild(cx, cz, lod, priority, key, groupRef) {
-    if (pendingPropKeys.has(key)) return;
-    pendingPropKeys.add(key);
-    pendingPropBuilds.push({ cx, cz, lod, priority, key, groupRef });
-    pendingPropQueueDirty = true;
+    chunkRuntime.removePendingPropJobs(key);
   }
 
   function processChunkBuildQueue(maxBuildsPerFrame = 2) {
-    const startedAtMs = performance.now();
-    if (pendingChunkBuilds.length === 0) {
-      return { durationMs: 0, builds: 0 };
-    }
-    if (pendingQueueDirty) { pendingChunkBuilds.sort((a, b) => b.priority - a.priority); pendingQueueDirty = false; }
-    let builds = 0;
-    while (builds < maxBuildsPerFrame && pendingChunkBuilds.length > 0) {
-      const job = pendingChunkBuilds.pop();
-      pendingChunkKeys.delete(job.key);
-      const existing = terrainChunks.get(job.key);
-
-      if (existing && existing.lod === job.lod) {
-        if (!existing.propsBuilt && existing.state !== 'building_props') {
-          enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, existing.group || existing.pendingGroup);
-        }
-        continue;
-      }
-
-      if (existing && existing.state === 'building_base' && existing.lod === job.lod) {
-        continue;
-      }
-
-      if (!existing) {
-        const restored = restoreWarmChunkState(job.key, job.lod);
-        if (restored) {
-          terrainChunks.set(job.key, restored);
-          continue;
-        }
-      }
-
-      let oldGroup = null;
-      if (existing) {
-        removePendingPropJobs(job.key);
-        oldGroup = existing.group;
-        if (existing.pendingGroup) disposeChunkGroup(existing.pendingGroup);
-      }
-
-      if (!chunkNeedsVisibleBaseTerrain(job.key)) {
-        const hostGroup = ensureChunkHostGroup(oldGroup, job.cx, job.cz, job.lod);
-        terrainChunks.set(job.key, {
-          group: hostGroup,
-          pendingGroup: null,
-          cx: job.cx,
-          cz: job.cz,
-          bounds: createChunkBounds(job.cx, job.cz),
-          lod: job.lod,
-          propsBuilt: false,
-          state: 'base_done'
-        });
-        enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, hostGroup);
-        syncChunkBaseSurfaceVisibility();
-        builds += 1;
-        continue;
-      }
-
-      terrainChunks.set(job.key, {
-        group: oldGroup,
-        pendingGroup: null,
-        cx: job.cx,
-        cz: job.cz,
-        bounds: createChunkBounds(job.cx, job.cz),
-        lod: job.lod,
-        propsBuilt: false,
-        state: 'building_base'
-      });
-      terrainPerfState.chunkBaseRole.buildStarts += 1;
-      builds++;
-
-      generateChunkBase(job.cx, job.cz, job.lod).then(group => {
-        const current = terrainChunks.get(job.key);
-        if (current && current.lod === job.lod && current.state === 'building_base') {
-          activateChunkBaseGroup(group);
-          if (current.group) {
-            const priorState = {
-              group: current.group,
-              pendingGroup: null,
-              lod: current.lod,
-              propsBuilt: current.propsBuilt,
-              state: current.propsBuilt ? 'done' : current.state
-            };
-            if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
-          }
-          current.group = group;
-          setChunkBaseSurfaceMeshes(current.group, group.userData?.chunkBaseTerrainMesh || null, group.userData?.chunkBaseWaterMesh || null);
-          if (!current.group.parent) {
-            scene.add(current.group);
-          }
-          current.pendingGroup = null;
-          current.state = 'base_done';
-          terrainPerfState.chunkBaseRole.buildCompletes += 1;
-          enqueuePropBuild(job.cx, job.cz, job.lod, job.priority, job.key, group);
-          syncChunkBaseSurfaceVisibility();
-        } else {
-          disposeChunkGroup(group);
-        }
-      }).catch(err => {
-        console.error(`[terrain] Base build failed for ${job.key}:`, err);
-        const current = terrainChunks.get(job.key);
-        if (current && current.state === 'building_base') current.state = 'error';
-      });
-    }
-
-    return {
-      durationMs: performance.now() - startedAtMs,
-      builds
-    };
+    return chunkRuntime.processChunkBuildQueue(maxBuildsPerFrame);
   }
 
   function processPropBuildQueue(maxBuildsPerFrame = 1) {
-    const startedAtMs = performance.now();
-    if (pendingPropBuilds.length === 0) {
-      return { durationMs: 0, builds: 0 };
-    }
-    if (pendingPropQueueDirty) { pendingPropBuilds.sort((a, b) => b.priority - a.priority); pendingPropQueueDirty = false; }
-    let builds = 0;
-    while (builds < maxBuildsPerFrame && pendingPropBuilds.length > 0) {
-      const job = pendingPropBuilds.pop();
-      pendingPropKeys.delete(job.key);
-      const state = terrainChunks.get(job.key);
-
-      const targetGroup = state ? (state.pendingGroup || state.group) : null;
-      if (!state || targetGroup !== job.groupRef || state.lod !== job.lod || state.propsBuilt || state.state === 'building_props') {
-        continue;
-      }
-
-      state.state = 'building_props';
-      builds++;
-
-      generateChunkProps(targetGroup, job.cx, job.cz, job.lod).then(() => {
-        const current = terrainChunks.get(job.key);
-        if (current && (current.pendingGroup === job.groupRef || current.group === job.groupRef) && current.lod === job.lod && current.state === 'building_props') {
-          if (current.pendingGroup) {
-            if (current.group) {
-              const priorState = {
-                group: current.group,
-                pendingGroup: null,
-                lod: current.lod,
-                propsBuilt: current.propsBuilt,
-                state: current.propsBuilt ? 'done' : current.state
-              };
-              if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
-            }
-            current.group = current.pendingGroup;
-            scene.add(current.group);
-            current.pendingGroup = null;
-          } else if (current.group && !current.group.parent) {
-            scene.add(current.group);
-          }
-          current.propsBuilt = true;
-          current.state = 'done';
-        }
-      }).catch(err => {
-        console.error(`[terrain] Prop build failed for ${job.key}:`, err);
-        const current = terrainChunks.get(job.key);
-        if (current && current.state === 'building_props') {
-          if (current.pendingGroup) {
-            if (current.group) {
-              const priorState = {
-                group: current.group,
-                pendingGroup: null,
-                lod: current.lod,
-                propsBuilt: current.propsBuilt,
-                state: current.propsBuilt ? 'done' : current.state
-              };
-              if (!cacheWarmChunkState(job.key, priorState)) disposeChunkGroup(current.group);
-            }
-            current.group = current.pendingGroup;
-            scene.add(current.group);
-            current.pendingGroup = null;
-          }
-          current.state = 'done';
-        }
-      });
-    }
-
-    return {
-      durationMs: performance.now() - startedAtMs,
-      builds
-    };
+    return chunkRuntime.processPropBuildQueue(maxBuildsPerFrame);
   }
 
   let lastProcessedChunkX = -999999;
@@ -3054,11 +2643,11 @@ export function createTerrainSystem({
     const queuePruneStartedAtMs = performance.now();
     for (let i = pendingChunkBuilds.length - 1; i >= 0; i--) {
       const job = pendingChunkBuilds[i];
-      if (!chunkLeafOwners.has(job.key)) { pendingChunkKeys.delete(job.key); pendingChunkBuilds.splice(i, 1); pendingQueueDirty = true; }
+      if (!chunkLeafOwners.has(job.key)) { pendingChunkKeys.delete(job.key); pendingChunkBuilds.splice(i, 1); chunkRuntime.markChunkQueueDirty(); }
     }
     for (let i = pendingPropBuilds.length - 1; i >= 0; i--) {
       const job = pendingPropBuilds[i];
-      if (!chunkLeafOwners.has(job.key)) { pendingPropKeys.delete(job.key); pendingPropBuilds.splice(i, 1); pendingPropQueueDirty = true; }
+      if (!chunkLeafOwners.has(job.key)) { pendingPropKeys.delete(job.key); pendingPropBuilds.splice(i, 1); chunkRuntime.markPropQueueDirty(); }
     }
     for (const [key, chunkState] of terrainChunks.entries()) {
       if (!chunkLeafOwners.has(key)) {
