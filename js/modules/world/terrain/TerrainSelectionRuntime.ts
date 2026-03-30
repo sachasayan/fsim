@@ -38,8 +38,24 @@ type TerrainSelectionLike = {
 };
 
 type ChunkStateLike = {
+    cx?: number;
+    cz?: number;
     lod?: number | null;
 };
+
+type ActiveChunkEntry = {
+    cx: number;
+    cz: number;
+    lod: number;
+};
+
+function parseChunkKey(key: string) {
+    const [cxRaw, czRaw] = key.split(',');
+    const cx = Number(cxRaw.trim());
+    const cz = Number(czRaw.trim());
+    if (!Number.isFinite(cx) || !Number.isFinite(cz)) return null;
+    return { cx, cz };
+}
 
 type BuildTerrainSelectionOptions = {
     centerChunkX: number;
@@ -252,7 +268,7 @@ function buildGridActiveChunks(
     createChunkBounds: (cx: number, cz: number) => Bounds
 ) {
     const renderDistance = bootstrapMode ? 0 : lodSettings.terrain.renderDistance;
-    const activeChunks = new Map<string, number>();
+    const activeChunks = new Map<string, ActiveChunkEntry>();
     const nextBlockingChunkKeys = new Set<string>();
     const selectedLeaves: SelectedLeaf[] = [];
     const selectedLeafIds = new Set<string>();
@@ -266,7 +282,7 @@ function buildGridActiveChunks(
             const ringDistance = Math.max(Math.abs(dx), Math.abs(dz));
             const currentLod = terrainChunks.has(key) ? terrainChunks.get(key)?.lod ?? null : null;
             const lod = getTargetLod(ringDistance, currentLod, lodSettings, bootstrapMode);
-            activeChunks.set(key, lod);
+            activeChunks.set(key, { cx, cz, lod });
             nextBlockingChunkKeys.add(key);
             const leafId = `grid:${key}`;
             selectedLeafIds.add(leafId);
@@ -297,7 +313,7 @@ function buildGridActiveChunks(
     };
 }
 
-export function smoothActiveChunkLods(activeChunks: Map<string, number>) {
+export function smoothActiveChunkLods(activeChunks: Map<string, ActiveChunkEntry>) {
     if (!activeChunks || activeChunks.size === 0) return activeChunks;
 
     let changed = true;
@@ -306,11 +322,8 @@ export function smoothActiveChunkLods(activeChunks: Map<string, number>) {
         changed = false;
         iterations += 1;
 
-        for (const [key, lod] of activeChunks.entries()) {
-            const [cxRaw, czRaw] = key.split(',');
-            const cx = Number(cxRaw.trim());
-            const cz = Number(czRaw.trim());
-            if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
+        for (const [key, entry] of activeChunks.entries()) {
+            const { cx, cz, lod } = entry;
 
             const neighbors = [
                 `${cx - 1}, ${cz}`,
@@ -320,15 +333,15 @@ export function smoothActiveChunkLods(activeChunks: Map<string, number>) {
             ];
 
             for (const neighborKey of neighbors) {
-                if (!activeChunks.has(neighborKey)) continue;
-                const neighborLod = activeChunks.get(neighborKey);
+                const neighborEntry = activeChunks.get(neighborKey);
+                const neighborLod = neighborEntry?.lod;
                 if (!Number.isInteger(neighborLod)) continue;
 
                 if (lod < neighborLod - 1) {
-                    activeChunks.set(neighborKey, lod + 1);
+                    neighborEntry.lod = lod + 1;
                     changed = true;
                 } else if (neighborLod < lod - 1) {
-                    activeChunks.set(key, neighborLod + 1);
+                    entry.lod = neighborLod + 1;
                     changed = true;
                 }
             }
@@ -338,12 +351,12 @@ export function smoothActiveChunkLods(activeChunks: Map<string, number>) {
     return activeChunks;
 }
 
-export function updateLeafChunkLods(selectedLeaves: SelectedLeaf[], activeChunks: Map<string, number>) {
+export function updateLeafChunkLods(selectedLeaves: SelectedLeaf[], activeChunks: Map<string, ActiveChunkEntry>) {
     if (!Array.isArray(selectedLeaves)) return;
     for (const leaf of selectedLeaves) {
         let finestLod = Number.isInteger(leaf.chunkLod) ? leaf.chunkLod : null;
         for (const key of leaf.chunkKeys || []) {
-            const chunkLod = activeChunks.get(key);
+            const chunkLod = activeChunks.get(key)?.lod;
             if (!Number.isInteger(chunkLod)) continue;
             if (!Number.isInteger(finestLod) || chunkLod < finestLod) {
                 finestLod = chunkLod;
@@ -412,17 +425,18 @@ export function buildTerrainSelection({
         CHUNK_SIZE,
         terrainDebugSettings
     );
-    const activeChunks = new Map<string, number>();
+    const activeChunks = new Map<string, ActiveChunkEntry>();
 
     for (const key of effectiveSelection.requiredChunkKeys) {
-        const [cxRaw, czRaw] = key.split(',');
-        const cx = Number(cxRaw.trim());
-        const cz = Number(czRaw.trim());
+        const chunkState = terrainChunks.get(key);
+        const parsed = parseChunkKey(key);
+        const cx = chunkState?.cx ?? parsed?.cx;
+        const cz = chunkState?.cz ?? parsed?.cz;
         if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
-        const currentLod = terrainChunks.has(key) ? terrainChunks.get(key)?.lod ?? null : null;
+        const currentLod = chunkState?.lod ?? null;
         const selectedLod = effectiveSelection.chunkLods.get(key);
         const targetLod = Number.isInteger(selectedLod) ? selectedLod : currentLod;
-        activeChunks.set(key, targetLod ?? 3);
+        activeChunks.set(key, { cx, cz, lod: targetLod ?? 3 });
     }
 
     return {

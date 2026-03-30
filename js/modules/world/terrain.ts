@@ -1564,6 +1564,8 @@ export function createTerrainSystem({
     warmChunkCache.delete(cacheKey);
     warmChunkCache.set(cacheKey, {
       key,
+      cx: chunkState.cx,
+      cz: chunkState.cz,
       lod: chunkState.lod,
       group: chunkState.group,
       cachedAt: performance.now()
@@ -1594,6 +1596,11 @@ export function createTerrainSystem({
     return {
       group: cached.group,
       pendingGroup: null,
+      cx: cached.cx,
+      cz: cached.cz,
+      bounds: Number.isFinite(cached.cx) && Number.isFinite(cached.cz)
+        ? createChunkBounds(cached.cx, cached.cz)
+        : null,
       lod,
       propsBuilt: true,
       state: 'done'
@@ -1610,10 +1617,7 @@ export function createTerrainSystem({
       state.propsBuilt = false;
       if (state.state !== 'building_base' && state.state !== 'error') {
         state.state = 'base_done';
-        const [cxRaw, czRaw] = key.split(',');
-        const cx = Number(cxRaw.trim());
-        const cz = Number(czRaw.trim());
-        enqueuePropBuild(cx, cz, state.lod, -getChunkPriorityBoost(key), key, targetGroup);
+        enqueuePropBuild(state.cx, state.cz, state.lod, -getChunkPriorityBoost(key), key, targetGroup);
       }
     }
   }
@@ -2331,8 +2335,11 @@ export function createTerrainSystem({
     }
 
     for (const [chunkKey, state] of terrainChunks.entries()) {
-      const [rawChunkX, rawChunkZ] = chunkKey.split(',');
-      const chunkBounds = state?.bounds || createChunkBounds(Number(rawChunkX.trim()), Number(rawChunkZ.trim()));
+      const chunkBounds = state?.bounds || (
+        Number.isFinite(state?.cx) && Number.isFinite(state?.cz)
+          ? createChunkBounds(state.cx, state.cz)
+          : null
+      );
       const terrainMesh = state?.group?.userData?.chunkBaseTerrainMesh || null;
       const waterMesh = state?.group?.userData?.chunkBaseWaterMesh || null;
       if (terrainMesh) {
@@ -2819,6 +2826,8 @@ export function createTerrainSystem({
         terrainChunks.set(job.key, {
           group: hostGroup,
           pendingGroup: null,
+          cx: job.cx,
+          cz: job.cz,
           bounds: createChunkBounds(job.cx, job.cz),
           lod: job.lod,
           propsBuilt: false,
@@ -2833,6 +2842,8 @@ export function createTerrainSystem({
       terrainChunks.set(job.key, {
         group: oldGroup,
         pendingGroup: null,
+        cx: job.cx,
+        cz: job.cz,
         bounds: createChunkBounds(job.cx, job.cz),
         lod: job.lod,
         propsBuilt: false,
@@ -2995,10 +3006,8 @@ export function createTerrainSystem({
     const selectionBuildMs = performance.now() - selectionStartedAtMs;
 
     const queueSchedulingStartedAtMs = performance.now();
-    for (const [key, lod] of activeChunks.entries()) {
-      const [cxRaw, czRaw] = key.split(',');
-      const cx = Number(cxRaw.trim());
-      const cz = Number(czRaw.trim());
+    for (const [key, entry] of activeChunks.entries()) {
+      const { cx, cz, lod } = entry;
       const ringDistance = Math.max(Math.abs(cx - px), Math.abs(cz - pz));
       const priority = ringDistance - getChunkPriorityBoost(key);
       if (!terrainChunks.has(key)) enqueueChunkBuild(cx, cz, lod, priority);
@@ -3472,7 +3481,9 @@ export function createTerrainSystem({
 
     for (const [key, state] of terrainChunks.entries()) {
       if (!state.group) continue;
-      const [cx, cz] = key.split(',').map(Number);
+      const cx = state.cx;
+      const cz = state.cz;
+      if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
 
       const overlapping = await getOverlappingDistricts(cx, cz);
       const matching = overlapping.filter(district => !cityId || district.id === cityId);
