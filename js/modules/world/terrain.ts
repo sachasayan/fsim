@@ -105,6 +105,7 @@ type TerrainSelectionSnapshot = {
  * @property {THREE.MeshStandardMaterial} waterMaterial
  * @property {(x: number, z: number, octaves?: number) => number} getTerrainHeight
  * @property {() => unknown} updateTerrain
+ * @property {(timeSeconds?: number) => void} animateWindmills
  * @property {(camera?: THREE.Camera | null, weatherColor?: THREE.Color | null) => void} updateTerrainAtmosphere
  * @property {(center: THREE.Vector3 | null | undefined, extent: number) => void} updateSurfaceShadowCoverage
  * @property {() => unknown} getTerrainSelectionDiagnostics
@@ -3440,11 +3441,6 @@ export function createTerrainSystem({
       tempMainCameraPosUniform.value.copy(camera.position);
       syncSurfaceShadowReception();
     }
-    const windmillTime = performance.now() * 0.001;
-    for (const state of terrainChunks.values()) {
-      if (state.group) animateWindmillProps(state.group, windmillTime, dummy);
-      if (state.pendingGroup) animateWindmillProps(state.pendingGroup, windmillTime, dummy);
-    }
     if (weatherColor) atmosphereColor.copy(weatherColor);
     else {
       tmpColorA.setRGB(0.62, 0.66, 0.72); tmpColorB.setRGB(0.78, 0.81, 0.86);
@@ -3456,6 +3452,16 @@ export function createTerrainSystem({
     } else {
       atmosphereUniforms.uAtmosNear.value = 15000.0;
       atmosphereUniforms.uAtmosFar.value = 90000.0;
+    }
+  }
+
+  /**
+   * @param {number} [timeSeconds]
+   */
+  function animateWindmills(timeSeconds = performance.now() * 0.001) {
+    for (const state of terrainChunks.values()) {
+      if (state.group) animateWindmillProps(state.group, timeSeconds, dummy);
+      if (state.pendingGroup) animateWindmillProps(state.pendingGroup, timeSeconds, dummy);
     }
   }
 
@@ -3792,6 +3798,7 @@ export function createTerrainSystem({
     waterMaterial,
     getTerrainHeight: getTerrainHeightWithNoise,
     updateTerrain,
+    animateWindmills,
     updateTerrainAtmosphere,
     updateSurfaceShadowCoverage,
     getTerrainSelectionDiagnostics,

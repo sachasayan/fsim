@@ -222,6 +222,7 @@ const {
   getBreakupPieceSpecs,
   updateAircraftLOD,
   updateControlSurfaces,
+  animateWindmills,
   isReady,
   reloadCity,
   warmupShaders,
@@ -727,6 +728,10 @@ function animate() {
   phaseStart = performance.now();
   weatherManager.update(dt, runtime.frameCount, camera);
   perfCollector.recordPhase('weather', performance.now() - phaseStart);
+
+  phaseStart = performance.now();
+  animateWindmills?.(now * 0.001);
+  perfCollector.recordPhase('windmills', performance.now() - phaseStart);
 
   // 2. Water Animation
   phaseStart = performance.now();

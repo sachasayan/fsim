@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { CLASS_NAMES, DISTRICT_PROP_NAMES } from './CityChunkLoader.js';
 import { hash2Local } from './TerrainUtils.js';
 
+const windmillForwardOffset = new THREE.Vector3();
+
 export const classConfigs = {
     supertall: {
         style: 'commercial',
@@ -229,8 +231,9 @@ export function spawnDistrictPropsForChunk(chunkGroup, cx, cz, districtData, lod
         const bladeWidth = Math.max(0.22, prop.rotorRadius * 0.08) * 1.5;
         const bladeDepth = Math.max(0.12, prop.rotorRadius * 0.035) * 1.4;
         const bladeLength = prop.rotorRadius * 3.0;
-        const rotorCenterX = lx + Math.cos(prop.angle) * nacelleLength;
-        const rotorCenterZ = lz + Math.sin(prop.angle) * nacelleLength;
+        windmillForwardOffset.set(nacelleLength, 0, 0).applyAxisAngle(THREE.Object3D.DEFAULT_UP, prop.angle);
+        const rotorCenterX = lx + windmillForwardOffset.x;
+        const rotorCenterZ = lz + windmillForwardOffset.z;
 
         dummy.position.set(lx, prop.y, lz);
         dummy.rotation.set(0, prop.angle, 0);
