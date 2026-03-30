@@ -1835,22 +1835,58 @@ export function createTerrainSystem({
     return false;
   }
 
+  function collectSelectedLeafStates(selectedLeaves = []) {
+    const selectedLeafStates = [];
+    for (const leaf of selectedLeaves || []) {
+      const leafState = activeLeaves.get(leaf.leafId);
+      if (leafState) selectedLeafStates.push(leafState);
+    }
+    return selectedLeafStates;
+  }
+
+  function countBlockingChunks(nextBlockingLeafIds) {
+    let blockingChunkCount = 0;
+    for (const owners of chunkLeafOwners.values()) {
+      for (const ownerId of owners) {
+        if (nextBlockingLeafIds.has(ownerId)) {
+          blockingChunkCount += 1;
+          break;
+        }
+      }
+    }
+    return blockingChunkCount;
+  }
+
+  function countActiveSelectedLeaves() {
+    let selectedLeafCount = 0;
+    for (const leaf of activeLeaves.values()) {
+      if (!leaf?.retired) selectedLeafCount += 1;
+    }
+    return selectedLeafCount;
+  }
+
   function resolveRetiredLeafTransitions(selectedLeafStates = []) {
     const visibilityDirtyChunkKeys = new Set();
     const retiredLeafIdsToDispose = [];
 
     for (const [leafId, leafState] of activeLeaves.entries()) {
       if (!leafState?.retired || !leafState.bounds) continue;
-      const overlappingSelected = selectedLeafStates.filter((selectedLeafState) =>
-        selectedLeafState
-        && !selectedLeafState.retired
-        && boundsOverlap(leafState.bounds, selectedLeafState.bounds)
-      );
-      const transitionReady = overlappingSelected.length === 0 || overlappingSelected.every((selectedLeafState) => {
-        if (selectedLeafState.state !== 'surface_ready' || !selectedLeafState.terrainMesh) return false;
-        if (selectedLeafState.hasWater && !selectedLeafState.waterMesh) return false;
-        return true;
-      });
+      let foundOverlap = false;
+      let transitionReady = true;
+      for (const selectedLeafState of selectedLeafStates) {
+        if (!selectedLeafState || selectedLeafState.retired) continue;
+        if (!boundsOverlap(leafState.bounds, selectedLeafState.bounds)) continue;
+        foundOverlap = true;
+        if (selectedLeafState.state !== 'surface_ready' || !selectedLeafState.terrainMesh) {
+          transitionReady = false;
+          break;
+        }
+        if (selectedLeafState.hasWater && !selectedLeafState.waterMesh) {
+          transitionReady = false;
+          break;
+        }
+      }
+      if (!foundOverlap) transitionReady = true;
       if (transitionReady) {
         retiredLeafIdsToDispose.push(leafId);
         addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
@@ -1869,9 +1905,10 @@ export function createTerrainSystem({
   }
 
   function syncLeafSurfaceTransitionVisibility(selectedLeafStates = []) {
-    const retainedLeafStates = Array.from(activeLeaves.values()).filter((leafState) =>
-      leafState?.retired && leafState.terrainMesh
-    );
+    const retainedLeafStates = [];
+    for (const leafState of activeLeaves.values()) {
+      if (leafState?.retired && leafState.terrainMesh) retainedLeafStates.push(leafState);
+    }
     retainedLeafStates.sort((a, b) => {
       const sizeDelta = (b.size ?? 0) - (a.size ?? 0);
       if (sizeDelta !== 0) return sizeDelta;
@@ -1955,7 +1992,10 @@ export function createTerrainSystem({
     if (waterMesh) {
       scene.add(waterMesh);
     }
-    const selectedLeafStates = Array.from(activeLeaves.values()).filter((activeLeafState) => !activeLeafState.retired);
+    const selectedLeafStates = [];
+    for (const activeLeafState of activeLeaves.values()) {
+      if (!activeLeafState?.retired) selectedLeafStates.push(activeLeafState);
+    }
     const visibilityDirtyChunkKeys = resolveRetiredLeafTransitions(selectedLeafStates);
     syncLeafSurfaceTransitionVisibility(selectedLeafStates);
     syncChunkBaseSurfaceVisibility(visibilityDirtyChunkKeys.size > 0 ? visibilityDirtyChunkKeys : null);
@@ -2635,9 +2675,7 @@ export function createTerrainSystem({
       }
     }
 
-    const selectedLeafStates = (selectedLeaves || [])
-      .map((leaf) => activeLeaves.get(leaf.leafId))
-      .filter(Boolean);
+    const selectedLeafStates = collectSelectedLeafStates(selectedLeaves);
 
     for (const [leafId, leafState] of activeLeaves.entries()) {
       if (selectedIds.has(leafId)) continue;
@@ -2666,12 +2704,7 @@ export function createTerrainSystem({
       blockingLeafCount: nextBlockingLeafIds.size,
       pendingBlockingLeafCount: 0,
       activeChunkCount: chunkLeafOwners.size,
-      blockingChunkCount: Array.from(chunkLeafOwners.entries()).filter(([, owners]) => {
-        for (const ownerId of owners) {
-          if (nextBlockingLeafIds.has(ownerId)) return true;
-        }
-        return false;
-      }).length,
+      blockingChunkCount: countBlockingChunks(nextBlockingLeafIds),
       selectedNodeCount: selectedLeaves?.length || 0,
       blockingLeafStates: [],
       quadtreeSelectionRegion: selectionRegion || null
@@ -2707,7 +2740,7 @@ export function createTerrainSystem({
     stalledPendingLeaves.sort((a, b) => (b.ageMs || 0) - (a.ageMs || 0));
     lastTerrainSelection.pendingBlockingLeafCount = pendingBlockingLeaves.length;
     lastTerrainSelection.blockingLeafStates = pendingBlockingLeaves.slice(0, 10);
-    lastTerrainSelection.selectedLeafCount = Array.from(activeLeaves.values()).filter((leaf) => !leaf.retired).length;
+    lastTerrainSelection.selectedLeafCount = countActiveSelectedLeaves();
     lastTerrainSelection.blockingLeafCount = blockingLeafIds.size;
     lastTerrainSelection.activeChunkCount = chunkLeafOwners.size;
     lastTerrainSelection.leafResponsiveness = summarizeLeafResponsiveness({
@@ -3414,19 +3447,21 @@ export function createTerrainSystem({
     const pz = Math.floor(physicsState.position.z / CHUNK_SIZE);
     if (px !== lastProcessedChunkX || pz !== lastProcessedChunkZ) return false;
 
-    const readyLeafIds = blockingLeafIds.size > 0
-      ? blockingLeafIds
-      : new Set(
-        Array.from(activeLeaves.entries())
-          .filter(([, leaf]) => !leaf.retired)
-          .map(([leafId]) => leafId)
-      );
     const blocking = [];
-    for (const leafId of readyLeafIds) {
-      const leaf = activeLeaves.get(leafId);
-      if (!leaf) continue;
-      if (leaf.state !== 'surface_ready') {
-        blocking.push(`${leafId}:${leaf.state}`);
+    if (blockingLeafIds.size > 0) {
+      for (const leafId of blockingLeafIds) {
+        const leaf = activeLeaves.get(leafId);
+        if (!leaf) continue;
+        if (leaf.state !== 'surface_ready') {
+          blocking.push(`${leafId}:${leaf.state}`);
+        }
+      }
+    } else {
+      for (const [leafId, leaf] of activeLeaves.entries()) {
+        if (!leaf || leaf.retired) continue;
+        if (leaf.state !== 'surface_ready') {
+          blocking.push(`${leafId}:${leaf.state}`);
+        }
       }
     }
 
