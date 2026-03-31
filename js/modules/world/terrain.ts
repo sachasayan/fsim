@@ -40,6 +40,7 @@ import {
 import { animateWindmillProps, spawnCityBuildingsForChunk, spawnDistrictPropsForChunk } from './terrain/BuildingSpawner.js';
 import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionController.js';
 import { createTerrainChunkRuntime } from './terrain/TerrainChunkRuntime.js';
+import { createTerrainDebugConfigRuntime } from './terrain/TerrainDebugConfig.js';
 import { createTerrainLeafSurfaceRuntime } from './terrain/TerrainLeafSurfaceRuntime.js';
 import {
   buildTerrainSelection,
@@ -908,6 +909,7 @@ export function createTerrainSystem({
   const grassTexture = terrainTextureLoader.load('/world/textures/processed/grass/grass_albedo.jpg');
   const grassBumpTexture = terrainTextureLoader.load('/world/textures/processed/grass/grass_bump.png');
   let grassNormalTexture = null;
+  let terrainDebugRuntime = null;
 
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   terrainDetailTex.anisotropy = maxAnisotropy;
@@ -984,6 +986,43 @@ export function createTerrainSystem({
   setColorFromLinearArray(waterSurfaceUniforms.uWaterFoamColor.value, getWaterDepthSrgb(0));
   setColorFromLinearArray(waterSurfaceUniforms.uWaterShallowColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.shallowStart + 0.01));
   setColorFromLinearArray(waterSurfaceUniforms.uWaterDeepColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.deepEnd + 1));
+  terrainDebugRuntime = createTerrainDebugConfigRuntime({
+    terrainDebugSettings,
+    CHUNK_SIZE,
+    terrainMaterial,
+    terrainFarMaterial,
+    terrainDetailUniforms,
+    atmosphereUniforms,
+    waterTimeUniform,
+    waterMaterial,
+    waterFarMaterial,
+    waterSurfaceUniforms,
+    baseWaterNormalScale,
+    grassTexture,
+    grassBumpTexture,
+    getGrassNormalTexture: () => grassNormalTexture,
+    grassSettings: {
+      scale: GRASS_TEXTURE_SCALE,
+      strength: GRASS_TEXTURE_STRENGTH,
+      nearStart: GRASS_TEXTURE_NEAR_START,
+      nearEnd: GRASS_TEXTURE_NEAR_END,
+      enabled: GRASS_TEXTURE_ENABLED,
+      debugMaskEnabled: GRASS_DEBUG_MASK_ENABLED,
+      bumpEnabled: GRASS_BUMP_ENABLED,
+      bumpScale: GRASS_BUMP_SCALE,
+      normalEnabled: GRASS_NORMAL_ENABLED,
+      normalScale: GRASS_NORMAL_SCALE
+    },
+    distanceToLeafBoundsSq,
+    atmosphereCameraPos,
+    getActiveLeaves: () => activeLeaves.values(),
+    getTerrainChunks: () => terrainChunks.values(),
+    syncSurfaceShadowReception,
+    invalidateActiveLeafSurfaces,
+    rebuildHydrologyMeshes,
+    invalidateChunkProps,
+    updateTerrain
+  });
   applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false });
   const leafSurfaceRuntime = createTerrainLeafSurfaceRuntime({
     scene,
@@ -1158,189 +1197,43 @@ export function createTerrainSystem({
   }
 
   function normalizeTerrainDebugSettings() {
-    terrainDebugSettings.selectionInterestRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.selectionInterestRadius);
-    terrainDebugSettings.selectionBlockingRadius = Math.max(CHUNK_SIZE * 0.125, terrainDebugSettings.selectionBlockingRadius);
-    terrainDebugSettings.selectionMinCellSize = Math.max(32, terrainDebugSettings.selectionMinCellSize);
-    terrainDebugSettings.selectionSplitDistanceFactor = Math.max(0.05, terrainDebugSettings.selectionSplitDistanceFactor);
-    terrainDebugSettings.selectionLookaheadSeconds = Math.max(0, terrainDebugSettings.selectionLookaheadSeconds);
-    terrainDebugSettings.selectionLookaheadMaxDistance = Math.max(0, terrainDebugSettings.selectionLookaheadMaxDistance);
-    terrainDebugSettings.selectionLookaheadRadiusPadding = Math.max(0, terrainDebugSettings.selectionLookaheadRadiusPadding);
-    terrainDebugSettings.selectionMaxDepth = Math.max(0, Math.min(12, Math.round(terrainDebugSettings.selectionMaxDepth)));
-    terrainDebugSettings.bootstrapRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.bootstrapRadius);
-
-    const thresholds = [
-      Math.max(32, terrainDebugSettings.resolution64MaxNodeSize),
-      Math.max(32, terrainDebugSettings.resolution32MaxNodeSize),
-      Math.max(32, terrainDebugSettings.resolution16MaxNodeSize),
-      Math.max(32, terrainDebugSettings.resolution8MaxNodeSize),
-      Math.max(32, terrainDebugSettings.resolution4MaxNodeSize)
-    ].sort((a, b) => a - b);
-    [
-      terrainDebugSettings.resolution64MaxNodeSize,
-      terrainDebugSettings.resolution32MaxNodeSize,
-      terrainDebugSettings.resolution16MaxNodeSize,
-      terrainDebugSettings.resolution8MaxNodeSize,
-      terrainDebugSettings.resolution4MaxNodeSize
-    ] = thresholds;
-    if (!['auto', 'force-on', 'force-off'].includes(terrainDebugSettings.waterShadowMode)) {
-      terrainDebugSettings.waterShadowMode = 'auto';
-    }
-    terrainDebugSettings.surfaceShadowDistance = Math.max(0, terrainDebugSettings.surfaceShadowDistance);
-    const shadowFadeRatio = 0.8;
-    atmosphereUniforms.uSurfaceShadowDistance.value = terrainDebugSettings.surfaceShadowDistance;
-    atmosphereUniforms.uSurfaceShadowFadeStart.value = terrainDebugSettings.surfaceShadowDistance * shadowFadeRatio;
-    terrainDebugSettings.terrainShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.terrainShadowContrast));
-    terrainDebugSettings.waterRoughness = Math.max(0, Math.min(1, terrainDebugSettings.waterRoughness));
-    terrainDebugSettings.waterMetalness = Math.max(0, Math.min(1, terrainDebugSettings.waterMetalness));
-    terrainDebugSettings.waterNormalStrength = Math.max(0, Math.min(4, terrainDebugSettings.waterNormalStrength));
-    terrainDebugSettings.waterAtmosphereStrength = Math.max(0, Math.min(2, terrainDebugSettings.waterAtmosphereStrength));
-    terrainDebugSettings.waterAtmosphereDesaturation = Math.max(0, Math.min(1, terrainDebugSettings.waterAtmosphereDesaturation));
-    terrainDebugSettings.waterShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.waterShadowContrast));
+    terrainDebugRuntime?.normalizeTerrainDebugSettings();
   }
 
   function applyTerrainWireframeSetting() {
-    terrainMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
-    terrainFarMaterial.wireframe = terrainDebugSettings.showTerrainWireframe;
-    terrainMaterial.needsUpdate = true;
-    terrainFarMaterial.needsUpdate = true;
+    terrainDebugRuntime?.applyTerrainWireframeSetting();
   }
 
   function applyTerrainMaterialDebugSettings() {
-    setupTerrainMaterial(
-      terrainMaterial,
-      terrainDetailUniforms,
-      atmosphereUniforms,
-      waterTimeUniform,
-      false,
-      { shadowContrast: terrainDebugSettings.terrainShadowContrast }
-    );
-    setupTerrainMaterial(
-      terrainFarMaterial,
-      terrainDetailUniforms,
-      atmosphereUniforms,
-      waterTimeUniform,
-      true,
-      { shadowContrast: terrainDebugSettings.terrainShadowContrast }
-    );
-    terrainMaterial.needsUpdate = true;
-    terrainFarMaterial.needsUpdate = true;
+    terrainDebugRuntime?.applyTerrainMaterialDebugSettings();
   }
 
   function shouldSurfaceReceiveShadow(bounds = null) {
-    if (!bounds) return false;
-    const threshold = terrainDebugSettings.surfaceShadowDistance;
-    if (!Number.isFinite(threshold) || threshold <= 0) return false;
-    const focusX = atmosphereCameraPos.x;
-    const focusZ = atmosphereCameraPos.z;
-    return distanceToLeafBoundsSq(bounds, focusX, focusZ) <= threshold * threshold;
+    return terrainDebugRuntime?.shouldSurfaceReceiveShadow(bounds) ?? false;
   }
 
   function shouldSurfaceCastShadow(bounds = null) {
-    return shouldSurfaceReceiveShadow(bounds);
+    return terrainDebugRuntime?.shouldSurfaceCastShadow(bounds) ?? false;
   }
 
   function shouldWaterReceiveShadow(bounds = null) {
-    if (terrainDebugSettings.waterShadowMode === 'force-on') return true;
-    if (terrainDebugSettings.waterShadowMode === 'force-off') return false;
-    return shouldSurfaceReceiveShadow(bounds);
+    return terrainDebugRuntime?.shouldWaterReceiveShadow(bounds) ?? false;
   }
 
-  function configureWaterMaterialDebug(material, {
-    isFarLOD = false,
-    waterUniforms = waterSurfaceUniforms
-  } = {}) {
-    if (!material) return;
-    material.roughness = terrainDebugSettings.waterRoughness;
-    material.metalness = terrainDebugSettings.waterMetalness;
-    material.normalMap = null;
-    if (material.normalScale) {
-      material.normalScale.set(
-        baseWaterNormalScale.x * terrainDebugSettings.waterNormalStrength,
-        baseWaterNormalScale.y * terrainDebugSettings.waterNormalStrength
-      );
-    } else {
-      material.normalScale = new THREE.Vector2(
-        baseWaterNormalScale.x * terrainDebugSettings.waterNormalStrength,
-        baseWaterNormalScale.y * terrainDebugSettings.waterNormalStrength
-      );
-    }
-    material.wireframe = terrainDebugSettings.showWaterWireframe;
-    material.userData = material.userData || {};
-    material.userData.isFarWaterLod = isFarLOD;
-    material.userData.waterSurfaceUniforms = waterUniforms;
-    material.userData.timeUniform = null;
-    setupWaterMaterial(
-      material,
-      atmosphereUniforms,
-      null,
-      isFarLOD,
-      waterUniforms,
-      {
-        strength: terrainDebugSettings.waterAtmosphereStrength,
-        desat: terrainDebugSettings.waterAtmosphereDesaturation,
-        shadowContrast: terrainDebugSettings.waterShadowContrast,
-        normalStrength: terrainDebugSettings.waterNormalStrength,
-        patternEnabled: terrainDebugSettings.waterNormalAnimation
-      }
-    );
-    material.needsUpdate = true;
+  function configureWaterMaterialDebug(material, options = {}) {
+    terrainDebugRuntime?.configureWaterMaterialDebug(material, options);
   }
 
   function applyWaterDebugSettings() {
-    configureWaterMaterialDebug(waterMaterial, {
-      isFarLOD: false,
-      waterUniforms: waterSurfaceUniforms
-    });
-    configureWaterMaterialDebug(waterFarMaterial, {
-      isFarLOD: true,
-      waterUniforms: waterSurfaceUniforms
-    });
-
-    for (const leafState of activeLeaves.values()) {
-      if (!leafState?.waterMesh) continue;
-      leafState.waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
-      configureWaterMaterialDebug(leafState.waterMesh.material, {
-        isFarLOD: false,
-        waterUniforms: leafState.waterMesh.material?.userData?.waterSurfaceUniforms || waterSurfaceUniforms
-      });
-    }
-
-    for (const state of terrainChunks.values()) {
-      const waterMesh = state?.group?.userData?.chunkBaseWaterMesh || null;
-      if (!waterMesh) continue;
-      waterMesh.receiveShadow = shouldWaterReceiveShadow(state.bounds || null);
-      configureWaterMaterialDebug(waterMesh.material, {
-        isFarLOD: state.lod !== 0,
-        waterUniforms: waterMesh.material?.userData?.waterSurfaceUniforms || waterSurfaceUniforms
-      });
-    }
+    terrainDebugRuntime?.applyWaterDebugSettings();
   }
 
   function applyTerrainGrassMapSettings() {
-    const uvRepeat = GRASS_TEXTURE_SCALE * 512;
-    grassBumpTexture.repeat.set(uvRepeat, uvRepeat);
-    grassNormalTexture?.repeat.set(uvRepeat, uvRepeat);
-
-    terrainMaterial.bumpMap = GRASS_BUMP_ENABLED ? grassBumpTexture : null;
-    terrainMaterial.bumpScale = GRASS_BUMP_SCALE;
-    terrainMaterial.normalMap = GRASS_NORMAL_ENABLED ? grassNormalTexture : null;
-    terrainMaterial.normalScale.set(GRASS_NORMAL_SCALE, GRASS_NORMAL_SCALE);
-
-    terrainFarMaterial.bumpMap = null;
-    terrainFarMaterial.normalMap = null;
-
-    terrainMaterial.needsUpdate = true;
-    terrainFarMaterial.needsUpdate = true;
+    terrainDebugRuntime?.applyTerrainGrassMapSettings();
   }
 
   function applyTerrainGrassShaderSettings() {
-    grassTexture.repeat.set(GRASS_TEXTURE_SCALE * 512, GRASS_TEXTURE_SCALE * 512);
-    terrainDetailUniforms.uTerrainGrassTexScale.value = GRASS_TEXTURE_SCALE;
-    terrainDetailUniforms.uTerrainGrassTexStrength.value = GRASS_TEXTURE_STRENGTH;
-    terrainDetailUniforms.uTerrainGrassTexNearStart.value = GRASS_TEXTURE_NEAR_START;
-    terrainDetailUniforms.uTerrainGrassTexNearEnd.value = GRASS_TEXTURE_NEAR_END;
-    terrainDetailUniforms.uTerrainGrassShowTexture.value = GRASS_TEXTURE_ENABLED ? 1.0 : 0.0;
-    terrainDetailUniforms.uTerrainGrassDebugMask.value = GRASS_DEBUG_MASK_ENABLED ? 1.0 : 0.0;
+    terrainDebugRuntime?.applyTerrainGrassShaderSettings();
   }
 
   function invalidateActiveLeafSurfaces() {
@@ -1381,25 +1274,12 @@ export function createTerrainSystem({
    * @param {{ rebuildSurfaces?: boolean, refreshSelection?: boolean, rebuildProps?: boolean, rebuildHydrology?: boolean }} [options]
    */
   function applyTerrainDebugSettings({ rebuildSurfaces = false, refreshSelection = false, rebuildProps = false, rebuildHydrology = false } = {}) {
-    normalizeTerrainDebugSettings();
-    applyTerrainWireframeSetting();
-    applyTerrainMaterialDebugSettings();
-    applyWaterDebugSettings();
-    syncSurfaceShadowReception();
-    applyTerrainGrassShaderSettings();
-    applyTerrainGrassMapSettings();
-    if (rebuildSurfaces) {
-      invalidateActiveLeafSurfaces();
-    }
-    if (rebuildHydrology) {
-      rebuildHydrologyMeshes();
-    }
-    if (rebuildProps) {
-      invalidateChunkProps();
-    }
-    if (refreshSelection) {
-      updateTerrain();
-    }
+    terrainDebugRuntime?.applyTerrainDebugSettings({
+      rebuildSurfaces,
+      refreshSelection,
+      rebuildProps,
+      rebuildHydrology
+    });
   }
 
   function enqueueLeafBuild(leafState, priority = 0) {
