@@ -1,0 +1,3 @@
+## 2024-04-01 - Adding Semantic Landmarks to Complex Dashboards
+**Learning:** For complex dashboard interfaces with multiple screen regions (e.g., flight simulator panels like ND or EICAS), wrapping them in generic `div`s provides no semantic meaning to screen readers. Furthermore, `<canvas>` elements are inherently opaque and their graphical content cannot be interpreted.
+**Action:** Use `role="group"` combined with a descriptive `aria-label` on container `div`s to provide semantic navigation landmarks for assistive technologies. Additionally, apply `role="img"` and a descriptive `aria-label` directly to the `<canvas>` element itself to provide context for its graphical content.
