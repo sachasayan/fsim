@@ -62,6 +62,8 @@ type TerrainLeafSurfaceRuntimeOptions = {
     getTerrainSurfaceWeights: (height: number, slope: number, maskSet: unknown) => number[];
     getTerrainMaskSet: (x: number, z: number) => unknown;
     configureWaterMaterialDebug: (material: THREE.Material, options?: Record<string, unknown>) => void;
+    acquireLeafWaterMaterial: (waterDepthTexture: THREE.Texture | null, node: { minX: number; minZ: number; size: number }) => THREE.Material;
+    acquireWaterDepthTextureFromPayload: (payload: any) => THREE.Texture | null;
     shouldSurfaceCastShadow: (bounds?: unknown) => boolean;
     shouldSurfaceReceiveShadow: (bounds?: unknown) => boolean;
     shouldWaterReceiveShadow: (bounds?: unknown) => boolean;
@@ -149,6 +151,8 @@ export function createTerrainLeafSurfaceRuntime({
     getTerrainSurfaceWeights,
     getTerrainMaskSet,
     configureWaterMaterialDebug,
+    acquireLeafWaterMaterial,
+    acquireWaterDepthTextureFromPayload,
     shouldSurfaceCastShadow,
     shouldSurfaceReceiveShadow,
     shouldWaterReceiveShadow,
@@ -165,6 +169,8 @@ export function createTerrainLeafSurfaceRuntime({
     const pendingLeafBuilds: Array<{ leafId: string; priority: number }> = [];
     const pendingLeafBuildIds = new Set<string>();
     let pendingLeafQueueDirty = false;
+    const pendingLeafApplies: Array<{ leafId: string; buildVersion: number; result: any; workerMs: number | null; priority: number }> = [];
+    let pendingLeafApplyQueueDirty = false;
 
     function createLeafSurfaceGeometry({
         node,
@@ -427,6 +433,18 @@ export function createTerrainLeafSurfaceRuntime({
         return material;
     }
 
+    function enqueueCompletedLeafApply(leafState: LeafStateLike, result: any, workerMs: number | null) {
+        if (!leafState || !result) return;
+        pendingLeafApplies.push({
+            leafId: leafState.leafId,
+            buildVersion: leafState.buildVersion || 0,
+            result,
+            workerMs,
+            priority: getLeafBuildPriority(leafState)
+        });
+        pendingLeafApplyQueueDirty = true;
+    }
+
     function enqueueLeafBuild(leafState: LeafStateLike, priority = 0) {
         if (!leafState || pendingLeafBuildIds.has(leafState.leafId)) return;
         leafState.enqueuedAtMs = performance.now();
@@ -499,6 +517,15 @@ export function createTerrainLeafSurfaceRuntime({
         pendingLeafQueueDirty = true;
     }
 
+    function refreshLeafApplyQueuePriorities() {
+        if (pendingLeafApplies.length === 0) return;
+        for (const job of pendingLeafApplies) {
+            const leafState = activeLeaves.get(job.leafId);
+            job.priority = (!leafState || leafState.retired) ? Number.POSITIVE_INFINITY : getLeafBuildPriority(leafState);
+        }
+        pendingLeafApplyQueueDirty = true;
+    }
+
     function applyWorkerLeafSurfaceResult(leafState: LeafStateLike, result: any, { workerMs = null } = {}) {
         if (!leafState || !result?.terrain || !result?.node) {
             return;
@@ -522,9 +549,9 @@ export function createTerrainLeafSurfaceRuntime({
             const waterGeometry = createLeafSurfaceGeometryFromBuffers(result.water, 'water');
             waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
             const waterDepthStartedAtMs = performance.now();
-            waterDepthTexture = createWaterDepthTextureFromPayload(result.waterDepth);
+            waterDepthTexture = acquireWaterDepthTextureFromPayload(result.waterDepth) || createWaterDepthTextureFromPayload(result.waterDepth);
             waterDepthTextureMs = performance.now() - waterDepthStartedAtMs;
-            const leafWaterMaterial = createLeafWaterMaterial(waterDepthTexture, result.node);
+            const leafWaterMaterial = acquireLeafWaterMaterial(waterDepthTexture, result.node) || createLeafWaterMaterial(waterDepthTexture, result.node);
             waterMesh = new THREE.Mesh(waterGeometry!, leafWaterMaterial);
             waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
             waterMesh.position.set(result.node.minX, 0, result.node.minZ);
@@ -579,6 +606,33 @@ export function createTerrainLeafSurfaceRuntime({
         });
     }
 
+    function flushCompletedLeafApplies(maxAppliesPerFrame = 1, timeBudgetMs = 3) {
+        const startedAtMs = performance.now();
+        if (pendingLeafApplies.length === 0) {
+            return { durationMs: 0, applies: 0 };
+        }
+        refreshLeafApplyQueuePriorities();
+        if (pendingLeafApplyQueueDirty) {
+            pendingLeafApplies.sort((a, b) => b.priority - a.priority);
+            pendingLeafApplyQueueDirty = false;
+        }
+
+        let applies = 0;
+        while (applies < maxAppliesPerFrame && pendingLeafApplies.length > 0) {
+            if (applies > 0 && (performance.now() - startedAtMs) >= timeBudgetMs) break;
+            const job = pendingLeafApplies.pop()!;
+            const leafState = activeLeaves.get(job.leafId);
+            if (!leafState || leafState.retired || (leafState.buildVersion || 0) !== job.buildVersion) continue;
+            applyWorkerLeafSurfaceResult(leafState, job.result, { workerMs: job.workerMs });
+            applies += 1;
+        }
+
+        return {
+            durationMs: performance.now() - startedAtMs,
+            applies
+        };
+    }
+
     function startWorkerLeafSurfaceBuild(leafState: LeafStateLike) {
         const sampler = getStaticSampler();
         if (!sampler || !Number.isInteger(leafState?.nodeId)) {
@@ -614,9 +668,10 @@ export function createTerrainLeafSurfaceRuntime({
             if (!activeLeafState || activeLeafState !== leafState || activeLeafState.retired || activeLeafState.buildVersion !== buildVersion) {
                 return;
             }
-            applyWorkerLeafSurfaceResult(activeLeafState, result, {
-                workerMs: performance.now() - workerStartedAtMs
-            });
+            activeLeafState.state = 'awaiting_apply';
+            activeLeafState.workerBuildPromise = null;
+            activeLeafState.workerBuildStartedAtMs = null;
+            enqueueCompletedLeafApply(activeLeafState, result, performance.now() - workerStartedAtMs);
         }).catch((error) => {
             const activeLeafState = activeLeaves.get(leafState.leafId);
             if (!activeLeafState || activeLeafState !== leafState || activeLeafState.buildVersion !== buildVersion) {
@@ -652,6 +707,8 @@ export function createTerrainLeafSurfaceRuntime({
             builds += 1;
         }
 
+        flushCompletedLeafApplies(Math.max(1, Math.ceil(maxBuildsPerFrame * 0.5)), 4);
+
         return {
             durationMs: performance.now() - startedAtMs,
             builds
@@ -664,6 +721,8 @@ export function createTerrainLeafSurfaceRuntime({
         enqueueLeafBuild,
         getLeafBuildPriority,
         processLeafBuildQueue,
+        flushCompletedLeafApplies,
+        hasPendingLeafApplies: () => pendingLeafApplies.length > 0,
         sampleNodeHeightGrid,
         createWaterDepthTexture,
         leafContainsWater

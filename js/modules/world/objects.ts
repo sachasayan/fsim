@@ -186,6 +186,7 @@ export function createWorldObjects({ scene, renderer, Noise, PHYSICS, AIRCRAFT, 
     },
     getTerrainSelectionDiagnostics: terrain.getTerrainSelectionDiagnostics,
     hasPendingTerrainWork: terrain.hasPendingTerrainWork,
+    flushPendingLeafApplies: terrain.flushPendingLeafApplies,
     refreshTerrainAlignment,
     invalidateWorldLod: lodManager.invalidate,
     updateWorldLOD: lodManager.updateWorldLOD

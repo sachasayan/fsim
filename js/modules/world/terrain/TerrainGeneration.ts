@@ -385,29 +385,8 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
     const tGeo = terrainMesh.geometry;
     const wGeo = waterMesh.geometry;
 
-    const payload = {
-        cx, cz, lodCfg,
-        positions: tGeo.attributes.position.array.slice(),
-        normals: new Float32Array(tGeo.attributes.normal.array.length),
-        colors: new Float32Array(tGeo.attributes.color.array.length),
-        surfaceWeights: new Float32Array(tGeo.attributes.surfaceWeights.array.length),
-        wPos: wGeo.attributes.position.array.slice(),
-        wNormals: new Float32Array(wGeo.attributes.normal.array.length),
-        wCols: new Float32Array(wGeo.attributes.color.array.length)
-    };
-
-    const transferables = [
-        payload.positions.buffer,
-        payload.normals.buffer,
-        payload.colors.buffer,
-        payload.surfaceWeights.buffer,
-        payload.wPos.buffer,
-        payload.wNormals.buffer,
-        payload.wCols.buffer
-    ];
-
     const workerStartMs = performance.now();
-    const result = await dispatchWorker('chunkBase', payload, transferables);
+    const result = await dispatchWorker('chunkBase', { cx, cz, lod, lodCfg });
     const workerMs = performance.now() - workerStartMs;
 
     if (chunkGroup.userData.chunkKey !== `${cx},${cz}`) {

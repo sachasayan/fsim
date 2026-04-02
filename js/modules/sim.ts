@@ -201,6 +201,7 @@ const {
   getTerrainSelectionDiagnostics,
   getSurfaceShadowDiagnostics,
   consumeLeafBuildApplyTiming,
+  flushPendingLeafApplies,
   hasPendingTerrainWork,
   terrainDebugSettings,
   applyTerrainDebugSettings,
@@ -1018,6 +1019,7 @@ function animate() {
 
   const terrainNeedsWork = !isReady();
   const terrainHasPendingWork = hasPendingTerrainWork?.() === true;
+  flushPendingLeafApplies?.(terrainDue || chunkChanged ? 2 : 1, terrainDue || chunkChanged ? 4 : 2);
   const shouldUpdateTerrain = chunkChanged || (terrainDue && (movedEnough || terrainNeedsWork || terrainHasPendingWork));
   let terrainUpdated = false;
   let worldLodUpdated = false;

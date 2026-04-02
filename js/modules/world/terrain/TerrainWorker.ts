@@ -58,12 +58,7 @@ const SKIRT_DEPTH = 28;
  *   cx: number,
  *   cz: number,
  *   lod: number,
- *   lodCfg: { terrainRes: number, waterRes: number },
- *   positions: Float32Array,
- *   colors: Float32Array,
- *   surfaceWeights: Float32Array,
- *   wPos: Float32Array,
- *   wCols: Float32Array
+ *   lodCfg: { terrainRes: number, waterRes: number }
  * }} ChunkBaseJob
  */
 
@@ -398,6 +393,23 @@ function computeGridNormals(positions, segments) {
     return normals;
 }
 
+function createPlaneGridPositions(size, resolution) {
+    const stride = resolution + 1;
+    const positions = new Float32Array(stride * stride * 3);
+    const halfSize = size * 0.5;
+    let writeIndex = 0;
+    for (let row = 0; row < stride; row += 1) {
+        const z = -halfSize + (row / Math.max(1, resolution)) * size;
+        for (let col = 0; col < stride; col += 1) {
+            const x = -halfSize + (col / Math.max(1, resolution)) * size;
+            positions[writeIndex++] = x;
+            positions[writeIndex++] = 0;
+            positions[writeIndex++] = z;
+        }
+    }
+    return positions;
+}
+
 function buildBorderLoopIndices(stride) {
     const indices = [];
     for (let x = 0; x < stride; x += 1) indices.push(x);
@@ -691,7 +703,12 @@ function buildLeafSurface(job) {
 
 function buildChunkBase(job) {
     /** @type {ChunkBaseJob} */
-    const { cx, cz, lodCfg, positions, colors, surfaceWeights, wPos, wCols } = job;
+    const { cx, cz, lodCfg } = job;
+    const positions = createPlaneGridPositions(CHUNK_SIZE, Math.max(1, lodCfg.terrainRes));
+    const colors = new Float32Array(((lodCfg.terrainRes + 1) * (lodCfg.terrainRes + 1)) * 3);
+    const surfaceWeights = new Float32Array(((lodCfg.terrainRes + 1) * (lodCfg.terrainRes + 1)) * 4);
+    const wPos = createPlaneGridPositions(CHUNK_SIZE, Math.max(1, lodCfg.waterRes));
+    const wCols = new Float32Array(((lodCfg.waterRes + 1) * (lodCfg.waterRes + 1)) * 3);
     const staticWorldMetadata = getStaticWorldMetadata();
 
     const chunkMinX = cx * CHUNK_SIZE;

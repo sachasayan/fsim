@@ -2,6 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
+const TEST_CHUNK_SIZE = 4000;
+
+function createMockChunkBaseResult(lodCfg) {
+    const terrainGeo = new THREE.PlaneGeometry(TEST_CHUNK_SIZE, TEST_CHUNK_SIZE, lodCfg.terrainRes, lodCfg.terrainRes);
+    terrainGeo.rotateX(-Math.PI / 2);
+    terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 3), 3));
+    terrainGeo.setAttribute('surfaceWeights', new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 4), 4));
+    const waterGeo = new THREE.PlaneGeometry(TEST_CHUNK_SIZE, TEST_CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
+    waterGeo.rotateX(-Math.PI / 2);
+    waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
+    return {
+        positions: terrainGeo.attributes.position.array.slice(),
+        normals: new Float32Array(terrainGeo.attributes.normal.array),
+        colors: new Float32Array(terrainGeo.attributes.color.array),
+        surfaceWeights: new Float32Array(terrainGeo.attributes.surfaceWeights.array),
+        wPos: waterGeo.attributes.position.array.slice(),
+        wNormals: new Float32Array(waterGeo.attributes.normal.array),
+        wCols: new Float32Array(waterGeo.attributes.color.array)
+    };
+}
+
 // Define globals needed for terrain logic
 global.Worker = class {
     constructor() {
@@ -20,15 +41,7 @@ global.Worker = class {
                 this.onmessage?.({
                     data: {
                         jobId,
-                        result: {
-                            positions: payload.positions,
-                            normals: payload.normals,
-                            colors: payload.colors,
-                            surfaceWeights: payload.surfaceWeights,
-                            wPos: payload.wPos,
-                            wNormals: payload.wNormals,
-                            wCols: payload.wCols
-                        }
+                        result: createMockChunkBaseResult(payload.lodCfg)
                     }
                 });
                 return;
@@ -349,15 +362,7 @@ test('terrain tests', async (t) => {
                         this.onmessage?.({
                             data: {
                                 jobId,
-                                result: {
-                                    positions: payload.positions,
-                                    normals: payload.normals,
-                                    colors: payload.colors,
-                                    surfaceWeights: payload.surfaceWeights,
-                                    wPos: payload.wPos,
-                                    wNormals: payload.wNormals,
-                                    wCols: payload.wCols
-                                }
+                                result: createMockChunkBaseResult(payload.lodCfg)
                             }
                         });
                     }, 0);

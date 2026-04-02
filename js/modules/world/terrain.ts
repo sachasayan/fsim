@@ -118,6 +118,7 @@ type TerrainSelectionSnapshot = {
  * @property {() => unknown} getTerrainSelectionDiagnostics
  * @property {() => unknown} getSurfaceShadowDiagnostics
  * @property {() => { applyMs: number, applies: number }} consumeLeafBuildApplyTiming
+ * @property {(maxAppliesPerFrame?: number, timeBudgetMs?: number) => { durationMs: number, applies: number }} flushPendingLeafApplies
  * @property {Record<string, unknown>} terrainDebugSettings
  * @property {(options?: { rebuildSurfaces?: boolean, refreshSelection?: boolean, rebuildProps?: boolean, rebuildHydrology?: boolean }) => void} applyTerrainDebugSettings
  * @property {() => boolean} isReady
@@ -1024,6 +1025,104 @@ export function createTerrainSystem({
     updateTerrain
   });
   applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false });
+  const pooledLeafWaterMaterials = [];
+  const pooledLeafWaterDepthTextures = new Map();
+
+  function acquireWaterDepthTextureFromPayload(payload) {
+    if (!payload?.data || !Number.isFinite(payload.size)) return null;
+    const size = Math.max(1, Math.floor(payload.size));
+    const pool = pooledLeafWaterDepthTextures.get(size);
+    const texture = pool && pool.length > 0
+      ? pool.pop()
+      : new THREE.DataTexture(payload.data, size, size, THREE.RGBAFormat);
+    texture.image = texture.image || {};
+    texture.image.data = payload.data;
+    texture.image.width = size;
+    texture.image.height = size;
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function recycleWaterDepthTexture(texture) {
+    if (!texture?.image) return;
+    const size = Number(texture.image.width);
+    if (!Number.isFinite(size) || size <= 0) return;
+    let pool = pooledLeafWaterDepthTextures.get(size);
+    if (!pool) {
+      pool = [];
+      pooledLeafWaterDepthTextures.set(size, pool);
+    }
+    pool.push(texture);
+  }
+
+  function acquireLeafWaterMaterial(waterDepthTexture, node) {
+    const material = pooledLeafWaterMaterials.pop() || waterMaterial.clone();
+    material.normalMap = waterMaterial.normalMap;
+    material.normalScale = material.normalScale?.clone?.() || waterMaterial.normalScale.clone();
+    const waterUniforms = material.userData?.waterSurfaceUniforms || {
+      uWaterDepthTex: { value: null },
+      uWaterBoundsMin: { value: new THREE.Vector2() },
+      uWaterBoundsSize: { value: new THREE.Vector2() },
+      uWaterDepthScale: { value: WATER_DEPTH_BANDS.deepEnd },
+      uWaterFoamDepth: { value: WATER_DEPTH_BANDS.foam },
+      uWaterShallowStart: { value: WATER_DEPTH_BANDS.shallowStart },
+      uWaterShallowEnd: { value: WATER_DEPTH_BANDS.shallowEnd },
+      uWaterDeepEnd: { value: WATER_DEPTH_BANDS.deepEnd },
+      uWaterFoamColor: { value: waterSurfaceUniforms.uWaterFoamColor.value.clone() },
+      uWaterShallowColor: { value: waterSurfaceUniforms.uWaterShallowColor.value.clone() },
+      uWaterDeepColor: { value: waterSurfaceUniforms.uWaterDeepColor.value.clone() }
+    };
+    if (!waterUniforms.uWaterBoundsMin || typeof waterUniforms.uWaterBoundsMin !== 'object') {
+      waterUniforms.uWaterBoundsMin = { value: new THREE.Vector2() };
+    } else if (!waterUniforms.uWaterBoundsMin.value || typeof waterUniforms.uWaterBoundsMin.value.set !== 'function') {
+      waterUniforms.uWaterBoundsMin.value = new THREE.Vector2();
+    }
+    if (!waterUniforms.uWaterBoundsSize || typeof waterUniforms.uWaterBoundsSize !== 'object') {
+      waterUniforms.uWaterBoundsSize = { value: new THREE.Vector2() };
+    } else if (!waterUniforms.uWaterBoundsSize.value || typeof waterUniforms.uWaterBoundsSize.value.set !== 'function') {
+      waterUniforms.uWaterBoundsSize.value = new THREE.Vector2();
+    }
+    if (!waterUniforms.uWaterFoamColor?.value || typeof waterUniforms.uWaterFoamColor.value.copy !== 'function') {
+      waterUniforms.uWaterFoamColor = { value: waterSurfaceUniforms.uWaterFoamColor.value.clone() };
+    }
+    if (!waterUniforms.uWaterShallowColor?.value || typeof waterUniforms.uWaterShallowColor.value.copy !== 'function') {
+      waterUniforms.uWaterShallowColor = { value: waterSurfaceUniforms.uWaterShallowColor.value.clone() };
+    }
+    if (!waterUniforms.uWaterDeepColor?.value || typeof waterUniforms.uWaterDeepColor.value.copy !== 'function') {
+      waterUniforms.uWaterDeepColor = { value: waterSurfaceUniforms.uWaterDeepColor.value.clone() };
+    }
+    waterUniforms.uWaterDepthTex.value = waterDepthTexture;
+    waterUniforms.uWaterBoundsMin.value.set(node.minX, node.minZ);
+    waterUniforms.uWaterBoundsSize.value.set(node.size, node.size);
+    waterUniforms.uWaterDepthScale.value = WATER_DEPTH_BANDS.deepEnd;
+    waterUniforms.uWaterFoamDepth.value = WATER_DEPTH_BANDS.foam;
+    waterUniforms.uWaterShallowStart.value = WATER_DEPTH_BANDS.shallowStart;
+    waterUniforms.uWaterShallowEnd.value = WATER_DEPTH_BANDS.shallowEnd;
+    waterUniforms.uWaterDeepEnd.value = WATER_DEPTH_BANDS.deepEnd;
+    waterUniforms.uWaterFoamColor.value.copy(waterSurfaceUniforms.uWaterFoamColor.value);
+    waterUniforms.uWaterShallowColor.value.copy(waterSurfaceUniforms.uWaterShallowColor.value);
+    waterUniforms.uWaterDeepColor.value.copy(waterSurfaceUniforms.uWaterDeepColor.value);
+    configureWaterMaterialDebug(material, {
+      isFarLOD: false,
+      waterUniforms
+    });
+    return material;
+  }
+
+  function recycleLeafWaterMaterial(material) {
+    if (!material) return;
+    const waterUniforms = material.userData?.waterSurfaceUniforms || null;
+    if (waterUniforms?.uWaterDepthTex) {
+      waterUniforms.uWaterDepthTex.value = null;
+    }
+    pooledLeafWaterMaterials.push(material);
+  }
   const leafSurfaceRuntime = createTerrainLeafSurfaceRuntime({
     scene,
     activeLeaves,
@@ -1047,6 +1146,8 @@ export function createTerrainSystem({
     getTerrainSurfaceWeights,
     getTerrainMaskSet,
     configureWaterMaterialDebug,
+    acquireLeafWaterMaterial,
+    acquireWaterDepthTextureFromPayload,
     shouldSurfaceCastShadow,
     shouldSurfaceReceiveShadow,
     shouldWaterReceiveShadow,
@@ -1062,7 +1163,9 @@ export function createTerrainSystem({
   });
   const {
     pendingLeafBuilds,
-    pendingLeafBuildIds
+    pendingLeafBuildIds,
+    flushCompletedLeafApplies,
+    hasPendingLeafApplies
   } = leafSurfaceRuntime;
 
   function disposeLeafRuntimeLeaf(leafState) {
@@ -1082,12 +1185,12 @@ export function createTerrainSystem({
     }
     if (leafState.waterMesh) {
       scene.remove(leafState.waterMesh);
-      leafState.waterMesh.material?.dispose?.();
+      recycleLeafWaterMaterial(leafState.waterMesh.material);
       leafState.waterMesh.geometry?.dispose?.();
       leafState.waterMesh = null;
     }
     if (leafState.waterDepthTexture) {
-      leafState.waterDepthTexture.dispose?.();
+      recycleWaterDepthTexture(leafState.waterDepthTexture);
       leafState.waterDepthTexture = null;
     }
     leafState.hasWater = false;
@@ -1416,6 +1519,10 @@ export function createTerrainSystem({
 
   function processLeafBuildQueue(maxBuildsPerFrame = 4) {
     return leafSurfaceRuntime.processLeafBuildQueue(maxBuildsPerFrame);
+  }
+
+  function flushPendingLeafAppliesBudget(maxAppliesPerFrame = 1, timeBudgetMs = 3) {
+    return flushCompletedLeafApplies(maxAppliesPerFrame, timeBudgetMs);
   }
 
   // Load static world data after uniforms exist so the moving road-marking atlas can populate immediately.
@@ -2457,7 +2564,7 @@ export function createTerrainSystem({
 
   /** @returns {boolean} */
   function hasPendingTerrainWork() {
-    if (pendingLeafBuilds.length > 0 || pendingChunkBuilds.length > 0 || pendingPropBuilds.length > 0) {
+    if (pendingLeafBuilds.length > 0 || hasPendingLeafApplies?.() || pendingChunkBuilds.length > 0 || pendingPropBuilds.length > 0) {
       return true;
     }
 
@@ -2536,6 +2643,7 @@ export function createTerrainSystem({
     getTerrainSelectionDiagnostics,
     getSurfaceShadowDiagnostics,
     consumeLeafBuildApplyTiming,
+    flushPendingLeafApplies: flushPendingLeafAppliesBudget,
     terrainDebugSettings,
     applyTerrainDebugSettings,
     isReady,
