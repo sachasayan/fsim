@@ -641,6 +641,8 @@ export function createTerrainSystem({
   let blockingLeafIds = new Set<string>();
   let currentBlockingChunkKeys = new Set<string>();
   const HIGH_LOD_SURFACE_RESOLUTION = 64;
+  const SURFACE_SHADOW_SYNC_MOVE_THRESHOLD = 128;
+  const SURFACE_SHADOW_SYNC_INTERVAL_MS = 250;
   const terrainDebugSettings = {
     selectionInterestRadius: CHUNK_SIZE * Math.max(3, lodSettings.terrain.renderDistance + 1),
     selectionBlockingRadius: CHUNK_SIZE * 2,
@@ -732,6 +734,25 @@ export function createTerrainSystem({
       maxTotalMs: 0
     }
   };
+  const dirtyLeafShadowIds = new Set<string>();
+  const dirtyChunkShadowKeys = new Set<string>();
+  const lastSurfaceShadowSyncPos = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+  let lastSurfaceShadowSyncAtMs = -Infinity;
+  let surfaceShadowSyncAllDirty = true;
+
+  function markAllSurfaceShadowsDirty() {
+    surfaceShadowSyncAllDirty = true;
+  }
+
+  function markLeafShadowDirty(leafId) {
+    if (!leafId) return;
+    dirtyLeafShadowIds.add(leafId);
+  }
+
+  function markChunkShadowDirty(chunkKey) {
+    if (!chunkKey) return;
+    dirtyChunkShadowKeys.add(chunkKey);
+  }
 
   const chunkRuntime = createTerrainChunkRuntime({
     scene,
@@ -743,6 +764,7 @@ export function createTerrainSystem({
     shouldSurfaceCastShadow,
     shouldSurfaceReceiveShadow,
     shouldWaterReceiveShadow,
+    markChunkShadowDirty,
     trackChunkBaseVisibility,
     isBootstrapMode: () => bootstrapMode,
     getCurrentBlockingChunkKeys: () => currentBlockingChunkKeys,
@@ -1196,6 +1218,7 @@ export function createTerrainSystem({
     leafState.hasWater = false;
     leafState.workerBuildPromise = null;
     leafState.workerBuildStartedAtMs = null;
+    dirtyLeafShadowIds.delete(leafState.leafId);
   }
 
   function createNativeLeafRuntime(leaf) {
@@ -1348,6 +1371,7 @@ export function createTerrainSystem({
       }
       leafState.state = 'pending_surface';
       enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+      markLeafShadowDirty(leafState.leafId);
     }
   }
 
@@ -1640,8 +1664,14 @@ export function createTerrainSystem({
     chunkRuntime.syncChunkBaseSurfaceVisibility(chunkKeys);
   }
 
-  function syncSurfaceShadowReception() {
-    for (const leafState of activeLeaves.values()) {
+  function syncSurfaceShadowReception({ forceFull = false } = {}) {
+    const syncAll = forceFull || surfaceShadowSyncAllDirty;
+    const leafEntries = syncAll
+      ? activeLeaves.values()
+      : Array.from(dirtyLeafShadowIds)
+        .map((leafId) => activeLeaves.get(leafId))
+        .filter(Boolean);
+    for (const leafState of leafEntries) {
       if (leafState?.terrainMesh) {
         leafState.terrainMesh.castShadow = shouldSurfaceCastShadow(leafState.bounds);
         leafState.terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(leafState.bounds);
@@ -1651,7 +1681,8 @@ export function createTerrainSystem({
       }
     }
 
-    for (const [chunkKey, state] of terrainChunks.entries()) {
+    const syncChunkShadowEntry = (chunkKey, state) => {
+      if (!state) return;
       const chunkBounds = state?.bounds || (
         Number.isFinite(state?.cx) && Number.isFinite(state?.cz)
           ? createChunkBounds(state.cx, state.cz)
@@ -1664,7 +1695,21 @@ export function createTerrainSystem({
         terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(chunkBounds);
       }
       if (waterMesh) waterMesh.receiveShadow = shouldWaterReceiveShadow(chunkBounds);
+    };
+    if (syncAll) {
+      for (const [chunkKey, state] of terrainChunks.entries()) {
+        syncChunkShadowEntry(chunkKey, state);
+      }
+    } else {
+      for (const chunkKey of dirtyChunkShadowKeys) {
+        syncChunkShadowEntry(chunkKey, terrainChunks.get(chunkKey));
+      }
     }
+    dirtyLeafShadowIds.clear();
+    dirtyChunkShadowKeys.clear();
+    surfaceShadowSyncAllDirty = false;
+    lastSurfaceShadowSyncPos.copy(atmosphereCameraPos);
+    lastSurfaceShadowSyncAtMs = performance.now();
   }
 
   function getSurfaceCenter(bounds = null) {
@@ -1902,11 +1947,13 @@ export function createTerrainSystem({
         if (changedNode && leafState.terrainMesh) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+          markLeafShadowDirty(leafState.leafId);
           addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
         } else if (leafState.state === 'surface_ready' && leafState.surfaceResolution !== desiredResolution) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
+          markLeafShadowDirty(leafState.leafId);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
         } else if (previousChunkKeys.length !== leafState.chunkKeys.length
           || previousChunkKeys.some((key, index) => key !== leafState.chunkKeys[index])) {
@@ -1922,13 +1969,16 @@ export function createTerrainSystem({
           }
           addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
+          markLeafShadowDirty(leafState.leafId);
         } else if (wasSurfaceReady !== (leafState.state === 'surface_ready')) {
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
+          markLeafShadowDirty(leafState.leafId);
         }
       }
 
       if ((!leafState.terrainMesh || (leafState.hasWater && !leafState.waterMesh)) && leafState.state !== 'building_surface') {
         markLeafPendingSurface(leafState);
+        markLeafShadowDirty(leafState.leafId);
         addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
       } else if (leafState.state !== 'error' && leafState.state !== 'building_surface') {
         leafState.state = 'surface_ready';
@@ -1955,6 +2005,7 @@ export function createTerrainSystem({
       if (shouldRetainLeafDuringTransition(leafState, selectedLeafStates)) {
         leafState.retired = true;
         leafState.blockingReady = false;
+        markLeafShadowDirty(leafState.leafId);
         continue;
       }
       addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
@@ -1967,6 +2018,7 @@ export function createTerrainSystem({
     addChunkKeysToSet(visibilityDirtyChunkKeys, resolvedTransitionDirtyChunkKeys);
 
     if (visibilityDirtyChunkKeys.size > 0) {
+      for (const chunkKey of visibilityDirtyChunkKeys) markChunkShadowDirty(chunkKey);
       syncLeafSurfaceTransitionVisibility(selectedLeafStates);
       syncChunkBaseSurfaceVisibility(visibilityDirtyChunkKeys);
     }
@@ -2181,7 +2233,7 @@ export function createTerrainSystem({
     const chunkBuildStats = processChunkBuildQueue(buildBudget);
     const propBuildStats = processPropBuildQueue(propBuildBudget);
     const leafApplyStats = consumeLeafBuildApplyTiming();
-    syncSurfaceShadowReception();
+    syncSurfaceShadowReception({ forceFull: surfaceShadowSyncAllDirty });
     refreshTerrainSelectionDiagnostics();
     terrainPerfState.lastUpdate = {
       selectionBuildMs,
@@ -2274,7 +2326,14 @@ export function createTerrainSystem({
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
-      syncSurfaceShadowReception();
+      const movedSinceLastSyncSq = Number.isFinite(lastSurfaceShadowSyncPos.x)
+        ? lastSurfaceShadowSyncPos.distanceToSquared(atmosphereCameraPos)
+        : Number.POSITIVE_INFINITY;
+      const shouldForceFullShadowSync = movedSinceLastSyncSq >= (SURFACE_SHADOW_SYNC_MOVE_THRESHOLD * SURFACE_SHADOW_SYNC_MOVE_THRESHOLD)
+        || (performance.now() - lastSurfaceShadowSyncAtMs) >= SURFACE_SHADOW_SYNC_INTERVAL_MS;
+      if (surfaceShadowSyncAllDirty || dirtyLeafShadowIds.size > 0 || dirtyChunkShadowKeys.size > 0 || shouldForceFullShadowSync) {
+        syncSurfaceShadowReception({ forceFull: shouldForceFullShadowSync });
+      }
     }
     if (weatherColor) atmosphereColor.copy(weatherColor);
     else {

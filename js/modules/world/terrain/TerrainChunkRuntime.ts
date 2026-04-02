@@ -31,6 +31,7 @@ type TerrainChunkRuntimeOptions = {
     shouldSurfaceCastShadow: (bounds?: unknown) => boolean;
     shouldSurfaceReceiveShadow: (bounds?: unknown) => boolean;
     shouldWaterReceiveShadow: (bounds?: unknown) => boolean;
+    markChunkShadowDirty: (chunkKey: string) => void;
     trackChunkBaseVisibility: (chunkKey: string, isVisible: boolean, hiddenByReadyLeaf: boolean, now?: number) => void;
     isBootstrapMode: () => boolean;
     getCurrentBlockingChunkKeys: () => Set<string>;
@@ -49,6 +50,7 @@ export function createTerrainChunkRuntime({
     shouldSurfaceCastShadow,
     shouldSurfaceReceiveShadow,
     shouldWaterReceiveShadow,
+    markChunkShadowDirty,
     trackChunkBaseVisibility,
     isBootstrapMode,
     getCurrentBlockingChunkKeys,
@@ -242,6 +244,7 @@ export function createTerrainChunkRuntime({
 
     function pruneChunkBaseSurface(chunkGroup: THREE.Group | null | undefined) {
         if (!chunkGroup) return;
+        const chunkKey = chunkGroup.userData?.chunkKey;
         const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
         if (terrainMesh) {
             chunkGroup.remove(terrainMesh);
@@ -252,10 +255,12 @@ export function createTerrainChunkRuntime({
             (waterMesh as any).geometry?.dispose?.();
         }
         setChunkBaseSurfaceMeshes(chunkGroup, null, null);
+        if (typeof chunkKey === 'string') markChunkShadowDirty(chunkKey);
     }
 
     function activateChunkBaseGroup(chunkGroup: THREE.Group | null | undefined) {
         if (!chunkGroup) return;
+        const chunkKey = chunkGroup.userData?.chunkKey;
         const bounds = chunkGroup?.userData?.bounds || null;
         const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
         if (terrainMesh) {
@@ -267,6 +272,7 @@ export function createTerrainChunkRuntime({
             (waterMesh as any).visible = false;
             (waterMesh as any).receiveShadow = shouldWaterReceiveShadow(bounds);
         }
+        if (typeof chunkKey === 'string') markChunkShadowDirty(chunkKey);
     }
 
     function ensureChunkHostGroup(chunkGroup: THREE.Group | null | undefined, cx: number, cz: number, lod: number) {
@@ -308,6 +314,7 @@ export function createTerrainChunkRuntime({
             const activeWaterMesh = refreshedMeshes.waterMesh as any;
             if (activeTerrainMesh && activeTerrainMesh.visible !== showBaseTerrain) activeTerrainMesh.visible = showBaseTerrain;
             if (activeWaterMesh && activeWaterMesh.visible !== false) activeWaterMesh.visible = false;
+            if ((activeTerrainMesh || activeWaterMesh) && typeof chunkKey === 'string') markChunkShadowDirty(chunkKey);
             if (activeTerrainMesh?.visible) currentVisibleChunkCount += 1;
             if (activeTerrainMesh && !activeTerrainMesh.visible && !showBaseTerrain) currentHiddenByReadyLeafCount += 1;
             trackChunkBaseVisibility(chunkKey, activeTerrainMesh?.visible === true, showBaseTerrain === false, now);
