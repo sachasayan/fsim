@@ -720,31 +720,36 @@ function animate() {
 
   runtime.frameCount++;
   perfCollector.beginFrame({ now, dt });
-  let phaseStart = performance.now();
+  let phaseStart = now;
   updateAdaptiveQuality(dt);
-  perfCollector.recordPhase('adaptive_quality', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('adaptive_quality', phaseStart);
 
   // 1. Update visuals (weather, lighting, clouds)
   phaseStart = performance.now();
   weatherManager.update(dt, runtime.frameCount, camera);
-  perfCollector.recordPhase('weather', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('weather', phaseStart);
 
   phaseStart = performance.now();
   animateWindmills?.(now * 0.001);
-  perfCollector.recordPhase('windmills', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('windmills', phaseStart);
 
   // 2. Water Animation
   phaseStart = performance.now();
   if (waterMaterial.userData.timeUniform) {
     waterMaterial.userData.timeUniform.value += dt;
   }
-  perfCollector.recordPhase('water_animation', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('water_animation', phaseStart);
 
 
   // 3. Aircraft Control Surfaces
   phaseStart = performance.now();
   updateControlSurfaces(PHYSICS, dt);
-  perfCollector.recordPhase('control_surfaces', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('control_surfaces', phaseStart);
 
   // 4. Strobe & Beacon Logic
   phaseStart = performance.now();
@@ -762,21 +767,25 @@ function animate() {
     b.intensity = beaconFlash ? 5 : 0;
     if (b.children[0]) b.children[0].visible = beaconFlash;
   });
-  perfCollector.recordPhase('lights', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('lights', phaseStart);
 
   // 5. Airport Systems (ALS)
   phaseStart = performance.now();
   airportSystems.updateALS(now);
-  perfCollector.recordPhase('airport_als', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('airport_als', phaseStart);
 
   phaseStart = performance.now();
   updateWorldObjects(now);
-  perfCollector.recordPhase('world_objects', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('world_objects', phaseStart);
 
   // 5b. Aircraft LOD
   phaseStart = performance.now();
   updateAircraftLOD(camera);
-  perfCollector.recordPhase('aircraft_lod', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('aircraft_lod', phaseStart);
 
   // 6. Audio Update
   phaseStart = performance.now();
@@ -791,7 +800,8 @@ function animate() {
     PHYSICS.aoa,
     PHYSICS.slip
   );
-  perfCollector.recordPhase('audio', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('audio', phaseStart);
 
   // 7. Particle System (Touchdown)
   phaseStart = performance.now();
@@ -827,7 +837,7 @@ function animate() {
     p.pos.addScaledVector(p.vel, dt);
     p.size += p.growth * dt;
     pDummy.position.copy(p.pos);
-    if (camera.quaternion) pDummy.quaternion.copy(camera.quaternion);
+    pDummy.quaternion.copy(camera.quaternion);
     pDummy.scale.set(p.size, p.size, p.size);
     pDummy.updateMatrix();
     particleMesh.setMatrixAt(i, pDummy.matrix);
@@ -841,7 +851,8 @@ function animate() {
     particleMesh.instanceMatrix.needsUpdate = true;
     if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
   }
-  perfCollector.recordPhase('particles', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('particles', phaseStart);
 
   // 8. Physics Steps
   phaseStart = performance.now();
@@ -916,7 +927,8 @@ function animate() {
     physicsSteps++;
     runtime.physicsAccumulator -= PHYSICS_STEP;
   }
-  perfCollector.recordPhase('physics', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('physics', phaseStart);
 
   const alpha = runtime.physicsAccumulator / PHYSICS_STEP;
   phaseStart = performance.now();
@@ -927,7 +939,8 @@ function animate() {
     planeGroup.position.lerpVectors(prevPhysicsPos, PHYSICS.position, alpha);
     planeGroup.quaternion.slerpQuaternions(prevPhysicsQuat, PHYSICS.quaternion, alpha);
   }
-  perfCollector.recordPhase('aircraft_pose', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('aircraft_pose', phaseStart);
 
   // 9. Post-Physics Sync
   phaseStart = performance.now();
@@ -988,7 +1001,8 @@ function animate() {
       shadowCameraHelper.update();
     }
   }
-  perfCollector.recordPhase('shadow_setup', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('shadow_setup', phaseStart);
 
   // Terrain and World LOD update
   phaseStart = performance.now();
@@ -997,7 +1011,9 @@ function animate() {
   const terrainDue = (now - lastTerrainUpdateMs) >= worldLodSettings.world.updateIntervalMs;
   const chunkChanged = chunkX !== lastTerrainChunkX || chunkZ !== lastTerrainChunkZ;
   
-  const distMovedSq = Math.pow(PHYSICS.position.x - lastTerrainUpdatePosX, 2) + Math.pow(PHYSICS.position.z - lastTerrainUpdatePosZ, 2);
+  const dx = PHYSICS.position.x - lastTerrainUpdatePosX;
+  const dz = PHYSICS.position.z - lastTerrainUpdatePosZ;
+  const distMovedSq = dx * dx + dz * dz;
   const movedEnough = distMovedSq > 2500; // 50 units
 
   const terrainNeedsWork = !isReady();
@@ -1033,11 +1049,13 @@ function animate() {
     updateWorldLOD(camera.position);
     worldLodUpdated = true;
   }
-  perfCollector.recordPhase('terrain_lod', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('terrain_lod', phaseStart);
 
   phaseStart = performance.now();
   cameraController.updateCamera(dt);
-  perfCollector.recordPhase('camera', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('camera', phaseStart);
 
   phaseStart = performance.now();
   updateTokenSystem({
@@ -1051,7 +1069,8 @@ function animate() {
     hud.updateHUD();
     hudUpdated = true;
   }
-  perfCollector.recordPhase('tokens_hud', performance.now() - phaseStart);
+  phaseStart = performance.now() - phaseStart;
+  perfCollector.recordPhase('tokens_hud', phaseStart);
 
   // 10. Final Render
   phaseStart = performance.now();
