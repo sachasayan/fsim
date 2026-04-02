@@ -1,0 +1,3 @@
+## 2025-02-14 - Dashboard & Canvas Accessibility
+**Learning:** For complex dashboard interfaces with multiple screen regions (e.g., flight simulator panels like ND or EICAS), wrapping `div`s lack semantic meaning out-of-the-box. Furthermore, `<canvas>` elements are inherently opaque to screen readers.
+**Action:** Use `role="group"` combined with descriptive `aria-label`s on container `div`s to provide semantic navigation landmarks for assistive technologies. For `<canvas>` elements like the minimap, apply `role="img"` and a descriptive `aria-label` directly to the `<canvas>` element itself to resolve screen reader opacity.
