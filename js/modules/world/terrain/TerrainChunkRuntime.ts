@@ -34,6 +34,8 @@ type TerrainChunkRuntimeOptions = {
     markChunkShadowDirty: (chunkKey: string) => void;
     trackChunkBaseVisibility: (chunkKey: string, isVisible: boolean, hiddenByReadyLeaf: boolean, now?: number) => void;
     isBootstrapMode: () => boolean;
+    isChunkGenerationEnabled: () => boolean;
+    isTerrainSurfaceVisible: () => boolean;
     getCurrentBlockingChunkKeys: () => Set<string>;
     getChunkPriorityBoost: (key: string) => number;
     generateChunkBase: (cx: number, cz: number, lod: number) => Promise<THREE.Group>;
@@ -53,6 +55,8 @@ export function createTerrainChunkRuntime({
     markChunkShadowDirty,
     trackChunkBaseVisibility,
     isBootstrapMode,
+    isChunkGenerationEnabled,
+    isTerrainSurfaceVisible,
     getCurrentBlockingChunkKeys,
     getChunkPriorityBoost,
     generateChunkBase,
@@ -264,7 +268,7 @@ export function createTerrainChunkRuntime({
         const bounds = chunkGroup?.userData?.bounds || null;
         const { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
         if (terrainMesh) {
-            (terrainMesh as any).visible = true;
+            (terrainMesh as any).visible = isTerrainSurfaceVisible();
             (terrainMesh as any).castShadow = shouldSurfaceCastShadow(bounds);
             (terrainMesh as any).receiveShadow = shouldSurfaceReceiveShadow(bounds);
         }
@@ -292,7 +296,7 @@ export function createTerrainChunkRuntime({
     }
 
     function chunkNeedsVisibleBaseTerrain(chunkKey: string) {
-        return isBootstrapMode() && getCurrentBlockingChunkKeys().has(chunkKey);
+        return isChunkGenerationEnabled() && isTerrainSurfaceVisible() && isBootstrapMode() && getCurrentBlockingChunkKeys().has(chunkKey);
     }
 
     function syncChunkBaseSurfaceVisibility(chunkKeys: Iterable<string> | null = null) {
@@ -386,7 +390,7 @@ export function createTerrainChunkRuntime({
 
     function processChunkBuildQueue(maxBuildsPerFrame = 2) {
         const startedAtMs = performance.now();
-        if (pendingChunkBuilds.length === 0) {
+        if (!isChunkGenerationEnabled() || pendingChunkBuilds.length === 0) {
             return { durationMs: 0, builds: 0 };
         }
         if (pendingQueueDirty) {
@@ -602,6 +606,16 @@ export function createTerrainChunkRuntime({
         enqueueChunkBuild,
         markChunkQueueDirty,
         markPropQueueDirty,
+        clearPendingChunkBuilds: () => {
+            pendingChunkBuilds.length = 0;
+            pendingChunkKeys.clear();
+            pendingQueueDirty = false;
+        },
+        clearPendingPropBuilds: () => {
+            pendingPropBuilds.length = 0;
+            pendingPropKeys.clear();
+            pendingPropQueueDirty = false;
+        },
         processChunkBuildQueue,
         processPropBuildQueue
     };

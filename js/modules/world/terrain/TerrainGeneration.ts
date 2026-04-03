@@ -51,6 +51,7 @@ type TerrainGenerationLodConfig = {
 };
 
 type TerrainGenerationDebugSettings = {
+    showObjects?: boolean;
     showTrees?: boolean;
     showBuildings?: boolean;
 };
@@ -482,7 +483,8 @@ export function buildTreeMeshesForLod(
     } = resources;
     const dummy = new THREE.Object3D();
     const meshes = [];
-    const treesEnabled = resources.terrainDebugSettings?.showTrees !== false;
+    const objectsEnabled = resources.terrainDebugSettings?.showObjects !== false;
+    const treesEnabled = objectsEnabled && resources.terrainDebugSettings?.showTrees !== false;
     const renderMode = treesEnabled
         ? (lodCfg?.treeRenderMode || (lodCfg?.enableTrees ? 'billboard' : 'disabled'))
         : 'disabled';
@@ -651,8 +653,13 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
         hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat,
         dummy
     } = ctx;
-    const treesEnabled = ctx.terrainDebugSettings?.showTrees !== false;
-    const buildingsEnabled = ctx.terrainDebugSettings?.showBuildings !== false;
+    const objectsEnabled = ctx.terrainDebugSettings?.showObjects !== false;
+    const treesEnabled = objectsEnabled && ctx.terrainDebugSettings?.showTrees !== false;
+    const buildingsEnabled = objectsEnabled && ctx.terrainDebugSettings?.showBuildings !== false;
+
+    if (!objectsEnabled) {
+        return;
+    }
 
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     const boatShadowsEnabled = lod === 0;

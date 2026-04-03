@@ -259,6 +259,31 @@ function refreshLodState() {
 }
 
 if (debugGui) {
+  if (terrainDebugSettings && typeof applyTerrainDebugSettings === 'function') {
+    const systemsFolder = debugGui.addFolder('Systems');
+    systemsFolder.add(terrainDebugSettings, 'showTerrain')
+      .name('Terrain')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    systemsFolder.add(terrainDebugSettings, 'showWater')
+      .name('Water')
+      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+    systemsFolder.add(terrainDebugSettings, 'showObjects')
+      .name('Objects')
+      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+    systemsFolder.add(terrainDebugSettings, 'showTrees')
+      .name('Trees')
+      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+    systemsFolder.add(terrainDebugSettings, 'showBuildings')
+      .name('Buildings')
+      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+    systemsFolder.add(terrainDebugSettings, 'enableChunkGeneration')
+      .name('Chunk Generation')
+      .onChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+    systemsFolder.add(terrainDebugSettings, 'enableLeafGeneration')
+      .name('Leaf Generation')
+      .onChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+  }
+
   const shadowsFolder = debugGui.addFolder('Shadows');
   shadowsFolder.add(debugView, 'showShadowCameraHelper')
     .name('Shadow Frustum')

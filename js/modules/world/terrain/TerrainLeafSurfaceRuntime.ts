@@ -64,6 +64,9 @@ type TerrainLeafSurfaceRuntimeOptions = {
     configureWaterMaterialDebug: (material: THREE.Material, options?: Record<string, unknown>) => void;
     acquireLeafWaterMaterial: (waterDepthTexture: THREE.Texture | null, node: { minX: number; minZ: number; size: number }) => THREE.Material;
     acquireWaterDepthTextureFromPayload: (payload: any) => THREE.Texture | null;
+    isLeafGenerationEnabled: () => boolean;
+    isTerrainSurfaceVisible: () => boolean;
+    isWaterSurfaceVisible: () => boolean;
     shouldSurfaceCastShadow: (bounds?: unknown) => boolean;
     shouldSurfaceReceiveShadow: (bounds?: unknown) => boolean;
     shouldWaterReceiveShadow: (bounds?: unknown) => boolean;
@@ -153,6 +156,9 @@ export function createTerrainLeafSurfaceRuntime({
     configureWaterMaterialDebug,
     acquireLeafWaterMaterial,
     acquireWaterDepthTextureFromPayload,
+    isLeafGenerationEnabled,
+    isTerrainSurfaceVisible,
+    isWaterSurfaceVisible,
     shouldSurfaceCastShadow,
     shouldSurfaceReceiveShadow,
     shouldWaterReceiveShadow,
@@ -446,7 +452,7 @@ export function createTerrainLeafSurfaceRuntime({
     }
 
     function enqueueLeafBuild(leafState: LeafStateLike, priority = 0) {
-        if (!leafState || pendingLeafBuildIds.has(leafState.leafId)) return;
+        if (!leafState || pendingLeafBuildIds.has(leafState.leafId) || !isLeafGenerationEnabled()) return;
         leafState.enqueuedAtMs = performance.now();
         if (!Number.isFinite(leafState.pendingSinceAtMs)) {
             leafState.pendingSinceAtMs = leafState.enqueuedAtMs;
@@ -538,6 +544,7 @@ export function createTerrainLeafSurfaceRuntime({
         const terrainMesh = new THREE.Mesh(terrainGeometry!, terrainMaterial);
         terrainMesh.castShadow = shouldSurfaceCastShadow(leafState.bounds);
         terrainMesh.receiveShadow = shouldSurfaceReceiveShadow(leafState.bounds);
+        terrainMesh.visible = isTerrainSurfaceVisible();
         terrainMesh.position.set(result.node.minX, 0, result.node.minZ);
 
         let waterGeometryMs = 0;
@@ -554,6 +561,7 @@ export function createTerrainLeafSurfaceRuntime({
             const leafWaterMaterial = acquireLeafWaterMaterial(waterDepthTexture, result.node) || createLeafWaterMaterial(waterDepthTexture, result.node);
             waterMesh = new THREE.Mesh(waterGeometry!, leafWaterMaterial);
             waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
+            waterMesh.visible = isWaterSurfaceVisible();
             waterMesh.position.set(result.node.minX, 0, result.node.minZ);
         }
         const materialSetupMs = performance.now() - materialSetupStartedAtMs;
@@ -668,6 +676,12 @@ export function createTerrainLeafSurfaceRuntime({
             if (!activeLeafState || activeLeafState !== leafState || activeLeafState.retired || activeLeafState.buildVersion !== buildVersion) {
                 return;
             }
+            if (!isLeafGenerationEnabled()) {
+                activeLeafState.state = activeLeafState.terrainMesh ? 'surface_ready' : 'pending_surface';
+                activeLeafState.workerBuildPromise = null;
+                activeLeafState.workerBuildStartedAtMs = null;
+                return;
+            }
             activeLeafState.state = 'awaiting_apply';
             activeLeafState.workerBuildPromise = null;
             activeLeafState.workerBuildStartedAtMs = null;
@@ -686,7 +700,7 @@ export function createTerrainLeafSurfaceRuntime({
 
     function processLeafBuildQueue(maxBuildsPerFrame = 4) {
         const startedAtMs = performance.now();
-        if (pendingLeafBuilds.length === 0) {
+        if (!isLeafGenerationEnabled() || pendingLeafBuilds.length === 0) {
             return { durationMs: 0, builds: 0 };
         }
         refreshLeafBuildQueuePriorities();
@@ -722,6 +736,13 @@ export function createTerrainLeafSurfaceRuntime({
         getLeafBuildPriority,
         processLeafBuildQueue,
         flushCompletedLeafApplies,
+        clearPendingLeafBuilds: () => {
+            pendingLeafBuilds.length = 0;
+            pendingLeafBuildIds.clear();
+            pendingLeafApplies.length = 0;
+            pendingLeafQueueDirty = false;
+            pendingLeafApplyQueueDirty = false;
+        },
         hasPendingLeafApplies: () => pendingLeafApplies.length > 0,
         sampleNodeHeightGrid,
         createWaterDepthTexture,
