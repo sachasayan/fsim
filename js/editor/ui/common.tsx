@@ -411,6 +411,7 @@ export function CommandButton({
                     data-testid={testId}
                     variant={variant}
                     className={cn('h-11 rounded-2xl px-4', className)}
+                    aria-label={typeof title === 'string' ? title : undefined}
                 >
                     {busy ? <SpinnerIcon /> : iconPath ? <Icon path={iconPath} /> : null}
                     <span>{children}</span>
