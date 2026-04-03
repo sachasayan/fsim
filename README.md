@@ -81,9 +81,9 @@ fsim/
 npm install
 ```
 
-### Run the development server
+### Run the full development stack
 
-This is the main local workflow. It serves the sim, exposes the editor, supports saving editor changes, and can rebuild world data.
+This is the main local workflow after the TypeScript/Vite transition. It starts the backend save/rebuild server plus both Vite dev servers, so sim and editor changes use Vite's dev pipeline instead of relying on lazy rebuilds of committed dist output.
 
 ```bash
 npm run dev
@@ -91,21 +91,48 @@ npm run dev
 
 Then open:
 
-- Sim: [http://127.0.0.1:5173/](http://127.0.0.1:5173/)
-- Editor: [http://127.0.0.1:5173/editor](http://127.0.0.1:5173/editor)
+- Sim: [http://127.0.0.1:5175/](http://127.0.0.1:5175/)
+- Editor: [http://127.0.0.1:5174/](http://127.0.0.1:5174/)
+
+### Run just one app in dev mode
+
+If you only need one surface, use the app-specific workflows:
+
+```bash
+npm run sim:dev
+npm run editor:dev
+```
+
+These still start the backend API/save server on port `5173`, while the Vite app itself runs on:
+
+- Sim dev: [http://127.0.0.1:5175/](http://127.0.0.1:5175/)
+- Editor dev: [http://127.0.0.1:5174/](http://127.0.0.1:5174/)
+
+The backend on port `5173` is primarily for save/rebuild APIs, world data, assets, and SSE reload events.
+
+### Build production assets
+
+Create the production bundles explicitly:
+
+```bash
+npm run build
+```
 
 ### Run the static server
 
-This serves the sim runtime without the editor save/rebuild APIs.
+Serve the built sim/editor bundles from `sim-dist/` and `editor-dist/`. This command no longer builds implicitly.
 
 ```bash
-npm run start
+npm run serve
 ```
 
 ## Common commands
 
 ```bash
 npm run dev
+npm run sim:dev
+npm run editor:dev
+npm run build
 npm run build:world
 npm run smoke
 npm run test:unit
@@ -121,7 +148,7 @@ npm run screenshot:batch
 ## World-building workflow
 
 1. Edit map content in the browser editor or directly in [`tools/map.json`](./tools/map.json).
-2. Save changes from the editor, or rebuild manually with:
+2. Save changes from the editor, or rebuild world data manually with:
 
 ```bash
 npm run build:world

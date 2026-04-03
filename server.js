@@ -4,34 +4,13 @@ import http from 'node:http';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { isBuildStale } from './tools/lib/BuildFreshness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 5173);
 const SIM_DIST_INDEX = path.resolve(ROOT, 'sim-dist', 'index.html');
 const EDITOR_DIST_INDEX = path.resolve(ROOT, 'editor-dist', 'index.html');
-const VITE_BIN = path.resolve(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
-const SIM_BUILD_SOURCES = [
-  'src/sim-app',
-  'js',
-  'styles',
-  'assets',
-  'vite.sim.config.mjs',
-  'package.json',
-  'tsconfig.json'
-];
-const EDITOR_BUILD_SOURCES = [
-  'src/editor-app',
-  'js/editor',
-  'js/modules/editor',
-  'vite.editor.config.mjs',
-  'package.json',
-  'tsconfig.json',
-  'components.json'
-];
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -64,49 +43,13 @@ function injectRuntimeFlags(filePath, content) {
   return content.replace('</head>', `    ${scripts.join('\n    ')}\n</head>`);
 }
 
-function ensureBuiltSim() {
-  const shouldRebuild = isBuildStale({
-    root: ROOT,
-    indexPath: SIM_DIST_INDEX,
-    sourcePaths: SIM_BUILD_SOURCES
-  });
-  if (!shouldRebuild) return SIM_DIST_INDEX;
-  const result = spawnSync(process.execPath, [VITE_BIN, 'build', '--config', 'vite.sim.config.mjs'], {
-    cwd: ROOT,
-    env: process.env,
-    stdio: 'inherit'
-  });
-  if (result.status !== 0 || !existsSync(SIM_DIST_INDEX)) {
-    throw new Error('Failed to build sim-dist before serving the sim runtime');
-  }
-  return SIM_DIST_INDEX;
-}
-
-function ensureBuiltEditor() {
-  const shouldRebuild = isBuildStale({
-    root: ROOT,
-    indexPath: EDITOR_DIST_INDEX,
-    sourcePaths: EDITOR_BUILD_SOURCES
-  });
-  if (!shouldRebuild) return EDITOR_DIST_INDEX;
-  const result = spawnSync(process.execPath, [VITE_BIN, 'build', '--config', 'vite.editor.config.mjs'], {
-    cwd: ROOT,
-    env: process.env,
-    stdio: 'inherit'
-  });
-  if (result.status !== 0 || !existsSync(EDITOR_DIST_INDEX)) {
-    throw new Error('Failed to build editor-dist before serving the editor runtime');
-  }
-  return EDITOR_DIST_INDEX;
-}
-
 function safeResolve(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
   if (decoded === '/' || decoded === '/fsim.html' || decoded === '/fsim.html/') {
-    return ensureBuiltSim();
+    return SIM_DIST_INDEX;
   }
   if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
-    return ensureBuiltEditor();
+    return EDITOR_DIST_INDEX;
   }
   if (decoded === '/favicon.ico') {
     return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');
@@ -115,6 +58,19 @@ function safeResolve(urlPath) {
   const absolutePath = path.resolve(ROOT, `.${requestPath}`);
   if (!absolutePath.startsWith(ROOT)) return null;
   return absolutePath;
+}
+
+function ensureBuildOutputs() {
+  const missing = [];
+  if (!existsSync(SIM_DIST_INDEX)) missing.push('sim-dist');
+  if (!existsSync(EDITOR_DIST_INDEX)) missing.push('editor-dist');
+
+  if (missing.length === 0) return;
+
+  console.error(
+    `[serve] Missing build output: ${missing.join(', ')}. Run "npm run build" before "npm run serve".`
+  );
+  process.exit(1);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -143,6 +99,8 @@ const server = http.createServer(async (req, res) => {
     res.end('Internal Server Error');
   }
 });
+
+ensureBuildOutputs();
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`fsim game server running at http://127.0.0.1:${PORT}`);

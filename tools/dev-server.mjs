@@ -433,6 +433,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-    console.log(`\n🚀 fsim Build Server running at http://127.0.0.1:${PORT}`);
-    console.log(`🗺️  Map Editor: http://127.0.0.1:${PORT}/editor\n`);
+    console.log(`\n🚀 fsim backend server running at http://127.0.0.1:${PORT}`);
+    console.log('🔁 Save/rebuild APIs, world data, assets, and SSE reloads are available on the backend');
+    console.log('🛩️  Sim dev UI: http://127.0.0.1:5175/');
+    console.log('🗺️  Editor dev UI: http://127.0.0.1:5174/\n');
 });
