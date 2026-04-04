@@ -721,15 +721,6 @@ function buildLeafSurface(job) {
             minDepth: Number.isFinite(minDepth) ? minDepth : 0,
             maxDepth
         };
-        const waterDecoded = resampleHeightGrid(carvedHeights, decoded.stride, job.waterSurfaceResolution);
-        water = createLeafSurfaceBuffers({
-            node,
-            heights: waterDecoded.heights,
-            stride: waterDecoded.stride,
-            worldData,
-            sampler: staticSampler,
-            materialKind: 'water'
-        });
         waterDepth = buildWaterDepthTextureData(node, staticSampler, job.waterDepthResolution, {
             heights: carvedHeights,
             stride: decoded.stride

@@ -92,6 +92,7 @@ type TerrainLeafSurfaceRuntimeOptions = {
     resolveRetiredLeafTransitions: (selectedLeafStates?: LeafStateLike[]) => Set<string>;
     syncLeafSurfaceTransitionVisibility: (selectedLeafStates?: LeafStateLike[]) => void;
     syncChunkBaseSurfaceVisibility: (chunkKeys?: Iterable<string> | null) => void;
+    markLeafWaterOverlayDirty: () => void;
     distanceToLeafBoundsSq: (leaf: LeafStateLike | Bounds | null | undefined, x: number, z: number) => number;
 };
 
@@ -186,6 +187,7 @@ export function createTerrainLeafSurfaceRuntime({
     resolveRetiredLeafTransitions,
     syncLeafSurfaceTransitionVisibility,
     syncChunkBaseSurfaceVisibility,
+    markLeafWaterOverlayDirty,
     distanceToLeafBoundsSq
 }: TerrainLeafSurfaceRuntimeOptions) {
     const pendingLeafBuilds: Array<{ leafId: string; priority: number }> = [];
@@ -569,23 +571,12 @@ export function createTerrainLeafSurfaceRuntime({
         terrainMesh.visible = isTerrainSurfaceVisible();
         terrainMesh.position.set(result.node.minX, 0, result.node.minZ);
 
-        let waterGeometryMs = 0;
         let waterDepthTextureMs = 0;
         let waterDepthBinding = null;
-        let waterMesh = null;
-        const createLeafWaterSurface = result.hasWater && result.water && shouldCreateLeafWaterSurface(leafState, result);
-        if (createLeafWaterSurface) {
-            const waterGeometryStartedAtMs = performance.now();
-            const waterGeometry = createLeafSurfaceGeometryFromBuffers(result.water, 'water');
-            waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
+        if (result.hasWater && shouldCreateLeafWaterSurface(leafState, result)) {
             const waterDepthStartedAtMs = performance.now();
             waterDepthBinding = acquireWaterDepthTextureFromPayload(result.waterDepth) || createWaterDepthTextureFromPayload(result.waterDepth);
             waterDepthTextureMs = performance.now() - waterDepthStartedAtMs;
-            const leafWaterMaterial = acquireLeafWaterMaterial(waterDepthBinding, result.node) || createLeafWaterMaterial(waterDepthBinding, result.node);
-            waterMesh = new THREE.Mesh(waterGeometry!, leafWaterMaterial);
-            waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
-            waterMesh.visible = isWaterSurfaceVisible();
-            waterMesh.position.set(result.node.minX, 0, result.node.minZ);
         }
         const materialSetupMs = performance.now() - materialSetupStartedAtMs;
 
@@ -594,12 +585,13 @@ export function createTerrainLeafSurfaceRuntime({
             disposeLeafRuntimeLeaf(leafState);
         }
         leafState.terrainMesh = terrainMesh;
-        leafState.waterMesh = waterMesh;
+        leafState.waterMesh = null;
         leafState.waterDepthBinding = waterDepthBinding;
         leafState.waterAnalysis = result.waterAnalysis || null;
         leafState.hasWater = result.hasWater === true;
         leafState.surfaceResolution = result.surfaceResolution;
         leafState.waterSurfaceResolution = result.waterSurfaceResolution ?? null;
+        markLeafWaterOverlayDirty();
         leafState.state = 'surface_ready';
         leafState.workerBuildPromise = null;
         leafState.workerBuildStartedAtMs = null;
@@ -611,9 +603,6 @@ export function createTerrainLeafSurfaceRuntime({
         }
         recordLeafCompletion(leafState, performance.now());
         scene.add(terrainMesh);
-        if (waterMesh) {
-            scene.add(waterMesh);
-        }
         const selectedLeafStates = [];
         for (const activeLeafState of activeLeaves.values()) {
             if (!activeLeafState?.retired) selectedLeafStates.push(activeLeafState);
@@ -625,7 +614,7 @@ export function createTerrainLeafSurfaceRuntime({
         recordLeafBuildBreakdown({
             sampleHeightMs: 0,
             terrainGeometryMs,
-            waterGeometryMs,
+            waterGeometryMs: 0,
             waterDepthTextureMs,
             materialSetupMs,
             sceneAttachMs,
@@ -686,9 +675,6 @@ export function createTerrainLeafSurfaceRuntime({
         const surfaceResolution = getNativeSurfaceResolution(node.size ?? CHUNK_SIZE, {
             bootstrapBlocking: leafState.blockingReady
         });
-        const waterSurfaceResolution = getWaterSurfaceResolution(surfaceResolution, node.size ?? CHUNK_SIZE, {
-            bootstrapBlocking: leafState.blockingReady
-        });
         const waterDepthResolution = (isBootstrapMode() && leafState.blockingReady) ? 16 : (isBootstrapMode() ? 32 : 64);
         const buildVersion = leafState.buildVersion;
         const workerStartedAtMs = performance.now();
@@ -698,7 +684,6 @@ export function createTerrainLeafSurfaceRuntime({
             nodeId: leafState.nodeId,
             depth: leafState.depth,
             surfaceResolution,
-            waterSurfaceResolution,
             waterDepthResolution
         }).then((result) => {
             const activeLeafState = activeLeaves.get(leafState.leafId);

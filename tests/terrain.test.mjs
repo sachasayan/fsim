@@ -339,6 +339,13 @@ test('terrain tests', async (t) => {
         const diagnostics = system.getTerrainSelectionDiagnostics();
         assert.equal(diagnostics.waterRuntime.activeChunkWaterMeshes, 0);
         assert.equal(diagnostics.waterRuntime.activeOceanWaterMeshes, 3);
+        assert.ok(diagnostics.waterRuntime.activeLeafWaterOverlayRenderers <= 1);
+        assert.ok(diagnostics.waterRuntime.activeLeafWaterMeshes <= diagnostics.selectedLeafCount);
+        assert.ok(diagnostics.waterRuntime.uniqueWaterMaterials >= 1);
+        assert.equal(
+            diagnostics.waterRuntime.estimatedSeaLevelWaterDrawCalls,
+            diagnostics.waterRuntime.activeLeafWaterOverlayRenderers + diagnostics.waterRuntime.activeOceanWaterMeshes
+        );
     });
 
     await t.test('near terrain chunk bases receive shadows by default', async () => {

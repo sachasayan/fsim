@@ -400,8 +400,11 @@ export function createPerformanceCollector({
         recordMetric('terrain.chunkBaseVisibleDwellP95Ms', profiling.terrainSelection?.chunkBaseRole?.visibleDwellMs?.p95Ms);
         recordMetric('terrain.chunkBaseBuildStarts', profiling.terrainSelection?.chunkBaseRole?.buildStarts);
         recordMetric('terrain.chunkBaseBuildCompletes', profiling.terrainSelection?.chunkBaseRole?.buildCompletes);
+        recordMetric('terrain.leafBuild.waterGeometryAvgMs', profiling.terrainSelection?.leafBuildBreakdown?.waterGeometryAvgMs);
+        recordMetric('terrain.leafBuild.maxWaterGeometryMs', profiling.terrainSelection?.leafBuildBreakdown?.maxWaterGeometryMs);
         recordMetric('terrain.water.activeWaterMeshes', profiling.terrainSelection?.waterRuntime?.activeWaterMeshes);
         recordMetric('terrain.water.visibleWaterMeshes', profiling.terrainSelection?.waterRuntime?.visibleWaterMeshes);
+        recordMetric('terrain.water.activeLeafWaterOverlayRenderers', profiling.terrainSelection?.waterRuntime?.activeLeafWaterOverlayRenderers);
         recordMetric('terrain.water.activeOceanWaterMeshes', profiling.terrainSelection?.waterRuntime?.activeOceanWaterMeshes);
         recordMetric('terrain.water.visibleOceanWaterMeshes', profiling.terrainSelection?.waterRuntime?.visibleOceanWaterMeshes);
         recordMetric('terrain.water.activeWaterDepthTextures', profiling.terrainSelection?.waterRuntime?.activeWaterDepthTextures);
@@ -410,6 +413,7 @@ export function createPerformanceCollector({
         recordMetric('terrain.water.waterDepthAtlasUploadCount', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasUploadCount);
         recordMetric('terrain.water.waterDepthAtlasReuseCount', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasReuseCount);
         recordMetric('terrain.water.uniqueWaterMaterials', profiling.terrainSelection?.waterRuntime?.uniqueWaterMaterials);
+        recordMetric('terrain.water.estimatedSeaLevelWaterDrawCalls', profiling.terrainSelection?.waterRuntime?.estimatedSeaLevelWaterDrawCalls);
         recordMetric('terrain.water.activeWaterVertices', profiling.terrainSelection?.waterRuntime?.activeWaterVertices);
         recordMetric('terrain.water.activeWaterTriangles', profiling.terrainSelection?.waterRuntime?.activeWaterTriangles);
         recordMetric('render.sceneMs', renderPassTimings.renderScene);

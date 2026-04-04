@@ -21,8 +21,9 @@ export function createOceanRenderer({
     CHUNK_SIZE: number;
     isWaterSurfaceVisible: () => boolean;
 }) {
-    // This is the first extraction step: a constant-cost ocean underlay that
-    // sits below the shoreline-aware leaf water meshes instead of replacing them.
+    // OceanRenderer owns sea-level offshore coverage. Terrain only contributes
+    // near-shore masks/pages plus authored hydrology overlays that intentionally
+    // render above the ocean underlay.
     const group = new THREE.Group();
     group.name = 'OceanRenderer';
 

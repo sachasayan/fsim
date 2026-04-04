@@ -30,7 +30,8 @@ test('water owned shader sources are cached and expose expected near/far behavio
     assert.match(nearSourceA.fragmentShader, /float waterProceduralHeight\(vec2 worldXZ\)/);
     assert.match(nearSourceA.fragmentShader, /float waterPatternStrength = 1\.5000;/);
     assert.match(nearSourceA.fragmentShader, /uniform sampler2D uWaterDepthTex;/);
-    assert.match(nearSourceA.fragmentShader, /vec2 waterDepthUv = mix\(uWaterDepthUvMin, uWaterDepthUvMax, waterUv\);/);
+    assert.match(nearSourceA.fragmentShader, /vec2 waterBoundsMin = uWaterBoundsMin;/);
+    assert.match(nearSourceA.fragmentShader, /vec2 waterDepthUv = mix\(waterDepthUvMin, waterDepthUvMax, waterUv\);/);
     assert.match(nearSourceA.fragmentShader, /float waterDepth = texture2D\(uWaterDepthTex, waterDepthUv\)\.r \* uWaterDepthScale;/);
     assert.match(nearSourceA.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
     assert.match(nearSourceA.fragmentShader, /float waterShadowFade = resolveSurfaceShadowFade\(vWaterWorldPos\.xz\);/);

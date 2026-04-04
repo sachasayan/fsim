@@ -42,6 +42,7 @@ import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionCo
 import { createTerrainChunkRuntime } from './terrain/TerrainChunkRuntime.js';
 import { createTerrainDebugConfigRuntime } from './terrain/TerrainDebugConfig.js';
 import { createTerrainLeafSurfaceRuntime } from './terrain/TerrainLeafSurfaceRuntime.js';
+import { createLeafWaterOverlayRenderer } from './terrain/LeafWaterOverlayRenderer.js';
 import { createOceanRenderer } from './terrain/OceanRenderer.js';
 import { createWaterDepthAtlas } from './terrain/WaterDepthAtlas.js';
 import {
@@ -88,6 +89,7 @@ type LeafBuildBreakdown = {
   sampleHeightMs: number;
   terrainGeometryMs: number;
   waterGeometryMs: number;
+  maxWaterGeometryMs: number;
   waterDepthTextureMs: number;
   materialSetupMs: number;
   sceneAttachMs: number;
@@ -631,6 +633,14 @@ export function createTerrainSystem({
 
   setupWaterMaterial(waterMaterial, atmosphereUniforms, false, waterSurfaceUniforms);
   setupWaterMaterial(waterFarMaterial, atmosphereUniforms, true, waterSurfaceUniforms);
+  const leafWaterOverlayRenderer = createLeafWaterOverlayRenderer({
+    scene,
+    material: waterMaterial,
+    SEA_LEVEL,
+    getActiveLeaves: () => activeLeaves.values(),
+    isWaterSurfaceVisible,
+    shouldCreateLeafWaterSurface
+  });
   const oceanRenderer = createOceanRenderer({
     scene,
     material: waterFarMaterial,
@@ -741,6 +751,7 @@ export function createTerrainSystem({
       sampleHeightMs: 0,
       terrainGeometryMs: 0,
       waterGeometryMs: 0,
+      maxWaterGeometryMs: 0,
       waterDepthTextureMs: 0,
       materialSetupMs: 0,
       sceneAttachMs: 0,
@@ -757,6 +768,10 @@ export function createTerrainSystem({
 
   function markAllSurfaceShadowsDirty() {
     surfaceShadowSyncAllDirty = true;
+  }
+
+  function markLeafWaterOverlayDirty() {
+    leafWaterOverlayRenderer.markDirty();
   }
 
   function markLeafShadowDirty(leafId) {
@@ -786,6 +801,9 @@ export function createTerrainSystem({
     const shallowSampleRatio = Number.isFinite(waterAnalysis?.shallowSampleRatio) ? waterAnalysis.shallowSampleRatio : 0;
     const foamSampleRatio = Number.isFinite(waterAnalysis?.foamSampleRatio) ? waterAnalysis.foamSampleRatio : 0;
     const maxDepth = Number.isFinite(waterAnalysis?.maxDepth) ? waterAnalysis.maxDepth : 0;
+    // Leaves only keep explicit water ownership when they contribute shoreline detail.
+    // Offshore sea-level coverage is owned by OceanRenderer so terrain streaming does
+    // not recreate ocean meshes as the camera moves.
     const shorelineLeaf = shallowSampleRatio >= 0.08 || foamSampleRatio >= 0.02 || maxDepth <= WATER_DEPTH_BANDS.shallowEnd;
     const nearWaterRadius = Math.max(CHUNK_SIZE * 2.5, leafSize * 2.5);
     if (shorelineLeaf) return true;
@@ -840,6 +858,7 @@ export function createTerrainSystem({
       sampleHeightMs: 0,
       terrainGeometryMs: 0,
       waterGeometryMs: 0,
+      maxWaterGeometryMs: 0,
       waterDepthTextureMs: 0,
       materialSetupMs: 0,
       sceneAttachMs: 0,
@@ -856,6 +875,7 @@ export function createTerrainSystem({
     bucket.sampleHeightMs += sample.sampleHeightMs || 0;
     bucket.terrainGeometryMs += sample.terrainGeometryMs || 0;
     bucket.waterGeometryMs += sample.waterGeometryMs || 0;
+    bucket.maxWaterGeometryMs = Math.max(bucket.maxWaterGeometryMs || 0, sample.waterGeometryMs || 0);
     bucket.waterDepthTextureMs += sample.waterDepthTextureMs || 0;
     bucket.materialSetupMs += sample.materialSetupMs || 0;
     bucket.sceneAttachMs += sample.sceneAttachMs || 0;
@@ -890,6 +910,7 @@ export function createTerrainSystem({
         sampleHeightAvgMs: null,
         terrainGeometryAvgMs: null,
         waterGeometryAvgMs: null,
+        maxWaterGeometryMs: null,
         waterDepthTextureAvgMs: null,
         materialSetupAvgMs: null,
         sceneAttachAvgMs: null,
@@ -904,6 +925,7 @@ export function createTerrainSystem({
       sampleHeightAvgMs: avg(bucket.sampleHeightMs),
       terrainGeometryAvgMs: avg(bucket.terrainGeometryMs),
       waterGeometryAvgMs: avg(bucket.waterGeometryMs),
+      maxWaterGeometryMs: Math.round((bucket.maxWaterGeometryMs || 0) * 1000) / 1000,
       waterDepthTextureAvgMs: avg(bucket.waterDepthTextureMs),
       materialSetupAvgMs: avg(bucket.materialSetupMs),
       sceneAttachAvgMs: avg(bucket.sceneAttachMs),
@@ -922,26 +944,19 @@ export function createTerrainSystem({
   }
 
   function getWaterRuntimeDiagnostics() {
+    const leafOverlayDiagnostics = leafWaterOverlayRenderer.getDiagnostics();
     const oceanDiagnostics = oceanRenderer.getDiagnostics();
     const materialSet = new Set();
-    let activeLeafWaterMeshes = 0;
-    let visibleLeafWaterMeshes = 0;
     let activeChunkWaterMeshes = 0;
     let visibleChunkWaterMeshes = 0;
     let activeWaterDepthTextures = 0;
-    let activeWaterVertices = 0;
-    let activeWaterTriangles = 0;
+    let activeWaterVertices = leafOverlayDiagnostics.activeLeafWaterVertices || 0;
+    let activeWaterTriangles = leafOverlayDiagnostics.activeLeafWaterTriangles || 0;
 
     for (const leafState of activeLeaves.values()) {
-      const waterMesh = leafState?.waterMesh || null;
-      if (!waterMesh) continue;
-      activeLeafWaterMeshes += 1;
-      if (waterMesh.visible) visibleLeafWaterMeshes += 1;
-      if (waterMesh.material) materialSet.add(waterMesh.material);
-      activeWaterVertices += waterMesh.geometry?.attributes?.position?.count || 0;
-      activeWaterTriangles += countGeometryTriangles(waterMesh.geometry);
       if (leafState.waterDepthBinding?.texture) activeWaterDepthTextures += 1;
     }
+    if ((leafOverlayDiagnostics.activeLeafWaterMeshes || 0) > 0) materialSet.add(waterMaterial);
 
     for (const chunkState of terrainChunks.values()) {
       const waterMesh = chunkState?.group?.userData?.chunkBaseWaterMesh || null;
@@ -959,14 +974,15 @@ export function createTerrainSystem({
     }
 
     return {
-      activeLeafWaterMeshes,
-      visibleLeafWaterMeshes,
+      activeLeafWaterMeshes: leafOverlayDiagnostics.activeLeafWaterMeshes || 0,
+      visibleLeafWaterMeshes: leafOverlayDiagnostics.visibleLeafWaterMeshes || 0,
+      activeLeafWaterOverlayRenderers: leafOverlayDiagnostics.activeLeafWaterOverlayRenderers || 0,
       activeChunkWaterMeshes,
       visibleChunkWaterMeshes,
       activeOceanWaterMeshes: oceanDiagnostics.activeOceanWaterMeshes || 0,
       visibleOceanWaterMeshes: oceanDiagnostics.visibleOceanWaterMeshes || 0,
-      activeWaterMeshes: activeLeafWaterMeshes + activeChunkWaterMeshes + (oceanDiagnostics.activeOceanWaterMeshes || 0),
-      visibleWaterMeshes: visibleLeafWaterMeshes + visibleChunkWaterMeshes + (oceanDiagnostics.visibleOceanWaterMeshes || 0),
+      activeWaterMeshes: (leafOverlayDiagnostics.activeLeafWaterMeshes || 0) + activeChunkWaterMeshes + (oceanDiagnostics.activeOceanWaterMeshes || 0),
+      visibleWaterMeshes: (leafOverlayDiagnostics.visibleLeafWaterMeshes || 0) + visibleChunkWaterMeshes + (oceanDiagnostics.visibleOceanWaterMeshes || 0),
       activeWaterDepthTextures,
       waterDepthAtlasAllocatedPages: waterDepthAtlas.allocatedSlotCount(),
       waterDepthAtlasFreePages: waterDepthAtlas.freeSlotCount(),
@@ -975,6 +991,9 @@ export function createTerrainSystem({
       waterDepthAtlasReuseCount: waterDepthAtlas.reuseCount(),
       pooledLeafWaterMaterials: pooledLeafWaterMaterials.length,
       uniqueWaterMaterials: materialSet.size,
+      estimatedSeaLevelWaterDrawCalls: (leafOverlayDiagnostics.activeLeafWaterOverlayRenderers || 0)
+        + activeChunkWaterMeshes
+        + (oceanDiagnostics.activeOceanWaterMeshes || 0),
       activeWaterVertices,
       activeWaterTriangles
     };
@@ -1314,6 +1333,7 @@ export function createTerrainSystem({
     resolveRetiredLeafTransitions,
     syncLeafSurfaceTransitionVisibility,
     syncChunkBaseSurfaceVisibility,
+    markLeafWaterOverlayDirty,
     distanceToLeafBoundsSq
   });
   const {
@@ -1326,6 +1346,7 @@ export function createTerrainSystem({
 
   function disposeLeafRuntimeLeaf(leafState) {
     if (!leafState) return;
+    markLeafWaterOverlayDirty();
     if (leafState.readyChunkCoverageActive) {
       for (const key of leafState.chunkKeys || []) {
         const nextCount = (readyLeafSurfaceChunkCounts.get(key) || 0) - 1;
@@ -1578,6 +1599,7 @@ export function createTerrainSystem({
     }
     syncLeafSurfaceTransitionVisibility(selectedLeafStates);
     syncChunkBaseSurfaceVisibility();
+    markLeafWaterOverlayDirty();
     oceanRenderer.update(atmosphereCameraPos);
   }
 
@@ -1657,7 +1679,11 @@ export function createTerrainSystem({
           transitionReady = false;
           break;
         }
-        if (selectedLeafState.hasWater && shouldCreateLeafWaterSurface(selectedLeafState) && !selectedLeafState.waterMesh) {
+        if (
+          selectedLeafState.hasWater
+          && shouldCreateLeafWaterSurface(selectedLeafState)
+          && !selectedLeafState.waterDepthBinding?.texture
+        ) {
           transitionReady = false;
           break;
         }
@@ -2098,12 +2124,13 @@ export function createTerrainSystem({
       const nextState = getLeafStateForChunkKeys(leaf.chunkKeys);
       let leafState = existing;
 
-      if (!leafState) {
+        if (!leafState) {
         leafState = createNativeLeafRuntime(leaf);
         activeLeaves.set(leaf.leafId, leafState);
         if (isLeafGenerationEnabled()) {
           enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
         }
+        markLeafWaterOverlayDirty();
         addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
       } else {
         const previousChunkKeys = [...(leafState.chunkKeys || [])];
@@ -2122,25 +2149,24 @@ export function createTerrainSystem({
         const desiredResolution = getNativeSurfaceResolution(leaf.size ?? CHUNK_SIZE, {
           bootstrapBlocking: nextBlockingLeafIds.has(leaf.leafId)
         });
-        const desiredWaterResolution = getWaterSurfaceResolution(desiredResolution, leaf.size ?? CHUNK_SIZE, {
-          bootstrapBlocking: nextBlockingLeafIds.has(leaf.leafId)
-        });
         if (changedNode && leafState.terrainMesh) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           if (isLeafGenerationEnabled()) {
             enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
           }
+          markLeafWaterOverlayDirty();
           markLeafShadowDirty(leafState.leafId);
           addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
         } else if (
           leafState.state === 'surface_ready'
-          && (leafState.surfaceResolution !== desiredResolution || leafState.waterSurfaceResolution !== desiredWaterResolution)
+          && leafState.surfaceResolution !== desiredResolution
         ) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           if (isLeafGenerationEnabled()) {
             enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));
           }
+          markLeafWaterOverlayDirty();
           markLeafShadowDirty(leafState.leafId);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
         } else if (previousChunkKeys.length !== leafState.chunkKeys.length
@@ -2155,17 +2181,22 @@ export function createTerrainSystem({
               readyLeafSurfaceChunkCounts.set(key, (readyLeafSurfaceChunkCounts.get(key) || 0) + 1);
             }
           }
+          markLeafWaterOverlayDirty();
           addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
           markLeafShadowDirty(leafState.leafId);
         } else if (wasSurfaceReady !== (leafState.state === 'surface_ready')) {
+          markLeafWaterOverlayDirty();
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
           markLeafShadowDirty(leafState.leafId);
         }
       }
 
-      if ((!leafState.terrainMesh || (leafState.hasWater && shouldCreateLeafWaterSurface(leafState) && !leafState.waterMesh)) && leafState.state !== 'building_surface') {
+      const needsExplicitLeafWaterSurface = leafState.hasWater && shouldCreateLeafWaterSurface(leafState);
+      const hasReadyLeafWaterSurface = !needsExplicitLeafWaterSurface || Boolean(leafState.waterDepthBinding?.texture);
+      if ((!leafState.terrainMesh || !hasReadyLeafWaterSurface) && leafState.state !== 'building_surface') {
         markLeafPendingSurface(leafState);
+        markLeafWaterOverlayDirty();
         markLeafShadowDirty(leafState.leafId);
         addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
       } else if (leafState.state !== 'error' && leafState.state !== 'building_surface') {
@@ -2193,6 +2224,7 @@ export function createTerrainSystem({
       if (shouldRetainLeafDuringTransition(leafState, selectedLeafStates)) {
         leafState.retired = true;
         leafState.blockingReady = false;
+        markLeafWaterOverlayDirty();
         markLeafShadowDirty(leafState.leafId);
         continue;
       }
@@ -2200,6 +2232,7 @@ export function createTerrainSystem({
       disposeLeafRuntimeLeaf(leafState);
       activeLeaves.delete(leafId);
       pendingLeafBuildIds.delete(leafId);
+      markLeafWaterOverlayDirty();
     }
 
     const resolvedTransitionDirtyChunkKeys = resolveRetiredLeafTransitions(selectedLeafStates);
@@ -2423,6 +2456,7 @@ export function createTerrainSystem({
     const propBuildStats = isObjectSystemVisible() ? processPropBuildQueue(propBuildBudget) : { durationMs: 0, builds: 0 };
     const leafApplyStats = consumeLeafBuildApplyTiming();
     syncSurfaceShadowReception({ forceFull: surfaceShadowSyncAllDirty });
+    leafWaterOverlayRenderer.update();
     refreshTerrainSelectionDiagnostics();
     terrainPerfState.lastUpdate = {
       selectionBuildMs,
@@ -2516,6 +2550,7 @@ export function createTerrainSystem({
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
+      leafWaterOverlayRenderer.update();
       oceanRenderer.update(camera.position);
       const movedSinceLastSyncSq = Number.isFinite(lastSurfaceShadowSyncPos.x)
         ? lastSurfaceShadowSyncPos.distanceToSquared(atmosphereCameraPos)
@@ -2538,7 +2573,10 @@ export function createTerrainSystem({
       atmosphereUniforms.uAtmosNear.value = 15000.0;
       atmosphereUniforms.uAtmosFar.value = 90000.0;
     }
-    if (!camera) oceanRenderer.update(atmosphereCameraPos);
+    if (!camera) {
+      leafWaterOverlayRenderer.update();
+      oceanRenderer.update(atmosphereCameraPos);
+    }
   }
 
   /**

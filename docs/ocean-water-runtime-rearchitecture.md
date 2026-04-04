@@ -69,19 +69,19 @@ This document is not primarily about:
 
 ### Design goals
 
-- [ ] Sea-level ocean should be owned by a dedicated renderer
-- [ ] Ocean draw count should be nearly constant with respect to terrain streaming
-- [ ] Ocean material count should be nearly constant with respect to terrain streaming
-- [ ] Shoreline coloration/depth response should remain world-space and terrain-aware
-- [ ] Authored/local water should remain separately owned and specialized
-- [ ] Runtime should support clear near/far shader variants without per-leaf material proliferation
+- [x] Sea-level ocean should be owned by a dedicated renderer
+- [x] Ocean draw count should be nearly constant with respect to terrain streaming
+- [x] Ocean material count should be nearly constant with respect to terrain streaming
+- [x] Shoreline coloration/depth response should remain world-space and terrain-aware
+- [x] Authored/local water should remain separately owned and specialized
+- [x] Runtime should support clear near/far shader variants without per-leaf material proliferation
 
 ### Desired split
 
-- [ ] `OceanRenderer`: owns sea-level ocean meshes, materials, and runtime bindings
-- [ ] `WaterDepthAtlas` or similar: owns streamed shoreline/depth pages
-- [ ] Terrain system: supplies ocean-relevant depth/page data, but does not own ocean meshes
-- [ ] Hydrology system: keeps lakes/rivers/harbor overlays as distinct meshes
+- [x] `OceanRenderer`: owns sea-level ocean meshes, materials, and runtime bindings
+- [x] `WaterDepthAtlas` or similar: owns streamed shoreline/depth pages
+- [x] Terrain system: supplies ocean-relevant depth/page data, but does not own ocean meshes
+- [x] Hydrology system: keeps lakes/rivers/harbor overlays as distinct meshes
 
 ## Execution Plan
 
@@ -101,9 +101,9 @@ Goal: reduce cost before larger architectural extraction.
 
 ### Expected result
 
-- [ ] Lower main-thread apply time
-- [ ] Lower water vertex count
-- [ ] Lower scene attachment and mesh churn
+- [x] Lower main-thread apply time
+- [x] Lower water vertex count
+- [x] Lower scene attachment and mesh churn
 
 ## Phase 2: Replace Per-Leaf Water Textures With An Atlas
 
@@ -118,9 +118,9 @@ Goal: eliminate per-leaf water depth texture ownership.
 
 ### Expected result
 
-- [-] Lower texture upload churn
+- [x] Lower texture upload churn
 - [x] Lower texture object count
-- [-] Better GPU locality
+- [x] Better GPU locality
 
 ## Phase 3: Extract A Dedicated Ocean Renderer
 
@@ -129,33 +129,34 @@ Goal: stop representing sea-level ocean as terrain-owned streaming tiles.
 - [x] Add a new runtime module, [`js/modules/world/terrain/OceanRenderer.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/OceanRenderer.ts)
 - [x] Create reusable camera-centered ocean geometry
 - [x] Use concentric reusable patches as the first nearly constant-cost mesh strategy
-- [-] Reuse the existing near/far water shader split where practical
+- [x] Reuse the existing near/far water shader split where practical
 - [x] Bind ocean shader state once per renderer instead of once per leaf
-- [-] Move sea-level ocean visibility ownership out of the terrain leaf runtime
-  Current state: far leaves can now decline shoreline-water ownership and fall back to the dedicated ocean underlay
+- [x] Move sea-level ocean visibility ownership out of the terrain leaf runtime
+  Current state: offshore coverage is renderer-owned; terrain leaves only contribute shoreline overlay instances and depth pages
 - [x] Retire chunk-base ocean meshes after parity is achieved
-- [ ] Retire leaf ocean meshes after parity is achieved
+- [x] Retire leaf ocean meshes after parity is achieved
+  Current state: shoreline-aware leaf water is rendered by one shared instanced overlay renderer rather than per-leaf meshes/materials
 
 ### Expected result
 
-- [-] Water draw count becomes nearly constant
-- [-] Water material count becomes nearly constant
-- [-] Terrain streaming no longer drives ocean mesh churn
+- [x] Water draw count becomes nearly constant
+- [x] Water material count becomes nearly constant
+- [x] Terrain streaming no longer drives ocean mesh churn
 
 ## Phase 4: Cleanly Separate Ocean From Authored Hydrology
 
 Goal: make ownership boundaries durable and understandable.
 
 - [x] Keep lakes and rivers in the hydrology overlay path
-- [-] Define blending/overlap rules between sea-level ocean and authored water
-- [ ] Ensure local harbors/shoreline exceptions are handled without reintroducing terrain-owned ocean tiles
-- [-] Document long-term ownership boundaries in code comments and docs
+- [x] Define blending/overlap rules between sea-level ocean and authored water
+- [x] Ensure local harbors/shoreline exceptions are handled without reintroducing terrain-owned ocean tiles
+- [x] Document long-term ownership boundaries in code comments and docs
 
 ### Expected result
 
-- [ ] Simpler mental model
-- [ ] Cleaner specialization of shaders and geometry
-- [ ] Easier future additions like animated waves, reflections, or shoreline foam
+- [x] Simpler mental model
+- [x] Cleaner specialization of shaders and geometry
+- [x] Easier future additions like animated waves, reflections, or shoreline foam
 
 ## File Targets
 
@@ -176,19 +177,19 @@ Goal: make ownership boundaries durable and understandable.
 
 ## Metrics To Track
 
-- [ ] Average leaf-water apply time
-- [ ] Max leaf-water apply time
+- [x] Average leaf-water apply time
+- [x] Max leaf-water apply time
 - [x] Water texture upload count
-- [ ] Total active water textures
-- [ ] Total active water materials
+- [x] Total active water textures
+- [x] Total active water materials
 - [x] Total active ocean meshes
-- [ ] Water-related draw calls
-- [ ] Water-related geometry count
-- [ ] Terrain update-frame time attributable to water work
+- [x] Water-related draw calls
+- [x] Water-related geometry count
+- [x] Terrain update-frame time attributable to water work
 
 ### Instrumentation notes
 
-- [-] Expose water runtime counters through terrain diagnostics:
+- [x] Expose water runtime counters through terrain diagnostics:
   - Active/visible leaf water meshes
   - Active/visible chunk-base water meshes
   - Active/visible dedicated ocean meshes
@@ -369,6 +370,73 @@ Shoreline-gate values from that capture:
 - `activeWaterVertices`: `2883`
 - `activeWaterTriangles`: `4594`
 
+### Phase 3 shared-overlay capture
+
+- [x] Record terrain-streaming metrics after replacing per-leaf water meshes/materials with one shared leaf-water overlay renderer
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase3-overlay-renderer/terrain_streaming_low_alt-latest.json`
+- Notes: this run had a materially smaller selected-leaf set than earlier exploratory captures, so it is not directly comparable for absolute workload, but it demonstrates the intended ownership shift clearly
+
+Shared-overlay values from that capture:
+
+- `frameMs p95`: `4.3`
+- `render.sceneMs p95`: `2.5`
+- `selectedLeafCount`: `28`
+- `activeChunkCount`: `39`
+- `activeLeafWaterMeshes`: `51`
+- `activeLeafWaterOverlayRenderers`: `1`
+- `activeChunkWaterMeshes`: `0`
+- `activeOceanWaterMeshes`: `3`
+- `activeWaterDepthTextures`: `51`
+- `waterDepthAtlasAllocatedPages`: `51`
+- `waterDepthAtlasUploadCount`: `68`
+- `waterDepthAtlasReuseCount`: `67`
+- `uniqueWaterMaterials`: `2`
+- `activeWaterVertices`: `1359`
+- `activeWaterTriangles`: `2190`
+
+### Phase 4 ownership-boundary capture
+
+- [x] Record terrain-streaming metrics after the shared shoreline-overlay renderer, draw-call telemetry, and ownership-boundary cleanup
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase4-boundaries-v2/terrain_streaming_low_alt-latest.json`
+- Notes: steady-state sample with the dedicated ocean underlay, one shared shoreline overlay renderer, and explicit draw-call telemetry
+
+Ownership-boundary values from that capture:
+
+- `frameMs p95`: `4.1`
+- `render.sceneMs p95`: `2.5`
+- `selectedLeafCount`: `28`
+- `activeChunkCount`: `39`
+- `activeLeafWaterMeshes`: `51`
+- `activeLeafWaterOverlayRenderers`: `1`
+- `activeChunkWaterMeshes`: `0`
+- `activeOceanWaterMeshes`: `3`
+- `activeWaterDepthTextures`: `51`
+- `waterDepthAtlasAllocatedPages`: `51`
+- `waterDepthAtlasUploadCount`: `68`
+- `waterDepthAtlasReuseCount`: `67`
+- `uniqueWaterMaterials`: `2`
+- `estimatedSeaLevelWaterDrawCalls`: `4`
+- `activeWaterVertices`: `1359`
+- `activeWaterTriangles`: `2190`
+- `leafBuildBreakdown.waterGeometryAvgMs`: `null`
+- `leafBuildBreakdown.maxWaterGeometryMs`: `null`
+
+Interpretation:
+
+- `estimatedSeaLevelWaterDrawCalls = 4` confirms the intended steady-state ownership shape: one shoreline overlay draw plus three far-ocean patch draws.
+- `uniqueWaterMaterials = 2` confirms near-water and far-water materials are now effectively constant-cost with respect to terrain streaming.
+- `leafBuildBreakdown.waterGeometry* = null` in this capture indicates no leaf-water geometry work occurred during the steady-state sample window, which is the desired outcome after moving shoreline rendering to the shared overlay path.
+
 ## Risks
 
 - [ ] Shoreline quality regressions if coarse water geometry and shoreline coloring are not decoupled correctly
@@ -378,13 +446,14 @@ Shoreline-gate values from that capture:
 
 ## Recommended Order
 
-- [ ] Phase 1
-- [ ] Phase 2
-- [ ] Phase 3
-- [ ] Phase 4
+- [x] Phase 1
+- [x] Phase 2
+- [x] Phase 3
+- [x] Phase 4
 
 ## Notes
 
 - The current near-water shader is static-pattern based rather than truly time-animated.
 - The current far-water shader is appropriately cheaper and should remain conceptually separate.
 - The best long-term direction is a dedicated ocean renderer fed by streamed shoreline/depth data, not more optimization of per-leaf ocean meshes.
+- Current overlap rule: ocean underlay sits beneath the shared shoreline overlay, while authored/local hydrology meshes intentionally render above both via the hydrology overlay path and polygon offset bias.

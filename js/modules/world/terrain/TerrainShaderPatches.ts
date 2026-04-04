@@ -169,7 +169,18 @@ export function applyWaterSurfaceColorShaderPatch(shader, {
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
         'common',
-        '#include <common>\nvarying vec3 vWaterWorldPos;'
+        `#include <common>
+varying vec3 vWaterWorldPos;
+#ifdef USE_INSTANCING
+attribute vec2 instanceWaterBoundsMin;
+attribute vec2 instanceWaterBoundsSize;
+attribute vec2 instanceWaterDepthUvMin;
+attribute vec2 instanceWaterDepthUvMax;
+varying vec2 vInstanceWaterBoundsMin;
+varying vec2 vInstanceWaterBoundsSize;
+varying vec2 vInstanceWaterDepthUvMin;
+varying vec2 vInstanceWaterDepthUvMax;
+#endif`
     );
     shader.vertexShader = replaceShaderInclude(
         shader.vertexShader,
@@ -178,6 +189,10 @@ export function applyWaterSurfaceColorShaderPatch(shader, {
     vec4 waterWorldPos = modelMatrix * vec4(transformed, 1.0);
 #ifdef USE_INSTANCING
 waterWorldPos = instanceMatrix * waterWorldPos;
+vInstanceWaterBoundsMin = instanceWaterBoundsMin;
+vInstanceWaterBoundsSize = instanceWaterBoundsSize;
+vInstanceWaterDepthUvMin = instanceWaterDepthUvMin;
+vInstanceWaterDepthUvMax = instanceWaterDepthUvMax;
 #endif
 vWaterWorldPos = waterWorldPos.xyz; `
     );
@@ -187,6 +202,12 @@ vWaterWorldPos = waterWorldPos.xyz; `
         'common',
         `#include <common>
 varying vec3 vWaterWorldPos;
+#ifdef USE_INSTANCING
+varying vec2 vInstanceWaterBoundsMin;
+varying vec2 vInstanceWaterBoundsSize;
+varying vec2 vInstanceWaterDepthUvMin;
+varying vec2 vInstanceWaterDepthUvMax;
+#endif
 uniform vec3 uAtmosCameraPos;
 uniform vec3 uAtmosColor;
 uniform float uAtmosNear;
@@ -235,8 +256,18 @@ float resolveSurfaceShadowFade(vec2 worldXZ) {
     shader.fragmentShader = replaceShaderSnippet(
         shader.fragmentShader,
         DIFFUSE_COLOR_SNIPPET,
-        `vec2 waterUv = clamp((vWaterWorldPos.xz - uWaterBoundsMin) / max(uWaterBoundsSize, vec2(0.0001)), 0.0, 1.0);
-vec2 waterDepthUv = mix(uWaterDepthUvMin, uWaterDepthUvMax, waterUv);
+        `vec2 waterBoundsMin = uWaterBoundsMin;
+vec2 waterBoundsSize = uWaterBoundsSize;
+vec2 waterDepthUvMin = uWaterDepthUvMin;
+vec2 waterDepthUvMax = uWaterDepthUvMax;
+#ifdef USE_INSTANCING
+waterBoundsMin = vInstanceWaterBoundsMin;
+waterBoundsSize = vInstanceWaterBoundsSize;
+waterDepthUvMin = vInstanceWaterDepthUvMin;
+waterDepthUvMax = vInstanceWaterDepthUvMax;
+#endif
+vec2 waterUv = clamp((vWaterWorldPos.xz - waterBoundsMin) / max(waterBoundsSize, vec2(0.0001)), 0.0, 1.0);
+vec2 waterDepthUv = mix(waterDepthUvMin, waterDepthUvMax, waterUv);
 float waterDepth = texture2D(uWaterDepthTex, waterDepthUv).r * uWaterDepthScale;
 vec3 waterBaseColor = resolveWaterColor(waterDepth);
 vec4 diffuseColor = vec4(waterBaseColor, opacity);

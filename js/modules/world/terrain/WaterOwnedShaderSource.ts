@@ -72,8 +72,8 @@ function buildWaterOwnedShaderSource({
         ],
         requiredFragment: [
             { pattern: 'uniform sampler2D uWaterDepthTex;', description: 'water depth texture uniform' },
-            { pattern: 'vec2 waterUv = clamp((vWaterWorldPos.xz - uWaterBoundsMin)', description: 'water world-space UV lookup' },
-            { pattern: 'vec2 waterDepthUv = mix(uWaterDepthUvMin, uWaterDepthUvMax, waterUv);', description: 'water atlas UV remap' }
+            { pattern: 'vec2 waterUv = clamp((vWaterWorldPos.xz - waterBoundsMin)', description: 'water world-space UV lookup' },
+            { pattern: 'vec2 waterDepthUv = mix(waterDepthUvMin, waterDepthUvMax, waterUv);', description: 'water atlas UV remap' }
         ],
         forbiddenFragment: isFarLOD
             ? [
