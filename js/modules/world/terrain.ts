@@ -624,10 +624,9 @@ export function createTerrainSystem({
   });
 
   const waterTimeUniform = { value: 0 };
-  waterMaterial.userData.timeUniform = waterTimeUniform;
 
-  setupWaterMaterial(waterMaterial, atmosphereUniforms, waterTimeUniform, false, waterSurfaceUniforms);
-  setupWaterMaterial(waterFarMaterial, atmosphereUniforms, null, true, waterSurfaceUniforms);
+  setupWaterMaterial(waterMaterial, atmosphereUniforms, false, waterSurfaceUniforms);
+  setupWaterMaterial(waterFarMaterial, atmosphereUniforms, true, waterSurfaceUniforms);
 
   const LOD_LEVELS = lodSettings.terrain.lodLevels;
 
@@ -1182,6 +1181,7 @@ export function createTerrainSystem({
     dispatchTerrainWorker,
     getStaticSampler,
     getNativeSurfaceResolution,
+    getWaterSurfaceResolution,
     getPhysicsState: () => physicsState,
     isBootstrapMode: () => bootstrapMode,
     CHUNK_SIZE,
@@ -1269,6 +1269,7 @@ export function createTerrainSystem({
       waterDepthTexture: null,
       hasWater: false,
       surfaceResolution: null,
+      waterSurfaceResolution: null,
       firstSelectedAtMs: now,
       lastSelectedAtMs: now,
       pendingSinceAtMs: now,
@@ -1348,6 +1349,25 @@ export function createTerrainSystem({
       if (resolution >= 32) return 16;
       if (resolution >= 16) return 8;
       if (resolution >= 8) return 4;
+    }
+
+    return resolution;
+  }
+
+  function getWaterSurfaceResolution(terrainSurfaceResolution, nodeSize, { bootstrapBlocking = false } = {}) {
+    const safeTerrainResolution = Math.max(1, Math.floor(terrainSurfaceResolution) || 1);
+    let resolution = Math.max(1, Math.ceil(safeTerrainResolution / 4));
+
+    if (safeTerrainResolution >= 16) resolution = Math.max(4, resolution);
+    if (safeTerrainResolution >= 32) resolution = Math.max(8, resolution);
+    if (safeTerrainResolution >= HIGH_LOD_SURFACE_RESOLUTION) resolution = Math.max(16, resolution);
+
+    if (nodeSize >= CHUNK_SIZE * 2) resolution = Math.min(resolution, 2);
+    else if (nodeSize >= CHUNK_SIZE) resolution = Math.min(resolution, 4);
+    else if (nodeSize >= CHUNK_SIZE * 0.5) resolution = Math.min(resolution, 8);
+
+    if (bootstrapMode && bootstrapBlocking) {
+      resolution = Math.max(1, Math.min(resolution, 8));
     }
 
     return resolution;
@@ -1995,6 +2015,9 @@ export function createTerrainSystem({
         const desiredResolution = getNativeSurfaceResolution(leaf.size ?? CHUNK_SIZE, {
           bootstrapBlocking: nextBlockingLeafIds.has(leaf.leafId)
         });
+        const desiredWaterResolution = getWaterSurfaceResolution(desiredResolution, leaf.size ?? CHUNK_SIZE, {
+          bootstrapBlocking: nextBlockingLeafIds.has(leaf.leafId)
+        });
         if (changedNode && leafState.terrainMesh) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           if (isLeafGenerationEnabled()) {
@@ -2003,7 +2026,10 @@ export function createTerrainSystem({
           markLeafShadowDirty(leafState.leafId);
           addChunkKeysToSet(visibilityDirtyChunkKeys, previousChunkKeys);
           addChunkKeysToSet(visibilityDirtyChunkKeys, leafState.chunkKeys);
-        } else if (leafState.state === 'surface_ready' && leafState.surfaceResolution !== desiredResolution) {
+        } else if (
+          leafState.state === 'surface_ready'
+          && (leafState.surfaceResolution !== desiredResolution || leafState.waterSurfaceResolution !== desiredWaterResolution)
+        ) {
           markLeafPendingSurface(leafState, { resetPendingStart: true });
           if (isLeafGenerationEnabled()) {
             enqueueLeafBuild(leafState, getLeafBuildPriority(leafState));

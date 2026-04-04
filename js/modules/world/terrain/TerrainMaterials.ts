@@ -172,7 +172,6 @@ export function setupTerrainMaterial(
 export function setupWaterMaterial(
     material,
     atmosphereUniforms,
-    timeUniform = null,
     isFarLOD = false,
     waterSurfaceUniforms = null,
     {
@@ -195,8 +194,7 @@ export function setupWaterMaterial(
         }),
         {
             atmosphereUniforms,
-            waterSurfaceUniforms,
-            timeUniform
+            waterSurfaceUniforms
         }
     );
 }

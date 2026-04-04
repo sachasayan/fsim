@@ -761,9 +761,6 @@ function animate() {
 
   // 2. Water Animation
   phaseStart = performance.now();
-  if (waterMaterial.userData.timeUniform) {
-    waterMaterial.userData.timeUniform.value += dt;
-  }
   phaseStart = performance.now() - phaseStart;
   perfCollector.recordPhase('water_animation', phaseStart);
 

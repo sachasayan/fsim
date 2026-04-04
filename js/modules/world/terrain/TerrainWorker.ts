@@ -95,6 +95,7 @@ const SKIRT_DEPTH = 28;
  *   nodeId: number,
  *   depth?: number | null,
  *   surfaceResolution: number,
+ *   waterSurfaceResolution: number,
  *   waterDepthResolution: number
  * }} LeafSurfaceJob
  */
@@ -488,7 +489,8 @@ function fillFlatNormals(normals, vertexCount, nx = 0, ny = 1, nz = 0) {
 export function createLeafSurfaceBuffers({ node, heights, stride, worldData, sampler, materialKind }) {
     const resolution = stride - 1;
     const topVertexCount = stride * stride;
-    const borderLoop = buildBorderLoopIndices(stride);
+    const includeSkirts = materialKind === 'terrain';
+    const borderLoop = includeSkirts ? buildBorderLoopIndices(stride) : [];
     const vertexCount = topVertexCount + borderLoop.length;
     const positions = new Float32Array(vertexCount * 3);
     const colors = new Float32Array(vertexCount * 3);
@@ -617,6 +619,30 @@ export function createLeafSurfaceBuffers({ node, heights, stride, worldData, sam
     };
 }
 
+function resampleHeightGrid(sourceHeights, sourceStride, targetResolution) {
+    const safeTargetResolution = Math.max(1, Math.floor(targetResolution));
+    const targetStride = safeTargetResolution + 1;
+    const targetHeights = new Float32Array(targetStride * targetStride);
+    const sourceResolution = Math.max(1, sourceStride - 1);
+    for (let z = 0; z < targetStride; z += 1) {
+        const vz = safeTargetResolution === 0 ? 0 : z / safeTargetResolution;
+        for (let x = 0; x < targetStride; x += 1) {
+            const ux = safeTargetResolution === 0 ? 0 : x / safeTargetResolution;
+            targetHeights[z * targetStride + x] = sampleHeightGridBilinear(
+                sourceHeights,
+                sourceStride,
+                ux * sourceResolution,
+                vz * sourceResolution
+            );
+        }
+    }
+    return {
+        resolution: safeTargetResolution,
+        stride: targetStride,
+        heights: targetHeights
+    };
+}
+
 export function buildWaterDepthTextureData(node, sampler, resolution = 64, sourceGrid = null) {
     const size = Math.max(4, resolution);
     const data = new Uint8Array(size * size * 4);
@@ -673,10 +699,11 @@ function buildLeafSurface(job) {
     let water = null;
     let waterDepth = null;
     if (hasWater) {
+        const waterDecoded = resampleHeightGrid(carvedHeights, decoded.stride, job.waterSurfaceResolution);
         water = createLeafSurfaceBuffers({
             node,
-            heights: carvedHeights,
-            stride: decoded.stride,
+            heights: waterDecoded.heights,
+            stride: waterDecoded.stride,
             worldData,
             sampler: staticSampler,
             materialKind: 'water'
@@ -694,6 +721,7 @@ function buildLeafSurface(job) {
             size: node.size
         },
         surfaceResolution: job.surfaceResolution,
+        waterSurfaceResolution: job.waterSurfaceResolution,
         hasWater,
         terrain,
         water,

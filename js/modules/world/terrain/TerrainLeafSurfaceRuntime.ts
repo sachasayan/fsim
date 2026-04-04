@@ -32,6 +32,7 @@ type LeafStateLike = {
     waterDepthTexture?: THREE.Texture | null;
     hasWater?: boolean;
     surfaceResolution?: number | null;
+    waterSurfaceResolution?: number | null;
     buildVersion?: number;
     lastBuildStartedAtMs?: number | null;
     workerBuildStartedAtMs?: number | null;
@@ -49,6 +50,7 @@ type TerrainLeafSurfaceRuntimeOptions = {
     dispatchTerrainWorker: (kind: string, payload: Record<string, unknown>) => Promise<any>;
     getStaticSampler: () => any;
     getNativeSurfaceResolution: (nodeSize: number, options?: { bootstrapBlocking?: boolean }) => number;
+    getWaterSurfaceResolution: (terrainSurfaceResolution: number, nodeSize: number, options?: { bootstrapBlocking?: boolean }) => number;
     getPhysicsState: () => PhysicsLike;
     isBootstrapMode: () => boolean;
     CHUNK_SIZE: number;
@@ -141,6 +143,7 @@ export function createTerrainLeafSurfaceRuntime({
     dispatchTerrainWorker,
     getStaticSampler,
     getNativeSurfaceResolution,
+    getWaterSurfaceResolution,
     getPhysicsState,
     isBootstrapMode,
     CHUNK_SIZE,
@@ -575,6 +578,7 @@ export function createTerrainLeafSurfaceRuntime({
         leafState.waterDepthTexture = waterDepthTexture;
         leafState.hasWater = result.hasWater === true;
         leafState.surfaceResolution = result.surfaceResolution;
+        leafState.waterSurfaceResolution = result.waterSurfaceResolution ?? null;
         leafState.state = 'surface_ready';
         leafState.workerBuildPromise = null;
         leafState.workerBuildStartedAtMs = null;
@@ -661,6 +665,9 @@ export function createTerrainLeafSurfaceRuntime({
         const surfaceResolution = getNativeSurfaceResolution(node.size ?? CHUNK_SIZE, {
             bootstrapBlocking: leafState.blockingReady
         });
+        const waterSurfaceResolution = getWaterSurfaceResolution(surfaceResolution, node.size ?? CHUNK_SIZE, {
+            bootstrapBlocking: leafState.blockingReady
+        });
         const waterDepthResolution = (isBootstrapMode() && leafState.blockingReady) ? 16 : (isBootstrapMode() ? 32 : 64);
         const buildVersion = leafState.buildVersion;
         const workerStartedAtMs = performance.now();
@@ -670,6 +677,7 @@ export function createTerrainLeafSurfaceRuntime({
             nodeId: leafState.nodeId,
             depth: leafState.depth,
             surfaceResolution,
+            waterSurfaceResolution,
             waterDepthResolution
         }).then((result) => {
             const activeLeafState = activeLeaves.get(leafState.leafId);

@@ -189,7 +189,6 @@ export function createTerrainDebugConfigRuntime({
         setupWaterMaterial(
             material,
             atmosphereUniforms,
-            null,
             isFarLOD,
             waterUniforms,
             {
