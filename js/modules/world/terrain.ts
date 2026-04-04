@@ -42,6 +42,7 @@ import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionCo
 import { createTerrainChunkRuntime } from './terrain/TerrainChunkRuntime.js';
 import { createTerrainDebugConfigRuntime } from './terrain/TerrainDebugConfig.js';
 import { createTerrainLeafSurfaceRuntime } from './terrain/TerrainLeafSurfaceRuntime.js';
+import { createOceanRenderer } from './terrain/OceanRenderer.js';
 import { createWaterDepthAtlas } from './terrain/WaterDepthAtlas.js';
 import {
   buildTerrainSelection,
@@ -479,7 +480,7 @@ export function createTerrainSystem({
     depthWrite: false
   });
   hydrologyLakeMaterial.polygonOffset = true;
-  hydrologyLakeMaterial.polygonOffsetFactor = -2; // Ensure lakes/rivers win over ocean if overlapping
+  hydrologyLakeMaterial.polygonOffsetFactor = -2; // Authored/local water overlays intentionally win over the ocean underlay.
   hydrologyLakeMaterial.polygonOffsetUnits = -2;
   const hydrologyRiverMaterial = new THREE.MeshBasicMaterial({
     color: 0x4cb1ff,
@@ -630,6 +631,13 @@ export function createTerrainSystem({
 
   setupWaterMaterial(waterMaterial, atmosphereUniforms, false, waterSurfaceUniforms);
   setupWaterMaterial(waterFarMaterial, atmosphereUniforms, true, waterSurfaceUniforms);
+  const oceanRenderer = createOceanRenderer({
+    scene,
+    material: waterFarMaterial,
+    SEA_LEVEL,
+    CHUNK_SIZE,
+    isWaterSurfaceVisible
+  });
 
   const LOD_LEVELS = lodSettings.terrain.lodLevels;
 
@@ -899,6 +907,7 @@ export function createTerrainSystem({
   }
 
   function getWaterRuntimeDiagnostics() {
+    const oceanDiagnostics = oceanRenderer.getDiagnostics();
     const materialSet = new Set();
     let activeLeafWaterMeshes = 0;
     let visibleLeafWaterMeshes = 0;
@@ -928,14 +937,21 @@ export function createTerrainSystem({
       activeWaterVertices += waterMesh.geometry?.attributes?.position?.count || 0;
       activeWaterTriangles += countGeometryTriangles(waterMesh.geometry);
     }
+    activeWaterVertices += oceanDiagnostics.oceanWaterVertices || 0;
+    activeWaterTriangles += oceanDiagnostics.oceanWaterTriangles || 0;
+    if (oceanDiagnostics.uniqueOceanWaterMaterials > 0) {
+      materialSet.add(waterFarMaterial);
+    }
 
     return {
       activeLeafWaterMeshes,
       visibleLeafWaterMeshes,
       activeChunkWaterMeshes,
       visibleChunkWaterMeshes,
-      activeWaterMeshes: activeLeafWaterMeshes + activeChunkWaterMeshes,
-      visibleWaterMeshes: visibleLeafWaterMeshes + visibleChunkWaterMeshes,
+      activeOceanWaterMeshes: oceanDiagnostics.activeOceanWaterMeshes || 0,
+      visibleOceanWaterMeshes: oceanDiagnostics.visibleOceanWaterMeshes || 0,
+      activeWaterMeshes: activeLeafWaterMeshes + activeChunkWaterMeshes + (oceanDiagnostics.activeOceanWaterMeshes || 0),
+      visibleWaterMeshes: visibleLeafWaterMeshes + visibleChunkWaterMeshes + (oceanDiagnostics.visibleOceanWaterMeshes || 0),
       activeWaterDepthTextures,
       waterDepthAtlasAllocatedPages: waterDepthAtlas.allocatedSlotCount(),
       waterDepthAtlasFreePages: waterDepthAtlas.freeSlotCount(),
@@ -1533,6 +1549,7 @@ export function createTerrainSystem({
     }
     syncLeafSurfaceTransitionVisibility(selectedLeafStates);
     syncChunkBaseSurfaceVisibility();
+    oceanRenderer.update(atmosphereCameraPos);
   }
 
   function enqueueLeafBuild(leafState, priority = 0) {
@@ -1940,6 +1957,7 @@ export function createTerrainSystem({
       terrainFarMaterial,
       waterMaterial,
       waterFarMaterial,
+      includeWaterMesh: false,
       Noise,
       scene
     });
@@ -2466,6 +2484,7 @@ export function createTerrainSystem({
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
+      oceanRenderer.update(camera.position);
       const movedSinceLastSyncSq = Number.isFinite(lastSurfaceShadowSyncPos.x)
         ? lastSurfaceShadowSyncPos.distanceToSquared(atmosphereCameraPos)
         : Number.POSITIVE_INFINITY;
@@ -2487,6 +2506,7 @@ export function createTerrainSystem({
       atmosphereUniforms.uAtmosNear.value = 15000.0;
       atmosphereUniforms.uAtmosFar.value = 90000.0;
     }
+    if (!camera) oceanRenderer.update(atmosphereCameraPos);
   }
 
   /**

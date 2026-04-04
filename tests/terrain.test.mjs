@@ -325,6 +325,22 @@ test('terrain tests', async (t) => {
         assert.equal(Object.prototype.hasOwnProperty.call(diagnostics, 'nearestWater'), true);
     });
 
+    await t.test('terrain runtime uses dedicated ocean patches instead of chunk water meshes', async () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+        const camera = new THREE.PerspectiveCamera();
+        camera.position.set(800, 180, 1200);
+        system.updateTerrainAtmosphere(camera);
+        await waitForChunkWorkIdle(system);
+
+        const diagnostics = system.getTerrainSelectionDiagnostics();
+        assert.equal(diagnostics.waterRuntime.activeChunkWaterMeshes, 0);
+        assert.equal(diagnostics.waterRuntime.activeOceanWaterMeshes, 3);
+    });
+
     await t.test('near terrain chunk bases receive shadows by default', async () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };

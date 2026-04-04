@@ -126,29 +126,29 @@ Goal: eliminate per-leaf water depth texture ownership.
 
 Goal: stop representing sea-level ocean as terrain-owned streaming tiles.
 
-- [ ] Add a new runtime module, likely [`js/modules/world/terrain/OceanRenderer.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/OceanRenderer.ts)
-- [ ] Create reusable camera-centered ocean geometry
-- [ ] Use clipmap rings, concentric patches, or another nearly constant-cost mesh strategy
-- [ ] Reuse the existing near/far water shader split where practical
-- [ ] Bind ocean shader state once per renderer instead of once per leaf
-- [ ] Move sea-level ocean visibility ownership out of the terrain leaf runtime
-- [ ] Retire chunk-base ocean meshes after parity is achieved
+- [x] Add a new runtime module, [`js/modules/world/terrain/OceanRenderer.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/OceanRenderer.ts)
+- [x] Create reusable camera-centered ocean geometry
+- [x] Use concentric reusable patches as the first nearly constant-cost mesh strategy
+- [-] Reuse the existing near/far water shader split where practical
+- [x] Bind ocean shader state once per renderer instead of once per leaf
+- [-] Move sea-level ocean visibility ownership out of the terrain leaf runtime
+- [x] Retire chunk-base ocean meshes after parity is achieved
 - [ ] Retire leaf ocean meshes after parity is achieved
 
 ### Expected result
 
-- [ ] Water draw count becomes nearly constant
-- [ ] Water material count becomes nearly constant
-- [ ] Terrain streaming no longer drives ocean mesh churn
+- [-] Water draw count becomes nearly constant
+- [-] Water material count becomes nearly constant
+- [-] Terrain streaming no longer drives ocean mesh churn
 
 ## Phase 4: Cleanly Separate Ocean From Authored Hydrology
 
 Goal: make ownership boundaries durable and understandable.
 
-- [ ] Keep lakes and rivers in the hydrology overlay path
-- [ ] Define blending/overlap rules between sea-level ocean and authored water
+- [x] Keep lakes and rivers in the hydrology overlay path
+- [-] Define blending/overlap rules between sea-level ocean and authored water
 - [ ] Ensure local harbors/shoreline exceptions are handled without reintroducing terrain-owned ocean tiles
-- [ ] Document long-term ownership boundaries in code comments and docs
+- [-] Document long-term ownership boundaries in code comments and docs
 
 ### Expected result
 
@@ -180,7 +180,7 @@ Goal: make ownership boundaries durable and understandable.
 - [x] Water texture upload count
 - [ ] Total active water textures
 - [ ] Total active water materials
-- [ ] Total active ocean meshes
+- [x] Total active ocean meshes
 - [ ] Water-related draw calls
 - [ ] Water-related geometry count
 - [ ] Terrain update-frame time attributable to water work
@@ -190,6 +190,7 @@ Goal: make ownership boundaries durable and understandable.
 - [-] Expose water runtime counters through terrain diagnostics:
   - Active/visible leaf water meshes
   - Active/visible chunk-base water meshes
+  - Active/visible dedicated ocean meshes
   - Active water depth bindings and atlas page occupancy
   - Unique active water materials
   - Active water vertex and triangle counts
@@ -248,6 +249,34 @@ Atlas-backed values from that capture:
 - `uniqueWaterMaterials`: `67`
 - `activeWaterVertices`: `1758`
 - `activeWaterTriangles`: `2450`
+
+### Phase 3 ocean-renderer capture
+
+- [x] Record terrain-streaming metrics after enabling the dedicated ocean renderer and retiring chunk-base water meshes
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase3-ocean-renderer/terrain_streaming_low_alt-latest.json`
+- Notes: dedicated ocean renderer enabled, chunk-base water meshes retired, shoreline-aware leaf water still active near the camera
+
+Ocean-renderer values from that capture:
+
+- `frameMs p95`: `5.9`
+- `render.sceneMs p95`: `3.8`
+- `selectedLeafCount`: `67`
+- `activeChunkCount`: `210`
+- `activeLeafWaterMeshes`: `67`
+- `activeChunkWaterMeshes`: `0`
+- `activeOceanWaterMeshes`: `3`
+- `activeWaterDepthTextures`: `67`
+- `waterDepthAtlasAllocatedPages`: `67`
+- `waterDepthAtlasUploadCount`: `104`
+- `waterDepthAtlasReuseCount`: `103`
+- `uniqueWaterMaterials`: `68`
+- `activeWaterVertices`: `2567`
+- `activeWaterTriangles`: `3950`
 
 ## Risks
 

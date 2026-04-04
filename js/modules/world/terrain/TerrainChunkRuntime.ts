@@ -169,7 +169,7 @@ export function createTerrainChunkRuntime({
                     recycleInstancedMesh(child as THREE.InstancedMesh);
                 }
             }
-            if (terrainMesh && waterMesh) {
+            if (terrainMesh) {
                 chunkPools[lod].push(chunkGroup);
             } else {
                 setChunkBaseSurfaceMeshes(chunkGroup, null, null);

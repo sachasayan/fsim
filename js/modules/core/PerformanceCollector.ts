@@ -402,6 +402,8 @@ export function createPerformanceCollector({
         recordMetric('terrain.chunkBaseBuildCompletes', profiling.terrainSelection?.chunkBaseRole?.buildCompletes);
         recordMetric('terrain.water.activeWaterMeshes', profiling.terrainSelection?.waterRuntime?.activeWaterMeshes);
         recordMetric('terrain.water.visibleWaterMeshes', profiling.terrainSelection?.waterRuntime?.visibleWaterMeshes);
+        recordMetric('terrain.water.activeOceanWaterMeshes', profiling.terrainSelection?.waterRuntime?.activeOceanWaterMeshes);
+        recordMetric('terrain.water.visibleOceanWaterMeshes', profiling.terrainSelection?.waterRuntime?.visibleOceanWaterMeshes);
         recordMetric('terrain.water.activeWaterDepthTextures', profiling.terrainSelection?.waterRuntime?.activeWaterDepthTextures);
         recordMetric('terrain.water.waterDepthAtlasAllocatedPages', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasAllocatedPages);
         recordMetric('terrain.water.waterDepthAtlasFreePages', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasFreePages);

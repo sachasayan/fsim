@@ -92,7 +92,8 @@ type TerrainTreeResources = {
  *   terrainMaterial: THREE.Material,
  *   terrainFarMaterial: THREE.Material,
  *   waterMaterial: THREE.Material,
- *   waterFarMaterial: THREE.Material
+ *   waterFarMaterial: THREE.Material,
+ *   includeWaterMesh?: boolean
  * }} TerrainChunkBaseContext
  */
 
@@ -342,7 +343,15 @@ function insertChunkBaseSurfaceMesh(chunkGroup, mesh, index) {
  * @param {THREE.Group | null} [existingGroup]
  */
 export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) {
-    const { LOD_LEVELS, chunkPools, terrainMaterial, terrainFarMaterial, waterMaterial, waterFarMaterial } = ctx;
+    const {
+        LOD_LEVELS,
+        chunkPools,
+        terrainMaterial,
+        terrainFarMaterial,
+        waterMaterial,
+        waterFarMaterial,
+        includeWaterMesh = true
+    } = ctx;
     const lodCfg = LOD_LEVELS[lod] || LOD_LEVELS[LOD_LEVELS.length - 1];
     let chunkGroup = existingGroup;
     let { terrainMesh, waterMesh } = getChunkBaseSurfaceMeshes(chunkGroup);
@@ -356,7 +365,7 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
         }
     }
 
-    if (!terrainMesh || !waterMesh) {
+    if (!terrainMesh) {
         const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.terrainRes, lodCfg.terrainRes);
         geometry.rotateX(-Math.PI / 2);
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3));
@@ -365,26 +374,34 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
         terrainMesh.castShadow = false;
         terrainMesh.receiveShadow = false;
         insertChunkBaseSurfaceMesh(chunkGroup, terrainMesh, 0);
+    }
 
+    if (!includeWaterMesh && waterMesh) {
+        chunkGroup.remove(waterMesh);
+        waterMesh.geometry?.dispose?.();
+        waterMesh = null;
+    }
+
+    if (includeWaterMesh && !waterMesh) {
         const waterGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, lodCfg.waterRes, lodCfg.waterRes);
         waterGeo.rotateX(-Math.PI / 2);
         waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(waterGeo.attributes.position.count * 3), 3));
         waterMesh = new THREE.Mesh(waterGeo, lod === 0 ? waterMaterial : waterFarMaterial);
         waterMesh.receiveShadow = false;
         insertChunkBaseSurfaceMesh(chunkGroup, waterMesh, 1);
-        setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh);
     }
+    setChunkBaseSurfaceMeshes(chunkGroup, terrainMesh, waterMesh);
 
     terrainMesh.castShadow = false;
     terrainMesh.receiveShadow = false;
-    waterMesh.receiveShadow = false;
+    if (waterMesh) waterMesh.receiveShadow = false;
 
     chunkGroup.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
     chunkGroup.userData.lod = lod;
     chunkGroup.userData.chunkKey = `${cx},${cz}`;
 
     const tGeo = terrainMesh.geometry;
-    const wGeo = waterMesh.geometry;
+    const wGeo = waterMesh?.geometry || null;
 
     const workerStartMs = performance.now();
     const result = await dispatchWorker('chunkBase', { cx, cz, lod, lodCfg });
@@ -405,12 +422,14 @@ export async function generateChunkBase(cx, cz, lod, ctx, existingGroup = null) 
     tGeo.attributes.surfaceWeights.array.set(result.surfaceWeights);
     tGeo.attributes.surfaceWeights.needsUpdate = true;
 
-    wGeo.attributes.position.array.set(result.wPos);
-    wGeo.attributes.position.needsUpdate = true;
-    wGeo.attributes.normal.array.set(result.wNormals);
-    wGeo.attributes.normal.needsUpdate = true;
-    wGeo.attributes.color.array.set(result.wCols);
-    wGeo.attributes.color.needsUpdate = true;
+    if (wGeo) {
+        wGeo.attributes.position.array.set(result.wPos);
+        wGeo.attributes.position.needsUpdate = true;
+        wGeo.attributes.normal.array.set(result.wNormals);
+        wGeo.attributes.normal.needsUpdate = true;
+        wGeo.attributes.color.array.set(result.wCols);
+        wGeo.attributes.color.needsUpdate = true;
+    }
 
     recordGenerationPerf('chunkBase', {
         workerMs,
