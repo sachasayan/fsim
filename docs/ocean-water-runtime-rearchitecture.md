@@ -109,18 +109,18 @@ Goal: reduce cost before larger architectural extraction.
 
 Goal: eliminate per-leaf water depth texture ownership.
 
-- [ ] Design an atlas/page-cache structure for shoreline/depth pages
-- [ ] Replace one-texture-per-leaf with shared atlas textures
-- [ ] Add page transform data so shaders can map world-space water lookups into atlas space
-- [ ] Update water shader bindings to sample atlas pages instead of leaf-local `uWaterDepthTex`
-- [ ] Add eviction/reuse behavior for atlas pages
-- [ ] Add diagnostics for atlas occupancy, upload count, and reuse rate
+- [x] Design an atlas/page-cache structure for shoreline/depth pages
+- [x] Replace one-texture-per-leaf with shared atlas textures
+- [x] Add page transform data so shaders can map world-space water lookups into atlas space
+- [x] Update water shader bindings to sample atlas pages instead of leaf-local `uWaterDepthTex`
+- [x] Add eviction/reuse behavior for atlas pages
+- [x] Add diagnostics for atlas occupancy, upload count, and reuse rate
 
 ### Expected result
 
-- [ ] Lower texture upload churn
-- [ ] Lower texture object count
-- [ ] Better GPU locality
+- [-] Lower texture upload churn
+- [x] Lower texture object count
+- [-] Better GPU locality
 
 ## Phase 3: Extract A Dedicated Ocean Renderer
 
@@ -160,24 +160,24 @@ Goal: make ownership boundaries durable and understandable.
 
 ### First-pass implementation targets
 
-- [ ] [`js/modules/world/terrain.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain.ts)
-- [ ] [`js/modules/world/terrain/TerrainLeafSurfaceRuntime.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainLeafSurfaceRuntime.ts)
-- [ ] [`js/modules/world/terrain/TerrainWorker.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainWorker.ts)
-- [ ] [`js/modules/world/terrain/TerrainShaderPatches.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainShaderPatches.ts)
-- [ ] [`js/modules/world/terrain/WaterOwnedShaderSource.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/WaterOwnedShaderSource.ts)
-- [ ] [`js/modules/world/terrain/TerrainDebugConfig.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainDebugConfig.ts)
+- [x] [`js/modules/world/terrain.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain.ts)
+- [x] [`js/modules/world/terrain/TerrainLeafSurfaceRuntime.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainLeafSurfaceRuntime.ts)
+- [x] [`js/modules/world/terrain/TerrainWorker.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainWorker.ts)
+- [x] [`js/modules/world/terrain/TerrainShaderPatches.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainShaderPatches.ts)
+- [x] [`js/modules/world/terrain/WaterOwnedShaderSource.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/WaterOwnedShaderSource.ts)
+- [x] [`js/modules/world/terrain/TerrainDebugConfig.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/TerrainDebugConfig.ts)
 
 ### Later-phase implementation targets
 
 - [ ] [`js/modules/world/terrain/OceanRenderer.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/OceanRenderer.ts)
-- [ ] [`js/modules/world/terrain/WaterDepthAtlas.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/WaterDepthAtlas.ts)
+- [x] [`js/modules/world/terrain/WaterDepthAtlas.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/WaterDepthAtlas.ts)
 - [ ] Additional tests for water shader ownership, atlas bindings, and renderer integration
 
 ## Metrics To Track
 
 - [ ] Average leaf-water apply time
 - [ ] Max leaf-water apply time
-- [ ] Water texture upload count per minute
+- [x] Water texture upload count
 - [ ] Total active water textures
 - [ ] Total active water materials
 - [ ] Total active ocean meshes
@@ -190,9 +190,10 @@ Goal: make ownership boundaries durable and understandable.
 - [-] Expose water runtime counters through terrain diagnostics:
   - Active/visible leaf water meshes
   - Active/visible chunk-base water meshes
-  - Active and pooled water-depth textures
+  - Active water depth bindings and atlas page occupancy
   - Unique active water materials
   - Active water vertex and triangle counts
+  - Atlas upload and reuse counts
 
 ### Phase 1 baseline capture
 
@@ -219,6 +220,34 @@ Baseline values from that capture:
 - `uniqueWaterMaterials`: `58`
 - `activeWaterVertices`: `1351`
 - `activeWaterTriangles`: `1814`
+
+### Phase 2 atlas capture
+
+- [x] Record atlas-backed terrain-streaming water metrics from the same representative scenario
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase2-atlas/terrain_streaming_low_alt-latest.json`
+- Notes: capture again did not reach steady state; `profilingReadinessReason` remained `programs_growing`
+
+Atlas-backed values from that capture:
+
+- `frameMs p95`: `5.9`
+- `render.sceneMs p95`: `4.0`
+- `selectedLeafCount`: `67`
+- `activeChunkCount`: `210`
+- `activeWaterMeshes`: `67`
+- `activeWaterDepthTextures`: `67`
+- `waterDepthAtlasAllocatedPages`: `67`
+- `waterDepthAtlasFreePages`: `189`
+- `waterDepthAtlasTotalPages`: `256`
+- `waterDepthAtlasUploadCount`: `129`
+- `waterDepthAtlasReuseCount`: `128`
+- `uniqueWaterMaterials`: `67`
+- `activeWaterVertices`: `1758`
+- `activeWaterTriangles`: `2450`
 
 ## Risks
 

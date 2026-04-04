@@ -403,7 +403,10 @@ export function createPerformanceCollector({
         recordMetric('terrain.water.activeWaterMeshes', profiling.terrainSelection?.waterRuntime?.activeWaterMeshes);
         recordMetric('terrain.water.visibleWaterMeshes', profiling.terrainSelection?.waterRuntime?.visibleWaterMeshes);
         recordMetric('terrain.water.activeWaterDepthTextures', profiling.terrainSelection?.waterRuntime?.activeWaterDepthTextures);
-        recordMetric('terrain.water.pooledWaterDepthTextures', profiling.terrainSelection?.waterRuntime?.pooledWaterDepthTextures);
+        recordMetric('terrain.water.waterDepthAtlasAllocatedPages', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasAllocatedPages);
+        recordMetric('terrain.water.waterDepthAtlasFreePages', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasFreePages);
+        recordMetric('terrain.water.waterDepthAtlasUploadCount', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasUploadCount);
+        recordMetric('terrain.water.waterDepthAtlasReuseCount', profiling.terrainSelection?.waterRuntime?.waterDepthAtlasReuseCount);
         recordMetric('terrain.water.uniqueWaterMaterials', profiling.terrainSelection?.waterRuntime?.uniqueWaterMaterials);
         recordMetric('terrain.water.activeWaterVertices', profiling.terrainSelection?.waterRuntime?.activeWaterVertices);
         recordMetric('terrain.water.activeWaterTriangles', profiling.terrainSelection?.waterRuntime?.activeWaterTriangles);

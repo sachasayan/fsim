@@ -86,6 +86,8 @@ export function createWaterSurfaceUniformBindings(atmosphereUniforms, waterSurfa
         uShadowCoverageExtent: atmosphereUniforms.uShadowCoverageExtent,
         uShadowCoverageFadeStart: atmosphereUniforms.uShadowCoverageFadeStart,
         uWaterDepthTex: waterSurfaceUniforms.uWaterDepthTex,
+        uWaterDepthUvMin: waterSurfaceUniforms.uWaterDepthUvMin,
+        uWaterDepthUvMax: waterSurfaceUniforms.uWaterDepthUvMax,
         uWaterBoundsMin: waterSurfaceUniforms.uWaterBoundsMin,
         uWaterBoundsSize: waterSurfaceUniforms.uWaterBoundsSize,
         uWaterDepthScale: waterSurfaceUniforms.uWaterDepthScale,
@@ -195,6 +197,8 @@ uniform vec3 uShadowCoverageCenter;
 uniform float uShadowCoverageExtent;
 uniform float uShadowCoverageFadeStart;
 uniform sampler2D uWaterDepthTex;
+uniform vec2 uWaterDepthUvMin;
+uniform vec2 uWaterDepthUvMax;
 uniform vec2 uWaterBoundsMin;
 uniform vec2 uWaterBoundsSize;
 uniform float uWaterDepthScale;
@@ -232,7 +236,8 @@ float resolveSurfaceShadowFade(vec2 worldXZ) {
         shader.fragmentShader,
         DIFFUSE_COLOR_SNIPPET,
         `vec2 waterUv = clamp((vWaterWorldPos.xz - uWaterBoundsMin) / max(uWaterBoundsSize, vec2(0.0001)), 0.0, 1.0);
-float waterDepth = texture2D(uWaterDepthTex, waterUv).r * uWaterDepthScale;
+vec2 waterDepthUv = mix(uWaterDepthUvMin, uWaterDepthUvMax, waterUv);
+float waterDepth = texture2D(uWaterDepthTex, waterDepthUv).r * uWaterDepthScale;
 vec3 waterBaseColor = resolveWaterColor(waterDepth);
 vec4 diffuseColor = vec4(waterBaseColor, opacity);
 float atmosDist = distance(vWaterWorldPos, uAtmosCameraPos);

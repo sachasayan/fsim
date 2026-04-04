@@ -42,6 +42,7 @@ import { createQuadtreeSelectionController } from './terrain/QuadtreeSelectionCo
 import { createTerrainChunkRuntime } from './terrain/TerrainChunkRuntime.js';
 import { createTerrainDebugConfigRuntime } from './terrain/TerrainDebugConfig.js';
 import { createTerrainLeafSurfaceRuntime } from './terrain/TerrainLeafSurfaceRuntime.js';
+import { createWaterDepthAtlas } from './terrain/WaterDepthAtlas.js';
 import {
   buildTerrainSelection,
   smoothActiveChunkLods,
@@ -506,6 +507,8 @@ export function createTerrainSystem({
   };
   const waterSurfaceUniforms = {
     uWaterDepthTex: { value: null },
+    uWaterDepthUvMin: { value: new THREE.Vector2(0, 0) },
+    uWaterDepthUvMax: { value: new THREE.Vector2(1, 1) },
     uWaterBoundsMin: { value: new THREE.Vector2(0, 0) },
     uWaterBoundsSize: { value: new THREE.Vector2(1, 1) },
     uWaterDepthScale: { value: WATER_DEPTH_BANDS.deepEnd },
@@ -913,7 +916,7 @@ export function createTerrainSystem({
       if (waterMesh.material) materialSet.add(waterMesh.material);
       activeWaterVertices += waterMesh.geometry?.attributes?.position?.count || 0;
       activeWaterTriangles += countGeometryTriangles(waterMesh.geometry);
-      if (leafState.waterDepthTexture) activeWaterDepthTextures += 1;
+      if (leafState.waterDepthBinding?.texture) activeWaterDepthTextures += 1;
     }
 
     for (const chunkState of terrainChunks.values()) {
@@ -926,11 +929,6 @@ export function createTerrainSystem({
       activeWaterTriangles += countGeometryTriangles(waterMesh.geometry);
     }
 
-    let pooledWaterDepthTextures = 0;
-    for (const pool of pooledLeafWaterDepthTextures.values()) {
-      pooledWaterDepthTextures += pool?.length || 0;
-    }
-
     return {
       activeLeafWaterMeshes,
       visibleLeafWaterMeshes,
@@ -939,7 +937,11 @@ export function createTerrainSystem({
       activeWaterMeshes: activeLeafWaterMeshes + activeChunkWaterMeshes,
       visibleWaterMeshes: visibleLeafWaterMeshes + visibleChunkWaterMeshes,
       activeWaterDepthTextures,
-      pooledWaterDepthTextures,
+      waterDepthAtlasAllocatedPages: waterDepthAtlas.allocatedSlotCount(),
+      waterDepthAtlasFreePages: waterDepthAtlas.freeSlotCount(),
+      waterDepthAtlasTotalPages: waterDepthAtlas.totalSlotCount,
+      waterDepthAtlasUploadCount: waterDepthAtlas.uploadCount(),
+      waterDepthAtlasReuseCount: waterDepthAtlas.reuseCount(),
       pooledLeafWaterMaterials: pooledLeafWaterMaterials.length,
       uniqueWaterMaterials: materialSet.size,
       activeWaterVertices,
@@ -1134,47 +1136,24 @@ export function createTerrainSystem({
   });
   applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false });
   const pooledLeafWaterMaterials = [];
-  const pooledLeafWaterDepthTextures = new Map();
+  const waterDepthAtlas = createWaterDepthAtlas();
 
   function acquireWaterDepthTextureFromPayload(payload) {
-    if (!payload?.data || !Number.isFinite(payload.size)) return null;
-    const size = Math.max(1, Math.floor(payload.size));
-    const pool = pooledLeafWaterDepthTextures.get(size);
-    const texture = pool && pool.length > 0
-      ? pool.pop()
-      : new THREE.DataTexture(payload.data, size, size, THREE.RGBAFormat);
-    texture.image = texture.image || {};
-    texture.image.data = payload.data;
-    texture.image.width = size;
-    texture.image.height = size;
-    texture.colorSpace = THREE.NoColorSpace;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
-    texture.needsUpdate = true;
-    return texture;
+    return waterDepthAtlas.allocate(payload);
   }
 
-  function recycleWaterDepthTexture(texture) {
-    if (!texture?.image) return;
-    const size = Number(texture.image.width);
-    if (!Number.isFinite(size) || size <= 0) return;
-    let pool = pooledLeafWaterDepthTextures.get(size);
-    if (!pool) {
-      pool = [];
-      pooledLeafWaterDepthTextures.set(size, pool);
-    }
-    pool.push(texture);
+  function recycleWaterDepthTexture(binding) {
+    waterDepthAtlas.release(binding);
   }
 
-  function acquireLeafWaterMaterial(waterDepthTexture, node) {
+  function acquireLeafWaterMaterial(waterDepthBinding, node) {
     const material = pooledLeafWaterMaterials.pop() || waterMaterial.clone();
     material.normalMap = waterMaterial.normalMap;
     material.normalScale = material.normalScale?.clone?.() || waterMaterial.normalScale.clone();
     const waterUniforms = material.userData?.waterSurfaceUniforms || {
       uWaterDepthTex: { value: null },
+      uWaterDepthUvMin: { value: new THREE.Vector2(0, 0) },
+      uWaterDepthUvMax: { value: new THREE.Vector2(1, 1) },
       uWaterBoundsMin: { value: new THREE.Vector2() },
       uWaterBoundsSize: { value: new THREE.Vector2() },
       uWaterDepthScale: { value: WATER_DEPTH_BANDS.deepEnd },
@@ -1186,6 +1165,16 @@ export function createTerrainSystem({
       uWaterShallowColor: { value: waterSurfaceUniforms.uWaterShallowColor.value.clone() },
       uWaterDeepColor: { value: waterSurfaceUniforms.uWaterDeepColor.value.clone() }
     };
+    if (!waterUniforms.uWaterDepthUvMin || typeof waterUniforms.uWaterDepthUvMin !== 'object') {
+      waterUniforms.uWaterDepthUvMin = { value: new THREE.Vector2(0, 0) };
+    } else if (!waterUniforms.uWaterDepthUvMin.value || typeof waterUniforms.uWaterDepthUvMin.value.set !== 'function') {
+      waterUniforms.uWaterDepthUvMin.value = new THREE.Vector2(0, 0);
+    }
+    if (!waterUniforms.uWaterDepthUvMax || typeof waterUniforms.uWaterDepthUvMax !== 'object') {
+      waterUniforms.uWaterDepthUvMax = { value: new THREE.Vector2(1, 1) };
+    } else if (!waterUniforms.uWaterDepthUvMax.value || typeof waterUniforms.uWaterDepthUvMax.value.set !== 'function') {
+      waterUniforms.uWaterDepthUvMax.value = new THREE.Vector2(1, 1);
+    }
     if (!waterUniforms.uWaterBoundsMin || typeof waterUniforms.uWaterBoundsMin !== 'object') {
       waterUniforms.uWaterBoundsMin = { value: new THREE.Vector2() };
     } else if (!waterUniforms.uWaterBoundsMin.value || typeof waterUniforms.uWaterBoundsMin.value.set !== 'function') {
@@ -1205,7 +1194,9 @@ export function createTerrainSystem({
     if (!waterUniforms.uWaterDeepColor?.value || typeof waterUniforms.uWaterDeepColor.value.copy !== 'function') {
       waterUniforms.uWaterDeepColor = { value: waterSurfaceUniforms.uWaterDeepColor.value.clone() };
     }
-    waterUniforms.uWaterDepthTex.value = waterDepthTexture;
+    waterUniforms.uWaterDepthTex.value = waterDepthBinding?.texture || defaultWaterDepthTexture;
+    waterUniforms.uWaterDepthUvMin.value.copy(waterDepthBinding?.uvMin || waterSurfaceUniforms.uWaterDepthUvMin.value);
+    waterUniforms.uWaterDepthUvMax.value.copy(waterDepthBinding?.uvMax || waterSurfaceUniforms.uWaterDepthUvMax.value);
     waterUniforms.uWaterBoundsMin.value.set(node.minX, node.minZ);
     waterUniforms.uWaterBoundsSize.value.set(node.size, node.size);
     waterUniforms.uWaterDepthScale.value = WATER_DEPTH_BANDS.deepEnd;
@@ -1228,6 +1219,12 @@ export function createTerrainSystem({
     const waterUniforms = material.userData?.waterSurfaceUniforms || null;
     if (waterUniforms?.uWaterDepthTex) {
       waterUniforms.uWaterDepthTex.value = null;
+    }
+    if (waterUniforms?.uWaterDepthUvMin?.value?.set) {
+      waterUniforms.uWaterDepthUvMin.value.set(0, 0);
+    }
+    if (waterUniforms?.uWaterDepthUvMax?.value?.set) {
+      waterUniforms.uWaterDepthUvMax.value.set(1, 1);
     }
     pooledLeafWaterMaterials.push(material);
   }
@@ -1302,9 +1299,9 @@ export function createTerrainSystem({
       leafState.waterMesh.geometry?.dispose?.();
       leafState.waterMesh = null;
     }
-    if (leafState.waterDepthTexture) {
-      recycleWaterDepthTexture(leafState.waterDepthTexture);
-      leafState.waterDepthTexture = null;
+    if (leafState.waterDepthBinding) {
+      recycleWaterDepthTexture(leafState.waterDepthBinding);
+      leafState.waterDepthBinding = null;
     }
     leafState.hasWater = false;
     leafState.workerBuildPromise = null;
@@ -1326,7 +1323,7 @@ export function createTerrainSystem({
       state: 'pending_surface',
       terrainMesh: null,
       waterMesh: null,
-      waterDepthTexture: null,
+      waterDepthBinding: null,
       hasWater: false,
       surfaceResolution: null,
       waterSurfaceResolution: null,

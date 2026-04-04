@@ -29,7 +29,11 @@ type LeafStateLike = {
     state?: string;
     terrainMesh?: THREE.Mesh | null;
     waterMesh?: THREE.Mesh | null;
-    waterDepthTexture?: THREE.Texture | null;
+    waterDepthBinding?: {
+        texture: THREE.Texture | null;
+        uvMin: THREE.Vector2;
+        uvMax: THREE.Vector2;
+    } | null;
     hasWater?: boolean;
     surfaceResolution?: number | null;
     waterSurfaceResolution?: number | null;
@@ -64,8 +68,8 @@ type TerrainLeafSurfaceRuntimeOptions = {
     getTerrainSurfaceWeights: (height: number, slope: number, maskSet: unknown) => number[];
     getTerrainMaskSet: (x: number, z: number) => unknown;
     configureWaterMaterialDebug: (material: THREE.Material, options?: Record<string, unknown>) => void;
-    acquireLeafWaterMaterial: (waterDepthTexture: THREE.Texture | null, node: { minX: number; minZ: number; size: number }) => THREE.Material;
-    acquireWaterDepthTextureFromPayload: (payload: any) => THREE.Texture | null;
+    acquireLeafWaterMaterial: (waterDepthBinding: { texture: THREE.Texture | null; uvMin: THREE.Vector2; uvMax: THREE.Vector2 } | null, node: { minX: number; minZ: number; size: number }) => THREE.Material;
+    acquireWaterDepthTextureFromPayload: (payload: any) => { texture: THREE.Texture | null; uvMin: THREE.Vector2; uvMax: THREE.Vector2 } | null;
     isLeafGenerationEnabled: () => boolean;
     isTerrainSurfaceVisible: () => boolean;
     isWaterSurfaceVisible: () => boolean;
@@ -345,7 +349,11 @@ export function createTerrainLeafSurfaceRuntime({
         texture.magFilter = THREE.LinearFilter;
         texture.generateMipmaps = false;
         texture.needsUpdate = true;
-        return texture;
+        return {
+            texture,
+            uvMin: new THREE.Vector2(0, 0),
+            uvMax: new THREE.Vector2(1, 1)
+        };
     }
 
     function sampleNodeHeightGrid(sampler: any, node: any, resolution: number, depth: number) {
@@ -416,13 +424,15 @@ export function createTerrainLeafSurfaceRuntime({
         return false;
     }
 
-    function createLeafWaterMaterial(waterDepthTexture: THREE.Texture | null, node: { minX: number; minZ: number; size: number }) {
+    function createLeafWaterMaterial(waterDepthBinding: { texture: THREE.Texture | null; uvMin: THREE.Vector2; uvMax: THREE.Vector2 } | null, node: { minX: number; minZ: number; size: number }) {
         const material = waterMaterial.clone();
         material.normalMap = waterMaterial.normalMap;
         material.normalScale = waterMaterial.normalScale.clone();
 
         const leafWaterUniforms = {
-            uWaterDepthTex: { value: waterDepthTexture },
+            uWaterDepthTex: { value: waterDepthBinding?.texture || null },
+            uWaterDepthUvMin: { value: waterDepthBinding?.uvMin?.clone?.() || new THREE.Vector2(0, 0) },
+            uWaterDepthUvMax: { value: waterDepthBinding?.uvMax?.clone?.() || new THREE.Vector2(1, 1) },
             uWaterBoundsMin: { value: new THREE.Vector2(node.minX, node.minZ) },
             uWaterBoundsSize: { value: new THREE.Vector2(node.size, node.size) },
             uWaterDepthScale: { value: WATER_DEPTH_BANDS.deepEnd },
@@ -552,16 +562,16 @@ export function createTerrainLeafSurfaceRuntime({
 
         let waterGeometryMs = 0;
         let waterDepthTextureMs = 0;
-        let waterDepthTexture = null;
+        let waterDepthBinding = null;
         let waterMesh = null;
         if (result.hasWater && result.water) {
             const waterGeometryStartedAtMs = performance.now();
             const waterGeometry = createLeafSurfaceGeometryFromBuffers(result.water, 'water');
             waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
             const waterDepthStartedAtMs = performance.now();
-            waterDepthTexture = acquireWaterDepthTextureFromPayload(result.waterDepth) || createWaterDepthTextureFromPayload(result.waterDepth);
+            waterDepthBinding = acquireWaterDepthTextureFromPayload(result.waterDepth) || createWaterDepthTextureFromPayload(result.waterDepth);
             waterDepthTextureMs = performance.now() - waterDepthStartedAtMs;
-            const leafWaterMaterial = acquireLeafWaterMaterial(waterDepthTexture, result.node) || createLeafWaterMaterial(waterDepthTexture, result.node);
+            const leafWaterMaterial = acquireLeafWaterMaterial(waterDepthBinding, result.node) || createLeafWaterMaterial(waterDepthBinding, result.node);
             waterMesh = new THREE.Mesh(waterGeometry!, leafWaterMaterial);
             waterMesh.receiveShadow = shouldWaterReceiveShadow(leafState.bounds);
             waterMesh.visible = isWaterSurfaceVisible();
@@ -575,7 +585,7 @@ export function createTerrainLeafSurfaceRuntime({
         }
         leafState.terrainMesh = terrainMesh;
         leafState.waterMesh = waterMesh;
-        leafState.waterDepthTexture = waterDepthTexture;
+        leafState.waterDepthBinding = waterDepthBinding;
         leafState.hasWater = result.hasWater === true;
         leafState.surfaceResolution = result.surfaceResolution;
         leafState.waterSurfaceResolution = result.waterSurfaceResolution ?? null;

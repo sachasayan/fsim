@@ -30,7 +30,8 @@ test('water owned shader sources are cached and expose expected near/far behavio
     assert.match(nearSourceA.fragmentShader, /float waterProceduralHeight\(vec2 worldXZ\)/);
     assert.match(nearSourceA.fragmentShader, /float waterPatternStrength = 1\.5000;/);
     assert.match(nearSourceA.fragmentShader, /uniform sampler2D uWaterDepthTex;/);
-    assert.match(nearSourceA.fragmentShader, /float waterDepth = texture2D\(uWaterDepthTex, waterUv\)\.r \* uWaterDepthScale;/);
+    assert.match(nearSourceA.fragmentShader, /vec2 waterDepthUv = mix\(uWaterDepthUvMin, uWaterDepthUvMax, waterUv\);/);
+    assert.match(nearSourceA.fragmentShader, /float waterDepth = texture2D\(uWaterDepthTex, waterDepthUv\)\.r \* uWaterDepthScale;/);
     assert.match(nearSourceA.fragmentShader, /float atmosMix = smoothstep\(uAtmosNear, uAtmosFar, atmosDist\) \* 0\.7400;/);
     assert.match(nearSourceA.fragmentShader, /float waterShadowFade = resolveSurfaceShadowFade\(vWaterWorldPos\.xz\);/);
     assert.match(nearSourceA.fragmentShader, /float waterShadowVisibility = mix\(1\.0, getShadowMask\(\), 0\.3500 \* waterShadowFade\);/);
@@ -55,6 +56,8 @@ test('water owned uniform bindings expose live references for near and far water
     };
     const waterSurfaceUniforms = {
         uWaterDepthTex: { value: 'depth' },
+        uWaterDepthUvMin: { value: 'depth-uv-min' },
+        uWaterDepthUvMax: { value: 'depth-uv-max' },
         uWaterBoundsMin: { value: 'min' },
         uWaterBoundsSize: { value: 'size' },
         uWaterDepthScale: { value: 1 },
@@ -82,6 +85,8 @@ test('water owned uniform bindings expose live references for near and far water
     assert.equal(nearBindings.uSurfaceShadowFadeStart, atmosphereUniforms.uSurfaceShadowFadeStart);
     assert.equal(nearBindings.uShadowCoverageCenter, atmosphereUniforms.uShadowCoverageCenter);
     assert.equal(nearBindings.uWaterDepthTex, waterSurfaceUniforms.uWaterDepthTex);
+    assert.equal(nearBindings.uWaterDepthUvMin, waterSurfaceUniforms.uWaterDepthUvMin);
+    assert.equal(nearBindings.uWaterDepthUvMax, waterSurfaceUniforms.uWaterDepthUvMax);
     assert.equal(farBindings.uAtmosNear, atmosphereUniforms.uAtmosNear);
     assert.equal(farBindings.uWaterDeepColor, waterSurfaceUniforms.uWaterDeepColor);
     assert.equal(Object.prototype.hasOwnProperty.call(nearBindings, 'uTime'), false);
@@ -146,6 +151,8 @@ test('water owned shader templates match the legacy water patch output', () => {
     function buildLegacyWaterSource(isFarLOD) {
         const waterSurfaceUniforms = Object.fromEntries([
             'uWaterDepthTex',
+            'uWaterDepthUvMin',
+            'uWaterDepthUvMax',
             'uWaterBoundsMin',
             'uWaterBoundsSize',
             'uWaterDepthScale',
