@@ -55,25 +55,93 @@
                     <div class="loader-radar-horizon"></div>
                 </div>
                 <div class="loader-copy">
+                    <div class="loader-copy-kicker">FLT DECK MAIN BUS</div>
                     <h2 id="loader-text">Initializing Flight Dynamics</h2>
                     <p id="loader-phase">Bringing the flight deck online</p>
-                    <p id="loader-subtext">Aligning inertial reference systems...</p>
                 </div>
             </div>
             <div id="loader-progress" aria-live="polite">
-                <div class="loader-progress-row loader-progress-row-terrain">
-                    <div class="loader-progress-labels">
-                        <span>Terrain mesh</span>
-                        <span id="loader-terrain-progress-text">Waiting...</span>
+                <div class="loader-main-grid">
+                    <div class="loader-left-stack">
+                        <div class="loader-systems-grid">
+                            <section class="loader-bank-panel loader-bank-panel-terrain">
+                                <div class="loader-bank-head">
+                                    <span class="loader-bank-title">Terrain mesh</span>
+                                    <span id="loader-terrain-progress-count" class="loader-bank-count">00/06</span>
+                                </div>
+                                <div id="loader-terrain-bank" class="loader-switch-bank" aria-hidden="true">
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                </div>
+                            </section>
+                            <section class="loader-bank-panel loader-bank-panel-assets">
+                                <div class="loader-bank-head">
+                                    <span class="loader-bank-title">Systems warmup</span>
+                                    <span id="loader-assets-progress-count" class="loader-bank-count">00/06</span>
+                                </div>
+                                <div id="loader-assets-bank" class="loader-switch-bank" aria-hidden="true">
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                    <span class="loader-switch"></span>
+                                </div>
+                            </section>
+                        </div>
                     </div>
-                    <div class="loader-progress-track"><div id="loader-terrain-progress-bar" class="loader-progress-fill"></div></div>
-                </div>
-                <div class="loader-progress-row loader-progress-row-assets">
-                    <div class="loader-progress-labels">
-                        <span>Systems warmup</span>
-                        <span id="loader-assets-progress-text">Waiting...</span>
+                    <section class="loader-acars-panel" aria-label="Bootstrap telemetry readout">
+                    <div class="loader-acars-sidekeys loader-acars-sidekeys-left" aria-hidden="true">
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
                     </div>
-                    <div class="loader-progress-track"><div id="loader-assets-progress-bar" class="loader-progress-fill"></div></div>
+                    <div class="loader-acars-sidekeys loader-acars-sidekeys-right" aria-hidden="true">
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                        <span class="loader-acars-sidekey"></span>
+                    </div>
+                    <div class="loader-acars-head">
+                        <span class="loader-acars-title">ACARS uplink</span>
+                        <span class="loader-acars-route">YYZ . BOOT . FSIM</span>
+                    </div>
+                    <div class="loader-acars-screen">
+                        <div class="loader-acars-row">
+                            <span class="loader-acars-key">SYS</span>
+                            <span id="loader-phase-detail" class="loader-acars-value">Bootstrap sequence queued</span>
+                        </div>
+                        <div class="loader-acars-row">
+                            <span class="loader-acars-key">TERR</span>
+                            <span id="loader-terrain-progress-text" class="loader-acars-value">Waiting...</span>
+                        </div>
+                        <div class="loader-acars-row">
+                            <span class="loader-acars-key">WARM</span>
+                            <span id="loader-assets-progress-text" class="loader-acars-value">Waiting...</span>
+                        </div>
+                        <div class="loader-acars-row">
+                            <span class="loader-acars-key">INFO</span>
+                            <span id="loader-subtext" class="loader-acars-value">Aligning inertial reference systems...</span>
+                        </div>
+                    </div>
+                    <div class="loader-acars-keypad" aria-hidden="true">
+                        <span class="loader-acars-keycap">DIR</span>
+                        <span class="loader-acars-keycap">PROG</span>
+                        <span class="loader-acars-keycap">PERF</span>
+                        <span class="loader-acars-keycap">INIT</span>
+                        <span class="loader-acars-keycap">DATA</span>
+                        <span class="loader-acars-keycap">COMM</span>
+                    </div>
+                    </section>
                 </div>
             </div>
             <div class="loader-footer">
@@ -83,7 +151,7 @@
                 </div>
                 <div class="loader-footer-copy">
                     <span class="loader-footer-label">Telemetry</span>
-                    <span id="loader-phase-detail" class="loader-footer-value">Bootstrap sequence queued</span>
+                    <span class="loader-footer-value">Bootstrap sequence queued</span>
                 </div>
             </div>
             <div id="terrain-bootstrap-debug"></div>

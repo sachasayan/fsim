@@ -36,9 +36,11 @@ type FsimRuntimeWindow = Window & typeof globalThis & {
 type LoaderElements = {
   phaseText: HTMLElement | null;
   phaseDetailText: HTMLElement | null;
-  terrainBar: HTMLElement | null;
+  terrainBank: HTMLElement | null;
+  terrainCount: HTMLElement | null;
   terrainText: HTMLElement | null;
-  assetsBar: HTMLElement | null;
+  assetsBank: HTMLElement | null;
+  assetsCount: HTMLElement | null;
   assetsText: HTMLElement | null;
 };
 
@@ -386,9 +388,11 @@ runtimeWindow.fsimPerf = perfCollector;
 const loaderElements: LoaderElements = {
   phaseText: document.getElementById('loader-phase'),
   phaseDetailText: document.getElementById('loader-phase-detail'),
-  terrainBar: document.getElementById('loader-terrain-progress-bar'),
+  terrainBank: document.getElementById('loader-terrain-bank'),
+  terrainCount: document.getElementById('loader-terrain-progress-count'),
   terrainText: document.getElementById('loader-terrain-progress-text'),
-  assetsBar: document.getElementById('loader-assets-progress-bar'),
+  assetsBank: document.getElementById('loader-assets-bank'),
+  assetsCount: document.getElementById('loader-assets-progress-count'),
   assetsText: document.getElementById('loader-assets-progress-text')
 };
 const loaderProgressState = {
@@ -396,8 +400,31 @@ const loaderProgressState = {
   assets: { ratio: 0, text: 'Waiting for shader warmup...' }
 };
 
-function setLoaderProgressSection(barElement, textElement, ratio, text) {
-  if (barElement) barElement.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+function setLoaderProgressSection(
+  bankElement: HTMLElement | null,
+  countElement: HTMLElement | null,
+  textElement: HTMLElement | null,
+  ratio: number,
+  text: string
+) {
+  const clampedRatio = Math.max(0, Math.min(1, ratio));
+  if (bankElement) {
+    const switchElements = Array.from(bankElement.querySelectorAll<HTMLElement>('.loader-switch'));
+    const totalSwitches = switchElements.length;
+    const activeSwitches = totalSwitches > 0
+      ? clampedRatio >= 1
+        ? totalSwitches
+        : Math.min(totalSwitches, Math.max(clampedRatio > 0 ? 1 : 0, Math.floor(clampedRatio * totalSwitches)))
+      : 0;
+    switchElements.forEach((switchElement, index) => {
+      switchElement.classList.toggle('is-active', index < activeSwitches);
+    });
+    if (countElement) {
+      countElement.textContent = `${String(activeSwitches).padStart(2, '0')}/${String(totalSwitches).padStart(2, '0')}`;
+    }
+  } else if (countElement) {
+    countElement.textContent = `${Math.round(clampedRatio * 100)}%`;
+  }
   if (textElement && typeof text === 'string') textElement.textContent = text;
 }
 
@@ -425,13 +452,15 @@ function updateLoaderProgress() {
   }
 
   setLoaderProgressSection(
-    loaderElements.terrainBar,
+    loaderElements.terrainBank,
+    loaderElements.terrainCount,
     loaderElements.terrainText,
     loaderProgressState.terrain.ratio,
     loaderProgressState.terrain.text
   );
   setLoaderProgressSection(
-    loaderElements.assetsBar,
+    loaderElements.assetsBank,
+    loaderElements.assetsCount,
     loaderElements.assetsText,
     loaderProgressState.assets.ratio,
     loaderProgressState.assets.text
