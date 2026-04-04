@@ -1253,6 +1253,20 @@ export function createTerrainSystem({
     }
     pooledLeafWaterMaterials.push(material);
   }
+
+  function recycleLeafWaterSurface(leafState) {
+    if (!leafState) return;
+    if (leafState.waterMesh) {
+      scene.remove(leafState.waterMesh);
+      recycleLeafWaterMaterial(leafState.waterMesh.material);
+      leafState.waterMesh.geometry?.dispose?.();
+      leafState.waterMesh = null;
+    }
+    if (leafState.waterDepthBinding) {
+      recycleWaterDepthTexture(leafState.waterDepthBinding);
+      leafState.waterDepthBinding = null;
+    }
+  }
   const leafSurfaceRuntime = createTerrainLeafSurfaceRuntime({
     scene,
     activeLeaves,
@@ -1320,10 +1334,7 @@ export function createTerrainSystem({
       leafState.terrainMesh = null;
     }
     if (leafState.waterMesh) {
-      scene.remove(leafState.waterMesh);
-      recycleLeafWaterMaterial(leafState.waterMesh.material);
-      leafState.waterMesh.geometry?.dispose?.();
-      leafState.waterMesh = null;
+      recycleLeafWaterSurface(leafState);
     }
     if (leafState.waterDepthBinding) {
       recycleWaterDepthTexture(leafState.waterDepthBinding);
@@ -1664,6 +1675,9 @@ export function createTerrainSystem({
   function syncLeafSurfaceTransitionVisibility(selectedLeafStates = []) {
     const retainedLeafStates = [];
     for (const leafState of activeLeaves.values()) {
+      if (leafState?.waterMesh && !shouldCreateLeafWaterSurface(leafState)) {
+        recycleLeafWaterSurface(leafState);
+      }
       if (leafState?.retired && leafState.terrainMesh) retainedLeafStates.push(leafState);
     }
     retainedLeafStates.sort((a, b) => {

@@ -170,9 +170,9 @@ Goal: make ownership boundaries durable and understandable.
 
 ### Later-phase implementation targets
 
-- [ ] [`js/modules/world/terrain/OceanRenderer.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/OceanRenderer.ts)
+- [x] [`js/modules/world/terrain/OceanRenderer.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/OceanRenderer.ts)
 - [x] [`js/modules/world/terrain/WaterDepthAtlas.ts`](/Users/sacha/Projects/fsim/js/modules/world/terrain/WaterDepthAtlas.ts)
-- [ ] Additional tests for water shader ownership, atlas bindings, and renderer integration
+- [x] Additional tests for water shader ownership, atlas bindings, and renderer integration
 
 ## Metrics To Track
 
@@ -308,6 +308,36 @@ Leaf-handoff values from that capture:
 - `uniqueWaterMaterials`: `54`
 - `activeWaterVertices`: `2899`
 - `activeWaterTriangles`: `4618`
+
+### Phase 3 leaf-release capture
+
+- [x] Record terrain-streaming metrics after far leaves release shoreline-water meshes and atlas bindings back to the pools/atlas
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase3-leaf-release/terrain_streaming_low_alt-latest.json`
+- Notes: this run further reduced active shoreline-water resources, although the exploratory frame profile was noisier than the previous handoff capture
+
+Leaf-release values from that capture:
+
+- `frameMs p95`: `6.3`
+- `render.sceneMs p95`: `4.1`
+- `selectedLeafCount`: `67`
+- `activeChunkCount`: `210`
+- `activeLeafWaterMeshes`: `51`
+- `visibleLeafWaterMeshes`: `51`
+- `activeChunkWaterMeshes`: `0`
+- `activeOceanWaterMeshes`: `3`
+- `activeWaterDepthTextures`: `51`
+- `waterDepthAtlasAllocatedPages`: `51`
+- `waterDepthAtlasFreePages`: `205`
+- `waterDepthAtlasUploadCount`: `118`
+- `waterDepthAtlasReuseCount`: `117`
+- `uniqueWaterMaterials`: `52`
+- `activeWaterVertices`: `2865`
+- `activeWaterTriangles`: `4578`
 
 ## Risks
 
