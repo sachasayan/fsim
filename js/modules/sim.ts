@@ -37,9 +37,11 @@ type LoaderElements = {
   phaseText: HTMLElement | null;
   phaseDetailText: HTMLElement | null;
   terrainBank: HTMLElement | null;
+  terrainSwitches: HTMLElement[];
   terrainCount: HTMLElement | null;
   terrainText: HTMLElement | null;
   assetsBank: HTMLElement | null;
+  assetsSwitches: HTMLElement[];
   assetsCount: HTMLElement | null;
   assetsText: HTMLElement | null;
 };
@@ -389,9 +391,11 @@ const loaderElements: LoaderElements = {
   phaseText: document.getElementById('loader-phase'),
   phaseDetailText: document.getElementById('loader-phase-detail'),
   terrainBank: document.getElementById('loader-terrain-bank'),
+  terrainSwitches: Array.from(document.querySelectorAll<HTMLElement>('#loader-terrain-bank .loader-switch')),
   terrainCount: document.getElementById('loader-terrain-progress-count'),
   terrainText: document.getElementById('loader-terrain-progress-text'),
   assetsBank: document.getElementById('loader-assets-bank'),
+  assetsSwitches: Array.from(document.querySelectorAll<HTMLElement>('#loader-assets-bank .loader-switch')),
   assetsCount: document.getElementById('loader-assets-progress-count'),
   assetsText: document.getElementById('loader-assets-progress-text')
 };
@@ -399,42 +403,70 @@ const loaderProgressState = {
   terrain: { ratio: 0, text: 'Waiting for terrain selection...' },
   assets: { ratio: 0, text: 'Waiting for shader warmup...' }
 };
+const loaderRenderState = {
+  phaseText: null as string | null,
+  phaseDetailText: null as string | null,
+  terrainActiveSwitches: -1,
+  terrainCountText: null as string | null,
+  terrainText: null as string | null,
+  assetsActiveSwitches: -1,
+  assetsCountText: null as string | null,
+  assetsText: null as string | null
+};
+type LoaderRenderTextKey =
+  | 'phaseText'
+  | 'phaseDetailText'
+  | 'terrainCountText'
+  | 'terrainText'
+  | 'assetsCountText'
+  | 'assetsText';
+
+function setTextIfChanged(
+  element: HTMLElement | null,
+  nextText: string,
+  stateKey: LoaderRenderTextKey
+) {
+  if (!element || loaderRenderState[stateKey] === nextText) return;
+  element.textContent = nextText;
+  loaderRenderState[stateKey] = nextText;
+}
 
 function setLoaderProgressSection(
-  bankElement: HTMLElement | null,
+  switchElements: HTMLElement[],
   countElement: HTMLElement | null,
   textElement: HTMLElement | null,
   ratio: number,
-  text: string
+  text: string,
+  countStateKey: 'terrainCountText' | 'assetsCountText',
+  textStateKey: 'terrainText' | 'assetsText',
+  activeSwitchesStateKey: 'terrainActiveSwitches' | 'assetsActiveSwitches'
 ) {
   const clampedRatio = Math.max(0, Math.min(1, ratio));
-  if (bankElement) {
-    const switchElements = Array.from(bankElement.querySelectorAll<HTMLElement>('.loader-switch'));
-    const totalSwitches = switchElements.length;
-    const activeSwitches = totalSwitches > 0
-      ? clampedRatio >= 1
-        ? totalSwitches
-        : Math.min(totalSwitches, Math.max(clampedRatio > 0 ? 1 : 0, Math.floor(clampedRatio * totalSwitches)))
-      : 0;
-    switchElements.forEach((switchElement, index) => {
-      switchElement.classList.toggle('is-active', index < activeSwitches);
-    });
-    if (countElement) {
-      countElement.textContent = `${String(activeSwitches).padStart(2, '0')}/${String(totalSwitches).padStart(2, '0')}`;
+  const totalSwitches = switchElements.length;
+  if (totalSwitches > 0) {
+    const activeSwitches = clampedRatio >= 1
+      ? totalSwitches
+      : Math.min(totalSwitches, Math.max(clampedRatio > 0 ? 1 : 0, Math.floor(clampedRatio * totalSwitches)));
+    if (loaderRenderState[activeSwitchesStateKey] !== activeSwitches) {
+      switchElements.forEach((switchElement, index) => {
+        switchElement.classList.toggle('is-active', index < activeSwitches);
+      });
+      loaderRenderState[activeSwitchesStateKey] = activeSwitches;
     }
-  } else if (countElement) {
-    countElement.textContent = `${Math.round(clampedRatio * 100)}%`;
+    setTextIfChanged(
+      countElement,
+      `${String(activeSwitches).padStart(2, '0')}/${String(totalSwitches).padStart(2, '0')}`,
+      countStateKey
+    );
+  } else {
+    setTextIfChanged(countElement, `${Math.round(clampedRatio * 100)}%`, countStateKey);
   }
-  if (textElement && typeof text === 'string') textElement.textContent = text;
+  setTextIfChanged(textElement, text, textStateKey);
 }
 
 function setLoaderPhaseText(phaseText, detailText) {
-  if (loaderElements.phaseText && typeof phaseText === 'string') {
-    loaderElements.phaseText.textContent = phaseText;
-  }
-  if (loaderElements.phaseDetailText && typeof detailText === 'string') {
-    loaderElements.phaseDetailText.textContent = detailText;
-  }
+  if (typeof phaseText === 'string') setTextIfChanged(loaderElements.phaseText, phaseText, 'phaseText');
+  if (typeof detailText === 'string') setTextIfChanged(loaderElements.phaseDetailText, detailText, 'phaseDetailText');
 }
 
 function updateLoaderProgress() {
@@ -451,19 +483,32 @@ function updateLoaderProgress() {
     loaderProgressState.terrain.text = terrainReady ? 'Terrain ready' : 'Selecting bootstrap terrain...';
   }
 
+  runtimeWindow.fsimWorld.loaderProgress = {
+    terrain: { ...loaderProgressState.terrain },
+    assets: { ...loaderProgressState.assets }
+  };
+
+  if (loaderHidden) return;
+
   setLoaderProgressSection(
-    loaderElements.terrainBank,
+    loaderElements.terrainSwitches,
     loaderElements.terrainCount,
     loaderElements.terrainText,
     loaderProgressState.terrain.ratio,
-    loaderProgressState.terrain.text
+    loaderProgressState.terrain.text,
+    'terrainCountText',
+    'terrainText',
+    'terrainActiveSwitches'
   );
   setLoaderProgressSection(
-    loaderElements.assetsBank,
+    loaderElements.assetsSwitches,
     loaderElements.assetsCount,
     loaderElements.assetsText,
     loaderProgressState.assets.ratio,
-    loaderProgressState.assets.text
+    loaderProgressState.assets.text,
+    'assetsCountText',
+    'assetsText',
+    'assetsActiveSwitches'
   );
 
   const terrainRatio = loaderProgressState.terrain.ratio;
@@ -479,11 +524,6 @@ function updateLoaderProgress() {
   } else {
     setLoaderPhaseText('Bringing the flight deck online', 'Awaiting terrain selection and shader warmup');
   }
-
-  runtimeWindow.fsimWorld.loaderProgress = {
-    terrain: { ...loaderProgressState.terrain },
-    assets: { ...loaderProgressState.assets }
-  };
 }
 
 // Initialize LiveReload functionality
@@ -698,7 +738,6 @@ function animate() {
   startupTimeline.animationStartedAtMs ??= performance.now();
 
   const now = performance.now();
-  updateLoaderProgress();
   let dt = Math.min((now - runtime.lastTime) / 1000, 0.05);
   runtime.lastTime = now;
 
@@ -1086,13 +1125,13 @@ function hideLoader() {
   loaderHidden = true;
   startupTimeline.loaderHiddenAtMs ??= performance.now();
   runtimeWindow.fsimWorld.loaderHidden = true;
+  if (loaderTipsInterval) clearInterval(loaderTipsInterval);
   const loader = document.getElementById('loader');
   if (!loader) return;
   debugLog('Hiding loader...');
   loader.style.opacity = '0';
   setTimeout(() => {
     loader.style.display = 'none';
-    if (loaderTipsInterval) clearInterval(loaderTipsInterval);
     debugLog('Loader removed.');
   }, 1000);
 }
