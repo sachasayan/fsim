@@ -132,6 +132,7 @@ Goal: stop representing sea-level ocean as terrain-owned streaming tiles.
 - [-] Reuse the existing near/far water shader split where practical
 - [x] Bind ocean shader state once per renderer instead of once per leaf
 - [-] Move sea-level ocean visibility ownership out of the terrain leaf runtime
+  Current state: far leaves can now decline shoreline-water ownership and fall back to the dedicated ocean underlay
 - [x] Retire chunk-base ocean meshes after parity is achieved
 - [ ] Retire leaf ocean meshes after parity is achieved
 
@@ -277,6 +278,36 @@ Ocean-renderer values from that capture:
 - `uniqueWaterMaterials`: `68`
 - `activeWaterVertices`: `2567`
 - `activeWaterTriangles`: `3950`
+
+### Phase 3 leaf-handoff capture
+
+- [x] Record terrain-streaming metrics after allowing far leaves to hand off water ownership to the dedicated ocean renderer
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase3-leaf-handoff/terrain_streaming_low_alt-latest.json`
+- Notes: chunk-base water remains retired; only near leaves now build shoreline-aware water meshes
+
+Leaf-handoff values from that capture:
+
+- `frameMs p95`: `4.8`
+- `render.sceneMs p95`: `3.2`
+- `selectedLeafCount`: `67`
+- `activeChunkCount`: `210`
+- `activeLeafWaterMeshes`: `53`
+- `visibleLeafWaterMeshes`: `51`
+- `activeChunkWaterMeshes`: `0`
+- `activeOceanWaterMeshes`: `3`
+- `activeWaterDepthTextures`: `53`
+- `waterDepthAtlasAllocatedPages`: `53`
+- `waterDepthAtlasFreePages`: `203`
+- `waterDepthAtlasUploadCount`: `115`
+- `waterDepthAtlasReuseCount`: `114`
+- `uniqueWaterMaterials`: `54`
+- `activeWaterVertices`: `2899`
+- `activeWaterTriangles`: `4618`
 
 ## Risks
 

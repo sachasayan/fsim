@@ -73,6 +73,7 @@ type TerrainLeafSurfaceRuntimeOptions = {
     isLeafGenerationEnabled: () => boolean;
     isTerrainSurfaceVisible: () => boolean;
     isWaterSurfaceVisible: () => boolean;
+    shouldCreateLeafWaterSurface: (leafState: LeafStateLike, result?: any) => boolean;
     shouldSurfaceCastShadow: (bounds?: unknown) => boolean;
     shouldSurfaceReceiveShadow: (bounds?: unknown) => boolean;
     shouldWaterReceiveShadow: (bounds?: unknown) => boolean;
@@ -166,6 +167,7 @@ export function createTerrainLeafSurfaceRuntime({
     isLeafGenerationEnabled,
     isTerrainSurfaceVisible,
     isWaterSurfaceVisible,
+    shouldCreateLeafWaterSurface,
     shouldSurfaceCastShadow,
     shouldSurfaceReceiveShadow,
     shouldWaterReceiveShadow,
@@ -564,7 +566,8 @@ export function createTerrainLeafSurfaceRuntime({
         let waterDepthTextureMs = 0;
         let waterDepthBinding = null;
         let waterMesh = null;
-        if (result.hasWater && result.water) {
+        const createLeafWaterSurface = result.hasWater && result.water && shouldCreateLeafWaterSurface(leafState, result);
+        if (createLeafWaterSurface) {
             const waterGeometryStartedAtMs = performance.now();
             const waterGeometry = createLeafSurfaceGeometryFromBuffers(result.water, 'water');
             waterGeometryMs = performance.now() - waterGeometryStartedAtMs;
