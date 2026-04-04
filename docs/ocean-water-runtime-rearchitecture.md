@@ -96,8 +96,8 @@ Goal: reduce cost before larger architectural extraction.
 - [x] Introduce a dedicated water resolution policy separate from terrain leaf surface resolution
 - [x] Reduce near-water grid density substantially relative to terrain leaf density
 - [x] Remove water skirts for sea-level water surfaces
-- [ ] Avoid unnecessary per-acquire material reconfiguration where the shader variant is unchanged
-- [ ] Measure leaf-water apply cost before and after
+- [x] Avoid unnecessary per-acquire material reconfiguration where the shader variant is unchanged
+- [-] Measure leaf-water apply cost before and after
 
 ### Expected result
 
@@ -184,6 +184,41 @@ Goal: make ownership boundaries durable and understandable.
 - [ ] Water-related draw calls
 - [ ] Water-related geometry count
 - [ ] Terrain update-frame time attributable to water work
+
+### Instrumentation notes
+
+- [-] Expose water runtime counters through terrain diagnostics:
+  - Active/visible leaf water meshes
+  - Active/visible chunk-base water meshes
+  - Active and pooled water-depth textures
+  - Unique active water materials
+  - Active water vertex and triangle counts
+
+### Phase 1 baseline capture
+
+- [-] Record baseline terrain-streaming water metrics from a representative scenario
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase1-baseline/terrain_streaming_low_alt-latest.json`
+- Notes: capture did not reach steady state; `profilingReadinessReason` remained `programs_growing`
+
+Baseline values from that capture:
+
+- `frameMs p95`: `7.3`
+- `render.sceneMs p95`: `4.7`
+- `selectedLeafCount`: `67`
+- `activeChunkCount`: `210`
+- `leafBuildBreakdown.totalAvgMs`: `0.25`
+- `leafBuildBreakdown.workerComputeAvgMs`: `47.95`
+- `activeWaterMeshes`: `58`
+- `activeWaterDepthTextures`: `58`
+- `pooledWaterDepthTextures`: `16`
+- `uniqueWaterMaterials`: `58`
+- `activeWaterVertices`: `1351`
+- `activeWaterTriangles`: `1814`
 
 ## Risks
 

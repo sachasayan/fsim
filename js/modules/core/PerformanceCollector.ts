@@ -400,6 +400,13 @@ export function createPerformanceCollector({
         recordMetric('terrain.chunkBaseVisibleDwellP95Ms', profiling.terrainSelection?.chunkBaseRole?.visibleDwellMs?.p95Ms);
         recordMetric('terrain.chunkBaseBuildStarts', profiling.terrainSelection?.chunkBaseRole?.buildStarts);
         recordMetric('terrain.chunkBaseBuildCompletes', profiling.terrainSelection?.chunkBaseRole?.buildCompletes);
+        recordMetric('terrain.water.activeWaterMeshes', profiling.terrainSelection?.waterRuntime?.activeWaterMeshes);
+        recordMetric('terrain.water.visibleWaterMeshes', profiling.terrainSelection?.waterRuntime?.visibleWaterMeshes);
+        recordMetric('terrain.water.activeWaterDepthTextures', profiling.terrainSelection?.waterRuntime?.activeWaterDepthTextures);
+        recordMetric('terrain.water.pooledWaterDepthTextures', profiling.terrainSelection?.waterRuntime?.pooledWaterDepthTextures);
+        recordMetric('terrain.water.uniqueWaterMaterials', profiling.terrainSelection?.waterRuntime?.uniqueWaterMaterials);
+        recordMetric('terrain.water.activeWaterVertices', profiling.terrainSelection?.waterRuntime?.activeWaterVertices);
+        recordMetric('terrain.water.activeWaterTriangles', profiling.terrainSelection?.waterRuntime?.activeWaterTriangles);
         recordMetric('render.sceneMs', renderPassTimings.renderScene);
         recordMetric('render.smaaMs', renderPassTimings.smaa);
         recordMetric('render.bloomMs', renderPassTimings.bloom);
@@ -458,6 +465,7 @@ export function createPerformanceCollector({
                     queueDepths: profiling.terrainSelection.queueDepths ?? null,
                     leafResponsiveness: profiling.terrainSelection.leafResponsiveness ?? null,
                     leafBuildBreakdown: profiling.terrainSelection.leafBuildBreakdown ?? null,
+                    waterRuntime: profiling.terrainSelection.waterRuntime ?? null,
                     chunkBaseRole: profiling.terrainSelection.chunkBaseRole ?? null,
                     chunkStates: profiling.terrainSelection.chunkStates ?? null,
                     worker: profiling.terrainSelection.worker ?? null,
@@ -598,6 +606,7 @@ export function createPerformanceCollector({
                     queueDepths: profiling.terrainSelection.queueDepths ?? null,
                     leafResponsiveness: profiling.terrainSelection.leafResponsiveness ?? null,
                     leafBuildBreakdown: profiling.terrainSelection.leafBuildBreakdown ?? null,
+                    waterRuntime: profiling.terrainSelection.waterRuntime ?? null,
                     chunkBaseRole: profiling.terrainSelection.chunkBaseRole ?? null,
                     chunkStates: profiling.terrainSelection.chunkStates ?? null,
                     worker: profiling.terrainSelection.worker ?? null,

@@ -290,9 +290,9 @@ float waterValueNoise(vec2 p) {
 }
 
 float waterProceduralHeight(vec2 worldXZ) {
-    vec2 uvA = worldXZ * 0.0023;
-    vec2 uvB = worldXZ * 0.0057 + vec2(17.3, -9.1);
-    vec2 uvC = worldXZ * 0.0115 + vec2(-4.7, 12.9);
+    vec2 uvA = worldXZ * 0.0230;
+    vec2 uvB = worldXZ * 0.0570 + vec2(17.3, -9.1);
+    vec2 uvC = worldXZ * 0.1150 + vec2(-4.7, 12.9);
     float broad = waterValueNoise(uvA);
     float mid = waterValueNoise(uvB);
     float fine = waterValueNoise(uvC);
@@ -306,7 +306,7 @@ float waterProceduralHeight(vec2 worldXZ) {
 {
     float waterPatternStrength = ${patternEnabled ? normalStrength.toFixed(4) : '0.0000'};
     if (waterPatternStrength > 0.0001) {
-        float waterNormalStep = 6.0;
+        float waterNormalStep = 0.6;
         float hL = waterProceduralHeight(vWaterWorldPos.xz - vec2(waterNormalStep, 0.0));
         float hR = waterProceduralHeight(vWaterWorldPos.xz + vec2(waterNormalStep, 0.0));
         float hD = waterProceduralHeight(vWaterWorldPos.xz - vec2(0.0, waterNormalStep));

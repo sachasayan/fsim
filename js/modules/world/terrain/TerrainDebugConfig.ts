@@ -167,6 +167,17 @@ export function createTerrainDebugConfigRuntime({
         waterUniforms = waterSurfaceUniforms
     } = {}) {
         if (!material) return;
+        const shaderConfigKey = [
+            isFarLOD ? 'far' : 'near',
+            terrainDebugSettings.waterRoughness.toFixed(4),
+            terrainDebugSettings.waterMetalness.toFixed(4),
+            terrainDebugSettings.waterNormalStrength.toFixed(4),
+            terrainDebugSettings.showWaterWireframe ? 'wire' : 'solid',
+            terrainDebugSettings.waterAtmosphereStrength.toFixed(4),
+            terrainDebugSettings.waterAtmosphereDesaturation.toFixed(4),
+            terrainDebugSettings.waterShadowContrast.toFixed(4),
+            terrainDebugSettings.waterNormalAnimation ? 'pattern' : 'flat'
+        ].join(':');
         material.roughness = terrainDebugSettings.waterRoughness;
         material.metalness = terrainDebugSettings.waterMetalness;
         material.normalMap = null;
@@ -185,21 +196,23 @@ export function createTerrainDebugConfigRuntime({
         material.userData = material.userData || {};
         material.userData.isFarWaterLod = isFarLOD;
         material.userData.waterSurfaceUniforms = waterUniforms;
-        material.userData.timeUniform = null;
-        setupWaterMaterial(
-            material,
-            atmosphereUniforms,
-            isFarLOD,
-            waterUniforms,
-            {
-                strength: terrainDebugSettings.waterAtmosphereStrength,
-                desat: terrainDebugSettings.waterAtmosphereDesaturation,
-                shadowContrast: terrainDebugSettings.waterShadowContrast,
-                normalStrength: terrainDebugSettings.waterNormalStrength,
-                patternEnabled: terrainDebugSettings.waterNormalAnimation
-            }
-        );
-        material.needsUpdate = true;
+        if (material.userData.waterShaderConfigKey !== shaderConfigKey) {
+            setupWaterMaterial(
+                material,
+                atmosphereUniforms,
+                isFarLOD,
+                waterUniforms,
+                {
+                    strength: terrainDebugSettings.waterAtmosphereStrength,
+                    desat: terrainDebugSettings.waterAtmosphereDesaturation,
+                    shadowContrast: terrainDebugSettings.waterShadowContrast,
+                    normalStrength: terrainDebugSettings.waterNormalStrength,
+                    patternEnabled: terrainDebugSettings.waterNormalAnimation
+                }
+            );
+            material.userData.waterShaderConfigKey = shaderConfigKey;
+            material.needsUpdate = true;
+        }
     }
 
     function applyWaterDebugSettings() {

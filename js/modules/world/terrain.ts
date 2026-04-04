@@ -887,6 +887,66 @@ export function createTerrainSystem({
     };
   }
 
+  function countGeometryTriangles(geometry) {
+    if (!geometry) return 0;
+    const indexCount = geometry.index?.count || 0;
+    if (indexCount > 0) return Math.floor(indexCount / 3);
+    const positionCount = geometry.attributes?.position?.count || 0;
+    return Math.floor(positionCount / 3);
+  }
+
+  function getWaterRuntimeDiagnostics() {
+    const materialSet = new Set();
+    let activeLeafWaterMeshes = 0;
+    let visibleLeafWaterMeshes = 0;
+    let activeChunkWaterMeshes = 0;
+    let visibleChunkWaterMeshes = 0;
+    let activeWaterDepthTextures = 0;
+    let activeWaterVertices = 0;
+    let activeWaterTriangles = 0;
+
+    for (const leafState of activeLeaves.values()) {
+      const waterMesh = leafState?.waterMesh || null;
+      if (!waterMesh) continue;
+      activeLeafWaterMeshes += 1;
+      if (waterMesh.visible) visibleLeafWaterMeshes += 1;
+      if (waterMesh.material) materialSet.add(waterMesh.material);
+      activeWaterVertices += waterMesh.geometry?.attributes?.position?.count || 0;
+      activeWaterTriangles += countGeometryTriangles(waterMesh.geometry);
+      if (leafState.waterDepthTexture) activeWaterDepthTextures += 1;
+    }
+
+    for (const chunkState of terrainChunks.values()) {
+      const waterMesh = chunkState?.group?.userData?.chunkBaseWaterMesh || null;
+      if (!waterMesh) continue;
+      activeChunkWaterMeshes += 1;
+      if (waterMesh.visible) visibleChunkWaterMeshes += 1;
+      if (waterMesh.material) materialSet.add(waterMesh.material);
+      activeWaterVertices += waterMesh.geometry?.attributes?.position?.count || 0;
+      activeWaterTriangles += countGeometryTriangles(waterMesh.geometry);
+    }
+
+    let pooledWaterDepthTextures = 0;
+    for (const pool of pooledLeafWaterDepthTextures.values()) {
+      pooledWaterDepthTextures += pool?.length || 0;
+    }
+
+    return {
+      activeLeafWaterMeshes,
+      visibleLeafWaterMeshes,
+      activeChunkWaterMeshes,
+      visibleChunkWaterMeshes,
+      activeWaterMeshes: activeLeafWaterMeshes + activeChunkWaterMeshes,
+      visibleWaterMeshes: visibleLeafWaterMeshes + visibleChunkWaterMeshes,
+      activeWaterDepthTextures,
+      pooledWaterDepthTextures,
+      pooledLeafWaterMaterials: pooledLeafWaterMaterials.length,
+      uniqueWaterMaterials: materialSet.size,
+      activeWaterVertices,
+      activeWaterTriangles
+    };
+  }
+
   function finalizeChunkBaseVisibilitySession(chunkKey, now = performance.now()) {
     const visibilityState = terrainPerfState.chunkBaseRole.visibilityByChunk.get(chunkKey);
     if (!visibilityState || !Number.isFinite(visibilityState.visibleSinceAtMs)) return;
@@ -2381,6 +2441,7 @@ export function createTerrainSystem({
       },
       leafResponsiveness: lastTerrainSelection.leafResponsiveness ?? null,
       leafBuildBreakdown: getLeafBuildBreakdownSummary(),
+      waterRuntime: getWaterRuntimeDiagnostics(),
       chunkStates: getChunkStateCounts(),
       chunkBaseRole: getChunkBaseRoleSummary(),
       warmChunkCache: {
