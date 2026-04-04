@@ -1,0 +1,3 @@
+## 2024-03-22 - Added ARIA Roles to Flight Simulator Dashboard
+**Learning:** Three.js canvas elements within complex simulation UI overlays are inherently opaque to screen readers, and wrapping container `div`s lack semantic meaning out-of-the-box.
+**Action:** Always apply `role="img"` and a descriptive `aria-label` to the `<canvas>` element itself, and group complex dashboard instrumentation panels using `role="group"` or `role="region"` with clear labels (e.g., "Flight Dashboard", "Navigation Display"). This establishes a navigable semantic hierarchy for complex HTML overlays on top of WebGL content.
