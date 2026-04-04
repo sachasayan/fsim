@@ -339,6 +339,36 @@ Leaf-release values from that capture:
 - `activeWaterVertices`: `2865`
 - `activeWaterTriangles`: `4578`
 
+### Phase 3 shoreline-gate capture
+
+- [x] Record terrain-streaming metrics after adding shoreline-aware water ownership heuristics on top of the ocean handoff
+
+Reference capture:
+
+- Scenario: `terrain_streaming_low_alt`
+- Capture mode: exploratory / unstable allowed
+- Artifact: `/tmp/ocean-water-phase3-shoreline-gate/terrain_streaming_low_alt-latest.json`
+- Notes: this heuristic preserved the reduced far-ocean ownership counts, but this exploratory run was materially noisier than the earlier handoff capture and is not the preferred baseline
+
+Shoreline-gate values from that capture:
+
+- `frameMs p95`: `10.8`
+- `render.sceneMs p95`: `7.7`
+- `selectedLeafCount`: `67`
+- `activeChunkCount`: `210`
+- `activeLeafWaterMeshes`: `53`
+- `visibleLeafWaterMeshes`: `53`
+- `activeChunkWaterMeshes`: `0`
+- `activeOceanWaterMeshes`: `3`
+- `activeWaterDepthTextures`: `53`
+- `waterDepthAtlasAllocatedPages`: `53`
+- `waterDepthAtlasFreePages`: `203`
+- `waterDepthAtlasUploadCount`: `119`
+- `waterDepthAtlasReuseCount`: `118`
+- `uniqueWaterMaterials`: `54`
+- `activeWaterVertices`: `2883`
+- `activeWaterTriangles`: `4594`
+
 ## Risks
 
 - [ ] Shoreline quality regressions if coarse water geometry and shoreline coloring are not decoupled correctly

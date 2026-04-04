@@ -34,6 +34,13 @@ type LeafStateLike = {
         uvMin: THREE.Vector2;
         uvMax: THREE.Vector2;
     } | null;
+    waterAnalysis?: {
+        waterSampleCount?: number;
+        shallowSampleRatio?: number;
+        foamSampleRatio?: number;
+        minDepth?: number;
+        maxDepth?: number;
+    } | null;
     hasWater?: boolean;
     surfaceResolution?: number | null;
     waterSurfaceResolution?: number | null;
@@ -589,6 +596,7 @@ export function createTerrainLeafSurfaceRuntime({
         leafState.terrainMesh = terrainMesh;
         leafState.waterMesh = waterMesh;
         leafState.waterDepthBinding = waterDepthBinding;
+        leafState.waterAnalysis = result.waterAnalysis || null;
         leafState.hasWater = result.hasWater === true;
         leafState.surfaceResolution = result.surfaceResolution;
         leafState.waterSurfaceResolution = result.waterSurfaceResolution ?? null;

@@ -782,7 +782,13 @@ export function createTerrainSystem({
     const bounds = leafState?.bounds || result?.node || null;
     if (!bounds) return false;
     const leafSize = Number.isFinite(leafState?.size) ? leafState.size : Number.isFinite(result?.node?.size) ? result.node.size : CHUNK_SIZE;
+    const waterAnalysis = leafState?.waterAnalysis || result?.waterAnalysis || null;
+    const shallowSampleRatio = Number.isFinite(waterAnalysis?.shallowSampleRatio) ? waterAnalysis.shallowSampleRatio : 0;
+    const foamSampleRatio = Number.isFinite(waterAnalysis?.foamSampleRatio) ? waterAnalysis.foamSampleRatio : 0;
+    const maxDepth = Number.isFinite(waterAnalysis?.maxDepth) ? waterAnalysis.maxDepth : 0;
+    const shorelineLeaf = shallowSampleRatio >= 0.08 || foamSampleRatio >= 0.02 || maxDepth <= WATER_DEPTH_BANDS.shallowEnd;
     const nearWaterRadius = Math.max(CHUNK_SIZE * 2.5, leafSize * 2.5);
+    if (shorelineLeaf) return true;
     return distanceToLeafBoundsSq(bounds, atmosphereCameraPos.x, atmosphereCameraPos.z) <= (nearWaterRadius * nearWaterRadius);
   }
 
@@ -1340,6 +1346,7 @@ export function createTerrainSystem({
       recycleWaterDepthTexture(leafState.waterDepthBinding);
       leafState.waterDepthBinding = null;
     }
+    leafState.waterAnalysis = null;
     leafState.hasWater = false;
     leafState.workerBuildPromise = null;
     leafState.workerBuildStartedAtMs = null;
@@ -1361,6 +1368,7 @@ export function createTerrainSystem({
       terrainMesh: null,
       waterMesh: null,
       waterDepthBinding: null,
+      waterAnalysis: null,
       hasWater: false,
       surfaceResolution: null,
       waterSurfaceResolution: null,

@@ -687,6 +687,7 @@ function buildLeafSurface(job) {
     const carvedHeights = applyRoadCarvingToHeightGrid(node, decoded.heights, decoded.stride, localRoadSegments);
 
     const hasWater = leafContainsWater(carvedHeights);
+    let waterAnalysis = null;
     const terrain = createLeafSurfaceBuffers({
         node,
         heights: carvedHeights,
@@ -699,6 +700,27 @@ function buildLeafSurface(job) {
     let water = null;
     let waterDepth = null;
     if (hasWater) {
+        let waterSampleCount = 0;
+        let shallowSampleCount = 0;
+        let foamSampleCount = 0;
+        let maxDepth = 0;
+        let minDepth = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < carvedHeights.length; index += 1) {
+            const depth = Math.max(0, SEA_LEVEL - carvedHeights[index]);
+            if (depth <= 0) continue;
+            waterSampleCount += 1;
+            if (depth <= WATER_DEPTH_BANDS.foam) foamSampleCount += 1;
+            if (depth <= WATER_DEPTH_BANDS.shallowEnd) shallowSampleCount += 1;
+            maxDepth = Math.max(maxDepth, depth);
+            minDepth = Math.min(minDepth, depth);
+        }
+        waterAnalysis = {
+            waterSampleCount,
+            shallowSampleRatio: waterSampleCount > 0 ? shallowSampleCount / waterSampleCount : 0,
+            foamSampleRatio: waterSampleCount > 0 ? foamSampleCount / waterSampleCount : 0,
+            minDepth: Number.isFinite(minDepth) ? minDepth : 0,
+            maxDepth
+        };
         const waterDecoded = resampleHeightGrid(carvedHeights, decoded.stride, job.waterSurfaceResolution);
         water = createLeafSurfaceBuffers({
             node,
@@ -723,6 +745,7 @@ function buildLeafSurface(job) {
         surfaceResolution: job.surfaceResolution,
         waterSurfaceResolution: job.waterSurfaceResolution,
         hasWater,
+        waterAnalysis,
         terrain,
         water,
         waterDepth
