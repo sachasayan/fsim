@@ -10,10 +10,44 @@ import {
 /**
  * @typedef TreeDepthShaderPatchOptions
  * @property {{ value: import('three').Vector3 | null }} mainCameraPosUniform
+ * @property {{ value: import('three').Vector3 | null }} [lightDirUniform]
  * @property {boolean} [cameraFacing]
  * @property {boolean} [lockYAxis]
  * @property {number} [shadowFadeNear]
  * @property {number} [shadowFadeFar]
+ */
+
+/**
+ * @typedef TreeOctahedralShaderPatchOptions
+ * @property {{
+ *   directions: import('three').Vector3[],
+ *   gridCols: number,
+ *   gridRows: number,
+ *   atlasTexelSize?: [number, number],
+ *   depthStrength?: number,
+ *   normalSpace?: 'frame-local' | 'object',
+ *   depthRange?: { near?: number, far?: number }
+ * }} impostor
+ * @property {{
+ *   lightDirUniform: { value: import('three').Vector3 | null },
+ *   lightColorUniform: { value: import('three').Color | null },
+ *   lightIntensityUniform: { value: number },
+ *   depthTexture?: import('three').Texture | null
+ * }} [lighting]
+ * @property {{
+ *   modeUniform?: { value: number },
+ *   freezeFrameIndexUniform?: { value: number },
+ *   disableFrameBlendUniform?: { value: number },
+ *   flipNormalXUniform?: { value: number },
+ *   flipNormalYUniform?: { value: number },
+ *   flipNormalZUniform?: { value: number },
+ *   flipFrameDirUniform?: { value: number },
+ *   flipLightDirUniform?: { value: number },
+ *   flipBasisRightUniform?: { value: number },
+ *   flipBasisUpUniform?: { value: number },
+ *   disableDepthNormalUniform?: { value: number },
+ *   disableAtlasNormalUniform?: { value: number }
+ * }} [debug]
  */
 
 /**
@@ -114,6 +148,41 @@ export function createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeN
         uMainCameraPos: mainCameraPosUniform,
         uTreeShadowFadeNear: { value: shadowFadeNear },
         uTreeShadowFadeFar: { value: shadowFadeFar }
+    };
+}
+
+export function createTreeOctahedralUniformBindings(impostor) {
+    return {
+        uTreeImpostorGrid: { value: [impostor.gridCols, impostor.gridRows] },
+        uTreeImpostorFrameDirections: { value: impostor.directions },
+        uTreeImpostorAtlasTexelSize: { value: impostor.atlasTexelSize || [1 / 1024, 1 / 1024] },
+        uTreeImpostorDepthStrength: { value: Number.isFinite(impostor.depthStrength) ? impostor.depthStrength : 6.0 }
+    };
+}
+
+export function createTreeImpostorLightingUniformBindings(lighting = {}) {
+    return {
+        uTreeLightDirWorld: lighting.lightDirUniform || { value: null },
+        uTreeLightColor: lighting.lightColorUniform || { value: null },
+        uTreeLightIntensity: lighting.lightIntensityUniform || { value: 1.0 },
+        uTreeImpostorDepthTex: { value: lighting.depthTexture || null }
+    };
+}
+
+export function createTreeImpostorDebugUniformBindings(debug = {}) {
+    return {
+        uTreeImpostorDebugMode: debug.modeUniform || { value: 0 },
+        uTreeImpostorDebugFreezeFrameIndex: debug.freezeFrameIndexUniform || { value: -1 },
+        uTreeImpostorDebugDisableFrameBlend: debug.disableFrameBlendUniform || { value: 0 },
+        uTreeImpostorDebugFlipNormalX: debug.flipNormalXUniform || { value: 0 },
+        uTreeImpostorDebugFlipNormalY: debug.flipNormalYUniform || { value: 0 },
+        uTreeImpostorDebugFlipNormalZ: debug.flipNormalZUniform || { value: 0 },
+        uTreeImpostorDebugFlipFrameDir: debug.flipFrameDirUniform || { value: 0 },
+        uTreeImpostorDebugFlipLightDir: debug.flipLightDirUniform || { value: 0 },
+        uTreeImpostorDebugFlipBasisRight: debug.flipBasisRightUniform || { value: 0 },
+        uTreeImpostorDebugFlipBasisUp: debug.flipBasisUpUniform || { value: 0 },
+        uTreeImpostorDebugDisableDepthNormal: debug.disableDepthNormalUniform || { value: 0 },
+        uTreeImpostorDebugDisableAtlasNormal: debug.disableAtlasNormalUniform || { value: 0 }
     };
 }
 
@@ -515,6 +584,556 @@ roughnessFactor = mix(roughnessFactor * 0.82, min(1.0, roughnessFactor * 1.08), 
     return shader;
 }
 
+function buildOctahedralFrameSelectionShader(impostor) {
+    const frameCount = Math.max(1, impostor?.directions?.length || 1);
+    const gridCols = Math.max(1, impostor?.gridCols || 1);
+    const gridRows = Math.max(1, impostor?.gridRows || 1);
+    return `
+uniform vec2 uTreeImpostorGrid;
+uniform vec3 uTreeImpostorFrameDirections[${frameCount}];
+uniform float uTreeImpostorDebugFreezeFrameIndex;
+uniform float uTreeImpostorDebugDisableFrameBlend;
+varying vec2 vTreeUv;
+varying vec4 vTreeImpostorIndices;
+varying vec4 vTreeImpostorWeights;
+varying float vTreeImpostorBlend;
+varying vec3 vTreeImpostorDirA;
+varying vec3 vTreeImpostorDirB;
+varying vec3 vTreeImpostorDirC;
+varying vec3 vTreeImpostorDirD;
+
+vec2 fsimEncodeTreeOctahedralDirection(vec3 direction) {
+    vec3 view = normalize(direction);
+    float denom = max(0.0001, abs(view.x) + abs(view.y) + abs(view.z));
+    vec2 encoded = vec2(view.x, view.z) / denom;
+    if (view.y < 0.0) {
+        vec2 folded = vec2(
+            (1.0 - abs(encoded.y)) * sign(encoded.x == 0.0 ? 1.0 : encoded.x),
+            (1.0 - abs(encoded.x)) * sign(encoded.y == 0.0 ? 1.0 : encoded.y)
+        );
+        encoded = folded;
+    }
+    return encoded * 0.5 + 0.5;
+}
+
+void fsimSelectTreeImpostorFrames(vec3 localViewDir) {
+    vec2 encoded = fsimEncodeTreeOctahedralDirection(localViewDir);
+    vec2 sampleCoord = clamp(
+        encoded * vec2(${gridCols}.0, ${gridRows}.0) - vec2(0.5),
+        vec2(0.0),
+        vec2(${Math.max(0, gridCols - 1)}.0, ${Math.max(0, gridRows - 1)}.0)
+    );
+    float x0f = floor(sampleCoord.x);
+    float y0f = floor(sampleCoord.y);
+    float x1f = min(${Math.max(0, gridCols - 1)}.0, x0f + 1.0);
+    float y1f = min(${Math.max(0, gridRows - 1)}.0, y0f + 1.0);
+    float tx = sampleCoord.x - x0f;
+    float ty = sampleCoord.y - y0f;
+    vec4 weights = vec4(
+        (1.0 - tx) * (1.0 - ty),
+        tx * (1.0 - ty),
+        (1.0 - tx) * ty,
+        tx * ty
+    );
+    vec4 indices = vec4(
+        y0f * ${gridCols}.0 + x0f,
+        y0f * ${gridCols}.0 + x1f,
+        y1f * ${gridCols}.0 + x0f,
+        y1f * ${gridCols}.0 + x1f
+    );
+
+    if (uTreeImpostorDebugFreezeFrameIndex >= 0.0) {
+        float frozenIndex = clamp(floor(uTreeImpostorDebugFreezeFrameIndex + 0.5), 0.0, ${Math.max(0, frameCount - 1)}.0);
+        indices = vec4(frozenIndex);
+        weights = vec4(1.0, 0.0, 0.0, 0.0);
+    }
+    if (uTreeImpostorDebugDisableFrameBlend > 0.5 && uTreeImpostorDebugFreezeFrameIndex < 0.0) {
+        float bestWeight = weights.x;
+        float bestIndex = indices.x;
+        if (weights.y > bestWeight) { bestWeight = weights.y; bestIndex = indices.y; }
+        if (weights.z > bestWeight) { bestWeight = weights.z; bestIndex = indices.z; }
+        if (weights.w > bestWeight) { bestWeight = weights.w; bestIndex = indices.w; }
+        indices = vec4(bestIndex);
+        weights = vec4(1.0, 0.0, 0.0, 0.0);
+    }
+
+    int primaryIndex = int(indices.x + 0.5);
+    float primaryWeight = weights.x;
+    if (weights.y > primaryWeight) { primaryWeight = weights.y; primaryIndex = int(indices.y + 0.5); }
+    if (weights.z > primaryWeight) { primaryWeight = weights.z; primaryIndex = int(indices.z + 0.5); }
+    if (weights.w > primaryWeight) { primaryWeight = weights.w; primaryIndex = int(indices.w + 0.5); }
+
+    int secondaryIndex = primaryIndex;
+    float secondaryWeight = 0.0;
+    if (int(indices.x + 0.5) != primaryIndex && weights.x > secondaryWeight) { secondaryWeight = weights.x; secondaryIndex = int(indices.x + 0.5); }
+    if (int(indices.y + 0.5) != primaryIndex && weights.y > secondaryWeight) { secondaryWeight = weights.y; secondaryIndex = int(indices.y + 0.5); }
+    if (int(indices.z + 0.5) != primaryIndex && weights.z > secondaryWeight) { secondaryWeight = weights.z; secondaryIndex = int(indices.z + 0.5); }
+    if (int(indices.w + 0.5) != primaryIndex && weights.w > secondaryWeight) { secondaryWeight = weights.w; secondaryIndex = int(indices.w + 0.5); }
+
+    vTreeImpostorIndices = indices;
+    vTreeImpostorWeights = weights;
+    vTreeImpostorBlend = secondaryIndex == primaryIndex
+        ? 0.0
+        : clamp(secondaryWeight / max(0.0001, primaryWeight + secondaryWeight), 0.0, 1.0);
+    vTreeImpostorDirA = normalize(uTreeImpostorFrameDirections[primaryIndex]);
+    vTreeImpostorDirB = normalize(uTreeImpostorFrameDirections[secondaryIndex]);
+    vTreeImpostorDirC = normalize(uTreeImpostorFrameDirections[int(indices.z + 0.5)]);
+    vTreeImpostorDirD = normalize(uTreeImpostorFrameDirections[int(indices.w + 0.5)]);
+}
+`;
+}
+
+export function applyTreeOctahedralShaderPatch(shader, {
+    impostor,
+    lighting,
+    debug
+} = /** @type {TreeOctahedralShaderPatchOptions} */ ({
+    impostor: { directions: [], gridCols: 1, gridRows: 1 },
+    lighting: undefined,
+    debug: undefined
+})) {
+    Object.assign(shader.uniforms, createTreeOctahedralUniformBindings(impostor));
+    Object.assign(shader.uniforms, createTreeImpostorLightingUniformBindings(lighting));
+    Object.assign(shader.uniforms, createTreeImpostorDebugUniformBindings(debug));
+
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'common',
+        `#include <common>
+varying vec3 vTreeInstanceXAxis;
+varying vec3 vTreeInstanceYAxis;
+varying vec3 vTreeInstanceZAxis;
+${buildOctahedralFrameSelectionShader(impostor)}`
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'begin_vertex',
+        `#include <begin_vertex>
+vTreeUv = uv;`
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'beginnormal_vertex',
+        `#include <beginnormal_vertex>
+#ifdef USE_INSTANCING
+vec3 fsimTreeInstanceXAxis = normalize(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2]));
+vec3 fsimTreeInstanceYAxis = normalize(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2]));
+vec3 fsimTreeInstanceZAxis = normalize(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]));
+vTreeInstanceXAxis = fsimTreeInstanceXAxis;
+vTreeInstanceYAxis = fsimTreeInstanceYAxis;
+vTreeInstanceZAxis = fsimTreeInstanceZAxis;
+vec3 fsimTreeInstancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+vec3 fsimTreeCameraDirWorld = normalize(cameraPosition - (modelMatrix * vec4(fsimTreeInstancePos, 1.0)).xyz);
+vec3 fsimTreeCameraDirLocal = normalize(vec3(
+    dot(fsimTreeCameraDirWorld, fsimTreeInstanceXAxis),
+    dot(fsimTreeCameraDirWorld, fsimTreeInstanceYAxis),
+    dot(fsimTreeCameraDirWorld, fsimTreeInstanceZAxis)
+));
+fsimSelectTreeImpostorFrames(fsimTreeCameraDirLocal);
+objectNormal = normalize(fsimTreeCameraDirWorld);
+#endif`
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'project_vertex',
+        `
+vec4 mvPosition = vec4(transformed, 1.0);
+#ifdef USE_BATCHING
+mvPosition = batchingMatrix * mvPosition;
+#endif
+#ifdef USE_INSTANCING
+    vec3 instancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    vec2 instanceScale = vec2(length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
+    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])));
+    vec3 cameraDir = normalize(cameraPosition - (modelMatrix * vec4(instancePos, 1.0)).xyz);
+    vec3 upRef = abs(cameraDir.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(upRef, cameraDir));
+    vec3 up = normalize(cross(cameraDir, right));
+    mvPosition.xyz = mat3(
+        right.x, right.y, right.z,
+        up.x, up.y, up.z,
+        cameraDir.x, cameraDir.y, cameraDir.z
+    ) * (mvPosition.xyz * vec3(instanceScale.x, instanceScale.y, 1.0)) + instancePos;
+#endif
+mvPosition = modelViewMatrix * mvPosition;
+gl_Position = projectionMatrix * mvPosition;
+`
+    );
+
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'common',
+        `#include <common>
+varying vec2 vTreeUv;
+varying vec4 vTreeImpostorIndices;
+varying vec4 vTreeImpostorWeights;
+varying float vTreeImpostorBlend;
+varying vec3 vTreeImpostorDirA;
+varying vec3 vTreeImpostorDirB;
+varying vec3 vTreeImpostorDirC;
+varying vec3 vTreeImpostorDirD;
+varying vec3 vTreeInstanceXAxis;
+varying vec3 vTreeInstanceYAxis;
+varying vec3 vTreeInstanceZAxis;
+uniform vec2 uTreeImpostorGrid;
+uniform sampler2D uTreeImpostorDepthTex;
+uniform vec2 uTreeImpostorAtlasTexelSize;
+uniform float uTreeImpostorDepthStrength;
+uniform vec3 uTreeLightDirWorld;
+uniform vec3 uTreeLightColor;
+uniform float uTreeLightIntensity;
+uniform float uTreeImpostorDebugMode;
+uniform float uTreeImpostorDebugFlipNormalX;
+uniform float uTreeImpostorDebugFlipNormalY;
+uniform float uTreeImpostorDebugFlipNormalZ;
+uniform float uTreeImpostorDebugFlipFrameDir;
+uniform float uTreeImpostorDebugFlipLightDir;
+uniform float uTreeImpostorDebugFlipBasisRight;
+uniform float uTreeImpostorDebugFlipBasisUp;
+uniform float uTreeImpostorDebugDisableDepthNormal;
+uniform float uTreeImpostorDebugDisableAtlasNormal;
+
+vec4 fsimTreeDebugSampledDiffuseColor = vec4(1.0);
+vec3 fsimTreeDebugRawNormalColor = vec3(0.5, 0.5, 1.0);
+float fsimTreeDebugDepth = 0.0;
+vec3 fsimTreeDebugFrameDirA = vec3(0.0, 0.0, 1.0);
+vec3 fsimTreeDebugFrameDirB = vec3(0.0, 0.0, 1.0);
+float fsimTreeDebugBlend = 0.0;
+vec3 fsimTreeDebugLocalNormal = vec3(0.0, 0.0, 1.0);
+vec3 fsimTreeDebugWorldNormal = vec3(0.0, 0.0, 1.0);
+vec3 fsimTreeDebugViewNormal = vec3(0.0, 0.0, 1.0);
+vec3 fsimTreeDebugLightDirView = vec3(0.0, 0.0, 1.0);
+float fsimTreeDebugNdotL = 0.0;
+float fsimTreeDebugBacklight = 0.0;
+
+vec2 fsimResolveImpostorUvByIndex(vec2 baseUv, float frameIndexFloat) {
+    float cols = max(1.0, uTreeImpostorGrid.x);
+    float rows = max(1.0, uTreeImpostorGrid.y);
+    float col = mod(frameIndexFloat, cols);
+    float row = floor(frameIndexFloat / cols);
+    vec2 tileScale = vec2(1.0 / cols, 1.0 / rows);
+    return vec2(col, row) * tileScale + (baseUv * tileScale);
+}
+
+mat3 fsimBuildImpostorLocalBasis(vec3 forwardLocal) {
+    vec3 upRef = abs(forwardLocal.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(upRef, forwardLocal));
+    vec3 up = normalize(cross(forwardLocal, right));
+    if (uTreeImpostorDebugFlipBasisRight > 0.5) {
+        right *= -1.0;
+    }
+    if (uTreeImpostorDebugFlipBasisUp > 0.5) {
+        up *= -1.0;
+    }
+    return mat3(right, up, forwardLocal);
+}
+
+float fsimSampleImpostorDepth(float frameIndexFloat, vec2 baseUv) {
+    return texture2D(uTreeImpostorDepthTex, fsimResolveImpostorUvByIndex(baseUv, frameIndexFloat)).r;
+}
+
+vec3 fsimDecodeDepthNormal(float frameIndexFloat, vec2 baseUv) {
+    vec2 atlasUv = fsimResolveImpostorUvByIndex(baseUv, frameIndexFloat);
+    float depthL = texture2D(uTreeImpostorDepthTex, atlasUv - vec2(uTreeImpostorAtlasTexelSize.x, 0.0)).r;
+    float depthR = texture2D(uTreeImpostorDepthTex, atlasUv + vec2(uTreeImpostorAtlasTexelSize.x, 0.0)).r;
+    float depthD = texture2D(uTreeImpostorDepthTex, atlasUv - vec2(0.0, uTreeImpostorAtlasTexelSize.y)).r;
+    float depthU = texture2D(uTreeImpostorDepthTex, atlasUv + vec2(0.0, uTreeImpostorAtlasTexelSize.y)).r;
+    return normalize(vec3((depthL - depthR) * uTreeImpostorDepthStrength, (depthD - depthU) * uTreeImpostorDepthStrength, 1.0));
+}`
+    );
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'map_fragment',
+        `#ifdef USE_MAP
+    vec4 treeSampleA = texture2D(map, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.x));
+    vec4 treeSampleB = texture2D(map, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.y));
+    vec4 treeSampleC = texture2D(map, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.z));
+    vec4 treeSampleD = texture2D(map, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.w));
+    vec4 sampledDiffuseColor =
+        treeSampleA * vTreeImpostorWeights.x +
+        treeSampleB * vTreeImpostorWeights.y +
+        treeSampleC * vTreeImpostorWeights.z +
+        treeSampleD * vTreeImpostorWeights.w;
+    fsimTreeDebugSampledDiffuseColor = sampledDiffuseColor;
+    diffuseColor *= sampledDiffuseColor;
+#endif`
+    );
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'normal_fragment_maps',
+        `#ifdef USE_NORMALMAP
+    vec3 treeNormalColorA = texture2D(normalMap, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.x)).xyz;
+    vec3 treeNormalColorB = texture2D(normalMap, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.y)).xyz;
+    vec3 treeNormalColorC = texture2D(normalMap, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.z)).xyz;
+    vec3 treeNormalColorD = texture2D(normalMap, fsimResolveImpostorUvByIndex(vTreeUv, vTreeImpostorIndices.w)).xyz;
+    fsimTreeDebugRawNormalColor =
+        treeNormalColorA * vTreeImpostorWeights.x +
+        treeNormalColorB * vTreeImpostorWeights.y +
+        treeNormalColorC * vTreeImpostorWeights.z +
+        treeNormalColorD * vTreeImpostorWeights.w;
+    vec3 treeNormalA = treeNormalColorA * 2.0 - 1.0;
+    vec3 treeNormalB = treeNormalColorB * 2.0 - 1.0;
+    vec3 treeNormalC = treeNormalColorC * 2.0 - 1.0;
+    vec3 treeNormalD = treeNormalColorD * 2.0 - 1.0;
+    vec3 treeNormalFlip = vec3(
+        uTreeImpostorDebugFlipNormalX > 0.5 ? -1.0 : 1.0,
+        uTreeImpostorDebugFlipNormalY > 0.5 ? -1.0 : 1.0,
+        uTreeImpostorDebugFlipNormalZ > 0.5 ? -1.0 : 1.0
+    );
+    treeNormalA *= treeNormalFlip;
+    treeNormalB *= treeNormalFlip;
+    treeNormalC *= treeNormalFlip;
+    treeNormalD *= treeNormalFlip;
+    vec3 depthNormalA = fsimDecodeDepthNormal(vTreeImpostorIndices.x, vTreeUv);
+    vec3 depthNormalB = fsimDecodeDepthNormal(vTreeImpostorIndices.y, vTreeUv);
+    vec3 depthNormalC = fsimDecodeDepthNormal(vTreeImpostorIndices.z, vTreeUv);
+    vec3 depthNormalD = fsimDecodeDepthNormal(vTreeImpostorIndices.w, vTreeUv);
+    vec3 frameNormalA = normalize(mix(treeNormalA, depthNormalA, 0.18));
+    vec3 frameNormalB = normalize(mix(treeNormalB, depthNormalB, 0.18));
+    vec3 frameNormalC = normalize(mix(treeNormalC, depthNormalC, 0.18));
+    vec3 frameNormalD = normalize(mix(treeNormalD, depthNormalD, 0.18));
+    if (uTreeImpostorDebugDisableDepthNormal > 0.5 && uTreeImpostorDebugDisableAtlasNormal <= 0.5) {
+        frameNormalA = normalize(treeNormalA);
+        frameNormalB = normalize(treeNormalB);
+        frameNormalC = normalize(treeNormalC);
+        frameNormalD = normalize(treeNormalD);
+    } else if (uTreeImpostorDebugDisableAtlasNormal > 0.5 && uTreeImpostorDebugDisableDepthNormal <= 0.5) {
+        frameNormalA = normalize(depthNormalA);
+        frameNormalB = normalize(depthNormalB);
+        frameNormalC = normalize(depthNormalC);
+        frameNormalD = normalize(depthNormalD);
+    }
+    vec3 frameDirA = normalize(vTreeImpostorDirA) * (uTreeImpostorDebugFlipFrameDir > 0.5 ? -1.0 : 1.0);
+    vec3 frameDirB = normalize(vTreeImpostorDirB) * (uTreeImpostorDebugFlipFrameDir > 0.5 ? -1.0 : 1.0);
+    fsimTreeDebugFrameDirA = frameDirA;
+    fsimTreeDebugFrameDirB = frameDirB;
+    fsimTreeDebugBlend = vTreeImpostorBlend;
+    fsimTreeDebugDepth =
+        fsimSampleImpostorDepth(vTreeImpostorIndices.x, vTreeUv) * vTreeImpostorWeights.x +
+        fsimSampleImpostorDepth(vTreeImpostorIndices.y, vTreeUv) * vTreeImpostorWeights.y +
+        fsimSampleImpostorDepth(vTreeImpostorIndices.z, vTreeUv) * vTreeImpostorWeights.z +
+        fsimSampleImpostorDepth(vTreeImpostorIndices.w, vTreeUv) * vTreeImpostorWeights.w;
+    vec3 localNormalA = ${impostor?.normalSpace === 'object'
+        ? 'normalize(frameNormalA)'
+        : 'normalize(fsimBuildImpostorLocalBasis(frameDirA) * frameNormalA)'};
+    vec3 localNormalB = ${impostor?.normalSpace === 'object'
+        ? 'normalize(frameNormalB)'
+        : 'normalize(fsimBuildImpostorLocalBasis(frameDirB) * frameNormalB)'};
+    vec3 frameDirC = normalize(vTreeImpostorDirC) * (uTreeImpostorDebugFlipFrameDir > 0.5 ? -1.0 : 1.0);
+    vec3 frameDirD = normalize(vTreeImpostorDirD) * (uTreeImpostorDebugFlipFrameDir > 0.5 ? -1.0 : 1.0);
+    vec3 localNormalC = ${impostor?.normalSpace === 'object'
+        ? 'normalize(frameNormalC)'
+        : 'normalize(fsimBuildImpostorLocalBasis(frameDirC) * frameNormalC)'};
+    vec3 localNormalD = ${impostor?.normalSpace === 'object'
+        ? 'normalize(frameNormalD)'
+        : 'normalize(fsimBuildImpostorLocalBasis(frameDirD) * frameNormalD)'};
+    vec3 localNormal = normalize(
+        localNormalA * vTreeImpostorWeights.x +
+        localNormalB * vTreeImpostorWeights.y +
+        localNormalC * vTreeImpostorWeights.z +
+        localNormalD * vTreeImpostorWeights.w
+    );
+    fsimTreeDebugLocalNormal = localNormal;
+    vec3 worldNormal = normalize(
+        vTreeInstanceXAxis * localNormal.x +
+        vTreeInstanceYAxis * localNormal.y +
+        vTreeInstanceZAxis * localNormal.z
+    );
+    fsimTreeDebugWorldNormal = worldNormal;
+    normal = normalize((viewMatrix * vec4(worldNormal, 0.0)).xyz);
+    fsimTreeDebugViewNormal = normal;
+#else
+    #include <normal_fragment_maps>
+#endif`
+    );
+    shader.fragmentShader = replaceShaderSnippet(
+        shader.fragmentShader,
+        'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
+        `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+vec3 treeLightDirWorld = uTreeLightDirWorld * (uTreeImpostorDebugFlipLightDir > 0.5 ? -1.0 : 1.0);
+vec3 treeLightDir = normalize(mat3(viewMatrix) * treeLightDirWorld);
+fsimTreeDebugLightDirView = treeLightDir;
+float treeLightFacing = max(dot(normal, treeLightDir), 0.0);
+float treeBackLight = max(dot(normal, -treeLightDir), 0.0);
+fsimTreeDebugNdotL = treeLightFacing;
+fsimTreeDebugBacklight = treeBackLight;
+float treeDepthA = fsimSampleImpostorDepth(vTreeImpostorIndices.x, vTreeUv);
+float treeDepthB = fsimSampleImpostorDepth(vTreeImpostorIndices.y, vTreeUv);
+float treeDepthC = fsimSampleImpostorDepth(vTreeImpostorIndices.z, vTreeUv);
+float treeDepthD = fsimSampleImpostorDepth(vTreeImpostorIndices.w, vTreeUv);
+float treeDepth =
+    treeDepthA * vTreeImpostorWeights.x +
+    treeDepthB * vTreeImpostorWeights.y +
+    treeDepthC * vTreeImpostorWeights.z +
+    treeDepthD * vTreeImpostorWeights.w;
+float treeThickness = smoothstep(0.08, 0.92, treeDepth);
+float treeSelfOcclusion = mix(1.0, 0.78, treeDepth);
+float treeWrap = smoothstep(-0.35, 0.85, dot(normal, treeLightDir));
+outgoingLight *= mix(treeSelfOcclusion, 1.0, treeWrap);
+vec3 treeTransmissionColor = diffuseColor.rgb * mix(vec3(0.78, 1.0, 0.78), vec3(1.0, 0.95, 0.82), 0.28);
+float treeTransmission = treeBackLight * treeThickness * (0.12 + 0.16 * uTreeLightIntensity);
+outgoingLight += treeTransmissionColor * uTreeLightColor * treeTransmission;
+outgoingLight = mix(outgoingLight, outgoingLight * 1.04, treeLightFacing * 0.08);
+if (uTreeImpostorDebugMode > 0.5) {
+    vec3 debugColor = outgoingLight;
+    if (abs(uTreeImpostorDebugMode - 1.0) < 0.5) {
+        debugColor = fsimTreeDebugSampledDiffuseColor.rgb;
+    } else if (abs(uTreeImpostorDebugMode - 2.0) < 0.5) {
+        debugColor = fsimTreeDebugRawNormalColor;
+    } else if (abs(uTreeImpostorDebugMode - 3.0) < 0.5) {
+        debugColor = vec3(fsimTreeDebugDepth);
+    } else if (abs(uTreeImpostorDebugMode - 4.0) < 0.5) {
+        debugColor = fsimTreeDebugFrameDirA * 0.5 + 0.5;
+    } else if (abs(uTreeImpostorDebugMode - 5.0) < 0.5) {
+        debugColor = fsimTreeDebugFrameDirB * 0.5 + 0.5;
+    } else if (abs(uTreeImpostorDebugMode - 6.0) < 0.5) {
+        debugColor = vec3(fsimTreeDebugBlend);
+    } else if (abs(uTreeImpostorDebugMode - 7.0) < 0.5) {
+        debugColor = fsimTreeDebugLocalNormal * 0.5 + 0.5;
+    } else if (abs(uTreeImpostorDebugMode - 8.0) < 0.5) {
+        debugColor = fsimTreeDebugWorldNormal * 0.5 + 0.5;
+    } else if (abs(uTreeImpostorDebugMode - 9.0) < 0.5) {
+        debugColor = fsimTreeDebugViewNormal * 0.5 + 0.5;
+    } else if (abs(uTreeImpostorDebugMode - 10.0) < 0.5) {
+        debugColor = fsimTreeDebugLightDirView * 0.5 + 0.5;
+    } else if (abs(uTreeImpostorDebugMode - 11.0) < 0.5) {
+        debugColor = vec3(fsimTreeDebugNdotL);
+    } else if (abs(uTreeImpostorDebugMode - 12.0) < 0.5) {
+        debugColor = vec3(fsimTreeDebugBacklight);
+    }
+    outgoingLight = debugColor;
+}`,
+        'tree impostor transmission and occlusion'
+    );
+
+    return shader;
+}
+
+export function applyTreeOctahedralDepthShaderPatch(shader, {
+    mainCameraPosUniform,
+    lightDirUniform,
+    depthTexture,
+    impostor,
+    shadowFadeNear = 1200,
+    shadowFadeFar = 1800
+} = /** @type {TreeDepthShaderPatchOptions & TreeOctahedralShaderPatchOptions} */ ({
+    mainCameraPosUniform: { value: null },
+    lightDirUniform: { value: null },
+    depthTexture: null,
+    impostor: { directions: [], gridCols: 1, gridRows: 1 }
+})) {
+    shader.defines = shader.defines || {};
+    shader.defines.DEPTH_PACKING = 3201;
+    Object.assign(shader.uniforms, createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear, shadowFadeFar));
+    Object.assign(shader.uniforms, createTreeOctahedralUniformBindings(impostor));
+    Object.assign(shader.uniforms, createTreeImpostorDebugUniformBindings());
+    shader.uniforms.uTreeLightDirWorld = lightDirUniform || { value: null };
+    shader.uniforms.uTreeImpostorDepthTex = { value: depthTexture || null };
+
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'common',
+        `#include <common>
+uniform vec3 uMainCameraPos;
+uniform vec3 uTreeLightDirWorld;
+uniform float uTreeShadowFadeNear;
+uniform float uTreeShadowFadeFar;
+${buildOctahedralFrameSelectionShader(impostor)}`
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'begin_vertex',
+        `#include <begin_vertex>
+vTreeUv = uv;`
+    );
+    shader.vertexShader = replaceShaderInclude(
+        shader.vertexShader,
+        'project_vertex',
+        `
+vec4 mvPosition = vec4(transformed, 1.0);
+#ifdef USE_BATCHING
+mvPosition = batchingMatrix * mvPosition;
+#endif
+#ifdef USE_INSTANCING
+    vec3 instanceXAxis = normalize(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2]));
+    vec3 instanceYAxis = normalize(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2]));
+    vec3 instanceZAxis = normalize(vec3(instanceMatrix[2][0], instanceMatrix[2][1], instanceMatrix[2][2]));
+    vec3 instancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    vec2 instanceScale = vec2(length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2])),
+    length(vec3(instanceMatrix[1][0], instanceMatrix[1][1], instanceMatrix[1][2])));
+    vec3 cameraDirWorld = uMainCameraPos - (modelMatrix * vec4(instancePos, 1.0)).xyz;
+    float distToCamera = length(cameraDirWorld);
+    float shadowScale = 1.0 - smoothstep(uTreeShadowFadeNear, uTreeShadowFadeFar, distToCamera);
+    vec3 lightDir = normalize(uTreeLightDirWorld);
+    vec3 localViewDir = normalize(vec3(
+        dot(lightDir, instanceXAxis),
+        dot(lightDir, instanceYAxis),
+        dot(lightDir, instanceZAxis)
+    ));
+    fsimSelectTreeImpostorFrames(localViewDir);
+    vec3 upRef = abs(lightDir.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(upRef, lightDir));
+    vec3 up = normalize(cross(lightDir, right));
+    mvPosition.xyz = mat3(
+        right.x, right.y, right.z,
+        up.x, up.y, up.z,
+        lightDir.x, lightDir.y, lightDir.z
+    ) * (mvPosition.xyz * vec3(instanceScale.x * shadowScale, instanceScale.y * shadowScale, 1.0)) + instancePos;
+#endif
+mvPosition = modelViewMatrix * mvPosition;
+gl_Position = projectionMatrix * mvPosition;
+`
+    );
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'common',
+        `#include <common>
+varying vec2 vTreeUv;
+varying vec4 vTreeImpostorIndices;
+varying vec4 vTreeImpostorWeights;
+varying float vTreeImpostorBlend;
+uniform vec2 uTreeImpostorGrid;
+uniform sampler2D uTreeImpostorDepthTex;
+
+vec2 fsimResolveImpostorUv(vec2 baseUv, float frameIndexFloat) {
+    float cols = max(1.0, uTreeImpostorGrid.x);
+    float rows = max(1.0, uTreeImpostorGrid.y);
+    float col = mod(frameIndexFloat, cols);
+    float row = floor(frameIndexFloat / cols);
+    vec2 tileScale = vec2(1.0 / cols, 1.0 / rows);
+    return vec2(col, row) * tileScale + (baseUv * tileScale);
+}`
+    );
+    shader.fragmentShader = replaceShaderInclude(
+        shader.fragmentShader,
+        'alphamap_fragment',
+        `#ifdef USE_ALPHAMAP
+    float treeAlphaA = texture2D(alphaMap, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.x)).a;
+    float treeAlphaB = texture2D(alphaMap, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.y)).a;
+    float treeAlphaC = texture2D(alphaMap, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.z)).a;
+    float treeAlphaD = texture2D(alphaMap, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.w)).a;
+    float treeDepthA = texture2D(uTreeImpostorDepthTex, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.x)).r;
+    float treeDepthB = texture2D(uTreeImpostorDepthTex, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.y)).r;
+    float treeDepthC = texture2D(uTreeImpostorDepthTex, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.z)).r;
+    float treeDepthD = texture2D(uTreeImpostorDepthTex, fsimResolveImpostorUv(vTreeUv, vTreeImpostorIndices.w)).r;
+    float weightedDepth =
+        treeDepthA * vTreeImpostorWeights.x +
+        treeDepthB * vTreeImpostorWeights.y +
+        treeDepthC * vTreeImpostorWeights.z +
+        treeDepthD * vTreeImpostorWeights.w;
+    float treeThickness = mix(0.72, 1.0, smoothstep(0.15, 0.9, 1.0 - weightedDepth));
+    float weightedAlpha =
+        treeAlphaA * vTreeImpostorWeights.x +
+        treeAlphaB * vTreeImpostorWeights.y +
+        treeAlphaC * vTreeImpostorWeights.z +
+        treeAlphaD * vTreeImpostorWeights.w;
+    diffuseColor.a *= weightedAlpha * treeThickness;
+#endif`
+    );
+
+    return shader;
+}
+
 /**
  * @param {{ uniforms: Record<string, unknown>, defines?: Record<string, unknown>, vertexShader: string, fragmentShader: string }} shader
  * @param {TreeDepthShaderPatchOptions} [options]
@@ -559,11 +1178,9 @@ mvPosition = batchingMatrix * mvPosition;
                               
     vec3 cameraDir = uMainCameraPos - (modelMatrix * vec4(instancePos, 1.0)).xyz;
 
-    // Distance-based shadow culling to prevent ALPHATEST discard overdraw
     float distToCamera = length(cameraDir);
     float shadowScale = 1.0 - smoothstep(uTreeShadowFadeNear, uTreeShadowFadeFar, distToCamera);
 
-// Don't pitch trees up/down towards the camera
 ${lockYAxis ? 'cameraDir.y = 0.0;' : ''}
 cameraDir = normalize(cameraDir);
 

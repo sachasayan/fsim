@@ -5,7 +5,7 @@ type LodLevel = {
     enableBuildings: boolean;
     enableTrees: boolean;
     enableBoats: boolean;
-    treeRenderMode: 'hybrid' | 'billboard' | 'disabled';
+    treeRenderMode: 'mesh' | 'octahedral' | 'hybrid' | 'billboard' | 'disabled';
     enableTreeContactShadows: boolean;
     treeShadowFadeNear: number;
     treeShadowFadeFar: number;
@@ -69,19 +69,19 @@ export function createRuntimeLodSettings({ urlSearch = '' }: { urlSearch?: strin
         },
         terrain: {
             renderDistance,
-            ringThresholds: [3, 6, 12],
+            ringThresholds: [0, 3, 8],
             ringHysteresis: 1,
             lodLevels: cloneLodLevels([
                 {
                     terrainRes: 224, waterRes: 72, propDensity: 1.0, enableBuildings: true, enableTrees: true, enableBoats: true,
-                    treeRenderMode: 'hybrid',
+                    treeRenderMode: 'octahedral',
                     enableTreeContactShadows: true,
                     treeShadowFadeNear: 0,
                     treeShadowFadeFar: 0
                 },
                 {
                     terrainRes: 32, waterRes: 16, propDensity: 0.7, enableBuildings: true, enableTrees: true, enableBoats: false,
-                    treeRenderMode: 'billboard',
+                    treeRenderMode: 'octahedral',
                     enableTreeContactShadows: true,
                     treeShadowFadeNear: 1400,
                     treeShadowFadeFar: 2100

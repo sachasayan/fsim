@@ -45,6 +45,7 @@ type TerrainDebugConfigOptions = {
     invalidateActiveLeafSurfaces: () => void;
     rebuildHydrologyMeshes: () => void;
     invalidateChunkProps: () => void;
+    applyTreeImpostorDebugSettings?: () => void;
     updateTerrain: () => unknown;
 };
 
@@ -72,8 +73,11 @@ export function createTerrainDebugConfigRuntime({
     invalidateActiveLeafSurfaces,
     rebuildHydrologyMeshes,
     invalidateChunkProps,
+    applyTreeImpostorDebugSettings,
     updateTerrain
 }: TerrainDebugConfigOptions) {
+    let lastTreeReferenceSignature = `${terrainDebugSettings.treeImpostorDebugReferenceMode}:${terrainDebugSettings.treeImpostorDebugReferenceOffset}`;
+
     function normalizeTerrainDebugSettings() {
         terrainDebugSettings.selectionInterestRadius = Math.max(CHUNK_SIZE * 0.25, terrainDebugSettings.selectionInterestRadius);
         terrainDebugSettings.selectionBlockingRadius = Math.max(CHUNK_SIZE * 0.125, terrainDebugSettings.selectionBlockingRadius);
@@ -113,6 +117,41 @@ export function createTerrainDebugConfigRuntime({
         terrainDebugSettings.waterAtmosphereStrength = Math.max(0, Math.min(2, terrainDebugSettings.waterAtmosphereStrength));
         terrainDebugSettings.waterAtmosphereDesaturation = Math.max(0, Math.min(1, terrainDebugSettings.waterAtmosphereDesaturation));
         terrainDebugSettings.waterShadowContrast = Math.max(0, Math.min(1, terrainDebugSettings.waterShadowContrast));
+        if (!Object.prototype.hasOwnProperty.call(terrainDebugSettings, 'treeImpostorDebugMode')) {
+            terrainDebugSettings.treeImpostorDebugMode = 'lit';
+        }
+        if (![
+            'lit',
+            'albedo_only',
+            'normal_atlas_raw',
+            'depth_raw',
+            'frame_dir_a',
+            'frame_dir_b',
+            'blend_weight',
+            'local_normal',
+            'world_normal',
+            'view_normal',
+            'light_dir_view',
+            'ndotl',
+            'backlight'
+        ].includes(terrainDebugSettings.treeImpostorDebugMode)) {
+            terrainDebugSettings.treeImpostorDebugMode = 'lit';
+        }
+        terrainDebugSettings.treeImpostorDebugFreezeFrameIndex = Math.max(-1, Math.round(Number(terrainDebugSettings.treeImpostorDebugFreezeFrameIndex) || -1));
+        terrainDebugSettings.treeImpostorDebugDisableFrameBlend = Boolean(terrainDebugSettings.treeImpostorDebugDisableFrameBlend);
+        terrainDebugSettings.treeImpostorDebugFlipNormalX = Boolean(terrainDebugSettings.treeImpostorDebugFlipNormalX);
+        terrainDebugSettings.treeImpostorDebugFlipNormalY = Boolean(terrainDebugSettings.treeImpostorDebugFlipNormalY);
+        terrainDebugSettings.treeImpostorDebugFlipNormalZ = Boolean(terrainDebugSettings.treeImpostorDebugFlipNormalZ);
+        terrainDebugSettings.treeImpostorDebugFlipFrameDir = Boolean(terrainDebugSettings.treeImpostorDebugFlipFrameDir);
+        terrainDebugSettings.treeImpostorDebugFlipLightDir = Boolean(terrainDebugSettings.treeImpostorDebugFlipLightDir);
+        terrainDebugSettings.treeImpostorDebugFlipBasisRight = Boolean(terrainDebugSettings.treeImpostorDebugFlipBasisRight);
+        terrainDebugSettings.treeImpostorDebugFlipBasisUp = Boolean(terrainDebugSettings.treeImpostorDebugFlipBasisUp);
+        terrainDebugSettings.treeImpostorDebugDisableDepthNormal = Boolean(terrainDebugSettings.treeImpostorDebugDisableDepthNormal);
+        terrainDebugSettings.treeImpostorDebugDisableAtlasNormal = Boolean(terrainDebugSettings.treeImpostorDebugDisableAtlasNormal);
+        if (!['off', 'overlay', 'side-by-side'].includes(terrainDebugSettings.treeImpostorDebugReferenceMode)) {
+            terrainDebugSettings.treeImpostorDebugReferenceMode = 'off';
+        }
+        terrainDebugSettings.treeImpostorDebugReferenceOffset = Math.max(0, Number(terrainDebugSettings.treeImpostorDebugReferenceOffset) || 0);
     }
 
     function applyTerrainWireframeSetting() {
@@ -277,9 +316,15 @@ export function createTerrainDebugConfigRuntime({
         applyTerrainWireframeSetting();
         applyTerrainMaterialDebugSettings();
         applyWaterDebugSettings();
+        applyTreeImpostorDebugSettings?.();
         syncSurfaceShadowReception();
         applyTerrainGrassShaderSettings();
         applyTerrainGrassMapSettings();
+        const nextTreeReferenceSignature = `${terrainDebugSettings.treeImpostorDebugReferenceMode}:${terrainDebugSettings.treeImpostorDebugReferenceOffset}`;
+        if (nextTreeReferenceSignature !== lastTreeReferenceSignature) {
+            invalidateChunkProps();
+            lastTreeReferenceSignature = nextTreeReferenceSignature;
+        }
         if (rebuildSurfaces) {
             invalidateActiveLeafSurfaces();
         }

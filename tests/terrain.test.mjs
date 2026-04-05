@@ -290,6 +290,29 @@ test('terrain tests', async (t) => {
         assert.equal(system.terrainDebugSettings.waterShadowContrast, 1);
     });
 
+    await t.test('terrain debug settings normalize tree impostor diagnostic controls', () => {
+        const scene = new THREE.Scene();
+        const PHYSICS = { position: new THREE.Vector3() };
+        const lodSettings = createRuntimeLodSettings();
+
+        const system = createTerrainSystem({ scene, renderer, Noise: mockNoise, PHYSICS, lodSettings, loadStaticWorldFn });
+
+        system.terrainDebugSettings.treeImpostorDebugMode = 'not-a-mode';
+        system.terrainDebugSettings.treeImpostorDebugFreezeFrameIndex = 2.7;
+        system.terrainDebugSettings.treeImpostorDebugDisableFrameBlend = 1;
+        system.terrainDebugSettings.treeImpostorDebugFlipNormalX = 1;
+        system.terrainDebugSettings.treeImpostorDebugReferenceMode = 'broken';
+        system.terrainDebugSettings.treeImpostorDebugReferenceOffset = -4;
+        system.applyTerrainDebugSettings();
+
+        assert.equal(system.terrainDebugSettings.treeImpostorDebugMode, 'lit');
+        assert.equal(system.terrainDebugSettings.treeImpostorDebugFreezeFrameIndex, 3);
+        assert.equal(system.terrainDebugSettings.treeImpostorDebugDisableFrameBlend, true);
+        assert.equal(system.terrainDebugSettings.treeImpostorDebugFlipNormalX, true);
+        assert.equal(system.terrainDebugSettings.treeImpostorDebugReferenceMode, 'off');
+        assert.equal(system.terrainDebugSettings.treeImpostorDebugReferenceOffset, 0);
+    });
+
     await t.test('terrain shadow distance defaults to doubled range with fade start', () => {
         const scene = new THREE.Scene();
         const PHYSICS = { position: new THREE.Vector3() };

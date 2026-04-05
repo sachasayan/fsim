@@ -11,6 +11,8 @@ import {
 import { applyOwnedShaderDescriptor } from '../shaders/ShaderDescriptor.js';
 import {
     applyDistanceAtmosphereShaderPatch,
+    applyTreeOctahedralDepthShaderPatch,
+    applyTreeOctahedralShaderPatch,
 } from './TerrainShaderPatches.js';
 import {
     getTerrainShaderDescriptor
@@ -116,6 +118,105 @@ export function makeTreeDepthMaterial(texture, mainCameraPosUniform, {
                 source: getTreeDepthOwnedShaderSource({ cameraFacing, lockYAxis, shadowFadeNear, shadowFadeFar }),
                 uniformBindings() {
                     return getTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeNear, shadowFadeFar);
+                }
+            })
+        ]
+    });
+    return mat;
+}
+
+export function makeTreeOctahedralMaterial(texture, normalTexture, depthTexture, impostorData, lightingUniforms, debugUniforms = null) {
+    const mat = new THREE.MeshStandardMaterial({
+        map: texture,
+        normalMap: normalTexture,
+        transparent: true,
+        alphaTest: 0.4,
+        side: THREE.DoubleSide,
+        roughness: 0.95,
+        metalness: 0.0
+    });
+
+    configureMaterialShaderPipeline(mat, {
+        baseCacheKey: `tree-octahedral-v1-${impostorData?.frameCount || 1}-${impostorData?.grid?.cols || 1}x${impostorData?.grid?.rows || 1}`,
+        patches: [
+            createShaderPatch({
+                id: 'tree-octahedral-shader',
+                cacheKey: `tree-octahedral-shader-v1-${impostorData?.frameCount || 1}-${impostorData?.grid?.cols || 1}x${impostorData?.grid?.rows || 1}`,
+                metadata: {
+                    shaderFamily: 'standard',
+                    frameCount: impostorData?.frameCount || 1
+                },
+                apply(shader) {
+                    applyTreeOctahedralShaderPatch(shader, {
+                        impostor: {
+                            directions: impostorData?.directions || [],
+                            gridCols: impostorData?.grid?.cols || 1,
+                            gridRows: impostorData?.grid?.rows || 1,
+                            atlasTexelSize: [
+                                1 / Math.max(1, Number(impostorData?.atlasWidth) || 1024),
+                                1 / Math.max(1, Number(impostorData?.atlasHeight) || 1024)
+                            ],
+                            depthStrength: 2.0,
+                            normalSpace: impostorData?.normalSpace === 'object' ? 'object' : 'frame-local',
+                            depthRange: impostorData?.depthRange || { near: 0, far: 1 }
+                        }
+                        ,
+                        lighting: {
+                            ...lightingUniforms,
+                            depthTexture
+                        },
+                        debug: debugUniforms || undefined
+                    });
+                }
+            })
+        ]
+    });
+    mat.userData = mat.userData || {};
+    mat.userData.treeImpostorDebugUniforms = debugUniforms;
+    return mat;
+}
+
+export function makeTreeOctahedralDepthMaterial(texture, depthTexture, mainCameraPosUniform, lightDirUniform, impostorData, {
+    shadowFadeNear = 1200,
+    shadowFadeFar = 1800
+} = {}) {
+    const mat = new THREE.MeshDepthMaterial({
+        depthPacking: THREE.RGBADepthPacking,
+        alphaMap: texture,
+        alphaTest: 0.4,
+        side: THREE.DoubleSide
+    });
+
+    configureMaterialShaderPipeline(mat, {
+        baseCacheKey: `tree-octahedral-depth-v1-${impostorData?.frameCount || 1}-${impostorData?.grid?.cols || 1}x${impostorData?.grid?.rows || 1}-${shadowFadeNear}-${shadowFadeFar}`,
+        patches: [
+            createShaderPatch({
+                id: 'tree-octahedral-depth-shader',
+                cacheKey: `tree-octahedral-depth-shader-v1-${impostorData?.frameCount || 1}-${impostorData?.grid?.cols || 1}x${impostorData?.grid?.rows || 1}-${shadowFadeNear}-${shadowFadeFar}`,
+                metadata: {
+                    shaderFamily: 'depth',
+                    frameCount: impostorData?.frameCount || 1
+                },
+                apply(shader) {
+                    applyTreeOctahedralDepthShaderPatch(shader, {
+                        mainCameraPosUniform,
+                        lightDirUniform,
+                        depthTexture,
+                        impostor: {
+                            directions: impostorData?.directions || [],
+                            gridCols: impostorData?.grid?.cols || 1,
+                            gridRows: impostorData?.grid?.rows || 1,
+                            atlasTexelSize: [
+                                1 / Math.max(1, Number(impostorData?.atlasWidth) || 1024),
+                                1 / Math.max(1, Number(impostorData?.atlasHeight) || 1024)
+                            ],
+                            depthStrength: 2.0,
+                            normalSpace: impostorData?.normalSpace === 'object' ? 'object' : 'frame-local',
+                            depthRange: impostorData?.depthRange || { near: 0, far: 1 }
+                        },
+                        shadowFadeNear,
+                        shadowFadeFar
+                    });
                 }
             })
         ]

@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 5173);
 const SIM_DIST_INDEX = path.resolve(ROOT, 'sim-dist', 'index.html');
+const SIM_DIST_TREE_IMPOSTOR_VIEWER = path.resolve(ROOT, 'sim-dist', 'tree-impostor-viewer.html');
 const EDITOR_DIST_INDEX = path.resolve(ROOT, 'editor-dist', 'index.html');
 const VITE_BIN = path.resolve(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
 const IS_EDITOR_E2E = process.env.FSIM_EDITOR_E2E === '1';
@@ -116,6 +117,15 @@ function safeResolve(urlPath) {
     const decoded = decodeURIComponent(urlPath.split('?')[0]);
     if (decoded === '/' || decoded === '/fsim.html' || decoded === '/fsim.html/') {
         return ensureBuiltSim();
+    }
+    if (
+        decoded === '/tree-impostor-viewer'
+        || decoded === '/tree-impostor-viewer/'
+        || decoded === '/tree-impostor-viewer.html'
+        || decoded === '/tree-impostor-viewer.html/'
+    ) {
+        ensureBuiltSim();
+        return SIM_DIST_TREE_IMPOSTOR_VIEWER;
     }
     if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
         return ensureBuiltEditor();

@@ -74,11 +74,27 @@ type TreeTypeConfig = {
     depthMat: THREE.Material | null;
 };
 
+type TreeMeshPartResource = {
+    geometry: THREE.BufferGeometry;
+    material: THREE.Material;
+};
+
+type TreeModelMetrics = {
+    width: number;
+    height: number;
+    depth: number;
+};
+
 type TerrainTreeResources = {
     treeBillboardGeo: THREE.BufferGeometry;
     treeGroundGeo: THREE.BufferGeometry;
     treeTrunkGeo: THREE.BufferGeometry;
     treeTrunkMat: THREE.Material;
+    treeMeshParts?: TreeMeshPartResource[];
+    treeModelMetrics?: TreeModelMetrics | null;
+    treeOctahedralGeo?: THREE.BufferGeometry | null;
+    treeOctahedralMat?: THREE.Material | null;
+    treeOctahedralDepthMat?: THREE.Material | null;
     treeGroundMats: TreeGroundMaterialSet;
     treeTypeConfigs: Record<string, TreeTypeConfig>;
     terrainDebugSettings?: TerrainGenerationDebugSettings;
@@ -509,13 +525,47 @@ export function buildTreeMeshesForLod(
         : 'disabled';
     if (renderMode === 'disabled') return meshes;
 
+    const modelMetrics = resources.treeModelMetrics || { width: 1, height: 1, depth: 1 };
+    const normalizedModelHeight = Math.max(1e-4, modelMetrics.height || 1);
+    const modelWidthToHeight = Math.max(0.2, Math.min(4, (modelMetrics.width || 1) / normalizedModelHeight));
+    const referenceMeshMode = resources.terrainDebugSettings?.treeImpostorDebugReferenceMode || 'off';
+    const referenceMeshOffset = Math.max(0, Number(resources.terrainDebugSettings?.treeImpostorDebugReferenceOffset) || 0);
+    let referenceMeshSpawned = false;
+
     for (const [treeType, instances] of Object.entries(treeInstances || {})) {
         if (!instances || instances.length === 0) continue;
         const count = instances.length / 8;
         const cfg = treeTypeConfigs[treeType];
         if (!cfg || count === 0) continue;
 
-        if (renderMode === 'hybrid' || renderMode === 'crossed') {
+        if (renderMode === 'mesh' && Array.isArray(resources.treeMeshParts) && resources.treeMeshParts.length > 0) {
+            for (let partIndex = 0; partIndex < resources.treeMeshParts.length; partIndex += 1) {
+                const part = resources.treeMeshParts[partIndex];
+                const colorable = Boolean(part?.material?.transparent || (part?.material?.alphaTest || 0) > 0.01);
+                const mesh = getPooledInstancedMesh
+                    ? getPooledInstancedMesh(part.geometry, part.material, count, { colorable })
+                    : new THREE.InstancedMesh(part.geometry, part.material, count);
+                for (let i = 0; i < count; i++) {
+                    const offset = i * 8;
+                    const targetHeight = Math.max(1, instances[offset + 4]);
+                    const uniformScale = targetHeight / normalizedModelHeight;
+                    dummy.position.set(instances[offset + 0], instances[offset + 1], instances[offset + 2]);
+                    dummy.rotation.set(0, instances[offset + 5], 0);
+                    dummy.scale.setScalar(uniformScale);
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                }
+                mesh.instanceMatrix.needsUpdate = true;
+                if (colorable) {
+                    applyTreeInstanceColors(mesh, instances, cfg.baseTint);
+                }
+                mesh.castShadow = true;
+                mesh.receiveShadow = false;
+                mesh.userData.treeRenderTier = `near-mesh-${partIndex}`;
+                mesh.userData.treeType = treeType;
+                meshes.push(mesh);
+            }
+        } else if (renderMode === 'hybrid' || renderMode === 'crossed') {
             const trunkMesh = getPooledInstancedMesh
                 ? getPooledInstancedMesh(treeTrunkGeo, treeTrunkMat, count)
                 : new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, count);
@@ -583,6 +633,62 @@ export function buildTreeMeshesForLod(
                 mesh.userData.treeType = treeType;
                 meshes.push(mesh);
             });
+        } else if (renderMode === 'octahedral' && resources.treeOctahedralMat && resources.treeOctahedralGeo) {
+            const mesh = getPooledInstancedMesh
+                ? getPooledInstancedMesh(resources.treeOctahedralGeo, resources.treeOctahedralMat, count, { colorable: true })
+                : new THREE.InstancedMesh(resources.treeOctahedralGeo, resources.treeOctahedralMat, count);
+            const matrices = mesh.instanceMatrix.array;
+            for (let i = 0; i < count; i++) {
+                const offset = i * 8;
+                const m = i * 16;
+                const targetHeight = Math.max(1, instances[offset + 4]);
+                const scaleY = targetHeight;
+                matrices[m + 0] = targetHeight * modelWidthToHeight;
+                matrices[m + 1] = 0; matrices[m + 2] = 0; matrices[m + 3] = 0;
+                matrices[m + 4] = 0; matrices[m + 5] = scaleY; matrices[m + 6] = 0; matrices[m + 7] = 0;
+                matrices[m + 8] = 0; matrices[m + 9] = 0; matrices[m + 10] = 1; matrices[m + 11] = 0;
+                matrices[m + 12] = instances[offset + 0];
+                matrices[m + 13] = instances[offset + 1];
+                matrices[m + 14] = instances[offset + 2];
+                matrices[m + 15] = 1;
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            applyTreeInstanceColors(mesh, instances, cfg.baseTint);
+            mesh.castShadow = true;
+            mesh.receiveShadow = false;
+            mesh.customDepthMaterial = resources.treeOctahedralDepthMat || null;
+            mesh.userData.treeRenderTier = 'mid-octahedral';
+            mesh.userData.treeType = treeType;
+            meshes.push(mesh);
+
+            if (!referenceMeshSpawned
+                && referenceMeshMode !== 'off'
+                && Array.isArray(resources.treeMeshParts)
+                && resources.treeMeshParts.length > 0
+                && count > 0) {
+                const targetHeight = Math.max(1, instances[4]);
+                const uniformScale = targetHeight / normalizedModelHeight;
+                const sideBySideOffset = referenceMeshMode === 'side-by-side'
+                    ? targetHeight * Math.max(0.25, referenceMeshOffset || 1.35)
+                    : 0;
+                for (const [partIndex, part] of resources.treeMeshParts.entries()) {
+                    const referenceMesh = new THREE.Mesh(part.geometry, part.material);
+                    referenceMesh.position.set(
+                        instances[0] + sideBySideOffset,
+                        instances[1],
+                        instances[2]
+                    );
+                    referenceMesh.rotation.set(0, instances[5], 0);
+                    referenceMesh.scale.setScalar(uniformScale);
+                    referenceMesh.updateMatrix();
+                    referenceMesh.castShadow = false;
+                    referenceMesh.receiveShadow = false;
+                    referenceMesh.userData.treeRenderTier = `debug-reference-mesh-${partIndex}`;
+                    referenceMesh.userData.treeType = treeType;
+                    meshes.push(referenceMesh);
+                }
+                referenceMeshSpawned = true;
+            }
         } else if (renderMode === 'billboard') {
             const trunkHintMesh = getPooledInstancedMesh
                 ? getPooledInstancedMesh(treeTrunkGeo, treeTrunkMat, count)
@@ -636,7 +742,7 @@ export function buildTreeMeshesForLod(
         }
 
         if (lodCfg?.enableTreeContactShadows) {
-            const isNearHybrid = renderMode === 'hybrid' || renderMode === 'crossed';
+            const isNearHybrid = renderMode === 'hybrid' || renderMode === 'crossed' || renderMode === 'mesh';
             const groundMat = isNearHybrid ? resources.treeGroundMats.near : resources.treeGroundMats.mid;
             const groundMesh = getPooledInstancedMesh
                 ? getPooledInstancedMesh(treeGroundGeo, groundMat, count)
@@ -721,7 +827,11 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
             if (treesEnabled) {
                 buildTreeMeshesForLod(treeInstances, lodCfg, { 
-                    treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, 
+                    treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs,
+                    treeMeshParts: ctx.treeMeshParts,
+                    treeOctahedralGeo: ctx.treeOctahedralGeo,
+                    treeOctahedralMat: ctx.treeOctahedralMat,
+                    treeOctahedralDepthMat: ctx.treeOctahedralDepthMat,
                     terrainDebugSettings: ctx.terrainDebugSettings, 
                     getPooledInstancedMesh // Pass this through
                 })
@@ -759,7 +869,11 @@ export async function generateChunkProps(chunkGroup, cx, cz, lod, ctx) {
 
     if (treesEnabled) {
         buildTreeMeshesForLod(treeInstances, lodCfg, { 
-            treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, 
+            treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs,
+            treeMeshParts: ctx.treeMeshParts,
+            treeOctahedralGeo: ctx.treeOctahedralGeo,
+            treeOctahedralMat: ctx.treeOctahedralMat,
+            treeOctahedralDepthMat: ctx.treeOctahedralDepthMat,
             terrainDebugSettings: ctx.terrainDebugSettings,
             getPooledInstancedMesh // Pass this through
         })

@@ -264,28 +264,101 @@ function refreshLodState() {
 
 if (debugGui) {
   if (terrainDebugSettings && typeof applyTerrainDebugSettings === 'function') {
+    const applyTerrainDebugUniformSettings = () => applyTerrainDebugSettings({
+      rebuildSurfaces: false,
+      refreshSelection: false
+    });
+    const rebuildTerrainDebugProps = () => applyTerrainDebugSettings({
+      rebuildProps: true,
+      refreshSelection: false
+    });
     const systemsFolder = debugGui.addFolder('Systems');
     systemsFolder.add(terrainDebugSettings, 'showTerrain')
       .name('Terrain')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+      .onChange(() => applyTerrainDebugUniformSettings());
     systemsFolder.add(terrainDebugSettings, 'showWater')
       .name('Water')
-      .onChange(() => applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false }));
+      .onChange(() => applyTerrainDebugUniformSettings());
     systemsFolder.add(terrainDebugSettings, 'showObjects')
       .name('Objects')
-      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+      .onChange(() => rebuildTerrainDebugProps());
     systemsFolder.add(terrainDebugSettings, 'showTrees')
       .name('Trees')
-      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+      .onChange(() => rebuildTerrainDebugProps());
     systemsFolder.add(terrainDebugSettings, 'showBuildings')
       .name('Buildings')
-      .onChange(() => applyTerrainDebugSettings({ rebuildProps: true, refreshSelection: false }));
+      .onChange(() => rebuildTerrainDebugProps());
     systemsFolder.add(terrainDebugSettings, 'enableChunkGeneration')
       .name('Chunk Generation')
       .onChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
     systemsFolder.add(terrainDebugSettings, 'enableLeafGeneration')
       .name('Leaf Generation')
       .onChange(() => applyTerrainDebugSettings({ refreshSelection: true }));
+
+    const treeImpostorDebugModes = [
+      'lit',
+      'albedo_only',
+      'normal_atlas_raw',
+      'depth_raw',
+      'frame_dir_a',
+      'frame_dir_b',
+      'blend_weight',
+      'local_normal',
+      'world_normal',
+      'view_normal',
+      'light_dir_view',
+      'ndotl',
+      'backlight'
+    ];
+    const treeImpostorDebugFolder = debugGui.addFolder('Tree Impostor Debug');
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugMode', treeImpostorDebugModes)
+      .name('Mode')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFreezeFrameIndex')
+      .name('Freeze Frame')
+      .min(-1)
+      .max(15)
+      .step(1)
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugDisableFrameBlend')
+      .name('Disable Blend')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipNormalX')
+      .name('Flip Normal X')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipNormalY')
+      .name('Flip Normal Y')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipNormalZ')
+      .name('Flip Normal Z')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipFrameDir')
+      .name('Flip Frame Dir')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipLightDir')
+      .name('Flip Light Dir')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipBasisRight')
+      .name('Flip Basis Right')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugFlipBasisUp')
+      .name('Flip Basis Up')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugDisableDepthNormal')
+      .name('Depth Only')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugDisableAtlasNormal')
+      .name('Atlas Only')
+      .onChange(() => applyTerrainDebugUniformSettings());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugReferenceMode', ['off', 'overlay', 'side-by-side'])
+      .name('Reference Mesh')
+      .onChange(() => rebuildTerrainDebugProps());
+    treeImpostorDebugFolder.add(terrainDebugSettings, 'treeImpostorDebugReferenceOffset')
+      .name('Reference Offset')
+      .min(0)
+      .max(8)
+      .step(0.05)
+      .onChange(() => rebuildTerrainDebugProps());
   }
 
   const shadowsFolder = debugGui.addFolder('Shadows');

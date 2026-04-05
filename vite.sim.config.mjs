@@ -27,6 +27,12 @@ export default defineConfig({
     build: {
         outDir: path.resolve(ROOT, 'sim-dist'),
         emptyOutDir: true,
-        assetsDir: 'assets'
+        assetsDir: 'assets',
+        rollupOptions: {
+            input: {
+                main: path.resolve(ROOT, 'src', 'sim-app', 'index.html'),
+                treeImpostorViewer: path.resolve(ROOT, 'src', 'sim-app', 'tree-impostor-viewer.html')
+            }
+        }
     }
 });

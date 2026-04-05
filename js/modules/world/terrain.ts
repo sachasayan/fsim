@@ -5,15 +5,52 @@ import { createWaterNormalMap, createTreeBillboardTexture, createTreeContactText
 import {
   makeTreeBillboardMaterial,
   makeTreeDepthMaterial,
+  makeTreeOctahedralDepthMaterial,
+  makeTreeOctahedralMaterial,
   createDetailedBuildingMat,
   setupTerrainMaterial,
   setupWaterMaterial,
   setupBuildingPopIn
 } from './terrain/TerrainMaterials.js';
+import { getTreeAssetBundle } from './terrain/TreeAssetLoader.js';
 import { getRoadMarkingStyle, DASH_SCALE } from './terrain/RoadMarkingOverlay.js';
 import { buildRoadNetworkGraph, generateRoadNetworkGeometries } from './terrain/RoadNetworkGeometry.js';
 
 const tempMainCameraPosUniform = { value: new THREE.Vector3() };
+const tempTreeLightDirUniform = { value: new THREE.Vector3(0.25, 0.85, 0.45).normalize() };
+const tempTreeLightColorUniform = { value: new THREE.Color(0xffffff) };
+const tempTreeLightIntensityUniform = { value: 1.0 };
+const TREE_IMPOSTOR_DEBUG_MODE_VALUES = Object.freeze({
+  lit: 0,
+  albedo_only: 1,
+  normal_atlas_raw: 2,
+  depth_raw: 3,
+  frame_dir_a: 4,
+  frame_dir_b: 5,
+  blend_weight: 6,
+  local_normal: 7,
+  world_normal: 8,
+  view_normal: 9,
+  light_dir_view: 10,
+  ndotl: 11,
+  backlight: 12
+});
+const treeImpostorDebugUniforms = {
+  modeUniform: { value: 0 },
+  freezeFrameIndexUniform: { value: -1 },
+  disableFrameBlendUniform: { value: 0 },
+  flipNormalXUniform: { value: 0 },
+  flipNormalYUniform: { value: 0 },
+  flipNormalZUniform: { value: 0 },
+  flipFrameDirUniform: { value: 0 },
+  flipLightDirUniform: { value: 0 },
+  flipBasisRightUniform: { value: 0 },
+  flipBasisUpUniform: { value: 0 },
+  disableDepthNormalUniform: { value: 0 },
+  disableAtlasNormalUniform: { value: 0 }
+};
+const tempTreeLightDelta = new THREE.Vector3();
+const tempTreeLightWorldPos = new THREE.Vector3();
 import {
   getTerrainHeight,
   getTerrainMaskSet,
@@ -696,7 +733,21 @@ export function createTerrainSystem({
     waterAtmosphereDesaturation: 0.08,
     waterShadowContrast: 0.3,
     showTrees: true,
-    showBuildings: true
+    showBuildings: true,
+    treeImpostorDebugMode: 'lit',
+    treeImpostorDebugFreezeFrameIndex: -1,
+    treeImpostorDebugDisableFrameBlend: false,
+    treeImpostorDebugFlipNormalX: false,
+    treeImpostorDebugFlipNormalY: false,
+    treeImpostorDebugFlipNormalZ: false,
+    treeImpostorDebugFlipFrameDir: false,
+    treeImpostorDebugFlipLightDir: false,
+    treeImpostorDebugFlipBasisRight: false,
+    treeImpostorDebugFlipBasisUp: false,
+    treeImpostorDebugDisableDepthNormal: false,
+    treeImpostorDebugDisableAtlasNormal: false,
+    treeImpostorDebugReferenceMode: 'off',
+    treeImpostorDebugReferenceOffset: 1.35
   };
   let lastTerrainSelection: TerrainSelectionSnapshot = {
     mode: 'grid_fallback',
@@ -1144,6 +1195,22 @@ export function createTerrainSystem({
       rebuildGrassNormalTexture();
     };
   }
+  function applyTreeImpostorDebugSettings() {
+    treeImpostorDebugUniforms.modeUniform.value = TREE_IMPOSTOR_DEBUG_MODE_VALUES[terrainDebugSettings.treeImpostorDebugMode] ?? 0;
+    treeImpostorDebugUniforms.freezeFrameIndexUniform.value = Number.isFinite(terrainDebugSettings.treeImpostorDebugFreezeFrameIndex)
+      ? Math.round(terrainDebugSettings.treeImpostorDebugFreezeFrameIndex)
+      : -1;
+    treeImpostorDebugUniforms.disableFrameBlendUniform.value = terrainDebugSettings.treeImpostorDebugDisableFrameBlend ? 1 : 0;
+    treeImpostorDebugUniforms.flipNormalXUniform.value = terrainDebugSettings.treeImpostorDebugFlipNormalX ? 1 : 0;
+    treeImpostorDebugUniforms.flipNormalYUniform.value = terrainDebugSettings.treeImpostorDebugFlipNormalY ? 1 : 0;
+    treeImpostorDebugUniforms.flipNormalZUniform.value = terrainDebugSettings.treeImpostorDebugFlipNormalZ ? 1 : 0;
+    treeImpostorDebugUniforms.flipFrameDirUniform.value = terrainDebugSettings.treeImpostorDebugFlipFrameDir ? 1 : 0;
+    treeImpostorDebugUniforms.flipLightDirUniform.value = terrainDebugSettings.treeImpostorDebugFlipLightDir ? 1 : 0;
+    treeImpostorDebugUniforms.flipBasisRightUniform.value = terrainDebugSettings.treeImpostorDebugFlipBasisRight ? 1 : 0;
+    treeImpostorDebugUniforms.flipBasisUpUniform.value = terrainDebugSettings.treeImpostorDebugFlipBasisUp ? 1 : 0;
+    treeImpostorDebugUniforms.disableDepthNormalUniform.value = terrainDebugSettings.treeImpostorDebugDisableDepthNormal ? 1 : 0;
+    treeImpostorDebugUniforms.disableAtlasNormalUniform.value = terrainDebugSettings.treeImpostorDebugDisableAtlasNormal ? 1 : 0;
+  }
   setColorFromLinearArray(waterSurfaceUniforms.uWaterFoamColor.value, getWaterDepthSrgb(0));
   setColorFromLinearArray(waterSurfaceUniforms.uWaterShallowColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.shallowStart + 0.01));
   setColorFromLinearArray(waterSurfaceUniforms.uWaterDeepColor.value, getWaterDepthSrgb(WATER_DEPTH_BANDS.deepEnd + 1));
@@ -1182,6 +1249,7 @@ export function createTerrainSystem({
     invalidateActiveLeafSurfaces,
     rebuildHydrologyMeshes,
     invalidateChunkProps,
+    applyTreeImpostorDebugSettings,
     updateTerrain
   });
   applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false });
@@ -1794,12 +1862,51 @@ export function createTerrainSystem({
     poplar: { canopyMat: treeCanopyMats.poplar, depthMat: treeDepthMats.poplar, hRange: [13, 24], wScale: 0.4, baseTint: new THREE.Color(0xa7be88) },
     dry: { canopyMat: treeCanopyMats.dry, depthMat: treeDepthMats.dry, hRange: [9, 17], wScale: 0.58, baseTint: new THREE.Color(0xb3af7e) }
   };
+  const treeOctahedralGeo = treeBillboardGeo.clone();
+  const treeAssetState = {
+    meshParts: [],
+    modelMetrics: { width: 1, height: 1, depth: 1 },
+    octahedralMat: null,
+    octahedralDepthMat: null,
+    loaded: false,
+    error: null
+  };
   const treeGroundMats = {
     near: new THREE.MeshBasicMaterial({ map: treeContactTexture, color: 0x000000, transparent: true, opacity: 0.26, depthWrite: false }),
     mid: new THREE.MeshBasicMaterial({ map: treeContactTexture, color: 0x000000, transparent: true, opacity: 0.16, depthWrite: false })
   };
   treeGroundMats.near.toneMapped = false;
   treeGroundMats.mid.toneMapped = false;
+
+  getTreeAssetBundle().then((bundle) => {
+    treeAssetState.meshParts = bundle.meshParts || [];
+    treeAssetState.modelMetrics = bundle.modelMetrics || treeAssetState.modelMetrics;
+    treeAssetState.octahedralMat = makeTreeOctahedralMaterial(
+      bundle.impostor.albedoTexture,
+      bundle.impostor.normalTexture,
+      bundle.impostor.depthTexture,
+      bundle.impostor.metadata,
+      {
+        lightDirUniform: tempTreeLightDirUniform,
+        lightColorUniform: tempTreeLightColorUniform,
+        lightIntensityUniform: tempTreeLightIntensityUniform
+      },
+      treeImpostorDebugUniforms
+    );
+    treeAssetState.octahedralDepthMat = makeTreeOctahedralDepthMaterial(
+      bundle.impostor.albedoTexture,
+      bundle.impostor.depthTexture,
+      tempMainCameraPosUniform,
+      tempTreeLightDirUniform,
+      bundle.impostor.metadata,
+      { shadowFadeNear: 1400, shadowFadeFar: 2100 }
+    );
+    treeAssetState.loaded = true;
+    applyTerrainDebugSettings({ rebuildSurfaces: false, refreshSelection: false, rebuildProps: true });
+  }).catch((error) => {
+    treeAssetState.error = error;
+    console.warn('[terrain] Failed to load tree-1 assets:', error);
+  });
 
   const hullGeo = new THREE.BoxGeometry(2.5, 1.2, 8); hullGeo.translate(0, 0.6, 0);
   const cabinGeo = new THREE.BoxGeometry(2.0, 1.5, 3); cabinGeo.translate(0, 1.9, -1);
@@ -2036,7 +2143,13 @@ export function createTerrainSystem({
 
   function generateChunkProps(chunkGroup, cx, cz, lod = 0) {
     return genProps(chunkGroup, cx, cz, lod, {
-      LOD_LEVELS, Noise, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
+      LOD_LEVELS, Noise, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs,
+      treeMeshParts: treeAssetState.meshParts,
+      treeModelMetrics: treeAssetState.modelMetrics,
+      treeOctahedralGeo,
+      treeOctahedralMat: treeAssetState.octahedralMat,
+      treeOctahedralDepthMat: treeAssetState.octahedralDepthMat,
+      detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
       windmillTowerGeo, windmillTowerMat, windmillNacelleGeo, windmillNacelleMat, windmillHubGeo, windmillHubMat, windmillBladeGeo, windmillBladeMat,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,
@@ -2550,6 +2663,16 @@ export function createTerrainSystem({
     if (camera) {
       atmosphereCameraPos.copy(camera.position);
       tempMainCameraPosUniform.value.copy(camera.position);
+      const primaryDirectionalLight = scene.children.find((child) => child?.isDirectionalLight && child.visible);
+      if (primaryDirectionalLight) {
+        const lightTargetPosition = primaryDirectionalLight.target?.getWorldPosition?.(tempTreeLightDelta) || tempTreeLightDelta.set(0, 0, 0);
+        tempTreeLightDirUniform.value
+          .copy(primaryDirectionalLight.getWorldPosition(tempTreeLightWorldPos))
+          .sub(lightTargetPosition)
+          .normalize();
+        tempTreeLightColorUniform.value.copy(primaryDirectionalLight.color);
+        tempTreeLightIntensityUniform.value = primaryDirectionalLight.intensity;
+      }
       leafWaterOverlayRenderer.update();
       oceanRenderer.update(camera.position);
       const movedSinceLastSyncSq = Number.isFinite(lastSurfaceShadowSyncPos.x)
@@ -2728,7 +2851,11 @@ export function createTerrainSystem({
         metadata: { system: 'terrain', variant: 'tree-billboard' },
         build() {
           const treeGeo = createTreeWarmupGeometry();
-          const mesh = makeWarmupInstancedMesh(treeGeo, treeCanopyMats.broadleaf, new THREE.Vector3(960, 0, 0));
+          const mesh = makeWarmupInstancedMesh(
+            treeGeo,
+            treeAssetState.octahedralMat || treeCanopyMats.broadleaf,
+            new THREE.Vector3(960, 0, 0)
+          );
           return {
             objects: [mesh],
             dispose() {
@@ -2738,11 +2865,15 @@ export function createTerrainSystem({
         }
       },
       {
-        id: 'tree-depth',
-        metadata: { system: 'terrain', variant: 'tree-depth' },
+        id: 'tree-octahedral-depth',
+        metadata: { system: 'terrain', variant: 'tree-octahedral-depth' },
         build() {
           const treeGeo = createTreeWarmupGeometry();
-          const mesh = makeWarmupInstancedMesh(treeGeo, treeDepthMats.broadleaf, new THREE.Vector3(1120, 0, 0));
+          const mesh = makeWarmupInstancedMesh(
+            treeGeo,
+            treeAssetState.octahedralDepthMat || treeDepthMats.broadleaf,
+            new THREE.Vector3(1120, 0, 0)
+          );
           return {
             objects: [mesh],
             dispose() {
@@ -2890,7 +3021,13 @@ export function createTerrainSystem({
     await fetchDistrictIndex();
 
     const ctx = {
-      LOD_LEVELS, Noise, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs, detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
+      LOD_LEVELS, Noise, treeBillboardGeo, treeGroundGeo, treeTrunkGeo, treeTrunkMat, treeGroundMats, treeTypeConfigs,
+      treeMeshParts: treeAssetState.meshParts,
+      treeModelMetrics: treeAssetState.modelMetrics,
+      treeOctahedralGeo,
+      treeOctahedralMat: treeAssetState.octahedralMat,
+      treeOctahedralDepthMat: treeAssetState.octahedralDepthMat,
+      detailedBuildingMats, baseBuildingMat, baseBuildingGeo,
       roofCapGeo, roofCapMat, podiumGeo, podiumMat, spireGeo, spireMat, hvacGeo, hvacMat, getPooledInstancedMesh,
       windmillTowerGeo, windmillTowerMat, windmillNacelleGeo, windmillNacelleMat, windmillHubGeo, windmillHubMat, windmillBladeGeo, windmillBladeMat,
       hullGeo, hullMat, cabinGeo, cabinMat, mastGeo, mastMat, dummy, atmosphereUniforms,

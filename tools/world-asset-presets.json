@@ -99,7 +99,13 @@
     },
     "tree-1": {
       "category": "scenery",
-      "targetTriangles": 12000
+      "targetTriangles": 12000,
+      "impostorBake": {
+        "enabled": true,
+        "outputDir": "world/impostors/tree-1",
+        "gridSize": 4,
+        "frameSize": 256
+      }
     }
   }
 }

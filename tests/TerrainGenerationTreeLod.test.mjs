@@ -20,6 +20,11 @@ function makeResources() {
                 depthMat: new THREE.MeshDepthMaterial(),
                 baseTint: new THREE.Color(0x88aa77)
             }
+        },
+        treeModelMetrics: {
+            width: 0.8,
+            height: 1,
+            depth: 0.8
         }
     };
 }
@@ -70,4 +75,72 @@ test('buildTreeMeshesForLod omits trees when disabled', () => {
     }, makeResources());
 
     assert.deepEqual(meshes, []);
+});
+
+test('buildTreeMeshesForLod uses uniform scale for mesh trees and asset aspect for octahedral trees', () => {
+    const resources = makeResources();
+    resources.treeMeshParts = [{
+        geometry: new THREE.BoxGeometry(1, 1, 1),
+        material: new THREE.MeshStandardMaterial({ transparent: true, alphaTest: 0.2 })
+    }];
+    resources.treeOctahedralGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+    resources.treeOctahedralGeo.translate(0, 0.5, 0);
+    resources.treeOctahedralMat = new THREE.MeshStandardMaterial({ transparent: true, alphaTest: 0.2 });
+    resources.treeOctahedralDepthMat = new THREE.MeshDepthMaterial();
+
+    const meshLod = buildTreeMeshesForLod(makeInstances(), {
+        enableTrees: true,
+        treeRenderMode: 'mesh',
+        enableTreeContactShadows: false
+    }, resources);
+    const meshMatrix = new THREE.Matrix4();
+    const meshPosition = new THREE.Vector3();
+    const meshQuaternion = new THREE.Quaternion();
+    const meshScale = new THREE.Vector3();
+    meshLod[0].getMatrixAt(0, meshMatrix);
+    meshMatrix.decompose(meshPosition, meshQuaternion, meshScale);
+    assert.ok(Math.abs(meshScale.x - meshScale.y) < 1e-6);
+    assert.ok(Math.abs(meshScale.z - meshScale.y) < 1e-6);
+
+    const octahedralLod = buildTreeMeshesForLod(makeInstances(), {
+        enableTrees: true,
+        treeRenderMode: 'octahedral',
+        enableTreeContactShadows: false
+    }, resources);
+    const impostorMatrix = new THREE.Matrix4();
+    const impostorPosition = new THREE.Vector3();
+    const impostorQuaternion = new THREE.Quaternion();
+    const impostorScale = new THREE.Vector3();
+    octahedralLod[0].getMatrixAt(0, impostorMatrix);
+    impostorMatrix.decompose(impostorPosition, impostorQuaternion, impostorScale);
+    assert.ok(Math.abs(impostorScale.y - 15) < 1e-6);
+    assert.ok(Math.abs(impostorScale.x - (15 * 0.8)) < 1e-6);
+});
+
+test('buildTreeMeshesForLod can add a single diagnostic reference mesh beside octahedral trees', () => {
+    const resources = makeResources();
+    resources.treeMeshParts = [{
+        geometry: new THREE.BoxGeometry(1, 1, 1),
+        material: new THREE.MeshStandardMaterial({ transparent: true, alphaTest: 0.2 })
+    }];
+    resources.treeOctahedralGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+    resources.treeOctahedralGeo.translate(0, 0.5, 0);
+    resources.treeOctahedralMat = new THREE.MeshStandardMaterial({ transparent: true, alphaTest: 0.2 });
+    resources.treeOctahedralDepthMat = new THREE.MeshDepthMaterial();
+    resources.terrainDebugSettings = {
+        treeImpostorDebugReferenceMode: 'side-by-side',
+        treeImpostorDebugReferenceOffset: 2
+    };
+
+    const meshes = buildTreeMeshesForLod(makeInstances(), {
+        enableTrees: true,
+        treeRenderMode: 'octahedral',
+        enableTreeContactShadows: false
+    }, resources);
+
+    assert.equal(meshes.filter((mesh) => mesh.userData.treeRenderTier === 'mid-octahedral').length, 1);
+    assert.equal(meshes.filter((mesh) => /^debug-reference-mesh-/.test(mesh.userData.treeRenderTier)).length, 1);
+    const referenceMesh = meshes.find((mesh) => mesh.userData.treeRenderTier === 'debug-reference-mesh-0');
+    assert.equal(referenceMesh.castShadow, false);
+    assert.equal(referenceMesh.receiveShadow, false);
 });

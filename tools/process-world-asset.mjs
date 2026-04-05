@@ -8,6 +8,7 @@ const repoRoot = process.cwd();
 const manifestPath = path.join(repoRoot, 'tools', 'world-asset-presets.json');
 const targetHeightsPath = path.join(repoRoot, 'tools', 'world-asset-target-heights.json');
 const blenderScriptPath = path.join(repoRoot, 'tools', 'blender', 'decimate_world_asset.py');
+const treeImpostorBakeScriptPath = path.join(repoRoot, 'tools', 'bake-tree-impostor.mjs');
 
 function parseArgs(argv) {
   const args = {
@@ -15,7 +16,7 @@ function parseArgs(argv) {
     assetNames: [],
     // On macOS, Blender is often installed at /Applications/Blender.app/Contents/MacOS/Blender
     // even when `blender` is not on PATH.
-    blenderPath: process.env.BLENDER_BIN || 'blender',
+    blenderPath: process.env.BLENDER_BIN || '/Applications/Blender.app/Contents/MacOS/Blender',
     stage: false,
     dryRun: false,
     force: false
@@ -184,6 +185,29 @@ function stageGameReadyCopy(preset, resolved) {
   console.log(`  staged    ${path.relative(repoRoot, resolved.gameReadyPath)} (${formatBytes(bytes)})`);
 }
 
+function runTreeImpostorBake(args, preset) {
+  if (!preset?.impostorBake?.enabled) return;
+  const bakeArgs = [
+    treeImpostorBakeScriptPath,
+    '--asset',
+    preset.name,
+    '--blender',
+    args.blenderPath
+  ];
+  if (args.force) bakeArgs.push('--force');
+  if (args.dryRun) bakeArgs.push('--dry-run');
+  const result = spawnSync(process.execPath, bakeArgs, {
+    cwd: repoRoot,
+    stdio: 'inherit'
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`Tree impostor bake failed for '${preset.name}' with exit code ${result.status}.`);
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const manifest = loadManifest(args.manifestPath || manifestPath);
@@ -220,6 +244,8 @@ function main() {
     if (args.stage && !args.dryRun) {
       stageGameReadyCopy(preset, resolved);
     }
+
+    runTreeImpostorBake(args, preset);
   }
 }
 
