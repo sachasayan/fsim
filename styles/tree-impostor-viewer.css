@@ -58,3 +58,45 @@ html, body, #app {
     line-height: 1.45;
     color: #f3f7fb;
 }
+
+#viewer-selector-panel {
+    margin: 0 0 12px;
+}
+
+.viewer-selector-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.viewer-selector-card {
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(18, 26, 35, 0.75);
+    border: 1px solid rgba(186, 207, 230, 0.12);
+}
+
+.viewer-selector-card h2 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #d9e6f4;
+}
+
+#viewer-atlas-grid,
+#viewer-tile-primary,
+#viewer-tile-secondary {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    background: rgba(5, 9, 13, 0.95);
+    border: 1px solid rgba(186, 207, 230, 0.12);
+}
+
+.viewer-tile-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}

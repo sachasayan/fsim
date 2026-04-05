@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import {
+  buildSilhouetteFriendlyFrameLayout,
   buildOctahedralFrameDirections,
   decodeOctahedralDirection,
   encodeOctahedralDirection,
@@ -64,6 +65,63 @@ test('weighted impostor selection uses a stable local neighborhood in octahedral
   assert.ok(Math.abs(rightWeightSum - 1) < 1e-6);
 });
 
+test('silhouette-friendly frame layout uses unique directions and semantic frame bands', () => {
+  const layout = buildSilhouetteFriendlyFrameLayout();
+  assert.equal(layout.directions.length, 16);
+  assert.equal(layout.frameBands.length, 16);
+  assert.equal(layout.viewBlendMode, 'direction-weighted');
+  assert.equal(layout.gridCols, 4);
+  assert.equal(layout.gridRows, 4);
+  assert.equal(layout.elevatedThreshold, 0.52);
+  assert.equal(layout.highCardinalThreshold, 0.82);
+
+  const counts = layout.frameBands.reduce((acc, band) => {
+    acc[band] = (acc[band] || 0) + 1;
+    return acc;
+  }, {});
+  assert.deepEqual(counts, {
+    horizon: 8,
+    elevated: 4,
+    'high-cardinal': 4
+  });
+
+  const uniqueDirections = new Set(layout.directions.map((direction) => (
+    direction.toArray().map((value) => value.toFixed(6)).join(',')
+  )));
+  assert.equal(uniqueDirections.size, 16, 'Expected all silhouette-friendly frame directions to be unique');
+});
+
+test('direction-weighted selection keeps low side-front views in the horizon band', () => {
+  const layout = buildSilhouetteFriendlyFrameLayout();
+  const sideFront = new THREE.Vector3(0.62, 0.18, 0.76).normalize();
+  const selection = findWeightedImpostorFrames(sideFront, layout);
+
+  assert.equal(layout.frameBands[selection.primaryIndex], 'horizon');
+  assert.ok([4, 5].includes(selection.primaryIndex), `Expected side-front primary frame to stay on horizon ring, got ${selection.primaryIndex}`);
+
+  const horizonWeight = selection.frameWeights.reduce((sum, entry) => (
+    layout.frameBands[entry.index] === 'horizon' ? sum + entry.weight : sum
+  ), 0);
+  const elevatedWeight = selection.frameWeights.reduce((sum, entry) => (
+    layout.frameBands[entry.index] === 'elevated' ? sum + entry.weight : sum
+  ), 0);
+  const highCardinalWeight = selection.frameWeights.reduce((sum, entry) => (
+    layout.frameBands[entry.index] === 'high-cardinal' ? sum + entry.weight : sum
+  ), 0);
+
+  assert.ok(horizonWeight > elevatedWeight, `Expected horizon frames to outweigh elevated ones (${horizonWeight} vs ${elevatedWeight})`);
+  assert.ok(horizonWeight > highCardinalWeight, `Expected horizon frames to outweigh high-cardinal ones (${horizonWeight} vs ${highCardinalWeight})`);
+});
+
+test('direction-weighted selection promotes elevated frames only once view pitch rises', () => {
+  const layout = buildSilhouetteFriendlyFrameLayout();
+  const elevatedSideFront = new THREE.Vector3(0.46, 0.72, 0.52).normalize();
+  const selection = findWeightedImpostorFrames(elevatedSideFront, layout);
+
+  assert.equal(layout.frameBands[selection.primaryIndex], 'elevated');
+  assert.ok([10, 14].includes(selection.primaryIndex), `Expected elevated side-front to choose an elevated-compatible frame, got ${selection.primaryIndex}`);
+});
+
 test('runtime LOD defaults resolve to octahedral then octahedral then disabled', () => {
   const lodSettings = createRuntimeLodSettings();
   assert.equal(lodSettings.terrain.lodLevels[0].treeRenderMode, 'octahedral');
@@ -81,10 +139,15 @@ test('octahedral tree materials build shader pipeline metadata', () => {
   normalTexture.needsUpdate = true;
   const depthTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
   depthTexture.needsUpdate = true;
+  const layout = buildSilhouetteFriendlyFrameLayout();
   const metadata = {
-    frameCount: 4,
-    grid: { cols: 2, rows: 2 },
-    directions: buildOctahedralFrameDirections(2)
+    frameCount: layout.directions.length,
+    grid: { cols: layout.gridCols, rows: layout.gridRows },
+    directions: layout.directions,
+    frameBands: layout.frameBands,
+    viewBlendMode: layout.viewBlendMode,
+    elevatedThreshold: layout.elevatedThreshold,
+    highCardinalThreshold: layout.highCardinalThreshold
   };
 
   const colorMaterial = makeTreeOctahedralMaterial(colorTexture, normalTexture, depthTexture, metadata);
@@ -103,7 +166,7 @@ test('octahedral tree materials build shader pipeline metadata', () => {
 });
 
 test('octahedral shader patches wire lighting uniforms without duplicate vertex varyings', () => {
-  const directions = buildOctahedralFrameDirections(2);
+  const layout = buildSilhouetteFriendlyFrameLayout();
   const baseVertexShader = `
 #include <common>
 #include <begin_vertex>
@@ -124,11 +187,15 @@ vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
 
   applyColorPatch(shader, {
     impostor: {
-      directions,
-      gridCols: 2,
-      gridRows: 2,
+      directions: layout.directions,
+      frameBands: layout.frameBands,
+      gridCols: layout.gridCols,
+      gridRows: layout.gridRows,
       atlasTexelSize: [1 / 1024, 1 / 1024],
-      depthStrength: 4
+      depthStrength: 4,
+      viewBlendMode: layout.viewBlendMode,
+      elevatedThreshold: layout.elevatedThreshold,
+      highCardinalThreshold: layout.highCardinalThreshold
     },
     lighting: {
       lightDirUniform: { value: new THREE.Vector3(0.25, 0.85, 0.45).normalize() },
@@ -147,6 +214,9 @@ vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
   assert.equal((shader.vertexShader.match(/varying vec3 vTreeInstanceXAxis;/g) || []).length, 1);
   assert.match(shader.fragmentShader, /uTreeImpostorDepthTex/);
   assert.match(shader.fragmentShader, /uTreeLightDirWorld/);
+  assert.match(shader.vertexShader, /uTreeImpostorFrameBands/);
+  assert.match(shader.vertexShader, /uTreeImpostorElevatedThreshold/);
+  assert.match(shader.vertexShader, /uTreeImpostorHighCardinalThreshold/);
   assert.match(shader.vertexShader, /uTreeImpostorDebugFreezeFrameIndex/);
   assert.match(shader.vertexShader, /uTreeImpostorDebugDisableFrameBlend/);
   assert.match(shader.vertexShader, /frozenIndex = clamp\(floor\(uTreeImpostorDebugFreezeFrameIndex \+ 0\.5\)/);
@@ -165,7 +235,7 @@ vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
 });
 
 test('octahedral depth patch uses light-driven shadow selection', () => {
-  const directions = buildOctahedralFrameDirections(2);
+  const layout = buildSilhouetteFriendlyFrameLayout();
   const shader = {
     uniforms: {},
     defines: {},
@@ -185,15 +255,20 @@ test('octahedral depth patch uses light-driven shadow selection', () => {
     lightDirUniform: { value: new THREE.Vector3(0.25, 0.85, 0.45).normalize() },
     depthTexture: new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat),
     impostor: {
-      directions,
-      gridCols: 2,
-      gridRows: 2,
+      directions: layout.directions,
+      frameBands: layout.frameBands,
+      gridCols: layout.gridCols,
+      gridRows: layout.gridRows,
       atlasTexelSize: [1 / 1024, 1 / 1024],
-      depthStrength: 4
+      depthStrength: 4,
+      viewBlendMode: layout.viewBlendMode,
+      elevatedThreshold: layout.elevatedThreshold,
+      highCardinalThreshold: layout.highCardinalThreshold
     }
   });
 
   assert.match(shader.vertexShader, /uTreeLightDirWorld/);
+  assert.match(shader.vertexShader, /uTreeImpostorFrameBands/);
   assert.match(shader.vertexShader, /dot\(lightDir, instanceXAxis\)/);
   assert.match(shader.fragmentShader, /uTreeImpostorDepthTex/);
 });

@@ -3,6 +3,12 @@
 import * as THREE from 'three';
 
 const OCT_EPSILON = 1e-6;
+const DIRECTION_WEIGHT_EXPONENT = 4.0;
+const DEFAULT_ELEVATED_THRESHOLD = 0.52;
+const DEFAULT_HIGH_CARDINAL_THRESHOLD = 0.82;
+const HORIZON_BAND = 'horizon';
+const ELEVATED_BAND = 'elevated';
+const HIGH_CARDINAL_BAND = 'high-cardinal';
 
 /**
  * @typedef {{ index: number, weight: number }} WeightedImpostorFrame
@@ -13,6 +19,14 @@ const OCT_EPSILON = 1e-6;
  *   blend: number,
  *   encodedUv: THREE.Vector2
  * }} WeightedImpostorFrameSelection
+ * @typedef {'horizon' | 'elevated' | 'high-cardinal'} TreeImpostorFrameBand
+ * @typedef {{
+ *   directions: THREE.Vector3[],
+ *   frameBands?: TreeImpostorFrameBand[],
+ *   viewBlendMode?: string,
+ *   elevatedThreshold?: number,
+ *   highCardinalThreshold?: number
+ * }} TreeImpostorSelectionConfig
  */
 
 /**
@@ -70,12 +84,80 @@ export function buildOctahedralFrameDirections(gridSize = 4) {
     return directions;
 }
 
-/**
- * @param {THREE.Vector3 | { x: number, y: number, z: number }} direction
- * @param {number} gridCols
- * @param {number} gridRows
- */
-export function findWeightedImpostorFrames(direction, gridCols, gridRows) {
+function buildDirectionFromYawPitch(yawDeg, pitchDeg) {
+    const yaw = THREE.MathUtils.degToRad(yawDeg);
+    const pitch = THREE.MathUtils.degToRad(pitchDeg);
+    const cosPitch = Math.cos(pitch);
+    return new THREE.Vector3(
+        Math.sin(yaw) * cosPitch,
+        Math.sin(pitch),
+        Math.cos(yaw) * cosPitch
+    ).normalize();
+}
+
+export function buildSilhouetteFriendlyFrameLayout() {
+    /** @type {Array<[number, number, TreeImpostorFrameBand]>} */
+    const spec = [
+        [-135, 0, HORIZON_BAND],
+        [180, 0, HORIZON_BAND],
+        [135, 0, HORIZON_BAND],
+        [90, 0, HORIZON_BAND],
+        [45, 0, HORIZON_BAND],
+        [0, 0, HORIZON_BAND],
+        [-45, 0, HORIZON_BAND],
+        [-90, 0, HORIZON_BAND],
+        [-135, 38, ELEVATED_BAND],
+        [135, 38, ELEVATED_BAND],
+        [45, 38, ELEVATED_BAND],
+        [-45, 38, ELEVATED_BAND],
+        [180, 62, HIGH_CARDINAL_BAND],
+        [90, 62, HIGH_CARDINAL_BAND],
+        [0, 62, HIGH_CARDINAL_BAND],
+        [-90, 62, HIGH_CARDINAL_BAND]
+    ];
+    return {
+        directions: spec.map(([yaw, pitch]) => buildDirectionFromYawPitch(yaw, pitch)),
+        frameBands: spec.map(([, , band]) => band),
+        viewBlendMode: 'direction-weighted',
+        elevatedThreshold: DEFAULT_ELEVATED_THRESHOLD,
+        highCardinalThreshold: DEFAULT_HIGH_CARDINAL_THRESHOLD,
+        gridCols: 4,
+        gridRows: 4
+    };
+}
+
+function normalizeFrameBand(frameBand) {
+    if (frameBand === ELEVATED_BAND || frameBand === HIGH_CARDINAL_BAND) {
+        return frameBand;
+    }
+    return HORIZON_BAND;
+}
+
+function computeBandScale(frameBand, viewY, elevatedThreshold, highCardinalThreshold) {
+    const band = normalizeFrameBand(frameBand);
+    if (viewY < elevatedThreshold) {
+        if (band === HORIZON_BAND) return 1.0;
+        if (band === ELEVATED_BAND) return 0.18;
+        return 0.08;
+    }
+
+    if (viewY < highCardinalThreshold) {
+        const midT = THREE.MathUtils.clamp(
+            (viewY - elevatedThreshold) / Math.max(OCT_EPSILON, highCardinalThreshold - elevatedThreshold),
+            0,
+            1
+        );
+        if (band === HORIZON_BAND) return THREE.MathUtils.lerp(0.62, 0.28, midT);
+        if (band === ELEVATED_BAND) return 1.0;
+        return THREE.MathUtils.lerp(0.18, 1.0, midT);
+    }
+
+    if (band === HORIZON_BAND) return 0.16;
+    if (band === ELEVATED_BAND) return 0.78;
+    return 1.0;
+}
+
+function buildDirectionWeightedSelection(direction, selectionConfig) {
     const view = new THREE.Vector3(direction.x, direction.y, direction.z);
     if (view.lengthSq() <= OCT_EPSILON) {
         return {
@@ -88,7 +170,94 @@ export function findWeightedImpostorFrames(direction, gridCols, gridRows) {
     }
     view.normalize();
 
-    const cols = Math.max(1, Math.floor(gridCols) || 1);
+    const encodedUv = encodeOctahedralDirection(view);
+    const directions = selectionConfig?.directions || [];
+    const frameBands = selectionConfig?.frameBands || [];
+    const elevatedThreshold = Number.isFinite(selectionConfig?.elevatedThreshold)
+        ? /** @type {number} */ (selectionConfig.elevatedThreshold)
+        : DEFAULT_ELEVATED_THRESHOLD;
+    const highCardinalThreshold = Number.isFinite(selectionConfig?.highCardinalThreshold)
+        ? Math.max(elevatedThreshold + 0.01, /** @type {number} */ (selectionConfig.highCardinalThreshold))
+        : DEFAULT_HIGH_CARDINAL_THRESHOLD;
+    const viewY = THREE.MathUtils.clamp(view.y, 0, 1);
+
+    /** @type {Array<WeightedImpostorFrame & { score: number }>} */
+    const rankedFrames = [];
+    for (let index = 0; index < directions.length; index += 1) {
+        const frameDirection = directions[index];
+        const rawDot = Math.max(view.dot(frameDirection), 0);
+        if (rawDot <= OCT_EPSILON) continue;
+        const bandScale = computeBandScale(frameBands[index], viewY, elevatedThreshold, highCardinalThreshold);
+        const score = Math.pow(rawDot, DIRECTION_WEIGHT_EXPONENT) * bandScale;
+        if (score <= OCT_EPSILON) continue;
+        rankedFrames.push({ index, weight: 0, score });
+    }
+
+    rankedFrames.sort((a, b) => b.score - a.score);
+    const topFrames = rankedFrames.slice(0, 4);
+    if (topFrames.length === 0) {
+        return {
+            frameWeights: [{ index: 0, weight: 1 }],
+            primaryIndex: 0,
+            secondaryIndex: 0,
+            blend: 0,
+            encodedUv
+        };
+    }
+
+    const scoreSum = topFrames.reduce((sum, entry) => sum + entry.score, 0) || 1;
+    /** @type {WeightedImpostorFrame[]} */
+    const frameWeights = topFrames.map((entry) => ({
+        index: entry.index,
+        weight: entry.score / scoreSum
+    }));
+    const primaryIndex = frameWeights[0]?.index ?? 0;
+    const secondaryIndex = frameWeights[1]?.index ?? primaryIndex;
+    const primaryWeight = frameWeights[0]?.weight ?? 1;
+    const secondaryWeight = frameWeights[1]?.weight ?? 0;
+
+    return {
+        frameWeights,
+        primaryIndex,
+        secondaryIndex,
+        blend: secondaryIndex === primaryIndex
+            ? 0
+            : THREE.MathUtils.clamp(secondaryWeight / Math.max(OCT_EPSILON, primaryWeight + secondaryWeight), 0, 1),
+        encodedUv
+    };
+}
+
+/**
+ * @param {THREE.Vector3 | { x: number, y: number, z: number }} direction
+ * @param {number | TreeImpostorSelectionConfig} gridColsOrConfig
+ * @param {number} [gridRows]
+ */
+export function findWeightedImpostorFrames(direction, gridColsOrConfig, gridRows) {
+    if (
+        typeof gridColsOrConfig === 'object'
+        && gridColsOrConfig !== null
+        && Array.isArray(gridColsOrConfig.directions)
+        && (
+            gridColsOrConfig.viewBlendMode === 'direction-weighted'
+            || Array.isArray(gridColsOrConfig.frameBands)
+        )
+    ) {
+        return buildDirectionWeightedSelection(direction, /** @type {TreeImpostorSelectionConfig} */ (gridColsOrConfig));
+    }
+
+    const view = new THREE.Vector3(direction.x, direction.y, direction.z);
+    if (view.lengthSq() <= OCT_EPSILON) {
+        return {
+            frameWeights: [{ index: 0, weight: 1 }],
+            primaryIndex: 0,
+            secondaryIndex: 0,
+            blend: 0,
+            encodedUv: new THREE.Vector2(0.5, 0.5)
+        };
+    }
+    view.normalize();
+
+    const cols = Math.max(1, Math.floor(Number(gridColsOrConfig)) || 1);
     const rows = Math.max(1, Math.floor(gridRows) || 1);
     const encodedUv = encodeOctahedralDirection(view);
     const sampleX = THREE.MathUtils.clamp(encodedUv.x * cols - 0.5, 0, Math.max(0, cols - 1));

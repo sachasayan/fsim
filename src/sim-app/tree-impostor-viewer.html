@@ -13,6 +13,21 @@
                 <h1>Tree Impostor Debug Viewer</h1>
                 <p>Deterministic mesh vs impostor inspection surface</p>
             </div>
+            <section id="viewer-selector-panel" aria-label="Tree selector diagnostics">
+                <div class="viewer-selector-grid">
+                    <div class="viewer-selector-card">
+                        <h2>Atlas Grid</h2>
+                        <canvas id="viewer-atlas-grid" width="320" height="320"></canvas>
+                    </div>
+                    <div class="viewer-selector-card">
+                        <h2>Selected Tiles</h2>
+                        <div class="viewer-tile-row">
+                            <canvas id="viewer-tile-primary" width="160" height="160"></canvas>
+                            <canvas id="viewer-tile-secondary" width="160" height="160"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
             <pre id="viewer-state" data-testid="tree-impostor-viewer-state">Loading…</pre>
         </aside>
     </div>

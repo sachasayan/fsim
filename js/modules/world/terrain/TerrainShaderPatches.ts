@@ -21,12 +21,16 @@ import {
  * @typedef TreeOctahedralShaderPatchOptions
  * @property {{
  *   directions: import('three').Vector3[],
+ *   frameBands?: Array<'horizon' | 'elevated' | 'high-cardinal' | string>,
  *   gridCols: number,
  *   gridRows: number,
  *   atlasTexelSize?: [number, number],
  *   depthStrength?: number,
  *   normalSpace?: 'frame-local' | 'object',
- *   depthRange?: { near?: number, far?: number }
+ *   depthRange?: { near?: number, far?: number },
+ *   viewBlendMode?: 'grid-bilinear' | 'direction-weighted' | string,
+ *   elevatedThreshold?: number,
+ *   highCardinalThreshold?: number
  * }} impostor
  * @property {{
  *   lightDirUniform: { value: import('three').Vector3 | null },
@@ -152,11 +156,24 @@ export function createTreeDepthUniformBindings(mainCameraPosUniform, shadowFadeN
 }
 
 export function createTreeOctahedralUniformBindings(impostor) {
+    const frameCount = Math.max(1, impostor?.directions?.length || 1);
+    const frameBands = Array.isArray(impostor?.frameBands)
+        ? impostor.frameBands
+        : new Array(frameCount).fill('horizon');
+    const frameBandCodes = new Array(frameCount).fill(0).map((_, index) => {
+        const band = frameBands[index];
+        if (band === 'elevated') return 1;
+        if (band === 'high-cardinal') return 2;
+        return 0;
+    });
     return {
         uTreeImpostorGrid: { value: [impostor.gridCols, impostor.gridRows] },
         uTreeImpostorFrameDirections: { value: impostor.directions },
+        uTreeImpostorFrameBands: { value: frameBandCodes },
         uTreeImpostorAtlasTexelSize: { value: impostor.atlasTexelSize || [1 / 1024, 1 / 1024] },
-        uTreeImpostorDepthStrength: { value: Number.isFinite(impostor.depthStrength) ? impostor.depthStrength : 6.0 }
+        uTreeImpostorDepthStrength: { value: Number.isFinite(impostor.depthStrength) ? impostor.depthStrength : 6.0 },
+        uTreeImpostorElevatedThreshold: { value: Number.isFinite(impostor?.elevatedThreshold) ? impostor.elevatedThreshold : 0.52 },
+        uTreeImpostorHighCardinalThreshold: { value: Number.isFinite(impostor?.highCardinalThreshold) ? impostor.highCardinalThreshold : 0.82 }
     };
 }
 
@@ -586,11 +603,11 @@ roughnessFactor = mix(roughnessFactor * 0.82, min(1.0, roughnessFactor * 1.08), 
 
 function buildOctahedralFrameSelectionShader(impostor) {
     const frameCount = Math.max(1, impostor?.directions?.length || 1);
-    const gridCols = Math.max(1, impostor?.gridCols || 1);
-    const gridRows = Math.max(1, impostor?.gridRows || 1);
     return `
-uniform vec2 uTreeImpostorGrid;
 uniform vec3 uTreeImpostorFrameDirections[${frameCount}];
+uniform float uTreeImpostorFrameBands[${frameCount}];
+uniform float uTreeImpostorElevatedThreshold;
+uniform float uTreeImpostorHighCardinalThreshold;
 uniform float uTreeImpostorDebugFreezeFrameIndex;
 uniform float uTreeImpostorDebugDisableFrameBlend;
 varying vec2 vTreeUv;
@@ -616,31 +633,81 @@ vec2 fsimEncodeTreeOctahedralDirection(vec3 direction) {
     return encoded * 0.5 + 0.5;
 }
 
+float fsimTreeBandScale(int frameBand, float viewY) {
+    float elevatedThreshold = uTreeImpostorElevatedThreshold;
+    float highCardinalThreshold = max(elevatedThreshold + 0.01, uTreeImpostorHighCardinalThreshold);
+    if (viewY < elevatedThreshold) {
+        if (frameBand == 0) return 1.0;
+        if (frameBand == 1) return 0.18;
+        return 0.08;
+    }
+    if (viewY < highCardinalThreshold) {
+        float midT = clamp((viewY - elevatedThreshold) / max(0.0001, highCardinalThreshold - elevatedThreshold), 0.0, 1.0);
+        if (frameBand == 0) return mix(0.62, 0.28, midT);
+        if (frameBand == 1) return 1.0;
+        return mix(0.18, 1.0, midT);
+    }
+    if (frameBand == 0) return 0.16;
+    if (frameBand == 1) return 0.78;
+    return 1.0;
+}
+
 void fsimSelectTreeImpostorFrames(vec3 localViewDir) {
-    vec2 encoded = fsimEncodeTreeOctahedralDirection(localViewDir);
-    vec2 sampleCoord = clamp(
-        encoded * vec2(${gridCols}.0, ${gridRows}.0) - vec2(0.5),
-        vec2(0.0),
-        vec2(${Math.max(0, gridCols - 1)}.0, ${Math.max(0, gridRows - 1)}.0)
-    );
-    float x0f = floor(sampleCoord.x);
-    float y0f = floor(sampleCoord.y);
-    float x1f = min(${Math.max(0, gridCols - 1)}.0, x0f + 1.0);
-    float y1f = min(${Math.max(0, gridRows - 1)}.0, y0f + 1.0);
-    float tx = sampleCoord.x - x0f;
-    float ty = sampleCoord.y - y0f;
-    vec4 weights = vec4(
-        (1.0 - tx) * (1.0 - ty),
-        tx * (1.0 - ty),
-        (1.0 - tx) * ty,
-        tx * ty
-    );
-    vec4 indices = vec4(
-        y0f * ${gridCols}.0 + x0f,
-        y0f * ${gridCols}.0 + x1f,
-        y1f * ${gridCols}.0 + x0f,
-        y1f * ${gridCols}.0 + x1f
-    );
+    vec3 normalizedView = normalize(localViewDir);
+    vec2 encoded = fsimEncodeTreeOctahedralDirection(normalizedView);
+    float topScore0 = -1.0;
+    float topScore1 = -1.0;
+    float topScore2 = -1.0;
+    float topScore3 = -1.0;
+    int topIndex0 = 0;
+    int topIndex1 = 0;
+    int topIndex2 = 0;
+    int topIndex3 = 0;
+    float viewY = clamp(normalizedView.y, 0.0, 1.0);
+
+    for (int frameIndex = 0; frameIndex < ${frameCount}; frameIndex += 1) {
+        vec3 frameDir = normalize(uTreeImpostorFrameDirections[frameIndex]);
+        float rawScore = max(dot(normalizedView, frameDir), 0.0);
+        if (rawScore <= 0.00001) {
+            continue;
+        }
+        int frameBand = int(uTreeImpostorFrameBands[frameIndex] + 0.5);
+        float weightedScore = pow(rawScore, 4.0) * fsimTreeBandScale(frameBand, viewY);
+        if (weightedScore > topScore0) {
+            topScore3 = topScore2;
+            topIndex3 = topIndex2;
+            topScore2 = topScore1;
+            topIndex2 = topIndex1;
+            topScore1 = topScore0;
+            topIndex1 = topIndex0;
+            topScore0 = weightedScore;
+            topIndex0 = frameIndex;
+        } else if (weightedScore > topScore1) {
+            topScore3 = topScore2;
+            topIndex3 = topIndex2;
+            topScore2 = topScore1;
+            topIndex2 = topIndex1;
+            topScore1 = weightedScore;
+            topIndex1 = frameIndex;
+        } else if (weightedScore > topScore2) {
+            topScore3 = topScore2;
+            topIndex3 = topIndex2;
+            topScore2 = weightedScore;
+            topIndex2 = frameIndex;
+        } else if (weightedScore > topScore3) {
+            topScore3 = weightedScore;
+            topIndex3 = frameIndex;
+        }
+    }
+
+    vec4 indices = vec4(float(topIndex0), float(topIndex1), float(topIndex2), float(topIndex3));
+    vec4 weights = vec4(max(topScore0, 0.0), max(topScore1, 0.0), max(topScore2, 0.0), max(topScore3, 0.0));
+    float totalWeight = max(0.0001, weights.x + weights.y + weights.z + weights.w);
+    weights /= totalWeight;
+    if (topScore0 <= 0.0) {
+        indices = vec4(0.0);
+        weights = vec4(1.0, 0.0, 0.0, 0.0);
+    }
 
     if (uTreeImpostorDebugFreezeFrameIndex >= 0.0) {
         float frozenIndex = clamp(floor(uTreeImpostorDebugFreezeFrameIndex + 0.5), 0.0, ${Math.max(0, frameCount - 1)}.0);
@@ -658,17 +725,9 @@ void fsimSelectTreeImpostorFrames(vec3 localViewDir) {
     }
 
     int primaryIndex = int(indices.x + 0.5);
+    int secondaryIndex = int(indices.y + 0.5);
     float primaryWeight = weights.x;
-    if (weights.y > primaryWeight) { primaryWeight = weights.y; primaryIndex = int(indices.y + 0.5); }
-    if (weights.z > primaryWeight) { primaryWeight = weights.z; primaryIndex = int(indices.z + 0.5); }
-    if (weights.w > primaryWeight) { primaryWeight = weights.w; primaryIndex = int(indices.w + 0.5); }
-
-    int secondaryIndex = primaryIndex;
-    float secondaryWeight = 0.0;
-    if (int(indices.x + 0.5) != primaryIndex && weights.x > secondaryWeight) { secondaryWeight = weights.x; secondaryIndex = int(indices.x + 0.5); }
-    if (int(indices.y + 0.5) != primaryIndex && weights.y > secondaryWeight) { secondaryWeight = weights.y; secondaryIndex = int(indices.y + 0.5); }
-    if (int(indices.z + 0.5) != primaryIndex && weights.z > secondaryWeight) { secondaryWeight = weights.z; secondaryIndex = int(indices.z + 0.5); }
-    if (int(indices.w + 0.5) != primaryIndex && weights.w > secondaryWeight) { secondaryWeight = weights.w; secondaryIndex = int(indices.w + 0.5); }
+    float secondaryWeight = weights.y;
 
     vTreeImpostorIndices = indices;
     vTreeImpostorWeights = weights;

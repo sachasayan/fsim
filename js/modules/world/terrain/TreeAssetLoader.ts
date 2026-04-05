@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-import { buildOctahedralFrameDirections } from './TreeImpostorUtils.js';
+import { buildOctahedralFrameDirections, buildSilhouetteFriendlyFrameLayout } from './TreeImpostorUtils.js';
 import { createTreeBillboardTexture } from './TerrainTextures.js';
 
 const DRACO_DECODER_PATH = '/node_modules/three/examples/jsm/libs/draco/gltf/';
@@ -23,10 +23,13 @@ const DEFAULT_TREE_IMPOSTOR_BASE_URL = '/world/impostors/tree-1';
  *   frameCount?: number,
  *   grid?: { cols?: number, rows?: number },
  *   directions?: Array<THREE.Vector3 | [number, number, number] | { x?: number, y?: number, z?: number }>,
+ *   frameBands?: Array<'horizon' | 'elevated' | 'high-cardinal' | string>,
  *   normalSpace?: 'frame-local' | 'object',
  *   depthEncoding?: 'orthographic-normalized' | string,
  *   depthRange?: { near?: number, far?: number },
- *   viewBlendMode?: 'grid-bilinear' | string
+ *   viewBlendMode?: 'grid-bilinear' | 'direction-weighted' | string,
+ *   elevatedThreshold?: number,
+ *   highCardinalThreshold?: number
  * }} TreeImpostorMetadata
  */
 /** @typedef {{ metadata: TreeImpostorMetadata, albedoTexture: THREE.Texture, normalTexture: THREE.Texture, depthTexture: THREE.Texture }} TreeImpostorTextures */
@@ -213,12 +216,32 @@ async function loadTreeImpostorTextures(baseUrl) {
             rows: Math.max(1, Number(metadata?.grid?.rows) || Math.round(Math.sqrt(metadata.directions.length)) || 1)
         };
         metadata.frameCount = metadata.directions.length;
+        const selectorDefaults = buildSilhouetteFriendlyFrameLayout();
+        if (!Array.isArray(metadata?.frameBands) || metadata.frameBands.length !== metadata.frameCount) {
+            if (metadata.viewBlendMode === 'direction-weighted' && metadata.frameCount === selectorDefaults.frameBands.length) {
+                metadata.frameBands = [...selectorDefaults.frameBands];
+            } else {
+                metadata.frameBands = new Array(metadata.frameCount).fill('horizon');
+            }
+        }
+        metadata.frameBands = metadata.frameBands.map((band) => (
+            band === 'elevated' || band === 'high-cardinal'
+                ? band
+                : 'horizon'
+        ));
         metadata.normalSpace = metadata?.normalSpace === 'object' ? 'object' : 'frame-local';
         metadata.depthEncoding = metadata?.depthEncoding || 'orthographic-normalized';
         metadata.depthRange = {
             near: Number(metadata?.depthRange?.near) || 0,
             far: Number(metadata?.depthRange?.far) || 1
         };
+        metadata.viewBlendMode = metadata?.viewBlendMode === 'direction-weighted' ? 'direction-weighted' : (metadata?.viewBlendMode || 'grid-bilinear');
+        metadata.elevatedThreshold = Number.isFinite(metadata?.elevatedThreshold)
+            ? Number(metadata.elevatedThreshold)
+            : selectorDefaults.elevatedThreshold;
+        metadata.highCardinalThreshold = Number.isFinite(metadata?.highCardinalThreshold)
+            ? Number(metadata.highCardinalThreshold)
+            : selectorDefaults.highCardinalThreshold;
 
         const [albedoTexture, normalTexture, depthTexture] = await Promise.all([
             loadTexture(new URL(`${baseUrl}/albedo.png`, browserBaseUrl).toString(), THREE.SRGBColorSpace),
@@ -259,7 +282,8 @@ function createFlatAtlasTexture(size, rgb = [128, 255, 128, 255], colorSpace = T
 }
 
 function createFallbackTreeImpostorTextures() {
-    const gridSize = 4;
+    const fallbackLayout = buildSilhouetteFriendlyFrameLayout();
+    const gridSize = fallbackLayout.gridCols;
     const frameSize = 256;
     const atlasSize = gridSize * frameSize;
     const metadata = {
@@ -267,12 +291,16 @@ function createFallbackTreeImpostorTextures() {
         frameSize,
         atlasWidth: atlasSize,
         atlasHeight: atlasSize,
-        frameCount: gridSize * gridSize,
+        frameCount: fallbackLayout.directions.length,
         grid: { cols: gridSize, rows: gridSize },
-        directions: buildOctahedralFrameDirections(gridSize),
+        directions: fallbackLayout.directions,
+        frameBands: fallbackLayout.frameBands,
         normalSpace: 'frame-local',
         depthEncoding: 'orthographic-normalized',
-        depthRange: { near: 0, far: 1 }
+        depthRange: { near: 0, far: 1 },
+        viewBlendMode: fallbackLayout.viewBlendMode,
+        elevatedThreshold: fallbackLayout.elevatedThreshold,
+        highCardinalThreshold: fallbackLayout.highCardinalThreshold
     };
 
     if (typeof document === 'undefined') {

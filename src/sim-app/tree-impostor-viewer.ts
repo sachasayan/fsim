@@ -6,7 +6,10 @@ import {
   makeTreeOctahedralDepthMaterial,
   makeTreeOctahedralMaterial
 } from '../../js/modules/world/terrain/TerrainMaterials.ts';
-import { findWeightedImpostorFrames } from '../../js/modules/world/terrain/TreeImpostorUtils.ts';
+import {
+  encodeOctahedralDirection,
+  findWeightedImpostorFrames
+} from '../../js/modules/world/terrain/TreeImpostorUtils.ts';
 
 type DebugMode =
   | 'lit'
@@ -21,7 +24,14 @@ type DebugMode =
   | 'view_normal'
   | 'light_dir_view'
   | 'ndotl'
-  | 'backlight';
+  | 'backlight'
+  | 'selected_frame_id'
+  | 'atlas_tile_preview'
+  | 'atlas_tile_pair_preview'
+  | 'frame_direction_world'
+  | 'camera_direction_local'
+  | 'encoded_octahedral_uv'
+  | 'frame_grid_overlay';
 
 type RepresentationMode = 'mesh-only' | 'impostor-only' | 'side-by-side' | 'overlay';
 
@@ -55,15 +65,24 @@ type FrameSelection = {
 type DebugSnapshot = {
   ready: boolean;
   debugState: DebugState;
+  primaryIndex: number;
+  secondaryIndex: number;
   frameSelection: FrameSelection;
   framePairChanged: boolean;
   previousFrameSelection: FrameSelection | null;
   frameTransitionOccurred: boolean;
   frameWeights: Array<{ index: number; weight: number }>;
+  cameraDirectionLocal: [number, number, number];
   sunDirectionWorld: [number, number, number];
   cameraDirectionWorld: [number, number, number];
   cameraPositionWorld: [number, number, number];
   impostorPositionWorld: [number, number, number];
+  encodedOctUv: [number, number];
+  selectedFrameDirections: Array<{
+    index: number;
+    weight: number;
+    direction: [number, number, number];
+  }>;
   atlas: {
     frameCount: number;
     gridCols: number;
@@ -73,6 +92,11 @@ type DebugSnapshot = {
     normalSpace: string;
     depthEncoding: string;
     depthRange: { near: number; far: number };
+    viewBlendMode?: string;
+    directions?: Array<[number, number, number]>;
+    frameBands?: Array<'horizon' | 'elevated' | 'high-cardinal'>;
+    elevatedThreshold?: number;
+    highCardinalThreshold?: number;
   };
   toggles: Record<string, boolean>;
 };
@@ -89,7 +113,11 @@ type ViewerSequenceId =
   | 'mesh_match'
   | 'seam_normal_atlas_raw'
   | 'seam_local_normal'
-  | 'seam_view_normal';
+  | 'seam_view_normal'
+  | 'selector_cardinals'
+  | 'selector_stability'
+  | 'selector_seam_probe'
+  | 'selector_silhouette_compare';
 
 type SequenceCapture = {
   name: string;
@@ -120,8 +148,13 @@ declare global {
       setDebugState: (partial: Partial<DebugState>) => Promise<DebugSnapshot>;
       getDebugState: () => DebugState;
       captureDebugSnapshot: () => DebugSnapshot;
+      captureSelectorSnapshot: () => DebugSnapshot;
       runCapturePreset: (presetId: ViewerPresetId) => Promise<SequenceCapture>;
       captureSequence: (sequenceId: ViewerSequenceId) => Promise<SequenceManifest>;
+      captureFrameSelectionSweep: (sequenceId: Extract<ViewerSequenceId, 'selector_cardinals' | 'selector_stability' | 'selector_seam_probe' | 'selector_silhouette_compare'>) => Promise<SequenceManifest>;
+      captureAtlasSelectionPair: (options?: Partial<DebugState> & {
+        preset?: 'front' | 'back' | 'left' | 'right' | 'elevated-front' | 'elevated-side' | 'top-down' | 'seam';
+      }) => Promise<SequenceManifest>;
       captureComparisonPair: (options?: Partial<DebugState> & {
         preset?: 'frontlit' | 'sidelit' | 'backlit' | 'seam';
       }) => Promise<SequenceManifest>;
@@ -142,7 +175,14 @@ const DEBUG_MODE_VALUES: Record<DebugMode, number> = {
   view_normal: 9,
   light_dir_view: 10,
   ndotl: 11,
-  backlight: 12
+  backlight: 12,
+  selected_frame_id: 0,
+  atlas_tile_preview: 0,
+  atlas_tile_pair_preview: 0,
+  frame_direction_world: 0,
+  camera_direction_local: 0,
+  encoded_octahedral_uv: 0,
+  frame_grid_overlay: 0
 };
 
 const defaultState: DebugState = {
@@ -168,7 +208,16 @@ const defaultState: DebugState = {
 
 const viewerRoot = document.getElementById('viewer-root');
 const statePre = document.getElementById('viewer-state');
-if (!(viewerRoot instanceof HTMLDivElement) || !(statePre instanceof HTMLPreElement)) {
+const atlasGridCanvas = document.getElementById('viewer-atlas-grid');
+const primaryTileCanvas = document.getElementById('viewer-tile-primary');
+const secondaryTileCanvas = document.getElementById('viewer-tile-secondary');
+if (
+  !(viewerRoot instanceof HTMLDivElement)
+  || !(statePre instanceof HTMLPreElement)
+  || !(atlasGridCanvas instanceof HTMLCanvasElement)
+  || !(primaryTileCanvas instanceof HTMLCanvasElement)
+  || !(secondaryTileCanvas instanceof HTMLCanvasElement)
+) {
   throw new Error('Tree impostor viewer DOM roots are missing.');
 }
 
@@ -265,6 +314,13 @@ const debugUniforms = {
 
 let debugState: DebugState = { ...defaultState };
 let bundleMetadata: DebugSnapshot['atlas'] | null = null;
+let bundleSelectionConfig: {
+  directions: THREE.Vector3[];
+  frameBands: Array<'horizon' | 'elevated' | 'high-cardinal'>;
+  viewBlendMode: string;
+  elevatedThreshold: number;
+  highCardinalThreshold: number;
+} | null = null;
 let modelWidthToHeight = 1;
 let viewerReady = false;
 let resolveReady: ((snapshot: DebugSnapshot) => void) | null = null;
@@ -275,6 +331,7 @@ let previousFrameSelection: FrameSelection | null = null;
 
 let impostorMesh: THREE.InstancedMesh | null = null;
 let impostorDepthMaterial: THREE.Material | null = null;
+let atlasAlbedoSource: CanvasImageSource | null = null;
 
 function degToRad(value: number) {
   return value * (Math.PI / 180);
@@ -285,6 +342,24 @@ function toRoundedTuple(vector: THREE.Vector3): [number, number, number] {
     Number(vector.x.toFixed(6)),
     Number(vector.y.toFixed(6)),
     Number(vector.z.toFixed(6))
+  ];
+}
+
+function toRoundedPair(vector: THREE.Vector2): [number, number] {
+  return [
+    Number(vector.x.toFixed(6)),
+    Number(vector.y.toFixed(6))
+  ];
+}
+
+function roundDirectionTuple(direction: THREE.Vector3 | [number, number, number] | { x?: number; y?: number; z?: number } | undefined): [number, number, number] {
+  const x = direction instanceof THREE.Vector3 ? direction.x : Array.isArray(direction) ? direction[0] || 0 : direction?.x || 0;
+  const y = direction instanceof THREE.Vector3 ? direction.y : Array.isArray(direction) ? direction[1] || 0 : direction?.y || 0;
+  const z = direction instanceof THREE.Vector3 ? direction.z : Array.isArray(direction) ? direction[2] || 0 : direction?.z || 0;
+  return [
+    Number(x.toFixed(6)),
+    Number(y.toFixed(6)),
+    Number(z.toFixed(6))
   ];
 }
 
@@ -369,18 +444,18 @@ function applyDebugUniforms() {
   debugUniforms.disableAtlasNormalUniform.value = debugState.disableAtlasNormal ? 1 : 0;
 }
 
+function computeLocalCameraDirection() {
+  const impostorPosition = impostorGroup.position.clone();
+  return camera.position.clone().sub(impostorPosition).normalize();
+}
+
 function computeFrameSelection(): FrameSelection {
-  if (!bundleMetadata) {
+  if (!bundleMetadata || !bundleSelectionConfig) {
     return { primaryIndex: 0, secondaryIndex: 0, blend: 0 };
   }
 
-  const impostorPosition = impostorGroup.position.clone();
-  const localViewDirection = camera.position.clone().sub(impostorPosition).normalize();
-  let selection = findWeightedImpostorFrames(
-    localViewDirection,
-    bundleMetadata.gridCols,
-    bundleMetadata.gridRows
-  );
+  const localViewDirection = computeLocalCameraDirection();
+  let selection = findWeightedImpostorFrames(localViewDirection, bundleSelectionConfig);
 
   if (debugState.freezeFrameIndex >= 0) {
     const frozen = THREE.MathUtils.clamp(Math.round(debugState.freezeFrameIndex), 0, Math.max(0, bundleMetadata.frameCount - 1));
@@ -416,14 +491,15 @@ function cloneFrameSelection(selection: FrameSelection | null): FrameSelection |
 function computeDebugSnapshot(recordTransition = true): DebugSnapshot {
   const frameSelection = computeFrameSelection();
   const impostorPosition = impostorGroup.position.clone();
-  const localViewDirection = camera.position.clone().sub(impostorPosition).normalize();
-  let weightedSelection = bundleMetadata
-    ? findWeightedImpostorFrames(localViewDirection, bundleMetadata.gridCols, bundleMetadata.gridRows)
+  const localViewDirection = computeLocalCameraDirection();
+  let weightedSelection = bundleSelectionConfig
+    ? findWeightedImpostorFrames(localViewDirection, bundleSelectionConfig)
     : {
         frameWeights: [{ index: 0, weight: 1 }],
         primaryIndex: 0,
         secondaryIndex: 0,
-        blend: 0
+        blend: 0,
+        encodedUv: new THREE.Vector2(0.5, 0.5)
       };
   if (bundleMetadata && debugState.freezeFrameIndex >= 0) {
     const frozen = THREE.MathUtils.clamp(Math.round(debugState.freezeFrameIndex), 0, Math.max(0, bundleMetadata.frameCount - 1));
@@ -461,9 +537,19 @@ function computeDebugSnapshot(recordTransition = true): DebugSnapshot {
   if (recordTransition) {
     previousFrameSelection = cloneFrameSelection(frameSelection);
   }
+  const selectedFrameDirections = weightedSelection.frameWeights.map((entry) => {
+    const direction = bundleMetadata?.directions?.[entry.index] || [0, 1, 0];
+    return {
+      index: entry.index,
+      weight: Number(entry.weight.toFixed(6)),
+      direction
+    };
+  });
   return {
     ready: viewerReady,
     debugState: { ...debugState },
+    primaryIndex: frameSelection.primaryIndex,
+    secondaryIndex: frameSelection.secondaryIndex,
     frameSelection,
     framePairChanged,
     previousFrameSelection: prior,
@@ -472,10 +558,13 @@ function computeDebugSnapshot(recordTransition = true): DebugSnapshot {
       index: entry.index,
       weight: Number(entry.weight.toFixed(6))
     })),
+    cameraDirectionLocal: toRoundedTuple(localViewDirection),
     sunDirectionWorld: toRoundedTuple(sunDirectionWorld),
     cameraDirectionWorld: toRoundedTuple(cameraDirection),
     cameraPositionWorld: toRoundedTuple(camera.position),
     impostorPositionWorld: toRoundedTuple(impostorPosition),
+    encodedOctUv: toRoundedPair(weightedSelection.encodedUv || encodeOctahedralDirection(localViewDirection)),
+    selectedFrameDirections,
     atlas: bundleMetadata || {
       frameCount: 0,
       gridCols: 0,
@@ -484,7 +573,12 @@ function computeDebugSnapshot(recordTransition = true): DebugSnapshot {
       atlasHeight: 0,
       normalSpace: 'frame-local',
       depthEncoding: 'orthographic-normalized',
-      depthRange: { near: 0, far: 1 }
+      depthRange: { near: 0, far: 1 },
+      directions: [],
+      frameBands: [],
+      elevatedThreshold: 0.52,
+      highCardinalThreshold: 0.82,
+      viewBlendMode: 'direction-weighted'
     },
     toggles: {
       flipNormalX: debugState.flipNormalX,
@@ -504,8 +598,140 @@ function captureDebugSnapshot(): DebugSnapshot {
   return computeDebugSnapshot(true);
 }
 
+function captureSelectorSnapshot(): DebugSnapshot {
+  return computeDebugSnapshot(false);
+}
+
+function drawTilePreview(
+  canvas: HTMLCanvasElement,
+  frameIndex: number,
+  weight: number,
+  direction: [number, number, number] | undefined,
+  label: string
+) {
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = '#0b1016';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (!atlasAlbedoSource || !bundleMetadata || frameIndex < 0) {
+    context.fillStyle = '#c5d2df';
+    context.font = '12px monospace';
+    context.fillText(`${label}: n/a`, 10, 18);
+    return;
+  }
+
+  const frameSize = Math.max(1, Math.floor(bundleMetadata.atlasWidth / Math.max(1, bundleMetadata.gridCols)));
+  const col = frameIndex % bundleMetadata.gridCols;
+  const row = Math.floor(frameIndex / bundleMetadata.gridCols);
+  const sourceX = col * frameSize;
+  const sourceY = row * frameSize;
+  const inset = 8;
+  const labelHeight = 34;
+  context.drawImage(
+    atlasAlbedoSource,
+    sourceX,
+    sourceY,
+    frameSize,
+    frameSize,
+    inset,
+    inset + labelHeight,
+    canvas.width - inset * 2,
+    canvas.height - inset * 2 - labelHeight
+  );
+  context.strokeStyle = label === 'A' ? '#ff8e72' : '#7dd4ff';
+  context.lineWidth = 3;
+  context.strokeRect(inset + 0.5, inset + labelHeight + 0.5, canvas.width - inset * 2 - 1, canvas.height - inset * 2 - labelHeight - 1);
+  context.fillStyle = 'rgba(9, 15, 22, 0.82)';
+  context.fillRect(0, 0, canvas.width, labelHeight);
+  context.fillStyle = '#eef5fb';
+  context.font = 'bold 13px monospace';
+  context.fillText(`${label}: frame ${frameIndex}`, 10, 14);
+  context.font = '11px monospace';
+  context.fillText(`w=${weight.toFixed(3)}`, 10, 28);
+  if (direction) {
+    context.fillText(
+      `dir=(${direction[0].toFixed(2)}, ${direction[1].toFixed(2)}, ${direction[2].toFixed(2)})`,
+      62,
+      28
+    );
+  }
+}
+
+function drawAtlasGrid(snapshot: DebugSnapshot) {
+  const context = atlasGridCanvas.getContext('2d');
+  if (!context) return;
+  context.clearRect(0, 0, atlasGridCanvas.width, atlasGridCanvas.height);
+  context.fillStyle = '#0b1016';
+  context.fillRect(0, 0, atlasGridCanvas.width, atlasGridCanvas.height);
+  if (!atlasAlbedoSource || !bundleMetadata) return;
+
+  context.drawImage(atlasAlbedoSource, 0, 0, atlasGridCanvas.width, atlasGridCanvas.height);
+  const tileWidth = atlasGridCanvas.width / Math.max(1, bundleMetadata.gridCols);
+  const tileHeight = atlasGridCanvas.height / Math.max(1, bundleMetadata.gridRows);
+
+  context.strokeStyle = 'rgba(210, 226, 242, 0.22)';
+  context.lineWidth = 1;
+  for (let col = 0; col <= bundleMetadata.gridCols; col += 1) {
+    const x = col * tileWidth;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, atlasGridCanvas.height);
+    context.stroke();
+  }
+  for (let row = 0; row <= bundleMetadata.gridRows; row += 1) {
+    const y = row * tileHeight;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(atlasGridCanvas.width, y);
+    context.stroke();
+  }
+
+  for (let index = 0; index < snapshot.atlas.frameCount; index += 1) {
+    const x = (index % bundleMetadata.gridCols) * tileWidth;
+    const y = Math.floor(index / bundleMetadata.gridCols) * tileHeight;
+    context.fillStyle = 'rgba(6, 10, 15, 0.66)';
+    context.fillRect(x + 4, y + 4, 22, 14);
+    context.fillStyle = '#f0f6fb';
+    context.font = '10px monospace';
+    context.fillText(String(index), x + 8, y + 14);
+  }
+
+  const highlightFrame = (frameIndex: number, strokeStyle: string, lineWidth: number) => {
+    if (frameIndex < 0) return;
+    const x = (frameIndex % bundleMetadata.gridCols) * tileWidth;
+    const y = Math.floor(frameIndex / bundleMetadata.gridCols) * tileHeight;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth;
+    context.strokeRect(x + 2, y + 2, tileWidth - 4, tileHeight - 4);
+  };
+  highlightFrame(snapshot.primaryIndex, '#ff8e72', 4);
+  highlightFrame(snapshot.secondaryIndex, '#7dd4ff', 3);
+
+  const markerX = snapshot.encodedOctUv[0] * atlasGridCanvas.width;
+  const markerY = snapshot.encodedOctUv[1] * atlasGridCanvas.height;
+  context.fillStyle = '#f6f265';
+  context.beginPath();
+  context.arc(markerX, markerY, 6, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = '#10161d';
+  context.lineWidth = 2;
+  context.stroke();
+}
+
+function drawSelectorPanels(snapshot: DebugSnapshot) {
+  drawAtlasGrid(snapshot);
+  const primaryDirection = snapshot.selectedFrameDirections.find((entry) => entry.index === snapshot.primaryIndex)?.direction;
+  const primaryWeight = snapshot.selectedFrameDirections.find((entry) => entry.index === snapshot.primaryIndex)?.weight ?? 1;
+  const secondaryDirection = snapshot.selectedFrameDirections.find((entry) => entry.index === snapshot.secondaryIndex)?.direction;
+  const secondaryWeight = snapshot.selectedFrameDirections.find((entry) => entry.index === snapshot.secondaryIndex)?.weight ?? 0;
+  drawTilePreview(primaryTileCanvas, snapshot.primaryIndex, primaryWeight, primaryDirection, 'A');
+  drawTilePreview(secondaryTileCanvas, snapshot.secondaryIndex, secondaryWeight, secondaryDirection, 'B');
+}
+
 function updateOverlay() {
   const snapshot = computeDebugSnapshot(false);
+  drawSelectorPanels(snapshot);
   statePre.textContent = JSON.stringify(snapshot, null, 2);
 }
 
@@ -734,6 +960,111 @@ async function captureSequence(sequenceId: ViewerSequenceId): Promise<SequenceMa
     }));
     return captureStates(sequenceId, states);
   }
+  if (sequenceId === 'selector_cardinals') {
+    const states = [
+      ['selector-cardinals_front', 0, 12],
+      ['selector-cardinals_back', 180, 12],
+      ['selector-cardinals_left', -90, 12],
+      ['selector-cardinals_right', 90, 12],
+      ['selector-cardinals_elevated-front', 0, 30],
+      ['selector-cardinals_elevated-side', 90, 30],
+      ['selector-cardinals_top-down', 0, 78]
+    ].map(([name, cameraYaw, cameraPitch]) => ({
+      name: String(name),
+      state: {
+        ...base,
+        representation: 'impostor-only',
+        mode: 'atlas_tile_pair_preview' as DebugMode,
+        freezeFrameIndex: -1,
+        disableFrameBlend: false,
+        cameraYaw: Number(cameraYaw),
+        cameraPitch: Number(cameraPitch),
+        cameraDistance: 5.8,
+        sunYaw: -40,
+        sunPitch: 34
+      }
+    }));
+    return captureStates(sequenceId, states);
+  }
+  if (sequenceId === 'selector_stability') {
+    const states = [];
+    for (let cameraYaw = 60; cameraYaw <= 120; cameraYaw += 4) {
+      states.push({
+        name: `selector-stability_camYaw_${String(cameraYaw).padStart(3, '0')}`,
+        state: {
+          ...base,
+          representation: 'impostor-only',
+          mode: 'atlas_tile_pair_preview',
+          freezeFrameIndex: -1,
+          disableFrameBlend: false,
+          cameraYaw,
+          cameraPitch: 12,
+          cameraDistance: 5.8,
+          sunYaw: -40,
+          sunPitch: 34
+        }
+      });
+    }
+    return captureStates(sequenceId, states);
+  }
+  if (sequenceId === 'selector_seam_probe') {
+    const seamStates = [
+      ['selector-seam-probe_y040_p12', 40, 12],
+      ['selector-seam-probe_y044_p12', 44, 12],
+      ['selector-seam-probe_y048_p12', 48, 12],
+      ['selector-seam-probe_y040_p28', 40, 28],
+      ['selector-seam-probe_y044_p28', 44, 28],
+      ['selector-seam-probe_y048_p28', 48, 28],
+      ['selector-seam-probe_y088_p12', 88, 12],
+      ['selector-seam-probe_y092_p12', 92, 12],
+      ['selector-seam-probe_y088_p28', 88, 28],
+      ['selector-seam-probe_y092_p28', 92, 28]
+    ].map(([name, cameraYaw, cameraPitch]) => ({
+      name: String(name),
+      state: {
+        ...base,
+        representation: 'impostor-only',
+        mode: 'frame_grid_overlay' as DebugMode,
+        freezeFrameIndex: -1,
+        disableFrameBlend: false,
+        cameraYaw: Number(cameraYaw),
+        cameraPitch: Number(cameraPitch),
+        cameraDistance: 5.8,
+        sunYaw: -40,
+        sunPitch: 34
+      }
+    }));
+    return captureStates(sequenceId, seamStates);
+  }
+  if (sequenceId === 'selector_silhouette_compare') {
+    const states = [
+      {
+        name: 'selector-silhouette_right_mesh',
+        state: { ...base, representation: 'mesh-only', mode: 'lit', cameraYaw: 90, cameraPitch: 12, cameraDistance: 5.8, sunYaw: -40, sunPitch: 34 }
+      },
+      {
+        name: 'selector-silhouette_right_impostor',
+        state: { ...base, representation: 'impostor-only', mode: 'lit', cameraYaw: 90, cameraPitch: 12, cameraDistance: 5.8, sunYaw: -40, sunPitch: 34 }
+      },
+      {
+        name: 'selector-silhouette_sidefront_mesh',
+        state: { ...base, representation: 'mesh-only', mode: 'lit', cameraYaw: 44, cameraPitch: 12, cameraDistance: 5.8, sunYaw: -40, sunPitch: 34 }
+      },
+      {
+        name: 'selector-silhouette_sidefront_impostor',
+        state: { ...base, representation: 'impostor-only', mode: 'lit', cameraYaw: 44, cameraPitch: 12, cameraDistance: 5.8, sunYaw: -40, sunPitch: 34 }
+      },
+      {
+        name: 'selector-silhouette_elevated-sidefront_mesh',
+        state: { ...base, representation: 'mesh-only', mode: 'lit', cameraYaw: 44, cameraPitch: 28, cameraDistance: 5.8, sunYaw: -40, sunPitch: 34 }
+      },
+      {
+        name: 'selector-silhouette_elevated-sidefront_impostor',
+        state: { ...base, representation: 'impostor-only', mode: 'lit', cameraYaw: 44, cameraPitch: 28, cameraDistance: 5.8, sunYaw: -40, sunPitch: 34 }
+      }
+    ];
+    return captureStates(sequenceId, states);
+  }
 
   const states = [
     {
@@ -772,6 +1103,40 @@ async function captureSequence(sequenceId: ViewerSequenceId): Promise<SequenceMa
   return captureStates(sequenceId, states);
 }
 
+async function captureFrameSelectionSweep(sequenceId: Extract<ViewerSequenceId, 'selector_cardinals' | 'selector_stability' | 'selector_seam_probe' | 'selector_silhouette_compare'>) {
+  return captureSequence(sequenceId);
+}
+
+async function captureAtlasSelectionPair(
+  options: Partial<DebugState> & {
+    preset?: 'front' | 'back' | 'left' | 'right' | 'elevated-front' | 'elevated-side' | 'top-down' | 'seam';
+  } = {}
+): Promise<SequenceManifest> {
+  const preset = options.preset || 'right';
+  const { preset: _ignoredPreset, ...restOptions } = options;
+  const shared =
+    preset === 'back'
+      ? { cameraYaw: 180, cameraPitch: 12, cameraDistance: 5.8 }
+      : preset === 'left'
+        ? { cameraYaw: -90, cameraPitch: 12, cameraDistance: 5.8 }
+        : preset === 'right'
+          ? { cameraYaw: 90, cameraPitch: 12, cameraDistance: 5.8 }
+          : preset === 'elevated-front'
+            ? { cameraYaw: 0, cameraPitch: 30, cameraDistance: 5.8 }
+            : preset === 'elevated-side'
+              ? { cameraYaw: 90, cameraPitch: 30, cameraDistance: 5.8 }
+              : preset === 'top-down'
+                ? { cameraYaw: 0, cameraPitch: 78, cameraDistance: 5.8 }
+                : preset === 'seam'
+                  ? { cameraYaw: 44, cameraPitch: 12, cameraDistance: 5.8 }
+                  : { cameraYaw: 0, cameraPitch: 12, cameraDistance: 5.8 };
+  return captureComparisonPair({
+    ...shared,
+    ...restOptions,
+    mode: restOptions.mode || 'atlas_tile_pair_preview'
+  });
+}
+
 async function captureComparisonPair(options: Partial<DebugState> & { preset?: 'frontlit' | 'sidelit' | 'backlit' | 'seam' } = {}): Promise<SequenceManifest> {
   const preset = options.preset || 'frontlit';
   const shared =
@@ -806,8 +1171,22 @@ function resizeRenderer() {
 
 async function initialize() {
   const bundle = await getTreeAssetBundle();
+  const metadataDirections = (bundle.impostor.metadata?.directions || []).map((direction: any) => roundDirectionTuple(direction));
+  const selectionDirections = (bundle.impostor.metadata?.directions || []).map((direction: any) => (
+    direction instanceof THREE.Vector3
+      ? direction.clone()
+      : Array.isArray(direction)
+        ? new THREE.Vector3(direction[0] || 0, direction[1] || 0, direction[2] || 0)
+        : new THREE.Vector3(direction?.x || 0, direction?.y || 0, direction?.z || 0)
+  ));
+  const normalizedFrameBands = Array.isArray(bundle.impostor.metadata?.frameBands)
+    ? bundle.impostor.metadata.frameBands.map((band: any) => (
+      band === 'elevated' || band === 'high-cardinal' ? band : 'horizon'
+    ))
+    : [];
 
   bundleMetadata = {
+    ...(bundle.impostor.metadata as any),
     frameCount: Math.max(1, Number(bundle.impostor.metadata?.frameCount) || bundle.impostor.metadata?.directions?.length || 1),
     gridCols: Math.max(1, Number(bundle.impostor.metadata?.grid?.cols) || 1),
     gridRows: Math.max(1, Number(bundle.impostor.metadata?.grid?.rows) || 1),
@@ -819,9 +1198,29 @@ async function initialize() {
       near: Number(bundle.impostor.metadata?.depthRange?.near) || 0,
       far: Number(bundle.impostor.metadata?.depthRange?.far) || 1
     },
-    ...(bundle.impostor.metadata as any)
+    frameBands: normalizedFrameBands,
+    elevatedThreshold: Number.isFinite(bundle.impostor.metadata?.elevatedThreshold)
+      ? Number(bundle.impostor.metadata?.elevatedThreshold)
+      : 0.52,
+    highCardinalThreshold: Number.isFinite(bundle.impostor.metadata?.highCardinalThreshold)
+      ? Number(bundle.impostor.metadata?.highCardinalThreshold)
+      : 0.82,
+    viewBlendMode: bundle.impostor.metadata?.viewBlendMode || 'grid-bilinear',
+    directions: metadataDirections
+  };
+  bundleSelectionConfig = {
+    directions: selectionDirections,
+    frameBands: normalizedFrameBands,
+    viewBlendMode: bundle.impostor.metadata?.viewBlendMode || 'grid-bilinear',
+    elevatedThreshold: Number.isFinite(bundle.impostor.metadata?.elevatedThreshold)
+      ? Number(bundle.impostor.metadata?.elevatedThreshold)
+      : 0.52,
+    highCardinalThreshold: Number.isFinite(bundle.impostor.metadata?.highCardinalThreshold)
+      ? Number(bundle.impostor.metadata?.highCardinalThreshold)
+      : 0.82
   };
   modelWidthToHeight = Math.max(0.2, bundle.modelMetrics.width / Math.max(bundle.modelMetrics.height, 1e-4));
+  atlasAlbedoSource = bundle.impostor.albedoTexture.image || bundle.impostor.albedoTexture.source?.data || null;
 
   for (const part of bundle.meshParts) {
     const mesh = new THREE.Mesh(part.geometry, part.material);
@@ -880,8 +1279,11 @@ window.__TREE_IMPOSTOR_VIEWER__ = {
     return { ...debugState };
   },
   captureDebugSnapshot,
+  captureSelectorSnapshot,
   runCapturePreset,
   captureSequence,
+  captureFrameSelectionSweep,
+  captureAtlasSelectionPair,
   captureComparisonPair
 };
 

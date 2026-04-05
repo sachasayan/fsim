@@ -3,7 +3,12 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function parseArgs(argv) {
-  const args = { asset: 'tree-1', frame: -1 };
+  const args = {
+    asset: 'tree-1',
+    frame: -1,
+    outputDir: '',
+    contactSheet: false
+  };
   for (let i = 2; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--asset' && argv[i + 1]) {
@@ -12,9 +17,22 @@ function parseArgs(argv) {
     } else if (token === '--frame' && argv[i + 1]) {
       args.frame = Number.parseInt(argv[i + 1], 10);
       i += 1;
+    } else if (token === '--output-dir' && argv[i + 1]) {
+      args.outputDir = path.resolve(argv[i + 1]);
+      i += 1;
+    } else if (token === '--contact-sheet') {
+      args.contactSheet = true;
     }
   }
   return args;
+}
+
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function printHeader(title) {
+  console.log(`\n[${title}]`);
 }
 
 function runMagick(args) {
@@ -28,11 +46,150 @@ function runMagick(args) {
   return result.stdout.trim();
 }
 
-function printHeader(title) {
-  console.log(`\n[${title}]`);
+function fileToDataUri(filePath) {
+  const ext = path.extname(filePath).toLowerCase() === '.png' ? 'image/png' : 'application/octet-stream';
+  return `data:${ext};base64,${fs.readFileSync(filePath).toString('base64')}`;
 }
 
-const { asset, frame } = parseArgs(process.argv);
+function round(value) {
+  return Number(Number(value || 0).toFixed(6));
+}
+
+function buildFrameManifest(metadata) {
+  const frameCount = Number(metadata.frameCount) || 0;
+  const cols = Number(metadata?.grid?.cols) || 1;
+  const rows = Number(metadata?.grid?.rows) || 1;
+  const frameSize = Number(metadata.frameSize) || 0;
+  const directions = Array.isArray(metadata.directions) ? metadata.directions : [];
+  const frameBands = Array.isArray(metadata.frameBands) ? metadata.frameBands : [];
+  const frames = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    const direction = directions[index] || [0, 0, 0];
+    frames.push({
+      index,
+      row,
+      col,
+      crop: {
+        x: col * frameSize,
+        y: row * frameSize,
+        width: frameSize,
+        height: frameSize
+      },
+      frameBand: frameBands[index] || 'horizon',
+      direction: [
+        round(direction[0]),
+        round(direction[1]),
+        round(direction[2])
+      ]
+    });
+  }
+  return frames;
+}
+
+function buildAtlasTruthHtml({ asset, metadata, frames, albedoDataUri, normalDataUri }) {
+  const frameCards = frames.map((frame) => {
+    const backgroundStyle = `background-size:${metadata.atlasWidth}px ${metadata.atlasHeight}px;background-position:-${frame.crop.x}px -${frame.crop.y}px;`;
+    return `
+      <article class="frame-card">
+        <header>
+          <h2>Frame ${frame.index}</h2>
+          <p>dir=(${frame.direction[0]}, ${frame.direction[1]}, ${frame.direction[2]})</p>
+          <p>band=${frame.frameBand}</p>
+        </header>
+        <div class="thumb-row">
+          <div class="thumb-wrap">
+            <span>Albedo</span>
+            <div class="thumb" style="background-image:url('${albedoDataUri}');${backgroundStyle}"></div>
+          </div>
+          <div class="thumb-wrap">
+            <span>Normal</span>
+            <div class="thumb" style="background-image:url('${normalDataUri}');${backgroundStyle}"></div>
+          </div>
+        </div>
+        <p class="meta">row=${frame.row} col=${frame.col}</p>
+      </article>
+    `;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${asset} atlas truth</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d131a;
+      --panel: #17212b;
+      --line: rgba(214, 232, 248, 0.14);
+      --text: #edf5fc;
+      --muted: #b7c7d9;
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: radial-gradient(circle at top, #1b2633 0%, var(--bg) 70%);
+      color: var(--text);
+      font-family: "SF Mono", "Monaco", "Inconsolata", monospace;
+    }
+    h1, h2, p { margin: 0; }
+    .lead { margin: 6px 0 18px; color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .frame-card {
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(18, 27, 35, 0.85);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+    }
+    .frame-card header {
+      margin-bottom: 10px;
+    }
+    .frame-card header p,
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .thumb-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .thumb-wrap span {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .thumb {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background-repeat: no-repeat;
+      image-rendering: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>${asset} atlas truth</h1>
+  <p class="lead">frameCount=${metadata.frameCount}, frameSize=${metadata.frameSize}, blendMode=${metadata.viewBlendMode || 'unknown'}, elevatedThreshold=${metadata.elevatedThreshold ?? 'n/a'}, highCardinalThreshold=${metadata.highCardinalThreshold ?? 'n/a'}</p>
+  <section class="grid">
+    ${frameCards}
+  </section>
+</body>
+</html>`;
+}
+
+const { asset, frame, outputDir, contactSheet } = parseArgs(process.argv);
 const impostorDir = path.resolve('world/impostors', asset);
 const metadataPath = path.join(impostorDir, 'metadata.json');
 
@@ -43,6 +200,7 @@ if (!fs.existsSync(metadataPath)) {
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 const frameSize = Number(metadata.frameSize) || 0;
 const gridCols = Number(metadata?.grid?.cols) || 1;
+const frames = buildFrameManifest(metadata);
 
 printHeader('Metadata');
 console.log(JSON.stringify({
@@ -54,7 +212,10 @@ console.log(JSON.stringify({
   frameCount: metadata.frameCount,
   normalSpace: metadata.normalSpace,
   depthEncoding: metadata.depthEncoding,
-  depthRange: metadata.depthRange
+  depthRange: metadata.depthRange,
+  viewBlendMode: metadata.viewBlendMode,
+  elevatedThreshold: metadata.elevatedThreshold,
+  highCardinalThreshold: metadata.highCardinalThreshold
 }, null, 2));
 
 for (const name of ['albedo', 'normal', 'depth']) {
@@ -83,4 +244,49 @@ for (const name of ['albedo', 'normal', 'depth']) {
       'info:'
     ]));
   }
+}
+
+if (outputDir) {
+  ensureDir(outputDir);
+  const truthManifest = {
+    asset,
+    generatedAt: new Date().toISOString(),
+    metadata: {
+      version: metadata.version,
+      frameSize: metadata.frameSize,
+      atlasWidth: metadata.atlasWidth,
+      atlasHeight: metadata.atlasHeight,
+      frameCount: metadata.frameCount,
+      grid: metadata.grid,
+      normalSpace: metadata.normalSpace,
+      depthEncoding: metadata.depthEncoding,
+      depthRange: metadata.depthRange,
+      viewBlendMode: metadata.viewBlendMode,
+      elevatedThreshold: metadata.elevatedThreshold,
+      highCardinalThreshold: metadata.highCardinalThreshold,
+      frameBands: metadata.frameBands || []
+    },
+    frames
+  };
+  fs.writeFileSync(path.join(outputDir, 'atlas-truth.json'), `${JSON.stringify(truthManifest, null, 2)}\n`, 'utf8');
+
+  if (contactSheet) {
+    const html = buildAtlasTruthHtml({
+      asset,
+      metadata,
+      frames,
+      albedoDataUri: fileToDataUri(path.join(impostorDir, 'albedo.png')),
+      normalDataUri: fileToDataUri(path.join(impostorDir, 'normal.png'))
+    });
+    fs.writeFileSync(path.join(outputDir, 'atlas-truth.html'), html, 'utf8');
+  }
+
+  printHeader('Artifacts');
+  console.log(JSON.stringify({
+    outputDir,
+    contactSheet: Boolean(contactSheet),
+    files: contactSheet
+      ? ['atlas-truth.json', 'atlas-truth.html']
+      : ['atlas-truth.json']
+  }, null, 2));
 }

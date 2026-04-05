@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 import { chromium } from 'playwright';
 
@@ -12,7 +12,11 @@ const DEFAULT_SEQUENCES = [
   'mesh_match',
   'seam_normal_atlas_raw',
   'seam_local_normal',
-  'seam_view_normal'
+  'seam_view_normal',
+  'selector_cardinals',
+  'selector_stability',
+  'selector_seam_probe',
+  'selector_silhouette_compare'
 ];
 
 function parseArgs(argv) {
@@ -151,10 +155,34 @@ function createSequenceManifest(sequenceId, captures, summary, diffPairs) {
         secondaryIndex: capture.snapshot.frameSelection.secondaryIndex,
         blend: capture.snapshot.frameSelection.blend,
         frameTransitionOccurred: capture.snapshot.frameTransitionOccurred,
-        framePairChanged: capture.snapshot.framePairChanged
+        framePairChanged: capture.snapshot.framePairChanged,
+        cameraDirectionLocal: capture.snapshot.cameraDirectionLocal,
+        encodedOctUv: capture.snapshot.encodedOctUv,
+        frameWeights: capture.snapshot.frameWeights,
+        selectedFrameDirections: capture.snapshot.selectedFrameDirections
       })),
       diffPairs
     }
+  };
+}
+
+function generateAtlasTruthArtifacts(runDir) {
+  const outputDir = path.join(runDir, 'atlas_truth');
+  mkdirSync(outputDir, { recursive: true });
+  const result = spawnSync(
+    'node',
+    ['tools/inspect-tree-impostor.mjs', '--asset', 'tree-1', '--output-dir', outputDir, '--contact-sheet'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8'
+    }
+  );
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || 'Failed to generate atlas truth artifacts.');
+  }
+  return {
+    folder: path.relative(runDir, outputDir),
+    stdout: result.stdout.trim()
   };
 }
 
@@ -209,6 +237,23 @@ function getMeshMatchDiffPairs(captures) {
   return pairs;
 }
 
+function getSelectorSilhouetteDiffPairs(captures) {
+  const pairs = [];
+  const lookup = new Map(captures.map((capture) => [capture.name, capture]));
+  for (const prefix of ['right', 'sidefront', 'elevated-sidefront']) {
+    const mesh = `selector-silhouette_${prefix}_mesh`;
+    const impostor = `selector-silhouette_${prefix}_impostor`;
+    if (lookup.has(mesh) && lookup.has(impostor)) {
+      pairs.push({
+        name: `selector-silhouette_${prefix}_diff`,
+        before: mesh,
+        after: impostor
+      });
+    }
+  }
+  return pairs;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const baseUrl = `http://127.0.0.1:${options.port}`;
@@ -245,6 +290,7 @@ async function main() {
         baseUrl,
         sequences: []
       };
+      runManifest.atlasTruth = generateAtlasTruthArtifacts(runDir);
 
       for (const sequenceId of options.sequences) {
         const sequenceDir = path.join(runDir, sequenceId);
@@ -263,7 +309,9 @@ async function main() {
 
         const diffPairs = sequenceId === 'mesh_match'
           ? getMeshMatchDiffPairs(manifest.captures)
-          : getNeighborDiffPairs(manifest.captures);
+          : sequenceId === 'selector_silhouette_compare'
+            ? getSelectorSilhouetteDiffPairs(manifest.captures)
+            : getNeighborDiffPairs(manifest.captures);
         for (const diffPair of diffPairs) {
           const before = captureBuffers.get(diffPair.before);
           const after = captureBuffers.get(diffPair.after);

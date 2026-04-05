@@ -73,23 +73,41 @@ def combined_world_bounds(mesh_objects):
     return min_corner, max_corner, corners
 
 
-def build_octahedral_directions(grid_size):
-    directions = []
-    for row in range(grid_size):
-        for col in range(grid_size):
-            x = ((col + 0.5) / grid_size) * 2.0 - 1.0
-            z = ((row + 0.5) / grid_size) * 2.0 - 1.0
-            y = 1.0 - abs(x) - abs(z)
-            if y < 0.0:
-                old_x = x
-                old_z = z
-                x = (1.0 - abs(old_z)) * (1.0 if old_x >= 0.0 else -1.0)
-                z = (1.0 - abs(old_x)) * (1.0 if old_z >= 0.0 else -1.0)
-                y = -y
-            direction = mathutils.Vector((x, y, z))
-            direction.normalize()
-            directions.append(direction)
-    return directions
+def build_direction_from_yaw_pitch(yaw_deg, pitch_deg):
+    yaw = math.radians(yaw_deg)
+    pitch = math.radians(pitch_deg)
+    cos_pitch = math.cos(pitch)
+    direction = mathutils.Vector((
+        math.sin(yaw) * cos_pitch,
+        math.sin(pitch),
+        math.cos(yaw) * cos_pitch,
+    ))
+    direction.normalize()
+    return direction
+
+
+def build_silhouette_friendly_directions():
+    frame_spec = [
+        (-135.0, 0.0, "horizon"),
+        (180.0, 0.0, "horizon"),
+        (135.0, 0.0, "horizon"),
+        (90.0, 0.0, "horizon"),
+        (45.0, 0.0, "horizon"),
+        (0.0, 0.0, "horizon"),
+        (-45.0, 0.0, "horizon"),
+        (-90.0, 0.0, "horizon"),
+        (-135.0, 38.0, "elevated"),
+        (135.0, 38.0, "elevated"),
+        (45.0, 38.0, "elevated"),
+        (-45.0, 38.0, "elevated"),
+        (180.0, 62.0, "high-cardinal"),
+        (90.0, 62.0, "high-cardinal"),
+        (0.0, 62.0, "high-cardinal"),
+        (-90.0, 62.0, "high-cardinal"),
+    ]
+    directions = [build_direction_from_yaw_pitch(yaw, pitch) for yaw, pitch, _band in frame_spec]
+    frame_bands = [band for _yaw, _pitch, band in frame_spec]
+    return directions, frame_bands
 
 
 def look_at(camera_obj, target):
@@ -413,6 +431,8 @@ def main():
     grid_size = max(1, int(args.get("gridSize", "4")))
     if not input_path or not output_dir:
         raise RuntimeError("Expected --input and --outputDir.")
+    if grid_size != 4:
+        raise RuntimeError("Tree impostor selector layout expects gridSize=4 (16 frames).")
 
     ensure_parent_dir(output_dir)
     clear_scene()
@@ -430,7 +450,7 @@ def main():
     depth_near = max(0.0001, capture_radius - model_radius)
     depth_far = capture_radius + model_radius
     atlas_size = frame_size * grid_size
-    directions = build_octahedral_directions(grid_size)
+    directions, frame_bands = build_silhouette_friendly_directions()
 
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
@@ -509,7 +529,10 @@ def main():
             "near": depth_near,
             "far": depth_far,
         },
-        "viewBlendMode": "grid-bilinear",
+        "viewBlendMode": "direction-weighted",
+        "frameBands": frame_bands,
+        "elevatedThreshold": 0.52,
+        "highCardinalThreshold": 0.82,
         "directions": [[direction.x, direction.y, direction.z] for direction in directions],
     }
     with open(metadata_path, "w", encoding="utf8") as handle:
