@@ -57,6 +57,9 @@ test.describe('model viewer workbench', () => {
         await expect(page.getByTestId('model-viewer-metadata-measured')).toContainText('12,000 tris');
         await expect(page.getByTestId('model-viewer-metadata-measured')).toContainText('Staged triangles');
         await expect(page.getByTestId('model-viewer-metadata-measured')).toContainText('n/a');
+        await expect(page.getByTestId('model-viewer-metadata-impostor')).toContainText('Capture ortho scale');
+        await expect(page.getByTestId('model-viewer-metadata-impostor')).toContainText('Content rect');
+        await expect(page.getByTestId('model-viewer-metadata-impostor')).toContainText('Bottom padding');
 
         const scrollState = await page.evaluate(() => {
             const main = document.querySelector('[data-testid="model-viewer-main-scroll"]');

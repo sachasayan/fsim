@@ -39,6 +39,18 @@ function formatTriangles(value: number | null | undefined) {
     return `${Math.round(value).toLocaleString()} tris`;
 }
 
+function formatRatio(value: number | null | undefined) {
+    if (value == null || !Number.isFinite(value)) return 'n/a';
+    return `${(Number(value) * 100).toFixed(1)}%`;
+}
+
+function formatContentRect(contentRect: { x?: number; y?: number; width?: number; height?: number } | null | undefined) {
+    if (!contentRect) return 'n/a';
+    const { x, y, width, height } = contentRect;
+    if (![x, y, width, height].every((value) => Number.isFinite(value))) return 'n/a';
+    return [x, y, width, height].map((value) => Number(value).toFixed(3)).join(', ');
+}
+
 function previewModeLabel(representation: ModelViewerPreviewRepresentation) {
     if (representation === 'impostor') return 'Impostor';
     if (representation === 'sideBySide') return 'Comparison';
@@ -606,7 +618,11 @@ export function ModelViewerApp() {
                                     rows={[
                                         ['Blend mode', detail.impostorMetadata?.viewBlendMode || 'not configured'],
                                         ['Frame count', detail.impostorMetadata?.frameCount ? String(detail.impostorMetadata.frameCount) : 'n/a'],
-                                        ['Frame bands', Array.isArray(detail.impostorMetadata?.frameBands) ? detail.impostorMetadata.frameBands.join(', ') : 'n/a']
+                                        ['Frame bands', Array.isArray(detail.impostorMetadata?.frameBands) ? detail.impostorMetadata.frameBands.join(', ') : 'n/a'],
+                                        ['Capture ortho scale', Number.isFinite(detail.impostorMetadata?.captureOrthoScale) ? Number(detail.impostorMetadata?.captureOrthoScale).toFixed(4) : 'n/a'],
+                                        ['Content rect', formatContentRect(detail.impostorMetadata?.contentRect)],
+                                        ['Visible height', formatRatio(detail.impostorMetadata?.visibleHeightRatio)],
+                                        ['Bottom padding', formatRatio(detail.impostorMetadata?.padding?.bottom)]
                                     ]}
                                 />
                                 <SectionHeading>Derived Files</SectionHeading>

@@ -156,6 +156,7 @@ export function makeTreeOctahedralMaterial(texture, normalTexture, depthTexture,
                                 1 / Math.max(1, Number(impostorData?.atlasWidth) || 1024),
                                 1 / Math.max(1, Number(impostorData?.atlasHeight) || 1024)
                             ],
+                            contentRect: impostorData?.contentRect || { x: 0, y: 0, width: 1, height: 1 },
                             depthStrength: 2.0,
                             normalSpace: impostorData?.normalSpace === 'object' ? 'object' : 'frame-local',
                             depthRange: impostorData?.depthRange || { near: 0, far: 1 }
@@ -210,6 +211,7 @@ export function makeTreeOctahedralDepthMaterial(texture, depthTexture, mainCamer
                                 1 / Math.max(1, Number(impostorData?.atlasWidth) || 1024),
                                 1 / Math.max(1, Number(impostorData?.atlasHeight) || 1024)
                             ],
+                            contentRect: impostorData?.contentRect || { x: 0, y: 0, width: 1, height: 1 },
                             depthStrength: 2.0,
                             normalSpace: impostorData?.normalSpace === 'object' ? 'object' : 'frame-local',
                             depthRange: impostorData?.depthRange || { near: 0, far: 1 }

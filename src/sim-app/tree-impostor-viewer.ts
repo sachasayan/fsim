@@ -92,6 +92,11 @@ type DebugSnapshot = {
     normalSpace: string;
     depthEncoding: string;
     depthRange: { near: number; far: number };
+    captureOrthoScale?: number;
+    contentRect?: { x: number; y: number; width: number; height: number };
+    visibleWidthRatio?: number;
+    visibleHeightRatio?: number;
+    padding?: { left: number; right: number; top: number; bottom: number };
     viewBlendMode?: string;
     directions?: Array<[number, number, number]>;
     frameBands?: Array<'horizon' | 'elevated' | 'high-cardinal'>;
@@ -581,6 +586,11 @@ function computeDebugSnapshot(recordTransition = true): DebugSnapshot {
       normalSpace: 'frame-local',
       depthEncoding: 'orthographic-normalized',
       depthRange: { near: 0, far: 1 },
+      captureOrthoScale: 1,
+      contentRect: { x: 0, y: 0, width: 1, height: 1 },
+      visibleWidthRatio: 1,
+      visibleHeightRatio: 1,
+      padding: { left: 0, right: 0, top: 0, bottom: 0 },
       directions: [],
       frameBands: [],
       elevatedThreshold: 0.52,
@@ -676,6 +686,7 @@ function drawAtlasGrid(snapshot: DebugSnapshot) {
   context.drawImage(atlasAlbedoSource, 0, 0, atlasGridCanvas.width, atlasGridCanvas.height);
   const tileWidth = atlasGridCanvas.width / Math.max(1, bundleMetadata.gridCols);
   const tileHeight = atlasGridCanvas.height / Math.max(1, bundleMetadata.gridRows);
+  const contentRect = snapshot.atlas.contentRect || { x: 0, y: 0, width: 1, height: 1 };
 
   context.strokeStyle = 'rgba(210, 226, 242, 0.22)';
   context.lineWidth = 1;
@@ -714,6 +725,19 @@ function drawAtlasGrid(snapshot: DebugSnapshot) {
   };
   highlightFrame(snapshot.primaryIndex, '#ff8e72', 4);
   highlightFrame(snapshot.secondaryIndex, '#7dd4ff', 3);
+
+  context.strokeStyle = 'rgba(122, 240, 168, 0.95)';
+  context.lineWidth = 1.5;
+  for (let index = 0; index < snapshot.atlas.frameCount; index += 1) {
+    const tileX = (index % bundleMetadata.gridCols) * tileWidth;
+    const tileY = Math.floor(index / bundleMetadata.gridCols) * tileHeight;
+    context.strokeRect(
+      tileX + (contentRect.x * tileWidth),
+      tileY + ((1 - (contentRect.y + contentRect.height)) * tileHeight),
+      contentRect.width * tileWidth,
+      contentRect.height * tileHeight
+    );
+  }
 
   const markerX = snapshot.encodedOctUv[0] * atlasGridCanvas.width;
   const markerY = snapshot.encodedOctUv[1] * atlasGridCanvas.height;
@@ -1195,6 +1219,14 @@ async function initialize() {
       band === 'elevated' || band === 'high-cardinal' ? band : 'horizon'
     ))
     : [];
+  const contentRect = bundle.impostor.metadata?.contentRect
+    ? {
+      x: Number(bundle.impostor.metadata.contentRect.x) || 0,
+      y: Number(bundle.impostor.metadata.contentRect.y) || 0,
+      width: Number(bundle.impostor.metadata.contentRect.width) || 1,
+      height: Number(bundle.impostor.metadata.contentRect.height) || 1
+    }
+    : { x: 0, y: 0, width: 1, height: 1 };
 
   bundleMetadata = {
     ...(bundle.impostor.metadata as any),
@@ -1208,6 +1240,16 @@ async function initialize() {
     depthRange: {
       near: Number(bundle.impostor.metadata?.depthRange?.near) || 0,
       far: Number(bundle.impostor.metadata?.depthRange?.far) || 1
+    },
+    captureOrthoScale: Number(bundle.impostor.metadata?.captureOrthoScale) || 1,
+    contentRect,
+    visibleWidthRatio: contentRect.width,
+    visibleHeightRatio: contentRect.height,
+    padding: {
+      left: contentRect.x,
+      right: Math.max(0, 1 - (contentRect.x + contentRect.width)),
+      top: Math.max(0, 1 - (contentRect.y + contentRect.height)),
+      bottom: contentRect.y
     },
     frameBands: normalizedFrameBands,
     elevatedThreshold: Number.isFinite(bundle.impostor.metadata?.elevatedThreshold)

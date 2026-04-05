@@ -5,7 +5,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-import { buildOctahedralFrameDirections, buildSilhouetteFriendlyFrameLayout } from './TreeImpostorUtils.js';
+import {
+    buildOctahedralFrameDirections,
+    buildSilhouetteFriendlyFrameLayout,
+    resolveTreeImpostorFraming
+} from './TreeImpostorUtils.js';
 import { createTreeBillboardTexture } from './TerrainTextures.js';
 
 const DRACO_DECODER_PATH = '/node_modules/three/examples/jsm/libs/draco/gltf/';
@@ -29,7 +33,9 @@ const DEFAULT_TREE_IMPOSTOR_BASE_URL = '/world/impostors/tree-1';
  *   depthRange?: { near?: number, far?: number },
  *   viewBlendMode?: 'grid-bilinear' | 'direction-weighted' | string,
  *   elevatedThreshold?: number,
- *   highCardinalThreshold?: number
+ *   highCardinalThreshold?: number,
+ *   captureOrthoScale?: number,
+ *   contentRect?: { x?: number, y?: number, width?: number, height?: number }
  * }} TreeImpostorMetadata
  */
 /** @typedef {{ metadata: TreeImpostorMetadata, albedoTexture: THREE.Texture, normalTexture: THREE.Texture, depthTexture: THREE.Texture }} TreeImpostorTextures */
@@ -242,6 +248,9 @@ async function loadTreeImpostorTextures(baseUrl) {
         metadata.highCardinalThreshold = Number.isFinite(metadata?.highCardinalThreshold)
             ? Number(metadata.highCardinalThreshold)
             : selectorDefaults.highCardinalThreshold;
+        const framing = resolveTreeImpostorFraming(metadata);
+        metadata.captureOrthoScale = framing.captureOrthoScale;
+        metadata.contentRect = framing.contentRect;
 
         const [albedoTexture, normalTexture, depthTexture] = await Promise.all([
             loadTexture(new URL(`${baseUrl}/albedo.png`, browserBaseUrl).toString(), THREE.SRGBColorSpace),
@@ -300,7 +309,9 @@ function createFallbackTreeImpostorTextures() {
         depthRange: { near: 0, far: 1 },
         viewBlendMode: fallbackLayout.viewBlendMode,
         elevatedThreshold: fallbackLayout.elevatedThreshold,
-        highCardinalThreshold: fallbackLayout.highCardinalThreshold
+        highCardinalThreshold: fallbackLayout.highCardinalThreshold,
+        captureOrthoScale: 1,
+        contentRect: { x: 0, y: 0, width: 1, height: 1 }
     };
 
     if (typeof document === 'undefined') {

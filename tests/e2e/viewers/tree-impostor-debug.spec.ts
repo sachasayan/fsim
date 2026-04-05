@@ -76,6 +76,10 @@ type DebugSnapshot = {
     frameCount: number;
     gridCols: number;
     gridRows: number;
+    captureOrthoScale?: number;
+    contentRect?: { x: number; y: number; width: number; height: number };
+    visibleHeightRatio?: number;
+    padding?: { bottom: number };
     directions?: Array<[number, number, number]>;
   };
 };
@@ -185,6 +189,8 @@ test.describe.serial('tree impostor debug viewer', () => {
     expect(snapshot.ready).toBe(true);
     expect(snapshot.atlas.frameCount).toBeGreaterThan(0);
     expect(snapshot.atlas.gridCols).toBeGreaterThan(0);
+    expect(snapshot.atlas.contentRect?.height ?? 0).toBeGreaterThan(0);
+    expect(snapshot.atlas.padding?.bottom ?? 0).toBeGreaterThan(0);
     expect(snapshot.selectedFrameDirections.length).toBeGreaterThan(0);
 
     const frozen = await setDebugState(page, {

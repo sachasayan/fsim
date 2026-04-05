@@ -8,7 +8,8 @@ import {
   decodeOctahedralDirection,
   encodeOctahedralDirection,
   findTwoNearestImpostorFrames,
-  findWeightedImpostorFrames
+  findWeightedImpostorFrames,
+  resolveTreeImpostorFraming
 } from '../js/modules/world/terrain/TreeImpostorUtils.js';
 import { createRuntimeLodSettings } from '../js/modules/world/LodSystem.js';
 import { makeTreeOctahedralDepthMaterial, makeTreeOctahedralMaterial } from '../js/modules/world/terrain/TerrainMaterials.js';
@@ -89,6 +90,43 @@ test('silhouette-friendly frame layout uses unique directions and semantic frame
     direction.toArray().map((value) => value.toFixed(6)).join(',')
   )));
   assert.equal(uniqueDirections.size, 16, 'Expected all silhouette-friendly frame directions to be unique');
+});
+
+test('resolveTreeImpostorFraming honors explicit contentRect values', () => {
+  const framing = resolveTreeImpostorFraming({
+    boundsMin: [-0.4, -0.2, -0.3],
+    boundsMax: [0.4, 0.8, 0.5],
+    captureOrthoScale: 2,
+    contentRect: {
+      x: 0.2,
+      y: 0.15,
+      width: 0.6,
+      height: 0.7
+    }
+  });
+
+  assert.equal(framing.captureOrthoScale, 2);
+  assert.deepEqual(framing.contentRect, {
+    x: 0.2,
+    y: 0.15,
+    width: 0.6,
+    height: 0.7
+  });
+  assert.equal(framing.padding.bottom, 0.15);
+  assert.equal(framing.visibleHeightRatio, 0.7);
+});
+
+test('resolveTreeImpostorFraming derives legacy framing from bounds and capture size', () => {
+  const framing = resolveTreeImpostorFraming({
+    boundsMin: [-0.47694703936576843, -0.48308199644088745, -0.0073930732905864716],
+    boundsMax: [0.4342121183872223, 0.5290279984474182, 1.032127857208252]
+  });
+
+  assert.ok(Math.abs(framing.captureOrthoScale - 1.975089767947793) < 1e-9);
+  assert.ok(Math.abs(framing.contentRect.x - 0.2368421052631579) < 1e-9);
+  assert.ok(Math.abs(framing.contentRect.y - 0.24378126723325255) < 1e-9);
+  assert.ok(Math.abs(framing.contentRect.width - 0.5263157894736842) < 1e-9);
+  assert.ok(Math.abs(framing.contentRect.height - 0.5124374655334949) < 1e-9);
 });
 
 test('direction-weighted selection keeps low side-front views in the horizon band', () => {
@@ -192,6 +230,7 @@ vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
       gridCols: layout.gridCols,
       gridRows: layout.gridRows,
       atlasTexelSize: [1 / 1024, 1 / 1024],
+      contentRect: { x: 0.2, y: 0.1, width: 0.6, height: 0.75 },
       depthStrength: 4,
       viewBlendMode: layout.viewBlendMode,
       elevatedThreshold: layout.elevatedThreshold,
@@ -213,6 +252,8 @@ vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
 
   assert.equal((shader.vertexShader.match(/varying vec3 vTreeInstanceXAxis;/g) || []).length, 1);
   assert.match(shader.fragmentShader, /uTreeImpostorDepthTex/);
+  assert.match(shader.fragmentShader, /uTreeImpostorContentRect/);
+  assert.match(shader.fragmentShader, /contentUv = uTreeImpostorContentRect\.xy \+ \(clamp\(baseUv, 0\.0, 1\.0\) \* uTreeImpostorContentRect\.zw\)/);
   assert.match(shader.fragmentShader, /uTreeLightDirWorld/);
   assert.match(shader.vertexShader, /uTreeImpostorFrameBands/);
   assert.match(shader.vertexShader, /uTreeImpostorElevatedThreshold/);
@@ -260,6 +301,7 @@ test('octahedral depth patch uses light-driven shadow selection', () => {
       gridCols: layout.gridCols,
       gridRows: layout.gridRows,
       atlasTexelSize: [1 / 1024, 1 / 1024],
+      contentRect: { x: 0.2, y: 0.1, width: 0.6, height: 0.75 },
       depthStrength: 4,
       viewBlendMode: layout.viewBlendMode,
       elevatedThreshold: layout.elevatedThreshold,
@@ -271,4 +313,6 @@ test('octahedral depth patch uses light-driven shadow selection', () => {
   assert.match(shader.vertexShader, /uTreeImpostorFrameBands/);
   assert.match(shader.vertexShader, /dot\(lightDir, instanceXAxis\)/);
   assert.match(shader.fragmentShader, /uTreeImpostorDepthTex/);
+  assert.match(shader.fragmentShader, /uTreeImpostorContentRect/);
+  assert.match(shader.fragmentShader, /contentUv = uTreeImpostorContentRect\.xy \+ \(clamp\(baseUv, 0\.0, 1\.0\) \* uTreeImpostorContentRect\.zw\)/);
 });

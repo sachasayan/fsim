@@ -7,6 +7,7 @@ import {
     makeTreeOctahedralDepthMaterial,
     makeTreeOctahedralMaterial
 } from '../../modules/world/terrain/TerrainMaterials.ts';
+import { resolveTreeImpostorFraming } from '../../modules/world/terrain/TreeImpostorUtils.ts';
 import { CAMERA_LIMITS, DEFAULT_CAMERA_STATE, clampCameraState, fitDistanceForRadius, normalizeYaw } from './cameraState';
 import type { ModelViewerCameraState, ModelViewerPreviewState, WorldAssetDetail } from './types';
 
@@ -123,6 +124,7 @@ function normalizeImpostorMetadata(metadata: Record<string, unknown>) {
     const normalizedDirections = normalizeImpostorDirections(metadata?.directions);
     const gridCols = Math.max(1, Number((metadata.grid as { cols?: number } | undefined)?.cols) || Math.round(Math.sqrt(normalizedDirections.length)) || 1);
     const gridRows = Math.max(1, Number((metadata.grid as { rows?: number } | undefined)?.rows) || Math.round(Math.sqrt(normalizedDirections.length)) || 1);
+    const framing = resolveTreeImpostorFraming(metadata);
     return {
         ...metadata,
         directions: normalizedDirections,
@@ -130,7 +132,12 @@ function normalizeImpostorMetadata(metadata: Record<string, unknown>) {
             cols: gridCols,
             rows: gridRows
         },
-        frameCount: normalizedDirections.length || Number(metadata.frameCount) || 1
+        frameCount: normalizedDirections.length || Number(metadata.frameCount) || 1,
+        captureOrthoScale: framing.captureOrthoScale,
+        contentRect: framing.contentRect,
+        visibleWidthRatio: framing.visibleWidthRatio,
+        visibleHeightRatio: framing.visibleHeightRatio,
+        padding: framing.padding
     };
 }
 

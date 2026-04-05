@@ -26,6 +26,9 @@ test('world asset detail exposes impostor metadata for impostor-enabled assets',
   assert.equal(detail.targetHeightMeters, 1.0295);
   assert.equal(detail.files.impostor?.metadata.exists, true);
   assert.equal(detail.impostorMetadata?.viewBlendMode, 'direction-weighted');
+  assert.ok(Number.isFinite(detail.impostorMetadata?.captureOrthoScale));
+  assert.ok(Number.isFinite(detail.impostorMetadata?.contentRect?.y));
+  assert.ok(Number.isFinite(detail.impostorMetadata?.padding?.bottom));
   assert.equal(detail.measuredTriangles.source, 49664);
   assert.equal(detail.measuredTriangles.decimated, 12000);
   assert.equal(detail.measuredTriangles.gameReady, null);

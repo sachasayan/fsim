@@ -25,6 +25,7 @@ import {
  *   gridCols: number,
  *   gridRows: number,
  *   atlasTexelSize?: [number, number],
+ *   contentRect?: { x?: number, y?: number, width?: number, height?: number },
  *   depthStrength?: number,
  *   normalSpace?: 'frame-local' | 'object',
  *   depthRange?: { near?: number, far?: number },
@@ -166,11 +167,13 @@ export function createTreeOctahedralUniformBindings(impostor) {
         if (band === 'high-cardinal') return 2;
         return 0;
     });
+    const contentRect = impostor?.contentRect || { x: 0, y: 0, width: 1, height: 1 };
     return {
         uTreeImpostorGrid: { value: [impostor.gridCols, impostor.gridRows] },
         uTreeImpostorFrameDirections: { value: impostor.directions },
         uTreeImpostorFrameBands: { value: frameBandCodes },
         uTreeImpostorAtlasTexelSize: { value: impostor.atlasTexelSize || [1 / 1024, 1 / 1024] },
+        uTreeImpostorContentRect: { value: [contentRect.x || 0, contentRect.y || 0, contentRect.width || 1, contentRect.height || 1] },
         uTreeImpostorDepthStrength: { value: Number.isFinite(impostor.depthStrength) ? impostor.depthStrength : 6.0 },
         uTreeImpostorElevatedThreshold: { value: Number.isFinite(impostor?.elevatedThreshold) ? impostor.elevatedThreshold : 0.52 },
         uTreeImpostorHighCardinalThreshold: { value: Number.isFinite(impostor?.highCardinalThreshold) ? impostor.highCardinalThreshold : 0.82 }
@@ -837,6 +840,7 @@ varying vec3 vTreeInstanceZAxis;
 uniform vec2 uTreeImpostorGrid;
 uniform sampler2D uTreeImpostorDepthTex;
 uniform vec2 uTreeImpostorAtlasTexelSize;
+uniform vec4 uTreeImpostorContentRect;
 uniform float uTreeImpostorDepthStrength;
 uniform vec3 uTreeLightDirWorld;
 uniform vec3 uTreeLightColor;
@@ -871,7 +875,8 @@ vec2 fsimResolveImpostorUvByIndex(vec2 baseUv, float frameIndexFloat) {
     float col = mod(frameIndexFloat, cols);
     float row = floor(frameIndexFloat / cols);
     vec2 tileScale = vec2(1.0 / cols, 1.0 / rows);
-    return vec2(col, row) * tileScale + (baseUv * tileScale);
+    vec2 contentUv = uTreeImpostorContentRect.xy + (clamp(baseUv, 0.0, 1.0) * uTreeImpostorContentRect.zw);
+    return vec2(col, row) * tileScale + (contentUv * tileScale);
 }
 
 mat3 fsimBuildImpostorLocalBasis(vec3 forwardLocal) {
@@ -1153,6 +1158,7 @@ varying vec4 vTreeImpostorWeights;
 varying float vTreeImpostorBlend;
 uniform vec2 uTreeImpostorGrid;
 uniform sampler2D uTreeImpostorDepthTex;
+uniform vec4 uTreeImpostorContentRect;
 
 vec2 fsimResolveImpostorUv(vec2 baseUv, float frameIndexFloat) {
     float cols = max(1.0, uTreeImpostorGrid.x);
@@ -1160,7 +1166,8 @@ vec2 fsimResolveImpostorUv(vec2 baseUv, float frameIndexFloat) {
     float col = mod(frameIndexFloat, cols);
     float row = floor(frameIndexFloat / cols);
     vec2 tileScale = vec2(1.0 / cols, 1.0 / rows);
-    return vec2(col, row) * tileScale + (baseUv * tileScale);
+    vec2 contentUv = uTreeImpostorContentRect.xy + (clamp(baseUv, 0.0, 1.0) * uTreeImpostorContentRect.zw);
+    return vec2(col, row) * tileScale + (contentUv * tileScale);
 }`
     );
     shader.fragmentShader = replaceShaderInclude(

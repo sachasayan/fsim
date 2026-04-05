@@ -140,6 +140,17 @@ def clamp01(value):
     return max(0.0, min(1.0, value))
 
 
+def compute_content_rect(size, capture_ortho_scale):
+    visible_width = clamp01(max(size.x, size.z) / max(capture_ortho_scale, 1.0e-6))
+    visible_height = clamp01(size.y / max(capture_ortho_scale, 1.0e-6))
+    return {
+        "x": (1.0 - visible_width) * 0.5,
+        "y": (1.0 - visible_height) * 0.5,
+        "width": visible_width,
+        "height": visible_height,
+    }
+
+
 def atlas_pixel_index(atlas_size, x, y):
     return (y * atlas_size + x) * 4
 
@@ -470,6 +481,7 @@ def main():
     camera_data = bpy.data.cameras.new("TreeImpostorCamera")
     camera_data.type = "ORTHO"
     camera_data.ortho_scale = max(size.x, size.z, size.y) * 1.9
+    content_rect = compute_content_rect(size, camera_data.ortho_scale)
     camera_obj = bpy.data.objects.new("TreeImpostorCamera", camera_data)
     scene.collection.objects.link(camera_obj)
     scene.camera = camera_obj
@@ -510,7 +522,7 @@ def main():
     save_image(depth_path, depth_pixels, atlas_size, atlas_size)
 
     metadata = {
-        "version": 2,
+        "version": 3,
         "frameSize": frame_size,
         "atlasWidth": atlas_size,
         "atlasHeight": atlas_size,
@@ -522,6 +534,8 @@ def main():
         "boundsMin": [min_corner.x, min_corner.y, min_corner.z],
         "boundsMax": [max_corner.x, max_corner.y, max_corner.z],
         "pivot": [center.x, min_corner.y, center.z],
+        "captureOrthoScale": camera_data.ortho_scale,
+        "contentRect": content_rect,
         "captureRadius": capture_radius,
         "normalSpace": "frame-local",
         "depthEncoding": "orthographic-normalized",

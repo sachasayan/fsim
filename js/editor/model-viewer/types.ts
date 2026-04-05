@@ -79,6 +79,21 @@ export type WorldAssetDetail = {
         frameBands?: string[];
         elevatedThreshold?: number;
         highCardinalThreshold?: number;
+        captureOrthoScale?: number;
+        contentRect?: {
+            x?: number;
+            y?: number;
+            width?: number;
+            height?: number;
+        };
+        visibleWidthRatio?: number;
+        visibleHeightRatio?: number;
+        padding?: {
+            left?: number;
+            right?: number;
+            top?: number;
+            bottom?: number;
+        };
     }) | null;
 };
 

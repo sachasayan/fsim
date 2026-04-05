@@ -55,6 +55,61 @@ function round(value) {
   return Number(Number(value || 0).toFixed(6));
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function clampPositive(value, fallback = 1) {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) && nextValue > 1e-6 ? nextValue : fallback;
+}
+
+function normalizeContentRect(contentRect) {
+  if (!contentRect || typeof contentRect !== 'object') return null;
+  const x = clamp01(Number(contentRect.x));
+  const y = clamp01(Number(contentRect.y));
+  const widthValue = Number(contentRect.width);
+  const heightValue = Number(contentRect.height);
+  const width = Math.max(1e-6, Math.min(1 - x, Number.isFinite(widthValue) ? widthValue : 1));
+  const height = Math.max(1e-6, Math.min(1 - y, Number.isFinite(heightValue) ? heightValue : 1));
+  return { x, y, width, height };
+}
+
+function resolveImpostorFraming(metadata) {
+  const boundsMin = Array.isArray(metadata?.boundsMin) ? metadata.boundsMin : [-0.5, 0, -0.5];
+  const boundsMax = Array.isArray(metadata?.boundsMax) ? metadata.boundsMax : [0.5, 1, 0.5];
+  const width = Math.max(0, Number(boundsMax[0]) - Number(boundsMin[0])) || 0;
+  const height = Math.max(0, Number(boundsMax[1]) - Number(boundsMin[1])) || 0;
+  const depth = Math.max(0, Number(boundsMax[2]) - Number(boundsMin[2])) || 0;
+  const captureOrthoScale = clampPositive(
+    metadata?.captureOrthoScale,
+    Math.max(width, height, depth, 1) * 1.9
+  );
+  const contentRect = normalizeContentRect(metadata?.contentRect) || {
+    x: (1 - Math.max(1e-6, Math.min(1, Math.max(width, depth) / captureOrthoScale))) * 0.5,
+    y: (1 - Math.max(1e-6, Math.min(1, height / captureOrthoScale))) * 0.5,
+    width: Math.max(1e-6, Math.min(1, Math.max(width, depth) / captureOrthoScale)),
+    height: Math.max(1e-6, Math.min(1, height / captureOrthoScale))
+  };
+  return {
+    captureOrthoScale: round(captureOrthoScale),
+    contentRect: {
+      x: round(contentRect.x),
+      y: round(contentRect.y),
+      width: round(contentRect.width),
+      height: round(contentRect.height)
+    },
+    visibleWidthRatio: round(contentRect.width),
+    visibleHeightRatio: round(contentRect.height),
+    padding: {
+      left: round(contentRect.x),
+      right: round(1 - (contentRect.x + contentRect.width)),
+      bottom: round(contentRect.y),
+      top: round(1 - (contentRect.y + contentRect.height))
+    }
+  };
+}
+
 function buildFrameManifest(metadata) {
   const frameCount = Number(metadata.frameCount) || 0;
   const cols = Number(metadata?.grid?.cols) || 1;
@@ -89,6 +144,7 @@ function buildFrameManifest(metadata) {
 }
 
 function buildAtlasTruthHtml({ asset, metadata, frames, albedoDataUri, normalDataUri }) {
+  const framing = resolveImpostorFraming(metadata);
   const frameCards = frames.map((frame) => {
     const backgroundStyle = `background-size:${metadata.atlasWidth}px ${metadata.atlasHeight}px;background-position:-${frame.crop.x}px -${frame.crop.y}px;`;
     return `
@@ -182,6 +238,7 @@ function buildAtlasTruthHtml({ asset, metadata, frames, albedoDataUri, normalDat
 <body>
   <h1>${asset} atlas truth</h1>
   <p class="lead">frameCount=${metadata.frameCount}, frameSize=${metadata.frameSize}, blendMode=${metadata.viewBlendMode || 'unknown'}, elevatedThreshold=${metadata.elevatedThreshold ?? 'n/a'}, highCardinalThreshold=${metadata.highCardinalThreshold ?? 'n/a'}</p>
+  <p class="lead">contentRect=(${framing.contentRect.x}, ${framing.contentRect.y}, ${framing.contentRect.width}, ${framing.contentRect.height}), visibleHeight=${framing.visibleHeightRatio}, bottomPadding=${framing.padding.bottom}</p>
   <section class="grid">
     ${frameCards}
   </section>
@@ -198,6 +255,7 @@ if (!fs.existsSync(metadataPath)) {
 }
 
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+const framing = resolveImpostorFraming(metadata);
 const frameSize = Number(metadata.frameSize) || 0;
 const gridCols = Number(metadata?.grid?.cols) || 1;
 const frames = buildFrameManifest(metadata);
@@ -215,7 +273,12 @@ console.log(JSON.stringify({
   depthRange: metadata.depthRange,
   viewBlendMode: metadata.viewBlendMode,
   elevatedThreshold: metadata.elevatedThreshold,
-  highCardinalThreshold: metadata.highCardinalThreshold
+  highCardinalThreshold: metadata.highCardinalThreshold,
+  captureOrthoScale: framing.captureOrthoScale,
+  contentRect: framing.contentRect,
+  visibleWidthRatio: framing.visibleWidthRatio,
+  visibleHeightRatio: framing.visibleHeightRatio,
+  padding: framing.padding
 }, null, 2));
 
 for (const name of ['albedo', 'normal', 'depth']) {
@@ -264,7 +327,12 @@ if (outputDir) {
       viewBlendMode: metadata.viewBlendMode,
       elevatedThreshold: metadata.elevatedThreshold,
       highCardinalThreshold: metadata.highCardinalThreshold,
-      frameBands: metadata.frameBands || []
+      frameBands: metadata.frameBands || [],
+      captureOrthoScale: framing.captureOrthoScale,
+      contentRect: framing.contentRect,
+      visibleWidthRatio: framing.visibleWidthRatio,
+      visibleHeightRatio: framing.visibleHeightRatio,
+      padding: framing.padding
     },
     frames
   };

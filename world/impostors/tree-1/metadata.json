@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "frameSize": 256,
   "atlasWidth": 1024,
   "atlasHeight": 1024,
@@ -23,6 +23,13 @@
     -0.48308199644088745,
     0.5123673677444458
   ],
+  "captureOrthoScale": 1.975089767947793,
+  "contentRect": {
+    "x": 0.2368421052631579,
+    "y": 0.24378126723325255,
+    "width": 0.5263157894736842,
+    "height": 0.5124374655334949
+  },
   "captureRadius": 1.2994012236595154,
   "normalSpace": "frame-local",
   "depthEncoding": "orthographic-normalized",
