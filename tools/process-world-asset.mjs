@@ -3,10 +3,15 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import {
+  DEFAULT_MANIFEST_PATH,
+  DEFAULT_TARGET_HEIGHTS_PATH,
+  buildWorldAssetPresetMap
+} from './lib/WorldAssetCatalog.mjs';
 
 const repoRoot = process.cwd();
-const manifestPath = path.join(repoRoot, 'tools', 'world-asset-presets.json');
-const targetHeightsPath = path.join(repoRoot, 'tools', 'world-asset-target-heights.json');
+const manifestPath = path.join(repoRoot, DEFAULT_MANIFEST_PATH);
+const targetHeightsPath = path.join(repoRoot, DEFAULT_TARGET_HEIGHTS_PATH);
 const blenderScriptPath = path.join(repoRoot, 'tools', 'blender', 'decimate_world_asset.py');
 const treeImpostorBakeScriptPath = path.join(repoRoot, 'tools', 'bake-tree-impostor.mjs');
 
@@ -37,6 +42,9 @@ function parseArgs(argv) {
     } else if (token === '--manifest' && argv[i + 1]) {
       args.manifestPath = path.resolve(repoRoot, argv[i + 1]);
       i += 1;
+    } else if (token === '--target-heights' && argv[i + 1]) {
+      args.targetHeightsPath = path.resolve(repoRoot, argv[i + 1]);
+      i += 1;
     } else {
       throw new Error(`Unknown argument: ${token}`);
     }
@@ -45,57 +53,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadManifest(filePath) {
-  const manifest = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  if (!manifest.assets || typeof manifest.assets !== 'object') {
-    throw new Error(`Invalid manifest: ${filePath}`);
-  }
-  return manifest;
-}
-
-function loadTargetHeights(filePath) {
-  if (!fs.existsSync(filePath)) return {};
-  const targetHeights = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  return targetHeights && typeof targetHeights === 'object' ? targetHeights : {};
-}
-
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function toAbsolute(p) {
-  return path.isAbsolute(p) ? p : path.join(repoRoot, p);
-}
-
-function mergePreset(defaults, name, assetConfig) {
-  const merged = {
-    name,
-    inputFile: `${name}.glb`,
-    ...defaults,
-    ...assetConfig
-  };
-  const category = typeof merged.category === 'string' && merged.category.length > 0 ? merged.category : '';
-  return {
-    ...merged,
-    category,
-    unprocessedDir: merged.unprocessedDir || defaults.unprocessedDir,
-    sourceDir: merged.sourceDir || defaults.sourceDir,
-    decimatedDir: merged.decimatedDir || defaults.decimatedDir,
-    gameReadyDir: merged.gameReadyDir || defaults.gameReadyDir
-  };
-}
-
-function resolveAssetPaths(preset) {
-  const unprocessedDir = toAbsolute(preset.category ? path.join(preset.unprocessedDir, preset.category) : preset.unprocessedDir);
-  const sourceDir = toAbsolute(preset.category ? path.join(preset.sourceDir, preset.category) : preset.sourceDir);
-  const decimatedDir = toAbsolute(preset.category ? path.join(preset.decimatedDir, preset.category) : preset.decimatedDir);
-  const gameReadyDir = toAbsolute(preset.category ? path.join(preset.gameReadyDir, preset.category) : preset.gameReadyDir);
-  const unprocessedPath = toAbsolute(preset.unprocessedPath || path.join(unprocessedDir, preset.inputFile));
-  const inputPath = toAbsolute(preset.inputPath || path.join(sourceDir, preset.inputFile));
-  const decimatedPath = toAbsolute(preset.decimatedPath || path.join(decimatedDir, `${preset.name}.glb`));
-  const gameReadyPath = toAbsolute(preset.gameReadyPath || path.join(gameReadyDir, `${preset.name}.glb`));
-  const reportPath = `${decimatedPath}.report.json`;
-  return { unprocessedDir, sourceDir, decimatedDir, gameReadyDir, unprocessedPath, inputPath, decimatedPath, gameReadyPath, reportPath };
 }
 
 function ensureSourceAssetAvailable(preset, resolved) {
@@ -194,6 +153,7 @@ function runTreeImpostorBake(args, preset) {
     '--blender',
     args.blenderPath
   ];
+  if (args.manifestPath) bakeArgs.push('--manifest', args.manifestPath);
   if (args.force) bakeArgs.push('--force');
   if (args.dryRun) bakeArgs.push('--dry-run');
   const result = spawnSync(process.execPath, bakeArgs, {
@@ -210,25 +170,22 @@ function runTreeImpostorBake(args, preset) {
 
 function main() {
   const args = parseArgs(process.argv);
-  const manifest = loadManifest(args.manifestPath || manifestPath);
-  const targetHeights = loadTargetHeights(targetHeightsPath);
-  const assetNames = args.all ? Object.keys(manifest.assets) : args.assetNames;
+  const presetMap = buildWorldAssetPresetMap(repoRoot, {
+    manifestPath: args.manifestPath || manifestPath,
+    targetHeightsPath: args.targetHeightsPath || targetHeightsPath
+  });
+  const assetNames = args.all ? Array.from(presetMap.presets.keys()) : args.assetNames;
 
   if (assetNames.length === 0) {
     throw new Error('Choose at least one asset with --asset <name> or run with --all.');
   }
 
   for (const name of assetNames) {
-    const assetConfig = manifest.assets[name];
-    if (!assetConfig) {
+    const entry = presetMap.presets.get(name);
+    if (!entry) {
       throw new Error(`Unknown asset '${name}'. Add it to tools/world-asset-presets.json first.`);
     }
-
-    const preset = mergePreset(manifest.defaults || {}, name, {
-      ...assetConfig,
-      targetHeightMeters: Number(targetHeights[name] || assetConfig.targetHeightMeters || 0)
-    });
-    const resolved = resolveAssetPaths(preset);
+    const { preset, paths: resolved } = entry;
     ensureDir(resolved.unprocessedDir);
     ensureDir(resolved.decimatedDir);
     ensureDir(resolved.gameReadyDir);

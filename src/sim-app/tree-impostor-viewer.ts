@@ -185,6 +185,13 @@ const DEBUG_MODE_VALUES: Record<DebugMode, number> = {
   frame_grid_overlay: 0
 };
 
+const searchParams = new URLSearchParams(window.location.search);
+const viewerAssetName = searchParams.get('asset') || 'tree-1';
+const viewerModelUrl = searchParams.get('modelUrl')
+  || `/world/assets/decimated/scenery/${viewerAssetName}.glb`;
+const viewerImpostorBaseUrl = searchParams.get('impostorBaseUrl')
+  || `/world/impostors/${viewerAssetName}`;
+
 const defaultState: DebugState = {
   mode: 'lit',
   freezeFrameIndex: -1,
@@ -1170,7 +1177,11 @@ function resizeRenderer() {
 }
 
 async function initialize() {
-  const bundle = await getTreeAssetBundle();
+  document.title = `FSIM | ${viewerAssetName} Impostor Viewer`;
+  const bundle = await getTreeAssetBundle({
+    modelUrl: viewerModelUrl,
+    impostorBaseUrl: viewerImpostorBaseUrl
+  });
   const metadataDirections = (bundle.impostor.metadata?.directions || []).map((direction: any) => roundDirectionTuple(direction));
   const selectionDirections = (bundle.impostor.metadata?.directions || []).map((direction: any) => (
     direction instanceof THREE.Vector3

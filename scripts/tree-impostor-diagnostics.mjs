@@ -21,12 +21,37 @@ const DEFAULT_SEQUENCES = [
 
 function parseArgs(argv) {
   const options = {
+    asset: 'tree-1',
     port: DEFAULT_PORT,
     sequences: [...DEFAULT_SEQUENCES],
     outputBase: path.resolve(ROOT, 'test-results', 'tree-impostor-diagnostics'),
     reuseServer: false
   };
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--asset' && argv[index + 1]) {
+      options.asset = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg === '--port' && argv[index + 1]) {
+      options.port = Number(argv[index + 1]) || DEFAULT_PORT;
+      index += 1;
+      continue;
+    }
+    if (arg === '--sequence' && argv[index + 1]) {
+      options.sequences = argv[index + 1]
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      index += 1;
+      continue;
+    }
+    if (arg === '--output-base' && argv[index + 1]) {
+      options.outputBase = path.resolve(ROOT, argv[index + 1]);
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--port=')) {
       options.port = Number(arg.slice('--port='.length)) || DEFAULT_PORT;
     } else if (arg.startsWith('--sequence=')) {
@@ -166,12 +191,12 @@ function createSequenceManifest(sequenceId, captures, summary, diffPairs) {
   };
 }
 
-function generateAtlasTruthArtifacts(runDir) {
+function generateAtlasTruthArtifacts(runDir, assetName) {
   const outputDir = path.join(runDir, 'atlas_truth');
   mkdirSync(outputDir, { recursive: true });
   const result = spawnSync(
     'node',
-    ['tools/inspect-tree-impostor.mjs', '--asset', 'tree-1', '--output-dir', outputDir, '--contact-sheet'],
+    ['tools/inspect-tree-impostor.mjs', '--asset', assetName, '--output-dir', outputDir, '--contact-sheet'],
     {
       cwd: ROOT,
       encoding: 'utf8'
@@ -280,7 +305,9 @@ async function main() {
     });
     try {
       const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
-      await page.goto(`${baseUrl}/tree-impostor-viewer.html`, { waitUntil: 'networkidle' });
+      const viewerUrl = new URL(`${baseUrl}/tree-impostor-viewer.html`);
+      viewerUrl.searchParams.set('asset', options.asset);
+      await page.goto(viewerUrl.toString(), { waitUntil: 'networkidle' });
       await page.waitForFunction(() => Boolean(window.__TREE_IMPOSTOR_VIEWER__), null, { timeout: 60_000 });
       await getViewerApi(page);
       await callViewer(page, 'waitUntilReady');
@@ -288,9 +315,10 @@ async function main() {
       const runManifest = {
         generatedAt: new Date().toISOString(),
         baseUrl,
+        asset: options.asset,
         sequences: []
       };
-      runManifest.atlasTruth = generateAtlasTruthArtifacts(runDir);
+      runManifest.atlasTruth = generateAtlasTruthArtifacts(runDir, options.asset);
 
       for (const sequenceId of options.sequences) {
         const sequenceDir = path.join(runDir, sequenceId);

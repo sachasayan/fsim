@@ -25,7 +25,7 @@
 }
 
 @layer base {
-    html, body, #editor-app {
+    html, body, #editor-app, #model-viewer-app {
         @apply m-0 h-full w-full;
     }
 
@@ -80,6 +80,102 @@
 
     .editor-workspace {
         @apply grid min-h-0 grid-cols-[minmax(0,1fr)_340px];
+    }
+
+    .model-viewer-shell {
+        @apply grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)];
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 16%),
+            radial-gradient(circle at top, #111827 0%, #030712 62%);
+    }
+
+    .model-viewer-workspace {
+        @apply grid min-h-0 overflow-hidden grid-cols-[280px_minmax(0,1fr)_380px];
+    }
+
+    .model-viewer-main {
+        @apply flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-4;
+    }
+
+    .model-viewer-preview-stage {
+        @apply relative min-h-[620px] overflow-hidden rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_center,#111827_0%,#030712_100%)];
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+            0 20px 50px rgba(0, 0, 0, 0.28);
+    }
+
+    .model-viewer-bottom-panels {
+        @apply grid min-h-0 grid-cols-2 gap-3;
+    }
+
+    .model-viewer-scene-controls {
+        @apply flex flex-col gap-4;
+    }
+
+    .model-viewer-scene-card {
+        @apply flex flex-col gap-3 rounded-[1.15rem] border border-white/8 bg-black/22 px-4 py-4;
+    }
+
+    .model-viewer-scene-card-label {
+        @apply text-[10px] font-extrabold uppercase tracking-[0.18em] text-[color:var(--accent)];
+    }
+
+    .model-viewer-scene-summary {
+        @apply flex flex-wrap items-center gap-2 text-sm text-[color:var(--text)];
+    }
+
+    .model-viewer-scene-status {
+        @apply flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text)] backdrop-blur-sm;
+    }
+
+    .model-viewer-overlay-pill {
+        @apply rounded-full border border-white/10 bg-black/35 px-3 py-2 text-[11px] text-[color:var(--text-dim)] backdrop-blur-sm;
+    }
+
+    .model-viewer-overlay-button {
+        @apply border-white/12 bg-black/35 backdrop-blur-sm;
+    }
+
+    .model-viewer-catalog-scroll {
+        @apply flex min-h-0 flex-col gap-4 overflow-y-auto pr-1;
+        max-height: none;
+    }
+
+    .model-viewer-asset-row {
+        @apply flex flex-col gap-2 rounded-[1.05rem] border border-white/8 bg-black/18 px-3 py-3 text-left transition-all hover:border-white/14 hover:bg-white/[0.05];
+    }
+
+    .model-viewer-asset-row.is-active {
+        @apply border-[color:var(--accent-glow)] bg-[linear-gradient(180deg,rgba(56,189,248,0.14),rgba(56,189,248,0.06))] shadow-[0_0_0_1px_rgba(56,189,248,0.12)];
+    }
+
+    .model-viewer-file-grid {
+        @apply grid gap-2;
+    }
+
+    .model-viewer-file-card {
+        @apply flex flex-col gap-1 rounded-2xl border border-white/8 bg-black/20 px-3 py-3;
+    }
+
+    .model-viewer-log-pane {
+        @apply min-h-[220px] overflow-auto rounded-2xl border border-white/8 bg-black/30 p-3 font-mono text-xs text-[color:var(--text-dim)];
+        white-space: pre-wrap;
+    }
+
+    .model-viewer-tab-strip {
+        @apply flex items-center gap-2;
+    }
+
+    .model-viewer-metadata-grid {
+        @apply grid grid-cols-[minmax(0,128px)_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-[1.1rem] border border-white/8 bg-black/16 px-4 py-4;
+    }
+
+    .model-viewer-metadata-label {
+        @apply text-[11px] font-bold uppercase tracking-[0.14em] text-[color:var(--text-dim)];
+    }
+
+    .model-viewer-metadata-value {
+        @apply text-sm text-[color:var(--text)];
     }
 
     .editor-dock {

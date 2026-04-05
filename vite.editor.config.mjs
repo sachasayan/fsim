@@ -33,6 +33,12 @@ export default defineConfig({
     build: {
         outDir: path.resolve(ROOT, 'editor-dist'),
         emptyOutDir: true,
-        assetsDir: 'assets'
+        assetsDir: 'assets',
+        rollupOptions: {
+            input: {
+                main: path.resolve(ROOT, 'src', 'editor-app', 'index.html'),
+                modelViewer: path.resolve(ROOT, 'src', 'editor-app', 'model-viewer.html')
+            }
+        }
     }
 });

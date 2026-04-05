@@ -35,7 +35,7 @@ const DEFAULT_TREE_IMPOSTOR_BASE_URL = '/world/impostors/tree-1';
 /** @typedef {{ metadata: TreeImpostorMetadata, albedoTexture: THREE.Texture, normalTexture: THREE.Texture, depthTexture: THREE.Texture }} TreeImpostorTextures */
 /** @typedef {{ meshParts: TreeMeshPart[], modelMetrics: TreeModelMetrics, impostor: TreeImpostorTextures }} TreeAssetBundle */
 
-let cachedBundlePromise = null;
+const cachedBundlePromises = new Map();
 
 function getBrowserAssetBaseUrl() {
     const href = typeof window !== 'undefined' ? window.location?.href || '' : '';
@@ -340,8 +340,9 @@ export function getTreeAssetBundle({
     modelUrl = DEFAULT_TREE_MODEL_URL,
     impostorBaseUrl = DEFAULT_TREE_IMPOSTOR_BASE_URL
 } = {}) {
-    if (!cachedBundlePromise) {
-        cachedBundlePromise = Promise.allSettled([
+    const cacheKey = `${modelUrl}|${impostorBaseUrl}`;
+    if (!cachedBundlePromises.has(cacheKey)) {
+        cachedBundlePromises.set(cacheKey, Promise.allSettled([
             loadTreeMeshParts(modelUrl),
             loadTreeImpostorTextures(impostorBaseUrl)
         ]).then((results) => {
@@ -360,7 +361,7 @@ export function getTreeAssetBundle({
             }
 
             return { meshParts: meshAsset.meshParts, modelMetrics: meshAsset.modelMetrics, impostor };
-        });
+        }));
     }
-    return cachedBundlePromise;
+    return cachedBundlePromises.get(cacheKey);
 }

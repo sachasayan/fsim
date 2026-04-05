@@ -64,6 +64,17 @@ export async function gotoEditor(page) {
     await page.waitForFunction(() => window.__EDITOR_TEST__?.store != null);
 }
 
+export async function gotoModelViewer(page) {
+    await page.goto('/model-viewer', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('model-viewer-catalog')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('model-viewer-preview')).toBeVisible({ timeout: 20_000 });
+    await page.waitForFunction(
+        () => document.querySelector('[data-testid="model-viewer-preview"]')?.getAttribute('data-ready') === 'true',
+        undefined,
+        { timeout: 45_000 }
+    );
+}
+
 export async function getEditorState(page) {
     return page.evaluate(() => {
         const store = window.__EDITOR_TEST__?.store;

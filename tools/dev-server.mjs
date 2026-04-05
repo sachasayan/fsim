@@ -1,10 +1,19 @@
 import http from 'node:http';
 import path from 'node:path';
 import { readFile, watch, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isBuildStale } from './lib/BuildFreshness.mjs';
+import {
+    createBakeImpostorJobSpec,
+    createDiagnosticsJobSpec,
+    createInspectImpostorJobSpec,
+    createProcessAssetJobSpec,
+    getModelViewerAssetDetail,
+    getModelViewerCatalog,
+    sanitizeAssetName
+} from './lib/ModelViewerSupport.mjs';
 
 // Path to project root
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,6 +22,7 @@ const PORT = Number(process.env.PORT || 5173);
 const SIM_DIST_INDEX = path.resolve(ROOT, 'sim-dist', 'index.html');
 const SIM_DIST_TREE_IMPOSTOR_VIEWER = path.resolve(ROOT, 'sim-dist', 'tree-impostor-viewer.html');
 const EDITOR_DIST_INDEX = path.resolve(ROOT, 'editor-dist', 'index.html');
+const EDITOR_DIST_MODEL_VIEWER = path.resolve(ROOT, 'editor-dist', 'model-viewer.html');
 const VITE_BIN = path.resolve(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
 const IS_EDITOR_E2E = process.env.FSIM_EDITOR_E2E === '1';
 const SIM_BUILD_SOURCES = [
@@ -129,6 +139,15 @@ function safeResolve(urlPath) {
     }
     if (decoded === '/editor' || decoded === '/editor/' || decoded === '/editor.html' || decoded === '/editor.html/') {
         return ensureBuiltEditor();
+    }
+    if (
+        decoded === '/model-viewer'
+        || decoded === '/model-viewer/'
+        || decoded === '/model-viewer.html'
+        || decoded === '/model-viewer.html/'
+    ) {
+        ensureBuiltEditor();
+        return EDITOR_DIST_MODEL_VIEWER;
     }
     if (decoded === '/favicon.ico') {
         return path.resolve(ROOT, 'assets', 'icons', 'favicon.ico');
@@ -323,6 +342,178 @@ if (!IS_EDITOR_E2E && existsSync(MAP_FILE)) {
 
 await initializeEditorE2eData();
 
+let nextModelViewerJobId = 1;
+const modelViewerJobs = new Map();
+
+function readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', (chunk) => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            if (!body) {
+                resolve({});
+                return;
+            }
+            try {
+                resolve(JSON.parse(body));
+            } catch (error) {
+                reject(error);
+            }
+        });
+        req.on('error', reject);
+    });
+}
+
+function createModelViewerJob(jobType, assetName, label) {
+    const id = `model_viewer_job_${nextModelViewerJobId++}`;
+    const job = {
+        id,
+        jobType,
+        assetName,
+        label,
+        status: 'queued',
+        logs: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        artifacts: null,
+        error: null
+    };
+    modelViewerJobs.set(id, job);
+    return job;
+}
+
+function emitModelViewerJobProgress(job, payload = {}) {
+    job.updatedAt = Date.now();
+    Object.assign(job, payload);
+    broadcast('model-viewer-job-progress', {
+        jobId: job.id,
+        jobType: job.jobType,
+        assetName: job.assetName,
+        label: job.label,
+        status: job.status,
+        logs: job.logs.slice(-200),
+        artifacts: job.artifacts,
+        error: job.error,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt
+    });
+}
+
+function relativeArtifactPath(filePath) {
+    return filePath.startsWith(ROOT)
+        ? `/${path.relative(ROOT, filePath).split(path.sep).join('/')}`
+        : filePath;
+}
+
+function collectArtifactDirectory(dirPath) {
+    if (!dirPath || !existsSync(dirPath)) return [];
+    /** @type {string[]} */
+    const files = [];
+    const queue = [dirPath];
+    while (queue.length > 0) {
+        const current = queue.shift();
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const absolute = path.join(current, entry.name);
+            if (entry.isDirectory()) queue.push(absolute);
+            else files.push(absolute);
+        }
+    }
+    return files.sort().map((filePath) => ({
+        path: filePath,
+        urlPath: relativeArtifactPath(filePath)
+    }));
+}
+
+function buildModelViewerJobArtifacts(jobSpec) {
+    if (jobSpec.outputDir) {
+        return {
+            outputDir: relativeArtifactPath(jobSpec.outputDir),
+            files: collectArtifactDirectory(jobSpec.outputDir)
+        };
+    }
+    if (jobSpec.outputBase) {
+        const entries = existsSync(jobSpec.outputBase)
+            ? readdirSync(jobSpec.outputBase, { withFileTypes: true })
+                .filter((entry) => entry.isDirectory())
+                .map((entry) => path.join(jobSpec.outputBase, entry.name))
+                .sort()
+            : [];
+        const latest = entries.at(-1) || null;
+        return latest
+            ? {
+                outputDir: relativeArtifactPath(latest),
+                files: collectArtifactDirectory(latest)
+            }
+            : {
+                outputDir: relativeArtifactPath(jobSpec.outputBase),
+                files: []
+            };
+    }
+    return null;
+}
+
+function startModelViewerJob(job, jobSpec) {
+    emitModelViewerJobProgress(job, { status: 'running', error: null });
+    const child = spawn(jobSpec.command, jobSpec.args, {
+        cwd: jobSpec.cwd || ROOT,
+        env: { ...process.env, PORT: String(PORT) },
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    const appendLog = (streamName, chunk) => {
+        const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
+        if (lines.length === 0) return;
+        job.logs.push(...lines.map((line) => `[${streamName}] ${line}`));
+        if (job.logs.length > 400) {
+            job.logs.splice(0, job.logs.length - 400);
+        }
+        emitModelViewerJobProgress(job, {});
+    };
+
+    child.stdout?.on('data', (chunk) => appendLog('stdout', chunk));
+    child.stderr?.on('data', (chunk) => appendLog('stderr', chunk));
+
+    child.on('close', (code) => {
+        try {
+            if (code === 0) {
+                emitModelViewerJobProgress(job, {
+                    status: 'completed',
+                    artifacts: buildModelViewerJobArtifacts(jobSpec),
+                    error: null
+                });
+            } else {
+                emitModelViewerJobProgress(job, {
+                    status: 'failed',
+                    error: `Job exited with code ${code ?? 'unknown'}`
+                });
+            }
+        } finally {
+            try {
+                jobSpec.cleanup?.();
+            } catch (error) {
+                console.error('[ModelViewer] Failed to clean up temp files', error);
+            }
+        }
+    });
+
+    child.on('error', (error) => {
+        try {
+            emitModelViewerJobProgress(job, {
+                status: 'failed',
+                error: error.message
+            });
+        } finally {
+            try {
+                jobSpec.cleanup?.();
+            } catch {}
+        }
+    });
+
+    return job;
+}
+
 const server = http.createServer(async (req, res) => {
     try {
         const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -417,6 +608,98 @@ const server = http.createServer(async (req, res) => {
             const requestId = url.searchParams.get('requestId') || null;
             const rebuild = queueWorldRebuild('manual rebuild requested', { forceClean, requestId, source: 'manual' });
             sendJson(res, { success: true, queued: rebuild.queued, rebuildJobId: rebuild.jobId });
+            return;
+        }
+
+        if ((url.pathname === '/api/model-viewer/catalog' || url.pathname === '/api/model-viewer/catalog/') && req.method === 'GET') {
+            sendJson(res, {
+                assets: getModelViewerCatalog(ROOT)
+            });
+            return;
+        }
+
+        if (url.pathname.startsWith('/api/model-viewer/assets/') && req.method === 'GET') {
+            const assetName = decodeURIComponent(url.pathname.split('/').pop() || '');
+            const detail = getModelViewerAssetDetail(ROOT, assetName);
+            if (!detail) {
+                sendJson(res, { error: `Unknown asset '${assetName}'.` }, 404);
+                return;
+            }
+            sendJson(res, detail);
+            return;
+        }
+
+        if (url.pathname.startsWith('/api/model-viewer/jobs/') && req.method === 'GET') {
+            const jobId = decodeURIComponent(url.pathname.split('/').pop() || '');
+            const job = modelViewerJobs.get(jobId);
+            if (!job) {
+                sendJson(res, { error: `Unknown job '${jobId}'.` }, 404);
+                return;
+            }
+            sendJson(res, job);
+            return;
+        }
+
+        if ((url.pathname === '/api/model-viewer/jobs/process-asset' || url.pathname === '/api/model-viewer/jobs/process-asset/') && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            const assetName = sanitizeAssetName(body.assetName);
+            const job = createModelViewerJob('process-asset', assetName, `Process asset: ${assetName}`);
+            const jobSpec = createProcessAssetJobSpec(ROOT, {
+                assetName,
+                blenderPath: body.blenderPath || process.env.BLENDER_BIN || '/Applications/Blender.app/Contents/MacOS/Blender',
+                dryRun: body.dryRun === true,
+                force: body.force !== false,
+                stage: body.stage === true,
+                processOverrides: body.processOverrides || {},
+                impostorOverrides: body.impostorOverrides || {}
+            });
+            startModelViewerJob(job, jobSpec);
+            sendJson(res, { success: true, jobId: job.id, status: job.status });
+            return;
+        }
+
+        if ((url.pathname === '/api/model-viewer/jobs/bake-impostor' || url.pathname === '/api/model-viewer/jobs/bake-impostor/') && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            const assetName = sanitizeAssetName(body.assetName);
+            const job = createModelViewerJob('bake-impostor', assetName, `Bake impostor: ${assetName}`);
+            const jobSpec = createBakeImpostorJobSpec(ROOT, {
+                assetName,
+                blenderPath: body.blenderPath || process.env.BLENDER_BIN || '/Applications/Blender.app/Contents/MacOS/Blender',
+                dryRun: body.dryRun === true,
+                force: body.force !== false,
+                processOverrides: body.processOverrides || {},
+                impostorOverrides: body.impostorOverrides || {}
+            });
+            startModelViewerJob(job, jobSpec);
+            sendJson(res, { success: true, jobId: job.id, status: job.status });
+            return;
+        }
+
+        if ((url.pathname === '/api/model-viewer/jobs/inspect-impostor' || url.pathname === '/api/model-viewer/jobs/inspect-impostor/') && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            const assetName = sanitizeAssetName(body.assetName);
+            const job = createModelViewerJob('inspect-impostor', assetName, `Inspect impostor: ${assetName}`);
+            const jobSpec = createInspectImpostorJobSpec(ROOT, {
+                assetName,
+                frame: body.frame,
+                contactSheet: body.contactSheet !== false
+            });
+            startModelViewerJob(job, jobSpec);
+            sendJson(res, { success: true, jobId: job.id, status: job.status });
+            return;
+        }
+
+        if ((url.pathname === '/api/model-viewer/jobs/run-diagnostics' || url.pathname === '/api/model-viewer/jobs/run-diagnostics/') && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            const assetName = sanitizeAssetName(body.assetName);
+            const job = createModelViewerJob('run-diagnostics', assetName, `Run diagnostics: ${assetName}`);
+            const jobSpec = createDiagnosticsJobSpec(ROOT, {
+                assetName,
+                sequences: Array.isArray(body.sequences) ? body.sequences : [],
+                port: PORT
+            });
+            startModelViewerJob(job, jobSpec);
+            sendJson(res, { success: true, jobId: job.id, status: job.status });
             return;
         }
 

@@ -3,15 +3,17 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { DEFAULT_MANIFEST_PATH, buildWorldAssetPresetMap } from './lib/WorldAssetCatalog.mjs';
 
 const repoRoot = process.cwd();
-const manifestPath = path.join(repoRoot, 'tools', 'world-asset-presets.json');
+const manifestPath = path.join(repoRoot, DEFAULT_MANIFEST_PATH);
 const blenderScriptPath = path.join(repoRoot, 'tools', 'blender', 'bake_tree_impostor.py');
 
 function parseArgs(argv) {
   const args = {
     asset: 'tree-1',
     blenderPath: process.env.BLENDER_BIN || '/Applications/Blender.app/Contents/MacOS/Blender',
+    manifestPath,
     force: false,
     dryRun: false
   };
@@ -22,6 +24,8 @@ function parseArgs(argv) {
       args.asset = argv[++index];
     } else if (token === '--blender' && argv[index + 1]) {
       args.blenderPath = argv[++index];
+    } else if (token === '--manifest' && argv[index + 1]) {
+      args.manifestPath = path.resolve(repoRoot, argv[++index]);
     } else if (token === '--force') {
       args.force = true;
     } else if (token === '--dry-run') {
@@ -34,38 +38,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadManifest(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function toAbsolute(targetPath) {
-  return path.isAbsolute(targetPath) ? targetPath : path.join(repoRoot, targetPath);
-}
-
-function resolveAssetConfig(manifest, assetName) {
-  const defaults = manifest.defaults || {};
-  const assetConfig = manifest.assets?.[assetName];
-  if (!assetConfig) {
-    throw new Error(`Unknown asset '${assetName}'.`);
-  }
-  const category = assetConfig.category || '';
-  const decimatedDir = toAbsolute(category ? path.join(assetConfig.decimatedDir || defaults.decimatedDir, category) : (assetConfig.decimatedDir || defaults.decimatedDir));
-  const inputPath = toAbsolute(assetConfig.decimatedPath || path.join(decimatedDir, `${assetName}.glb`));
-  const impostorConfig = assetConfig.impostorBake || null;
-  if (!impostorConfig?.enabled) {
-    throw new Error(`Asset '${assetName}' does not declare impostorBake.enabled.`);
-  }
-  const outputDir = toAbsolute(impostorConfig.outputDir);
-  return {
-    inputPath,
-    outputDir,
-    frameSize: Math.max(64, Number(impostorConfig.frameSize) || 256),
-    gridSize: Math.max(1, Number(impostorConfig.gridSize) || 4)
-  };
 }
 
 function runBake(args, resolved) {
@@ -108,8 +82,24 @@ function runBake(args, resolved) {
 
 function main() {
   const args = parseArgs(process.argv);
-  const manifest = loadManifest(manifestPath);
-  const resolved = resolveAssetConfig(manifest, args.asset);
+  const presetMap = buildWorldAssetPresetMap(repoRoot, {
+    manifestPath: args.manifestPath || manifestPath
+  });
+  const entry = presetMap.presets.get(args.asset);
+  if (!entry) {
+    throw new Error(`Unknown asset '${args.asset}'.`);
+  }
+  const { preset, paths } = entry;
+  const impostorConfig = preset.impostorBake || null;
+  if (!impostorConfig?.enabled) {
+    throw new Error(`Asset '${args.asset}' does not declare impostorBake.enabled.`);
+  }
+  const resolved = {
+    inputPath: paths.decimatedPath,
+    outputDir: paths.impostorOutputDir,
+    frameSize: Math.max(64, Number(impostorConfig.frameSize) || 256),
+    gridSize: Math.max(1, Number(impostorConfig.gridSize) || 4)
+  };
   runBake(args, resolved);
 }
 
