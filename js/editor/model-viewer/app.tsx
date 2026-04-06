@@ -73,14 +73,19 @@ function createDraftState(detail: WorldAssetDetail): ModelViewerDraftState {
     };
 }
 
+function hasBakedImpostor(detail: WorldAssetDetail | null) {
+    return Boolean(detail?.files.impostor?.metadata.exists);
+}
+
 function representationOptions(detail: WorldAssetDetail | null) {
     if (!detail) return [];
+    const hasImpostor = hasBakedImpostor(detail);
     const options: Array<{ value: ModelViewerPreviewRepresentation; label: string; disabled: boolean }> = [
         { value: 'source', label: 'Source', disabled: !detail.files.source.exists || !detail.files.source.urlPath },
         { value: 'decimated', label: 'Decimated', disabled: !detail.files.decimated.exists || !detail.files.decimated.urlPath },
         { value: 'gameReady', label: 'Staged', disabled: !detail.files.gameReady.exists || !detail.files.gameReady.urlPath },
-        { value: 'impostor', label: 'Impostor', disabled: !detail.files.impostor?.metadata.exists },
-        { value: 'sideBySide', label: 'Side by side', disabled: !detail.files.impostor?.metadata.exists || !detail.files.decimated.exists }
+        { value: 'impostor', label: 'Impostor', disabled: !hasImpostor },
+        { value: 'sideBySide', label: 'Side by side', disabled: !hasImpostor || !detail.files.decimated.exists }
     ];
     return options;
 }
@@ -353,10 +358,24 @@ export function ModelViewerApp() {
         }
     }, [selectedAssetName]);
 
-    const loadDetail = React.useCallback(async (assetName: string) => {
-        const nextDetail = await fetchModelViewerAssetDetail(assetName);
+    const loadDetail = React.useCallback(async (
+        assetName: string,
+        draftOverrides: ModelViewerDraftState | null = null,
+        preserveDraft = false
+    ) => {
+        const nextDetail = await fetchModelViewerAssetDetail(assetName, draftOverrides);
         setDetail(nextDetail);
-        setDraft(createDraftState(nextDetail));
+        setDraft((current) => {
+            if (!preserveDraft || !current) {
+                return createDraftState(nextDetail);
+            }
+            return {
+                ...current,
+                impostorGridSize: Number.isFinite(current.impostorGridSize) ? current.impostorGridSize : (Number(nextDetail.preset.impostorBake?.gridSize) || 4),
+                impostorFrameSize: Number.isFinite(current.impostorFrameSize) ? current.impostorFrameSize : (Number(nextDetail.preset.impostorBake?.frameSize) || 256),
+                impostorOutputDir: current.impostorOutputDir || String(nextDetail.preset.impostorBake?.outputDir || '')
+            };
+        });
         const options = representationOptions(nextDetail);
         if (!options.some((option) => option.value === previewState.representation && !option.disabled)) {
             const fallback = options.find((option) => !option.disabled);
@@ -389,7 +408,7 @@ export function ModelViewerApp() {
         let active = true;
         setLoading(true);
         setPreviewReady(false);
-        loadDetail(selectedAssetName)
+        loadDetail(selectedAssetName, null, false)
             .catch((nextError) => {
                 if (!active) return;
                 setError(nextError instanceof Error ? nextError.message : String(nextError));
@@ -420,7 +439,7 @@ export function ModelViewerApp() {
                 if (!activeJobId) setActiveJobId(jobId);
                 if ((payload.status === 'completed' || payload.status === 'failed') && payload.assetName === selectedAssetName && (payload.jobType === 'process-asset' || payload.jobType === 'bake-impostor')) {
                     loadCatalog().catch(() => {});
-                    loadDetail(payload.assetName).catch(() => {});
+                    loadDetail(payload.assetName, draft, true).catch(() => {});
                 }
             } catch (nextError) {
                 console.error('[ModelViewer] Failed to parse SSE payload', nextError);
@@ -430,7 +449,7 @@ export function ModelViewerApp() {
         return () => {
             eventSource.close();
         };
-    }, [activeJobId, loadCatalog, loadDetail, selectedAssetName]);
+    }, [activeJobId, draft, loadCatalog, loadDetail, selectedAssetName]);
 
     const startJob = React.useCallback(async (runner: () => Promise<{ jobId: string }>) => {
         const response = await runner();
@@ -647,18 +666,15 @@ export function ModelViewerApp() {
                                     <CheckboxField label="Cleanup loose geometry" checked={draft.cleanupLooseGeometry} onCheckedChange={(checked) => setDraft((current) => current ? { ...current, cleanupLooseGeometry: checked } : current)} />
                                     <CheckboxField label="Preserve UVs" checked={draft.preserveUVs} onCheckedChange={(checked) => setDraft((current) => current ? { ...current, preserveUVs: checked } : current)} />
                                     <CheckboxField label="Stage to game-ready output after processing" checked={draft.stage} onCheckedChange={(checked) => setDraft((current) => current ? { ...current, stage: checked } : current)} />
-                                    {detail.preset.impostorBake?.enabled ? (
-                                        <>
-                                            <SeparatorBlock />
-                                            <NumberInputField label="Impostor Grid Size" value={draft.impostorGridSize} onChange={(event) => setDraft((current) => current ? { ...current, impostorGridSize: Number(event.target.value) } : current)} />
-                                            <NumberInputField label="Impostor Frame Size" value={draft.impostorFrameSize} onChange={(event) => setDraft((current) => current ? { ...current, impostorFrameSize: Number(event.target.value) } : current)} />
-                                            <FieldRow label="Impostor Output Dir">
-                                                <Input value={draft.impostorOutputDir} onChange={(event) => setDraft((current) => current ? { ...current, impostorOutputDir: event.target.value } : current)} data-testid="model-viewer-impostor-output-dir" />
-                                            </FieldRow>
-                                        </>
-                                    ) : (
-                                        <HintCard tone="info">This asset does not declare `impostorBake.enabled`, so impostor draft fields and actions are disabled.</HintCard>
-                                    )}
+                                    <SeparatorBlock />
+                                    <NumberInputField label="Impostor Grid Size" value={draft.impostorGridSize} onChange={(event) => setDraft((current) => current ? { ...current, impostorGridSize: Number(event.target.value) } : current)} />
+                                    <NumberInputField label="Impostor Frame Size" value={draft.impostorFrameSize} onChange={(event) => setDraft((current) => current ? { ...current, impostorFrameSize: Number(event.target.value) } : current)} />
+                                    <FieldRow label="Impostor Output Dir">
+                                        <Input value={draft.impostorOutputDir} onChange={(event) => setDraft((current) => current ? { ...current, impostorOutputDir: event.target.value } : current)} data-testid="model-viewer-impostor-output-dir" />
+                                    </FieldRow>
+                                    {!hasBakedImpostor(detail) ? (
+                                        <HintCard tone="info">No baked impostor exists yet for this asset. Bake one here, then switch the preview to `Impostor` or `Side by side`.</HintCard>
+                                    ) : null}
                                 </div>
                             </Panel>
 
@@ -669,7 +685,6 @@ export function ModelViewerApp() {
                                     </Button>
                                     <Button
                                         variant="default"
-                                        disabled={!detail.preset.impostorBake?.enabled}
                                         onClick={() => startJob(() => startBakeImpostorJob(detail.assetName, draft))}
                                         data-testid="model-viewer-bake-button"
                                     >
@@ -677,16 +692,16 @@ export function ModelViewerApp() {
                                     </Button>
                                     <Button
                                         variant="default"
-                                        disabled={!detail.preset.impostorBake?.enabled}
-                                        onClick={() => startJob(() => startInspectImpostorJob(detail.assetName))}
+                                        disabled={!hasBakedImpostor(detail)}
+                                        onClick={() => startJob(() => startInspectImpostorJob(detail.assetName, draft))}
                                         data-testid="model-viewer-inspect-button"
                                     >
                                         Inspect Impostor
                                     </Button>
                                     <Button
                                         variant="secondary"
-                                        disabled={!detail.preset.impostorBake?.enabled}
-                                        onClick={() => startJob(() => startDiagnosticsJob(detail.assetName, ['selector_cardinals', 'selector_stability', 'selector_seam_probe', 'selector_silhouette_compare']))}
+                                        disabled={!hasBakedImpostor(detail)}
+                                        onClick={() => startJob(() => startDiagnosticsJob(detail.assetName, ['selector_cardinals', 'selector_stability', 'selector_seam_probe', 'selector_silhouette_compare'], draft))}
                                         data-testid="model-viewer-diagnostics-button"
                                     >
                                         Run Diagnostics

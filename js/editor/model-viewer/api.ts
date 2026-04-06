@@ -18,8 +18,17 @@ export async function fetchModelViewerCatalog(): Promise<{ assets: WorldAssetCat
     return requestJson('/api/model-viewer/catalog');
 }
 
-export async function fetchModelViewerAssetDetail(assetName: string): Promise<WorldAssetDetail> {
-    return requestJson(`/api/model-viewer/assets/${encodeURIComponent(assetName)}`);
+function appendDraftImpostorParams(url: URL, draft: ModelViewerDraftState | null | undefined) {
+    const outputDir = draft?.impostorOutputDir?.trim();
+    if (outputDir) {
+        url.searchParams.set('impostorOutputDir', outputDir);
+    }
+}
+
+export async function fetchModelViewerAssetDetail(assetName: string, draft?: ModelViewerDraftState | null): Promise<WorldAssetDetail> {
+    const url = new URL(`/api/model-viewer/assets/${encodeURIComponent(assetName)}`, window.location.origin);
+    appendDraftImpostorParams(url, draft);
+    return requestJson(`${url.pathname}${url.search}`);
 }
 
 type JobStartResponse = {
@@ -87,24 +96,26 @@ export async function startBakeImpostorJob(assetName: string, draft: ModelViewer
     });
 }
 
-export async function startInspectImpostorJob(assetName: string): Promise<JobStartResponse> {
+export async function startInspectImpostorJob(assetName: string, draft: ModelViewerDraftState): Promise<JobStartResponse> {
     return requestJson('/api/model-viewer/jobs/inspect-impostor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             assetName,
-            contactSheet: true
+            contactSheet: true,
+            impostorOverrides: buildDraftPayload(draft).impostorOverrides
         })
     });
 }
 
-export async function startDiagnosticsJob(assetName: string, sequences: string[]): Promise<JobStartResponse> {
+export async function startDiagnosticsJob(assetName: string, sequences: string[], draft: ModelViewerDraftState): Promise<JobStartResponse> {
     return requestJson('/api/model-viewer/jobs/run-diagnostics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             assetName,
-            sequences
+            sequences,
+            impostorOverrides: buildDraftPayload(draft).impostorOverrides
         })
     });
 }

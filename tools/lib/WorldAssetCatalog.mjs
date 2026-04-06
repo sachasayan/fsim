@@ -38,6 +38,12 @@ export function mergeWorldAssetPreset(defaults, name, assetConfig, targetHeights
         ...assetConfig
     };
     const category = typeof merged.category === 'string' && merged.category.length > 0 ? merged.category : '';
+    const mergedImpostorBake = {
+        enabled: assetConfig?.impostorBake?.enabled !== false,
+        outputDir: assetConfig?.impostorBake?.outputDir || `world/impostors/${name}`,
+        gridSize: Math.max(1, Number(assetConfig?.impostorBake?.gridSize) || 4),
+        frameSize: Math.max(64, Number(assetConfig?.impostorBake?.frameSize) || 256)
+    };
     return {
         ...merged,
         category,
@@ -45,6 +51,7 @@ export function mergeWorldAssetPreset(defaults, name, assetConfig, targetHeights
         sourceDir: merged.sourceDir || defaults.sourceDir,
         decimatedDir: merged.decimatedDir || defaults.decimatedDir,
         gameReadyDir: merged.gameReadyDir || defaults.gameReadyDir,
+        impostorBake: mergedImpostorBake,
         targetHeightMeters: Number(targetHeights[name] ?? merged.targetHeightMeters ?? 0)
     };
 }
@@ -143,7 +150,17 @@ export function buildWorldAssetDetail(root, assetName, options = {}) {
     if (!entry) {
         return null;
     }
-    const { preset, paths } = entry;
+    const { preset } = entry;
+    const effectivePreset = options?.impostorOverrides?.outputDir
+        ? {
+            ...preset,
+            impostorBake: {
+                ...preset.impostorBake,
+                outputDir: options.impostorOverrides.outputDir
+            }
+        }
+        : preset;
+    const paths = resolveWorldAssetPaths(root, effectivePreset);
     const reportData = readJsonIfExists(paths.reportPath);
     const impostorMetadataPath = paths.impostorOutputDir ? path.join(paths.impostorOutputDir, 'metadata.json') : null;
     const rawImpostorMetadata = impostorMetadataPath ? readJsonIfExists(impostorMetadataPath) : null;
@@ -168,9 +185,9 @@ export function buildWorldAssetDetail(root, assetName, options = {}) {
 
     return {
         assetName,
-        category: preset.category,
-        preset,
-        targetHeightMeters: preset.targetHeightMeters,
+        category: effectivePreset.category,
+        preset: effectivePreset,
+        targetHeightMeters: effectivePreset.targetHeightMeters,
         manifestPath: presetMap.manifestAbsolutePath,
         targetHeightsPath: presetMap.targetHeightsAbsolutePath,
         paths,

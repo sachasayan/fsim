@@ -25,6 +25,7 @@ function parseArgs(argv) {
     port: DEFAULT_PORT,
     sequences: [...DEFAULT_SEQUENCES],
     outputBase: path.resolve(ROOT, 'test-results', 'tree-impostor-diagnostics'),
+    impostorBaseUrl: '',
     reuseServer: false
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -52,6 +53,11 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === '--impostor-base-url' && argv[index + 1]) {
+      options.impostorBaseUrl = argv[index + 1];
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--port=')) {
       options.port = Number(arg.slice('--port='.length)) || DEFAULT_PORT;
     } else if (arg.startsWith('--sequence=')) {
@@ -62,6 +68,8 @@ function parseArgs(argv) {
         .filter(Boolean);
     } else if (arg.startsWith('--output-base=')) {
       options.outputBase = path.resolve(ROOT, arg.slice('--output-base='.length));
+    } else if (arg.startsWith('--impostor-base-url=')) {
+      options.impostorBaseUrl = arg.slice('--impostor-base-url='.length);
     } else if (arg === '--reuse-server') {
       options.reuseServer = true;
     }
@@ -191,12 +199,19 @@ function createSequenceManifest(sequenceId, captures, summary, diffPairs) {
   };
 }
 
-function generateAtlasTruthArtifacts(runDir, assetName) {
+function generateAtlasTruthArtifacts(runDir, assetName, impostorBaseUrl = '') {
   const outputDir = path.join(runDir, 'atlas_truth');
   mkdirSync(outputDir, { recursive: true });
+  const args = ['tools/inspect-tree-impostor.mjs', '--asset', assetName, '--output-dir', outputDir, '--contact-sheet'];
+  if (impostorBaseUrl) {
+    const impostorDir = impostorBaseUrl.startsWith('/')
+      ? path.join(ROOT, impostorBaseUrl.slice(1))
+      : path.resolve(ROOT, impostorBaseUrl);
+    args.push('--impostor-dir', impostorDir);
+  }
   const result = spawnSync(
     'node',
-    ['tools/inspect-tree-impostor.mjs', '--asset', assetName, '--output-dir', outputDir, '--contact-sheet'],
+    args,
     {
       cwd: ROOT,
       encoding: 'utf8'
@@ -307,6 +322,9 @@ async function main() {
       const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
       const viewerUrl = new URL(`${baseUrl}/tree-impostor-viewer.html`);
       viewerUrl.searchParams.set('asset', options.asset);
+      if (options.impostorBaseUrl) {
+        viewerUrl.searchParams.set('impostorBaseUrl', options.impostorBaseUrl);
+      }
       await page.goto(viewerUrl.toString(), { waitUntil: 'networkidle' });
       await page.waitForFunction(() => Boolean(window.__TREE_IMPOSTOR_VIEWER__), null, { timeout: 60_000 });
       await getViewerApi(page);
@@ -318,7 +336,7 @@ async function main() {
         asset: options.asset,
         sequences: []
       };
-      runManifest.atlasTruth = generateAtlasTruthArtifacts(runDir, options.asset);
+      runManifest.atlasTruth = generateAtlasTruthArtifacts(runDir, options.asset, options.impostorBaseUrl);
 
       for (const sequenceId of options.sequences) {
         const sequenceDir = path.join(runDir, sequenceId);

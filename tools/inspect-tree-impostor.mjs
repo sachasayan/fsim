@@ -7,6 +7,7 @@ function parseArgs(argv) {
     asset: 'tree-1',
     frame: -1,
     outputDir: '',
+    impostorDir: '',
     contactSheet: false
   };
   for (let i = 2; i < argv.length; i += 1) {
@@ -19,6 +20,9 @@ function parseArgs(argv) {
       i += 1;
     } else if (token === '--output-dir' && argv[i + 1]) {
       args.outputDir = path.resolve(argv[i + 1]);
+      i += 1;
+    } else if (token === '--impostor-dir' && argv[i + 1]) {
+      args.impostorDir = path.resolve(argv[i + 1]);
       i += 1;
     } else if (token === '--contact-sheet') {
       args.contactSheet = true;
@@ -246,8 +250,8 @@ function buildAtlasTruthHtml({ asset, metadata, frames, albedoDataUri, normalDat
 </html>`;
 }
 
-const { asset, frame, outputDir, contactSheet } = parseArgs(process.argv);
-const impostorDir = path.resolve('world/impostors', asset);
+const { asset, frame, outputDir, impostorDir: explicitImpostorDir, contactSheet } = parseArgs(process.argv);
+const impostorDir = explicitImpostorDir || path.resolve('world/impostors', asset);
 const metadataPath = path.join(impostorDir, 'metadata.json');
 
 if (!fs.existsSync(metadataPath)) {

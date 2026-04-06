@@ -7,6 +7,7 @@ import {
     DEFAULT_TARGET_HEIGHTS_PATH,
     buildWorldAssetCatalog,
     buildWorldAssetDetail,
+    buildWorldAssetPresetMap,
     loadWorldAssetManifest,
     loadWorldAssetTargetHeights
 } from './WorldAssetCatalog.mjs';
@@ -48,13 +49,19 @@ export function createDraftOverrideInputs(root, assetName, {
 } = {}) {
     const { absolutePath: manifestAbsolutePath, manifest } = loadWorldAssetManifest(root, manifestPath);
     const { absolutePath: targetHeightsAbsolutePath, targetHeights } = loadWorldAssetTargetHeights(root, targetHeightsPath);
+    const presetMap = buildWorldAssetPresetMap(root, { manifestPath, targetHeightsPath });
+    const mergedEntry = presetMap.presets.get(assetName);
     const existingAsset = manifest.assets?.[assetName];
     if (!existingAsset) {
         throw new Error(`Unknown asset '${assetName}'.`);
     }
+    if (!mergedEntry) {
+        throw new Error(`Unknown merged asset preset '${assetName}'.`);
+    }
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fsim-model-viewer-'));
     const assetConfig = structuredClone(existingAsset);
+    assetConfig.impostorBake = structuredClone(mergedEntry.preset.impostorBake);
     const nextManifest = structuredClone(manifest);
     const nextTargetHeights = { ...targetHeights };
 
@@ -181,6 +188,7 @@ export function createInspectImpostorJobSpec(root, {
     assetName,
     frame = -1,
     contactSheet = true,
+    impostorOutputDir = '',
     outputRoot = path.join(root, 'test-results', 'model-viewer-inspect')
 } = {}) {
     const outputDir = path.join(outputRoot, `${sanitizeAssetName(assetName)}-${timestampId()}`);
@@ -192,6 +200,9 @@ export function createInspectImpostorJobSpec(root, {
         '--output-dir',
         outputDir
     ];
+    if (impostorOutputDir) {
+        args.push('--impostor-dir', path.resolve(root, impostorOutputDir));
+    }
     if (contactSheet) args.push('--contact-sheet');
     if (Number.isFinite(frame) && Number(frame) >= 0) {
         args.push('--frame', String(Math.round(frame)));
@@ -208,6 +219,7 @@ export function createDiagnosticsJobSpec(root, {
     assetName,
     sequences = [],
     port,
+    impostorOutputDir = '',
     outputRoot = path.join(root, 'test-results', 'model-viewer-diagnostics')
 } = {}) {
     const outputBase = path.join(outputRoot, sanitizeAssetName(assetName) || 'asset');
@@ -222,6 +234,13 @@ export function createDiagnosticsJobSpec(root, {
         '--output-base',
         outputBase
     ];
+    if (impostorOutputDir) {
+        const absoluteImpostorDir = path.resolve(root, impostorOutputDir);
+        const impostorBaseUrl = absoluteImpostorDir.startsWith(root)
+            ? `/${path.relative(root, absoluteImpostorDir).split(path.sep).join('/')}`
+            : absoluteImpostorDir;
+        args.push('--impostor-base-url', impostorBaseUrl);
+    }
     if (Array.isArray(sequences) && sequences.length > 0) {
         args.push('--sequence', sequences.join(','));
     }

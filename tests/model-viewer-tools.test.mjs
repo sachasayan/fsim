@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { buildWorldAssetCatalog, buildWorldAssetDetail } from '../tools/lib/WorldAssetCatalog.mjs';
-import { createBakeImpostorJobSpec, createProcessAssetJobSpec } from '../tools/lib/ModelViewerSupport.mjs';
+import { createBakeImpostorJobSpec, createDiagnosticsJobSpec, createInspectImpostorJobSpec, createProcessAssetJobSpec } from '../tools/lib/ModelViewerSupport.mjs';
 import { clampCameraState, fitDistanceForRadius } from '../js/editor/model-viewer/cameraState.ts';
 import { normalizeTreeImpostorMetadata } from '../js/modules/world/terrain/TreeImpostorUtils.js';
 
@@ -14,10 +14,14 @@ test('world asset catalog resolves preset-backed entries with derived file info'
   assert.ok(catalog.length >= 20);
 
   const treeAsset = catalog.find((entry) => entry.assetName === 'tree-1');
+  const barnAsset = catalog.find((entry) => entry.assetName === 'barn');
   assert.ok(treeAsset);
+  assert.ok(barnAsset);
   assert.equal(treeAsset.category, 'scenery');
   assert.equal(treeAsset.hasImpostorBake, true);
   assert.ok(treeAsset.files?.decimated.repoRelativePath?.endsWith('world/assets/decimated/scenery/tree-1.glb'));
+  assert.equal(barnAsset.hasImpostorBake, true);
+  assert.ok(barnAsset.files?.impostor?.baseDir.repoRelativePath?.endsWith('world/impostors/barn'));
 });
 
 test('world asset detail exposes impostor metadata for impostor-enabled assets', () => {
@@ -33,6 +37,29 @@ test('world asset detail exposes impostor metadata for impostor-enabled assets',
   assert.equal(detail.measuredTriangles.source, 49664);
   assert.equal(detail.measuredTriangles.decimated, 12000);
   assert.equal(detail.measuredTriangles.gameReady, null);
+});
+
+test('world asset detail derives impostor bake defaults for non-tree assets', () => {
+  const detail = buildWorldAssetDetail(root, 'barn');
+  assert.ok(detail);
+  assert.equal(detail.preset.impostorBake?.enabled, true);
+  assert.equal(detail.preset.impostorBake?.gridSize, 4);
+  assert.equal(detail.preset.impostorBake?.frameSize, 256);
+  assert.equal(detail.preset.impostorBake?.outputDir, 'world/impostors/barn');
+  assert.equal(detail.files.impostor?.metadata.exists, false);
+});
+
+test('world asset detail can resolve impostor files from a draft output override', () => {
+  const detail = buildWorldAssetDetail(root, 'barn', {
+    impostorOverrides: {
+      outputDir: 'world/impostors/tree-1'
+    }
+  });
+
+  assert.ok(detail);
+  assert.equal(detail.preset.impostorBake?.outputDir, 'world/impostors/tree-1');
+  assert.equal(detail.files.impostor?.metadata.exists, true);
+  assert.equal(detail.impostorMetadata?.viewBlendMode, 'direction-weighted');
 });
 
 test('world asset detail normalizes impostor metadata with the shared runtime contract', () => {
@@ -113,6 +140,23 @@ test('bake impostor job spec uses temp manifest overrides without rewriting trac
   } finally {
     spec.cleanup?.();
   }
+});
+
+test('inspect and diagnostics job specs honor draft impostor output overrides', () => {
+  const inspectSpec = createInspectImpostorJobSpec(root, {
+    assetName: 'barn',
+    impostorOutputDir: 'world/impostors/barn-dev'
+  });
+  assert.ok(inspectSpec.args.includes('--impostor-dir'));
+  assert.ok(inspectSpec.args.includes(`${root}/world/impostors/barn-dev`));
+
+  const diagnosticsSpec = createDiagnosticsJobSpec(root, {
+    assetName: 'barn',
+    port: 4173,
+    impostorOutputDir: 'world/impostors/barn-dev'
+  });
+  assert.ok(diagnosticsSpec.args.includes('--impostor-base-url'));
+  assert.ok(diagnosticsSpec.args.includes('/world/impostors/barn-dev'));
 });
 
 test('camera helpers clamp orbit state and compute bounded fit distances', () => {

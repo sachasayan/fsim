@@ -620,7 +620,11 @@ const server = http.createServer(async (req, res) => {
 
         if (url.pathname.startsWith('/api/model-viewer/assets/') && req.method === 'GET') {
             const assetName = decodeURIComponent(url.pathname.split('/').pop() || '');
-            const detail = getModelViewerAssetDetail(ROOT, assetName);
+            const detail = getModelViewerAssetDetail(ROOT, assetName, {
+                impostorOverrides: {
+                    outputDir: url.searchParams.get('impostorOutputDir') || ''
+                }
+            });
             if (!detail) {
                 sendJson(res, { error: `Unknown asset '${assetName}'.` }, 404);
                 return;
@@ -682,7 +686,8 @@ const server = http.createServer(async (req, res) => {
             const jobSpec = createInspectImpostorJobSpec(ROOT, {
                 assetName,
                 frame: body.frame,
-                contactSheet: body.contactSheet !== false
+                contactSheet: body.contactSheet !== false,
+                impostorOutputDir: body.impostorOverrides?.outputDir || ''
             });
             startModelViewerJob(job, jobSpec);
             sendJson(res, { success: true, jobId: job.id, status: job.status });
@@ -696,7 +701,8 @@ const server = http.createServer(async (req, res) => {
             const jobSpec = createDiagnosticsJobSpec(ROOT, {
                 assetName,
                 sequences: Array.isArray(body.sequences) ? body.sequences : [],
-                port: PORT
+                port: PORT,
+                impostorOutputDir: body.impostorOverrides?.outputDir || ''
             });
             startModelViewerJob(job, jobSpec);
             sendJson(res, { success: true, jobId: job.id, status: job.status });

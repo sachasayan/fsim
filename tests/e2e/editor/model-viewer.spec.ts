@@ -82,19 +82,21 @@ test.describe('model viewer workbench', () => {
         await expect(page.getByTestId('model-viewer-tab-panel-artifacts')).toBeVisible();
     });
 
-    test('shows non-impostor assets without impostor controls failing', async ({ page }) => {
+    test('shows non-baked assets with bake controls but no impostor preview yet', async ({ page }) => {
         await gotoModelViewer(page);
 
         await expect(page.getByTestId('model-viewer-asset-tree-1')).toBeVisible();
         await page.getByTestId('model-viewer-search').fill('barn');
         await page.getByTestId('model-viewer-asset-barn').click();
 
-        await expect(page.getByTestId('model-viewer-bake-button')).toBeDisabled();
+        await expect(page.getByTestId('model-viewer-bake-button')).toBeEnabled();
         await expect(page.getByTestId('model-viewer-inspect-button')).toBeDisabled();
         await expect(page.getByTestId('model-viewer-diagnostics-button')).toBeDisabled();
         await expect(page.getByTestId('model-viewer-representation-impostor')).toBeDisabled();
         await expect(page.getByTestId('model-viewer-representation-sideBySide')).toBeDisabled();
         await expect(page.getByTestId('model-viewer-preview')).toHaveAttribute('data-ready', 'true');
+        await expect(page.getByTestId('model-viewer-impostor-output-dir')).toHaveValue(/world\/impostors\/barn/);
+        await expect(page.getByText(/No baked impostor exists yet/i)).toBeVisible();
 
         await page.getByTestId('field-target-triangles').selectText();
         await page.getByTestId('field-target-triangles').fill('13000');
