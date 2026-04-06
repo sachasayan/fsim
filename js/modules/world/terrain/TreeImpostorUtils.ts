@@ -1,15 +1,20 @@
 // @ts-check
 
 import * as THREE from 'three';
+import {
+    DEFAULT_ELEVATED_THRESHOLD,
+    DEFAULT_HIGH_CARDINAL_THRESHOLD,
+    ELEVATED_BAND,
+    HIGH_CARDINAL_BAND,
+    HORIZON_BAND,
+    buildOctahedralFrameDirections,
+    buildSilhouetteFriendlyFrameLayout,
+    normalizeTreeImpostorMetadata,
+    resolveTreeImpostorFraming
+} from './TreeImpostorMetadata.js';
 
 const OCT_EPSILON = 1e-6;
 const DIRECTION_WEIGHT_EXPONENT = 4.0;
-const DEFAULT_ELEVATED_THRESHOLD = 0.52;
-const DEFAULT_HIGH_CARDINAL_THRESHOLD = 0.82;
-const DEFAULT_CAPTURE_ORTHO_SCALE_MULTIPLIER = 1.9;
-const HORIZON_BAND = 'horizon';
-const ELEVATED_BAND = 'elevated';
-const HIGH_CARDINAL_BAND = 'high-cardinal';
 
 /**
  * @typedef {{ index: number, weight: number }} WeightedImpostorFrame
@@ -63,71 +68,7 @@ const HIGH_CARDINAL_BAND = 'high-cardinal';
  * }} TreeImpostorFraming
  */
 
-function clamp01(value) {
-    return THREE.MathUtils.clamp(Number.isFinite(value) ? value : 0, 0, 1);
-}
-
-function clampPositive(value, fallback = 1) {
-    const nextValue = Number(value);
-    return Number.isFinite(nextValue) && nextValue > OCT_EPSILON ? nextValue : fallback;
-}
-
-function normalizeContentRect(contentRect) {
-    if (!contentRect || typeof contentRect !== 'object') return null;
-    const x = clamp01(Number(contentRect.x));
-    const y = clamp01(Number(contentRect.y));
-    const maxWidth = Math.max(OCT_EPSILON, 1 - x);
-    const maxHeight = Math.max(OCT_EPSILON, 1 - y);
-    const widthValue = Number(contentRect.width);
-    const heightValue = Number(contentRect.height);
-    const width = THREE.MathUtils.clamp(Number.isFinite(widthValue) ? widthValue : 1, OCT_EPSILON, maxWidth);
-    const height = THREE.MathUtils.clamp(Number.isFinite(heightValue) ? heightValue : 1, OCT_EPSILON, maxHeight);
-    return { x, y, width, height };
-}
-
-/**
- * @param {TreeImpostorSelectionConfig | Record<string, unknown> | null | undefined} metadata
- * @returns {TreeImpostorFraming}
- */
-export function resolveTreeImpostorFraming(metadata) {
-    const boundsMin = Array.isArray(metadata?.boundsMin) ? metadata.boundsMin : [-0.5, 0, -0.5];
-    const boundsMax = Array.isArray(metadata?.boundsMax) ? metadata.boundsMax : [0.5, 1, 0.5];
-    const width = Math.max(0, Number(boundsMax[0]) - Number(boundsMin[0])) || 0;
-    const height = Math.max(0, Number(boundsMax[1]) - Number(boundsMin[1])) || 0;
-    const depth = Math.max(0, Number(boundsMax[2]) - Number(boundsMin[2])) || 0;
-    const legacyCaptureOrthoScale = clampPositive(
-        Math.max(width, height, depth, 1) * DEFAULT_CAPTURE_ORTHO_SCALE_MULTIPLIER,
-        1
-    );
-    const captureOrthoScale = clampPositive(metadata?.captureOrthoScale, legacyCaptureOrthoScale);
-    const explicitContentRect = normalizeContentRect(metadata?.contentRect);
-    const derivedWidthRatio = THREE.MathUtils.clamp(Math.max(width, depth) / captureOrthoScale, OCT_EPSILON, 1);
-    const derivedHeightRatio = THREE.MathUtils.clamp(height / captureOrthoScale, OCT_EPSILON, 1);
-    const contentRect = explicitContentRect || {
-        x: (1 - derivedWidthRatio) * 0.5,
-        y: (1 - derivedHeightRatio) * 0.5,
-        width: derivedWidthRatio,
-        height: derivedHeightRatio
-    };
-    const padding = {
-        left: clamp01(contentRect.x),
-        right: clamp01(1 - (contentRect.x + contentRect.width)),
-        bottom: clamp01(contentRect.y),
-        top: clamp01(1 - (contentRect.y + contentRect.height))
-    };
-    return {
-        captureOrthoScale,
-        contentRect,
-        visibleWidthRatio: contentRect.width,
-        visibleHeightRatio: contentRect.height,
-        padding,
-        occupiedBounds: {
-            width,
-            height,
-            depth
-        }
-    };
-}
+export { buildOctahedralFrameDirections, buildSilhouetteFriendlyFrameLayout, normalizeTreeImpostorMetadata, resolveTreeImpostorFraming };
 
 /**
  * @param {THREE.Vector3 | { x: number, y: number, z: number }} vector
@@ -167,63 +108,6 @@ export function decodeOctahedralDirection(encoded) {
     }
 
     return new THREE.Vector3(x, y, z).normalize();
-}
-
-export function buildOctahedralFrameDirections(gridSize = 4) {
-    const size = Math.max(1, Math.floor(gridSize));
-    /** @type {THREE.Vector3[]} */
-    const directions = [];
-    for (let row = 0; row < size; row += 1) {
-        for (let col = 0; col < size; col += 1) {
-            directions.push(decodeOctahedralDirection({
-                x: (col + 0.5) / size,
-                y: (row + 0.5) / size
-            }));
-        }
-    }
-    return directions;
-}
-
-function buildDirectionFromYawPitch(yawDeg, pitchDeg) {
-    const yaw = THREE.MathUtils.degToRad(yawDeg);
-    const pitch = THREE.MathUtils.degToRad(pitchDeg);
-    const cosPitch = Math.cos(pitch);
-    return new THREE.Vector3(
-        Math.sin(yaw) * cosPitch,
-        Math.sin(pitch),
-        Math.cos(yaw) * cosPitch
-    ).normalize();
-}
-
-export function buildSilhouetteFriendlyFrameLayout() {
-    /** @type {Array<[number, number, TreeImpostorFrameBand]>} */
-    const spec = [
-        [-135, 0, HORIZON_BAND],
-        [180, 0, HORIZON_BAND],
-        [135, 0, HORIZON_BAND],
-        [90, 0, HORIZON_BAND],
-        [45, 0, HORIZON_BAND],
-        [0, 0, HORIZON_BAND],
-        [-45, 0, HORIZON_BAND],
-        [-90, 0, HORIZON_BAND],
-        [-135, 38, ELEVATED_BAND],
-        [135, 38, ELEVATED_BAND],
-        [45, 38, ELEVATED_BAND],
-        [-45, 38, ELEVATED_BAND],
-        [180, 62, HIGH_CARDINAL_BAND],
-        [90, 62, HIGH_CARDINAL_BAND],
-        [0, 62, HIGH_CARDINAL_BAND],
-        [-90, 62, HIGH_CARDINAL_BAND]
-    ];
-    return {
-        directions: spec.map(([yaw, pitch]) => buildDirectionFromYawPitch(yaw, pitch)),
-        frameBands: spec.map(([, , band]) => band),
-        viewBlendMode: 'direction-weighted',
-        elevatedThreshold: DEFAULT_ELEVATED_THRESHOLD,
-        highCardinalThreshold: DEFAULT_HIGH_CARDINAL_THRESHOLD,
-        gridCols: 4,
-        gridRows: 4
-    };
 }
 
 function normalizeFrameBand(frameBand) {

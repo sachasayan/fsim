@@ -9,6 +9,7 @@ import {
   encodeOctahedralDirection,
   findTwoNearestImpostorFrames,
   findWeightedImpostorFrames,
+  normalizeTreeImpostorMetadata,
   resolveTreeImpostorFraming
 } from '../js/modules/world/terrain/TreeImpostorUtils.js';
 import { createRuntimeLodSettings } from '../js/modules/world/LodSystem.js';
@@ -90,6 +91,60 @@ test('silhouette-friendly frame layout uses unique directions and semantic frame
     direction.toArray().map((value) => value.toFixed(6)).join(',')
   )));
   assert.equal(uniqueDirections.size, 16, 'Expected all silhouette-friendly frame directions to be unique');
+});
+
+test('normalizeTreeImpostorMetadata preserves explicit direction-weighted selector metadata', () => {
+  const layout = buildSilhouetteFriendlyFrameLayout();
+  const normalized = normalizeTreeImpostorMetadata({
+    grid: { cols: 4, rows: 4 },
+    frameCount: 16,
+    directions: layout.directions.map((direction) => direction.toArray()),
+    frameBands: layout.frameBands,
+    viewBlendMode: 'direction-weighted',
+    elevatedThreshold: 0.6,
+    highCardinalThreshold: 0.9,
+    depthRange: { near: 2, far: 5 }
+  });
+
+  assert.equal(normalized.viewBlendMode, 'direction-weighted');
+  assert.equal(normalized.frameCount, 16);
+  assert.equal(normalized.grid.cols, 4);
+  assert.equal(normalized.grid.rows, 4);
+  assert.ok(normalized.directions.every((direction) => direction instanceof THREE.Vector3));
+  assert.deepEqual(normalized.frameBands, layout.frameBands);
+  assert.equal(normalized.elevatedThreshold, 0.6);
+  assert.equal(normalized.highCardinalThreshold, 0.9);
+  assert.deepEqual(normalized.depthRange, { near: 2, far: 5 });
+});
+
+test('normalizeTreeImpostorMetadata keeps legacy grid metadata on grid-bilinear defaults', () => {
+  const normalized = normalizeTreeImpostorMetadata({
+    grid: { cols: 4, rows: 4 },
+    directions: buildOctahedralFrameDirections(4).map((direction) => direction.toArray())
+  });
+
+  assert.equal(normalized.viewBlendMode, 'grid-bilinear');
+  assert.equal(normalized.frameCount, 16);
+  assert.equal(normalized.frameBands.length, 16);
+  assert.ok(normalized.frameBands.every((band) => band === 'horizon'));
+});
+
+test('normalizeTreeImpostorMetadata uses silhouette-friendly fallback for incomplete direction-weighted metadata', () => {
+  const layout = buildSilhouetteFriendlyFrameLayout();
+  const normalized = normalizeTreeImpostorMetadata({
+    grid: { cols: 4, rows: 4 },
+    frameCount: 16,
+    viewBlendMode: 'direction-weighted'
+  });
+
+  assert.equal(normalized.viewBlendMode, 'direction-weighted');
+  assert.deepEqual(normalized.frameBands, layout.frameBands);
+  for (let index = 0; index < layout.directions.length; index += 1) {
+    assert.ok(
+      normalized.directions[index].distanceTo(layout.directions[index]) < 1e-9,
+      `Expected fallback direction ${index} to match the silhouette-friendly layout`
+    );
+  }
 });
 
 test('resolveTreeImpostorFraming honors explicit contentRect values', () => {

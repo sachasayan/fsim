@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { buildWorldAssetCatalog, buildWorldAssetDetail } from '../tools/lib/WorldAssetCatalog.mjs';
 import { createBakeImpostorJobSpec, createProcessAssetJobSpec } from '../tools/lib/ModelViewerSupport.mjs';
 import { clampCameraState, fitDistanceForRadius } from '../js/editor/model-viewer/cameraState.ts';
+import { normalizeTreeImpostorMetadata } from '../js/modules/world/terrain/TreeImpostorUtils.js';
 
 const root = process.cwd();
 
@@ -32,6 +33,28 @@ test('world asset detail exposes impostor metadata for impostor-enabled assets',
   assert.equal(detail.measuredTriangles.source, 49664);
   assert.equal(detail.measuredTriangles.decimated, 12000);
   assert.equal(detail.measuredTriangles.gameReady, null);
+});
+
+test('world asset detail normalizes impostor metadata with the shared runtime contract', () => {
+  const detail = buildWorldAssetDetail(root, 'tree-1');
+  const rawMetadata = JSON.parse(fs.readFileSync(`${root}/world/impostors/tree-1/metadata.json`, 'utf8'));
+  const normalized = normalizeTreeImpostorMetadata(rawMetadata);
+
+  assert.ok(detail?.impostorMetadata);
+  assert.equal(detail.impostorMetadata.viewBlendMode, normalized.viewBlendMode);
+  assert.deepEqual(detail.impostorMetadata.frameBands, normalized.frameBands);
+  assert.equal(detail.impostorMetadata.frameCount, normalized.frameCount);
+  assert.equal(detail.impostorMetadata.elevatedThreshold, normalized.elevatedThreshold);
+  assert.equal(detail.impostorMetadata.highCardinalThreshold, normalized.highCardinalThreshold);
+  assert.deepEqual(detail.impostorMetadata.contentRect, normalized.contentRect);
+  assert.deepEqual(detail.impostorMetadata.padding, normalized.padding);
+  assert.equal(detail.impostorMetadata.directions.length, normalized.directions.length);
+  for (let index = 0; index < normalized.directions.length; index += 1) {
+    assert.ok(
+      detail.impostorMetadata.directions[index].distanceTo(normalized.directions[index]) < 1e-9,
+      `Expected normalized direction ${index} to match the shared runtime contract`
+    );
+  }
 });
 
 test('process asset job spec writes temp manifest and target-height overrides', () => {

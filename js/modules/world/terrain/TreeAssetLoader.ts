@@ -6,9 +6,8 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import {
-    buildOctahedralFrameDirections,
     buildSilhouetteFriendlyFrameLayout,
-    resolveTreeImpostorFraming
+    normalizeTreeImpostorMetadata
 } from './TreeImpostorUtils.js';
 import { createTreeBillboardTexture } from './TerrainTextures.js';
 
@@ -207,50 +206,7 @@ async function loadTreeImpostorTextures(baseUrl) {
         if (!metadataResponse.ok) {
             throw new Error(`Failed to load tree impostor metadata from ${metadataUrl}`);
         }
-        const metadata = await metadataResponse.json();
-        if (!Array.isArray(metadata?.directions) || metadata.directions.length === 0) {
-            const gridSize = Math.max(1, Number(metadata?.grid?.cols) || 4);
-            metadata.directions = buildOctahedralFrameDirections(gridSize).map((direction) => direction.toArray());
-        }
-        metadata.directions = metadata.directions.map((direction) => {
-            if (direction instanceof THREE.Vector3) return direction.clone();
-            if (Array.isArray(direction)) return new THREE.Vector3(direction[0] || 0, direction[1] || 0, direction[2] || 0).normalize();
-            return new THREE.Vector3(direction?.x || 0, direction?.y || 0, direction?.z || 0).normalize();
-        });
-        metadata.grid = {
-            cols: Math.max(1, Number(metadata?.grid?.cols) || Math.round(Math.sqrt(metadata.directions.length)) || 1),
-            rows: Math.max(1, Number(metadata?.grid?.rows) || Math.round(Math.sqrt(metadata.directions.length)) || 1)
-        };
-        metadata.frameCount = metadata.directions.length;
-        const selectorDefaults = buildSilhouetteFriendlyFrameLayout();
-        if (!Array.isArray(metadata?.frameBands) || metadata.frameBands.length !== metadata.frameCount) {
-            if (metadata.viewBlendMode === 'direction-weighted' && metadata.frameCount === selectorDefaults.frameBands.length) {
-                metadata.frameBands = [...selectorDefaults.frameBands];
-            } else {
-                metadata.frameBands = new Array(metadata.frameCount).fill('horizon');
-            }
-        }
-        metadata.frameBands = metadata.frameBands.map((band) => (
-            band === 'elevated' || band === 'high-cardinal'
-                ? band
-                : 'horizon'
-        ));
-        metadata.normalSpace = metadata?.normalSpace === 'object' ? 'object' : 'frame-local';
-        metadata.depthEncoding = metadata?.depthEncoding || 'orthographic-normalized';
-        metadata.depthRange = {
-            near: Number(metadata?.depthRange?.near) || 0,
-            far: Number(metadata?.depthRange?.far) || 1
-        };
-        metadata.viewBlendMode = metadata?.viewBlendMode === 'direction-weighted' ? 'direction-weighted' : (metadata?.viewBlendMode || 'grid-bilinear');
-        metadata.elevatedThreshold = Number.isFinite(metadata?.elevatedThreshold)
-            ? Number(metadata.elevatedThreshold)
-            : selectorDefaults.elevatedThreshold;
-        metadata.highCardinalThreshold = Number.isFinite(metadata?.highCardinalThreshold)
-            ? Number(metadata.highCardinalThreshold)
-            : selectorDefaults.highCardinalThreshold;
-        const framing = resolveTreeImpostorFraming(metadata);
-        metadata.captureOrthoScale = framing.captureOrthoScale;
-        metadata.contentRect = framing.contentRect;
+        const metadata = normalizeTreeImpostorMetadata(await metadataResponse.json());
 
         const [albedoTexture, normalTexture, depthTexture] = await Promise.all([
             loadTexture(new URL(`${baseUrl}/albedo.png`, browserBaseUrl).toString(), THREE.SRGBColorSpace),

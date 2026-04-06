@@ -7,7 +7,7 @@ import {
     makeTreeOctahedralDepthMaterial,
     makeTreeOctahedralMaterial
 } from '../../modules/world/terrain/TerrainMaterials.ts';
-import { resolveTreeImpostorFraming } from '../../modules/world/terrain/TreeImpostorUtils.ts';
+import { normalizeTreeImpostorMetadata } from '../../modules/world/terrain/TreeImpostorUtils.ts';
 import { CAMERA_LIMITS, DEFAULT_CAMERA_STATE, clampCameraState, fitDistanceForRadius, normalizeYaw } from './cameraState';
 import type { ModelViewerCameraState, ModelViewerPreviewState, WorldAssetDetail } from './types';
 
@@ -97,50 +97,6 @@ async function loadTexture(url: string, colorSpace = THREE.NoColorSpace) {
     return texture;
 }
 
-function normalizeImpostorDirections(directions: unknown) {
-    if (!Array.isArray(directions)) return [];
-    return directions.map((direction) => {
-        if (direction instanceof THREE.Vector3) return direction.clone().normalize();
-        if (Array.isArray(direction)) {
-            return new THREE.Vector3(
-                Number(direction[0]) || 0,
-                Number(direction[1]) || 0,
-                Number(direction[2]) || 0
-            ).normalize();
-        }
-        if (direction && typeof direction === 'object') {
-            const vector = direction as { x?: number; y?: number; z?: number };
-            return new THREE.Vector3(
-                Number(vector.x) || 0,
-                Number(vector.y) || 0,
-                Number(vector.z) || 0
-            ).normalize();
-        }
-        return new THREE.Vector3(0, 1, 0);
-    });
-}
-
-function normalizeImpostorMetadata(metadata: Record<string, unknown>) {
-    const normalizedDirections = normalizeImpostorDirections(metadata?.directions);
-    const gridCols = Math.max(1, Number((metadata.grid as { cols?: number } | undefined)?.cols) || Math.round(Math.sqrt(normalizedDirections.length)) || 1);
-    const gridRows = Math.max(1, Number((metadata.grid as { rows?: number } | undefined)?.rows) || Math.round(Math.sqrt(normalizedDirections.length)) || 1);
-    const framing = resolveTreeImpostorFraming(metadata);
-    return {
-        ...metadata,
-        directions: normalizedDirections,
-        grid: {
-            cols: gridCols,
-            rows: gridRows
-        },
-        frameCount: normalizedDirections.length || Number(metadata.frameCount) || 1,
-        captureOrthoScale: framing.captureOrthoScale,
-        contentRect: framing.contentRect,
-        visibleWidthRatio: framing.visibleWidthRatio,
-        visibleHeightRatio: framing.visibleHeightRatio,
-        padding: framing.padding
-    };
-}
-
 async function loadImpostorAsset(detail: WorldAssetDetail, lightDirUniform: { value: THREE.Vector3 }, cameraPosUniform: { value: THREE.Vector3 }) {
     if (!detail.files.impostor?.metadata.urlPath || !detail.files.impostor.albedo.urlPath || !detail.files.impostor.normal.urlPath || !detail.files.impostor.depth.urlPath) {
         throw new Error(`Missing impostor files for ${detail.assetName}`);
@@ -149,7 +105,7 @@ async function loadImpostorAsset(detail: WorldAssetDetail, lightDirUniform: { va
     if (!metadataResponse.ok) {
         throw new Error(`Failed to load impostor metadata for ${detail.assetName}`);
     }
-    const metadata = normalizeImpostorMetadata(await metadataResponse.json());
+    const metadata = normalizeTreeImpostorMetadata(await metadataResponse.json());
     const [albedoTexture, normalTexture, depthTexture] = await Promise.all([
         loadTexture(detail.files.impostor.albedo.urlPath, THREE.SRGBColorSpace),
         loadTexture(detail.files.impostor.normal.urlPath, THREE.NoColorSpace),

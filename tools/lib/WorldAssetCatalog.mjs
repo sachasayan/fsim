@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeTreeImpostorMetadata } from '../../js/modules/world/terrain/TreeImpostorMetadata.js';
 
 export const DEFAULT_MANIFEST_PATH = 'tools/world-asset-presets.json';
 export const DEFAULT_TARGET_HEIGHTS_PATH = 'tools/world-asset-target-heights.json';
@@ -122,59 +123,6 @@ function toFiniteNumber(value) {
     return Number.isFinite(nextValue) ? nextValue : null;
 }
 
-function clamp01(value) {
-    return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-}
-
-function clampPositive(value, fallback = 1) {
-    const nextValue = Number(value);
-    return Number.isFinite(nextValue) && nextValue > 1e-6 ? nextValue : fallback;
-}
-
-function normalizeContentRect(contentRect) {
-    if (!contentRect || typeof contentRect !== 'object') return null;
-    const x = clamp01(Number(contentRect.x));
-    const y = clamp01(Number(contentRect.y));
-    const widthValue = Number(contentRect.width);
-    const heightValue = Number(contentRect.height);
-    const width = Math.max(1e-6, Math.min(1 - x, Number.isFinite(widthValue) ? widthValue : 1));
-    const height = Math.max(1e-6, Math.min(1 - y, Number.isFinite(heightValue) ? heightValue : 1));
-    return { x, y, width, height };
-}
-
-function resolveImpostorFraming(metadata) {
-    if (!metadata || typeof metadata !== 'object') return null;
-    const boundsMin = Array.isArray(metadata.boundsMin) ? metadata.boundsMin : [-0.5, 0, -0.5];
-    const boundsMax = Array.isArray(metadata.boundsMax) ? metadata.boundsMax : [0.5, 1, 0.5];
-    const width = Math.max(0, Number(boundsMax[0]) - Number(boundsMin[0])) || 0;
-    const height = Math.max(0, Number(boundsMax[1]) - Number(boundsMin[1])) || 0;
-    const depth = Math.max(0, Number(boundsMax[2]) - Number(boundsMin[2])) || 0;
-    const captureOrthoScale = clampPositive(
-        metadata.captureOrthoScale,
-        Math.max(width, height, depth, 1) * 1.9
-    );
-    const derivedWidth = Math.max(1e-6, Math.min(1, Math.max(width, depth) / captureOrthoScale));
-    const derivedHeight = Math.max(1e-6, Math.min(1, height / captureOrthoScale));
-    const contentRect = normalizeContentRect(metadata.contentRect) || {
-        x: (1 - derivedWidth) * 0.5,
-        y: (1 - derivedHeight) * 0.5,
-        width: derivedWidth,
-        height: derivedHeight
-    };
-    return {
-        captureOrthoScale,
-        contentRect,
-        visibleWidthRatio: contentRect.width,
-        visibleHeightRatio: contentRect.height,
-        padding: {
-            left: contentRect.x,
-            right: clamp01(1 - (contentRect.x + contentRect.width)),
-            bottom: contentRect.y,
-            top: clamp01(1 - (contentRect.y + contentRect.height))
-        }
-    };
-}
-
 function buildMeasuredTriangleCounts(files, reportData) {
     const sourceTriangles = toFiniteNumber(reportData?.sourceTriangles);
     const decimatedTriangles = toFiniteNumber(reportData?.outputTriangles);
@@ -199,12 +147,8 @@ export function buildWorldAssetDetail(root, assetName, options = {}) {
     const reportData = readJsonIfExists(paths.reportPath);
     const impostorMetadataPath = paths.impostorOutputDir ? path.join(paths.impostorOutputDir, 'metadata.json') : null;
     const rawImpostorMetadata = impostorMetadataPath ? readJsonIfExists(impostorMetadataPath) : null;
-    const resolvedFraming = resolveImpostorFraming(rawImpostorMetadata);
     const impostorMetadata = rawImpostorMetadata
-        ? {
-            ...rawImpostorMetadata,
-            ...(resolvedFraming || {})
-        }
+        ? normalizeTreeImpostorMetadata(rawImpostorMetadata)
         : null;
 
     const files = {
