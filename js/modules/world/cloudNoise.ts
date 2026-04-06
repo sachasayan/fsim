@@ -28,18 +28,34 @@ function smoothstep(t) {
 function valueNoise2D(x, z, seed = 0) {
   const x0 = Math.floor(x);
   const z0 = Math.floor(z);
-  const x1 = x0 + 1;
-  const z1 = z0 + 1;
-  const tx = smoothstep(x - x0);
-  const tz = smoothstep(z - z0);
 
-  const n00 = hash2D(x0, z0, seed);
-  const n10 = hash2D(x1, z0, seed);
-  const n01 = hash2D(x0, z1, seed);
-  const n11 = hash2D(x1, z1, seed);
-  const nx0 = n00 * (1 - tx) + n10 * tx;
-  const nx1 = n01 * (1 - tx) + n11 * tx;
-  return nx0 * (1 - tz) + nx1 * tz;
+  const dx = x - x0;
+  const dz = z - z0;
+  const tx = dx * dx * (3 - 2 * dx);
+  const tz = dz * dz * (3 - 2 * dz);
+
+  // Precalculate repeated terms for hash2D to avoid redundant multiplications
+  const baseY = z0 * 311.7 + seed * 74.7;
+  const baseY1 = baseY + 311.7; // (z0 + 1) * 311.7 + seed * 74.7
+  const baseX = x0 * 127.1;
+  const baseX1 = baseX + 127.1; // (x0 + 1) * 127.1
+
+  const n00_val = Math.sin(baseX + baseY) * 43758.5453123;
+  const n00 = n00_val - Math.floor(n00_val);
+
+  const n10_val = Math.sin(baseX1 + baseY) * 43758.5453123;
+  const n10 = n10_val - Math.floor(n10_val);
+
+  const n01_val = Math.sin(baseX + baseY1) * 43758.5453123;
+  const n01 = n01_val - Math.floor(n01_val);
+
+  const n11_val = Math.sin(baseX1 + baseY1) * 43758.5453123;
+  const n11 = n11_val - Math.floor(n11_val);
+
+  // Optimized lerp: a + t * (b - a)
+  const nx0 = n00 + tx * (n10 - n00);
+  const nx1 = n01 + tx * (n11 - n01);
+  return nx0 + tz * (nx1 - nx0);
 }
 
 /**
