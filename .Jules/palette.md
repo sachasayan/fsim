@@ -1,0 +1,3 @@
+## 2024-04-06 - Accessible Canvas Elements
+**Learning:** `<canvas>` elements are inherently opaque to screen readers, meaning any graphical content or interaction rendered within them is completely hidden from assistive technologies out-of-the-box. Wrapping them in container `div`s does not provide the necessary semantic meaning.
+**Action:** When adding accessibility to WebGL/Three.js applications or custom 2D canvas interfaces, apply `role="img"` and a descriptive `aria-label` directly to the `<canvas>` element itself to provide context to screen reader users. Also use `role="group"` on parent container groups to provide navigation landmarks.
