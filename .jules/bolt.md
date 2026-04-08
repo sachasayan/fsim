@@ -1,0 +1,3 @@
+## 2024-04-08 - Function call and property access overhead in hot loops
+**Learning:** In highly mathematical hot loops like Perlin noise generation (e.g. `Noise.noise`), the V8 overhead of calling inner functions like `lerp` and `fade` and accessing array properties via the `this.` context (like `this.permutation`) adds up to significant latency.
+**Action:** Extract static data structures like look-up arrays (e.g., `new Uint8Array(512)`) into module-scoped constants, and manually inline trivial math functions (`fade`, `lerp`) into the hot loop body to skip function invocation limits and this-binding overhead, reducing execution time significantly.
