@@ -1,0 +1,3 @@
+## 2024-05-24 - Semantic Landmarks for Flight Dashboards
+**Learning:** In complex web-based simulator dashboards containing multiple sub-displays (like Primary Flight Displays, Navigation Displays, and telemetry panels), screen readers struggle to parse the relationship between the isolated visual regions without semantic grouping.
+**Action:** Use `role="group"` combined with descriptive `aria-label`s on the wrapper containers (e.g., `#dashboard`, `#nd`, `#eicas`) to create distinct, navigable semantic landmarks that help assistive technologies orient users to the specific dashboard section they are reading.
