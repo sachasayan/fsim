@@ -1,0 +1,3 @@
+## 2024-05-15 - Dashboard Navigation Landmarks
+**Learning:** Complex dashboard interfaces with multiple screen regions (e.g., flight simulator panels like ND or EICAS) benefit significantly from `role="group"` combined with descriptive `aria-label`s. Additionally, `<canvas>` elements are inherently opaque to screen readers, so they must have `role="img"` and an `aria-label` directly applied, as wrapping container `div`s lack the semantic meaning to resolve this out-of-the-box.
+**Action:** Always provide explicit semantic labels and roles for multi-panel dashboards and raw `<canvas>` elements to improve screen reader navigation.
