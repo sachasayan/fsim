@@ -1,0 +1,3 @@
+## 2024-03-24 - Improve Semantic Navigation for Complex Dashboards
+**Learning:** For complex dashboard interfaces (like ND or EICAS), use `role="group"` with an `aria-label` on wrapper divs to provide semantic navigation landmarks, and apply `role="img"` with an `aria-label` directly to `<canvas>` elements as they are inherently opaque to screen readers.
+**Action:** Always verify complex screens have landmarks and apply direct labeling to canvas elements.
