@@ -1,0 +1,3 @@
+## 2025-02-15 - Accessible Disabled Buttons with Radix Tooltips
+**Learning:** When using Radix UI Tooltips around custom buttons, disabled buttons with `pointer-events: none` will not trigger tooltips to show. This means users relying on screen readers won't get the context of what the button does when they navigate to it (if it could be focused) or explore the DOM, and visual users won't see the tooltip explanation.
+**Action:** Ensure the underlying native button element explicitly receives an `aria-label` (falling back to the `title` prop if available) so icon-only buttons remain accessible to screen readers even when disabled.
