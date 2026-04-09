@@ -1,7 +1,11 @@
 // @ts-check
 
+const P = new Uint8Array(512);
+
 export const Noise = {
-  permutation: new Uint8Array(512),
+  // Expose permutation for compatibility if anything reads it directly,
+  // but internally we use the hoisted P array for speed.
+  permutation: P,
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
@@ -14,7 +18,7 @@ export const Noise = {
       p[i] = p[rand];
       p[rand] = temp;
     }
-    for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
+    for (let i = 0; i < 512; i++) P[i] = p[i & 255];
   },
   fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
   lerp: (t, a, b) => a + t * (b - a),
@@ -25,6 +29,7 @@ export const Noise = {
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   },
   noise(x, y, z) {
+    // ⚡ Bolt: Use hoisted P array instead of this.permutation to avoid context lookup overhead
     let X = Math.floor(x) & 255;
     let Y = Math.floor(y) & 255;
     let Z = Math.floor(z) & 255;
@@ -34,27 +39,27 @@ export const Noise = {
     let u = this.fade(x);
     let v = this.fade(y);
     let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+    let A = P[X] + Y;
+    let AA = P[A] + Z;
+    let AB = P[A + 1] + Z;
+    let B = P[X + 1] + Y;
+    let BA = P[B] + Z;
+    let BB = P[B + 1] + Z;
 
     return this.lerp(
       w,
       this.lerp(
         v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
+        this.lerp(u, this.grad(P[AA], x, y, z), this.grad(P[BA], x - 1, y, z)),
+        this.lerp(u, this.grad(P[AB], x, y - 1, z), this.grad(P[BB], x - 1, y - 1, z))
       ),
       this.lerp(
         v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
+        this.lerp(u, this.grad(P[AA + 1], x, y, z - 1), this.grad(P[BA + 1], x - 1, y, z - 1)),
         this.lerp(
           u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
+          this.grad(P[AB + 1], x, y - 1, z - 1),
+          this.grad(P[BB + 1], x - 1, y - 1, z - 1)
         )
       )
     );
