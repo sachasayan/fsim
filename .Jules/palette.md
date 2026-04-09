@@ -1,0 +1,3 @@
+## 2024-03-30 - Dashboard Panel and Canvas Accessibility
+**Learning:** Canvas elements are inherently opaque to screen readers, and complex dashboard interfaces with multiple screen regions (like ND and EICAS in the flight simulator) need semantic navigation landmarks. Wrapping container `div`s lack necessary semantic meaning out-of-the-box.
+**Action:** Apply `role="img"` and descriptive `aria-label`s directly to `<canvas>` elements. Use `role="group"` combined with descriptive `aria-label`s on container `div`s for dashboard panels to provide clear navigation landmarks for assistive technologies.
