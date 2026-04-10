@@ -1,0 +1,3 @@
+## 2024-04-10 - Radix Tooltip Disabled Button Accessibility
+**Learning:** Radix UI Tooltips wrap trigger elements, but when the underlying native button is disabled (often causing `pointer-events: none`), the tooltip cannot capture hover or focus events. This leaves the button inaccessible to screen readers, especially if it relies on the tooltip for context (like icon-only buttons).
+**Action:** Ensure the underlying native button element explicitly receives an `aria-label` (falling back to the `title` prop if available) so icon-only buttons remain accessible to screen readers even when disabled.
