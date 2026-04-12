@@ -390,7 +390,8 @@ export function CommandButton({
     variant = 'secondary',
     className,
     disabled = false,
-    busy = false
+    busy = false,
+    ariaLabel
 }: ChildrenProp &
     ClassNameProp & {
         testId?: string;
@@ -400,6 +401,7 @@ export function CommandButton({
         variant?: 'default' | 'secondary' | 'accent' | 'danger' | 'ghost';
         disabled?: boolean;
         busy?: boolean;
+        ariaLabel?: string;
     }) {
     return (
         <Tooltip>
@@ -411,6 +413,7 @@ export function CommandButton({
                     data-testid={testId}
                     variant={variant}
                     className={cn('h-11 rounded-2xl px-4', className)}
+                    aria-label={ariaLabel || (typeof title === 'string' ? title : undefined)}
                 >
                     {busy ? <SpinnerIcon /> : iconPath ? <Icon path={iconPath} /> : null}
                     <span>{children}</span>
