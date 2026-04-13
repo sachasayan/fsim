@@ -28,6 +28,10 @@ export function createRendererManager({ container, scene, camera }) {
     renderer.toneMappingExposure = 0.85;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+    // A11y: WebGL canvas elements are opaque to screen readers.
+    renderer.domElement.setAttribute('role', 'img');
+    renderer.domElement.setAttribute('aria-label', 'Interactive 3D simulation view');
+
     if (container) {
         container.appendChild(renderer.domElement);
     }
