@@ -1,0 +1,3 @@
+## 2024-04-14 - WebGL Canvas Screen Reader Accessibility
+**Learning:** WebGL `<canvas>` elements are inherently opaque to screen readers. Adding a role of `img` and an `aria-label` directly to the `<canvas>` makes them recognizable as an image to screen readers. Because the primary simulation canvas is created dynamically via JavaScript (`WebGLRenderer`), these attributes must be applied programmatically before appending to the DOM, as standard wrapping `div`s lack the needed semantic meaning out-of-the-box.
+**Action:** Always ensure dynamically generated WebGL canvas elements are initialized with `role="img"` and a descriptive `aria-label` before appending them to the container.
