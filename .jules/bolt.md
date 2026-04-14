@@ -1,0 +1,3 @@
+## 2024-04-14 - Fast Math Operations in `Noise.ts`
+**Learning:** Moving arrays out of class properties to module-scope variables `const P = new Uint8Array(512)` and explicitly inlining math heavy operations such as `lerp`, `grad` and `fade` results in significant performance increase since it bypasses function call overhead in tight V8 loops.
+**Action:** When working on procedural generation mathematical functions, consider moving frequently accessed memory structs (like tables and arrays) out of object properties directly to module level `const` variables and fully inlining mathematical expressions like polynomials.
