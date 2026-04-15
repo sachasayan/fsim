@@ -1,7 +1,9 @@
 // @ts-check
 
+const P = new Uint8Array(512);
+
 export const Noise = {
-  permutation: new Uint8Array(512),
+  permutation: P,
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
@@ -14,7 +16,7 @@ export const Noise = {
       p[i] = p[rand];
       p[rand] = temp;
     }
-    for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
+    for (let i = 0; i < 512; i++) P[i] = p[i & 255];
   },
   fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
   lerp: (t, a, b) => a + t * (b - a),
@@ -24,6 +26,7 @@ export const Noise = {
     let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
     return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   },
+  // Inline fade, lerp, and grad for extreme performance in hot loops, eliminating 'this.' method dispatch overhead
   noise(x, y, z) {
     let X = Math.floor(x) & 255;
     let Y = Math.floor(y) & 255;
@@ -31,33 +34,77 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let A = P[X] + Y;
+    let AA = P[A] + Z;
+    let AB = P[A + 1] + Z;
+    let B = P[X + 1] + Y;
+    let BA = P[B] + Z;
+    let BB = P[B + 1] + Z;
+
+    let h, u_grad, v_grad;
+
+    h = P[AA] & 15;
+    u_grad = h < 8 ? x : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x : z;
+    let g_aa = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = P[BA] & 15;
+    let x1 = x - 1;
+    u_grad = h < 8 ? x1 : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x1 : z;
+    let g_ba = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    let l_v1 = g_aa + u * (g_ba - g_aa);
+
+    h = P[AB] & 15;
+    let y1 = y - 1;
+    u_grad = h < 8 ? x : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x : z;
+    let g_ab = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = P[BB] & 15;
+    u_grad = h < 8 ? x1 : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x1 : z;
+    let g_bb = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    let l_v2 = g_ab + u * (g_bb - g_ab);
+
+    let l_w1 = l_v1 + v * (l_v2 - l_v1);
+
+    let z1 = z - 1;
+
+    h = P[AA + 1] & 15;
+    u_grad = h < 8 ? x : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x : z1;
+    let g_aa1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = P[BA + 1] & 15;
+    u_grad = h < 8 ? x1 : y;
+    v_grad = h < 4 ? y : h === 12 || h === 14 ? x1 : z1;
+    let g_ba1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    let l_v3 = g_aa1 + u * (g_ba1 - g_aa1);
+
+    h = P[AB + 1] & 15;
+    u_grad = h < 8 ? x : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x : z1;
+    let g_ab1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    h = P[BB + 1] & 15;
+    u_grad = h < 8 ? x1 : y1;
+    v_grad = h < 4 ? y1 : h === 12 || h === 14 ? x1 : z1;
+    let g_bb1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    let l_v4 = g_ab1 + u * (g_bb1 - g_ab1);
+
+    let l_w2 = l_v3 + v * (l_v4 - l_v3);
+
+    return l_w1 + w * (l_w2 - l_w1);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {

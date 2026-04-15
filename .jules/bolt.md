@@ -1,0 +1,3 @@
+## 2024-04-15 - Clean Workspace
+**Learning:** Running `npm run build:world` regenerates world data artifacts resulting in massive diffs within `world/chunks/`. Ensure these changes are fully cleared using a command like `git checkout . && git clean -fd` before committing or requesting a code review, as `git restore world/` may leave behind untracked files or fail to reset the working tree completely. Also, temporary benchmark scripts must be explicitly deleted before code review.
+**Action:** Always run `git clean -fd` and `git checkout .` to scrub the workspace before asking for a review or submitting.
