@@ -229,6 +229,8 @@ export class ModelPreviewScene {
 
     initializeScene() {
         this.renderer.setSize(this.container.clientWidth || 800, this.container.clientHeight || 600, false);
+        this.renderer.domElement.setAttribute("role", "img");
+        this.renderer.domElement.setAttribute("aria-label", "3D Model Preview");
         this.container.appendChild(this.renderer.domElement);
         this.controls.enablePan = false;
         this.controls.enableDamping = true;
