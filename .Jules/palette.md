@@ -1,0 +1,3 @@
+## 2024-04-18 - Radix UI Tooltips and Disabled Tailwind Buttons
+**Learning:** Radix UI tooltips fail to trigger on elements that have `pointer-events: none` applied (which is a common pattern for disabled buttons in Tailwind, e.g., `disabled:pointer-events-none`). The tooltip relies on pointer events and keyboard focus, both of which are bypassed.
+**Action:** When using Tooltips on disabled interactive elements, wrap the button in a `span` with `tabIndex={disabled ? 0 : undefined}` and provide an `aria-label` to restore focusability and screen reader context for the disabled state explanation.
