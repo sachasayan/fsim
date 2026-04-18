@@ -403,18 +403,20 @@ export function CommandButton({
     }) {
     return (
         <Tooltip>
-            <TooltipTrigger>
-                <Button
-                    type="button"
-                    onClick={onClick}
-                    disabled={disabled}
-                    data-testid={testId}
-                    variant={variant}
-                    className={cn('h-11 rounded-2xl px-4', className)}
-                >
-                    {busy ? <SpinnerIcon /> : iconPath ? <Icon path={iconPath} /> : null}
-                    <span>{children}</span>
-                </Button>
+            <TooltipTrigger asChild>
+                <span tabIndex={disabled ? 0 : undefined} aria-label={typeof title === 'string' ? title : undefined}>
+                    <Button
+                        type="button"
+                        onClick={onClick}
+                        disabled={disabled}
+                        data-testid={testId}
+                        variant={variant}
+                        className={cn('h-11 rounded-2xl px-4', className)}
+                    >
+                        {busy ? <SpinnerIcon /> : iconPath ? <Icon path={iconPath} /> : null}
+                        <span>{children}</span>
+                    </Button>
+                </span>
             </TooltipTrigger>
             <TooltipContent>{title}</TooltipContent>
         </Tooltip>
