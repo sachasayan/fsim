@@ -1,0 +1,3 @@
+## 2025-05-18 - WebGL Canvas Accessibility
+**Learning:** Canvas elements are inherently opaque to screen readers. For WebGL/Three.js applications, applying `role="img"` and a descriptive `aria-label` directly to the `<canvas>` element itself (e.g., `renderer.domElement` in Three.js or statically in HTML) ensures they are semantically meaningful, rather than relying on wrapper `div`s which lack necessary semantic meaning.
+**Action:** When creating new canvas elements, either statically or dynamically via WebGL/Three.js, always explicitly add `role="img"` and an appropriate `aria-label` to make them accessible to screen readers.
