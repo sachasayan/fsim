@@ -1,5 +1,9 @@
 // @ts-check
 
+const gradX = new Float64Array([1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, 0, -1, 0]);
+const gradY = new Float64Array([1, 1, -1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1]);
+const gradZ = new Float64Array([0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 0, 1, 0, -1]);
+
 export const Noise = {
   permutation: new Uint8Array(512),
   init(seed = 12345) {
@@ -20,9 +24,7 @@ export const Noise = {
   lerp: (t, a, b) => a + t * (b - a),
   grad(hash, x, y, z) {
     let h = hash & 15;
-    let u = h < 8 ? x : y;
-    let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    return gradX[h] * x + gradY[h] * y + gradZ[h] * z;
   },
   noise(x, y, z) {
     let X = Math.floor(x) & 255;
