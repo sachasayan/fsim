@@ -1,0 +1,3 @@
+## 2024-06-25 - Noise performance optimization
+**Learning:** For performance-critical loops like noise generation, inlining calculations like bitwise gradient selections into pre-allocated flattened typed arrays provides significant speedup on V8 engines, compared to object method calls. Also, when acting on hot paths, do not expand mathematical simplifications if they result in precision losses that could break deterministic checks.
+**Action:** When optimizing procedural generation or heavily looped math logic, focus on removing method call overhead and pre-computing lookup tables into continuous memory buffers (like `Float64Array`) for the quickest possible access.
