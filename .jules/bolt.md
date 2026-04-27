@@ -1,0 +1,3 @@
+## 2024-04-27 - Performance optimization for Noise.fractal
+**Learning:** Precalculating intermediate grad hashes/values instead of function calls gives a massive speedup (~18% for Noise.fractal). Replacing Math.floor with bitwise `| 0` breaks for negative numbers, so it's not universally safe without a careful fallback. Moving property arrays (`this.permutation`) to an in-scope closure variable eliminates property access overhead in the hot loop.
+**Action:** When optimizing procedural generation math like Perlin Noise, inline operations, precalculate permutations and gradients manually in a flattened structure, and use an up-scoped variable for property access instead of `this` context.
