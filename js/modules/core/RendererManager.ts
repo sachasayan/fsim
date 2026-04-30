@@ -28,6 +28,10 @@ export function createRendererManager({ container, scene, camera }) {
     renderer.toneMappingExposure = 0.85;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+    // Accessibility for canvas
+    renderer.domElement.setAttribute('role', 'img');
+    renderer.domElement.setAttribute('aria-label', 'Interactive 3D Flight Simulator');
+
     if (container) {
         container.appendChild(renderer.domElement);
     }
