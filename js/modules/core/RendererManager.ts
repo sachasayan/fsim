@@ -28,6 +28,9 @@ export function createRendererManager({ container, scene, camera }) {
     renderer.toneMappingExposure = 0.85;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+    renderer.domElement.setAttribute('role', 'img');
+    renderer.domElement.setAttribute('aria-label', '3D Flight Simulator View');
+
     if (container) {
         container.appendChild(renderer.domElement);
     }
