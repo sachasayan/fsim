@@ -1,20 +1,23 @@
+
 // @ts-check
 
+const p = new Uint8Array(512);
+
 export const Noise = {
-  permutation: new Uint8Array(512),
+  permutation: p,
   init(seed = 12345) {
-    let p = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) p[i] = i;
+    let p_arr = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p_arr[i] = i;
 
     let s = seed;
     for (let i = 255; i > 0; i--) {
       s = Math.imul(1664525, s) + 1013904223 | 0;
       let rand = Math.floor((((s >>> 8) & 0xfffff) / 0x100000) * (i + 1));
-      let temp = p[i];
-      p[i] = p[rand];
-      p[rand] = temp;
+      let temp = p_arr[i];
+      p_arr[i] = p_arr[rand];
+      p_arr[rand] = temp;
     }
-    for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
+    for (let i = 0; i < 512; i++) p[i] = p_arr[i & 255];
   },
   fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
   lerp: (t, a, b) => a + t * (b - a),
@@ -31,33 +34,63 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    // Inlining fade
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let A = p[X] + Y;
+    let AA = p[A] + Z;
+    let AB = p[A + 1] + Z;
+    let B = p[X + 1] + Y;
+    let BA = p[B] + Z;
+    let BB = p[B + 1] + Z;
+
+    // Inlining grad and lerp for speed
+    let h, u_grad, v_grad;
+
+    // grad(p[AA], x, y, z)
+    h = p[AA] & 15; u_grad = h < 8 ? x : y; v_grad = h < 4 ? y : h === 12 || h === 14 ? x : z;
+    const gAA = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[BA], x - 1, y, z)
+    h = p[BA] & 15; u_grad = h < 8 ? (x - 1) : y; v_grad = h < 4 ? y : h === 12 || h === 14 ? (x - 1) : z;
+    const gBA = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[AB], x, y - 1, z)
+    h = p[AB] & 15; u_grad = h < 8 ? x : (y - 1); v_grad = h < 4 ? (y - 1) : h === 12 || h === 14 ? x : z;
+    const gAB = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[BB], x - 1, y - 1, z)
+    h = p[BB] & 15; u_grad = h < 8 ? (x - 1) : (y - 1); v_grad = h < 4 ? (y - 1) : h === 12 || h === 14 ? (x - 1) : z;
+    const gBB = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[AA + 1], x, y, z - 1)
+    h = p[AA + 1] & 15; u_grad = h < 8 ? x : y; v_grad = h < 4 ? y : h === 12 || h === 14 ? x : (z - 1);
+    const gAA1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[BA + 1], x - 1, y, z - 1)
+    h = p[BA + 1] & 15; u_grad = h < 8 ? (x - 1) : y; v_grad = h < 4 ? y : h === 12 || h === 14 ? (x - 1) : (z - 1);
+    const gBA1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[AB + 1], x, y - 1, z - 1)
+    h = p[AB + 1] & 15; u_grad = h < 8 ? x : (y - 1); v_grad = h < 4 ? (y - 1) : h === 12 || h === 14 ? x : (z - 1);
+    const gAB1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    // grad(p[BB + 1], x - 1, y - 1, z - 1)
+    h = p[BB + 1] & 15; u_grad = h < 8 ? (x - 1) : (y - 1); v_grad = h < 4 ? (y - 1) : h === 12 || h === 14 ? (x - 1) : (z - 1);
+    const gBB1 = ((h & 1) === 0 ? u_grad : -u_grad) + ((h & 2) === 0 ? v_grad : -v_grad);
+
+    const lerp1 = gAA + u * (gBA - gAA);
+    const lerp2 = gAB + u * (gBB - gAB);
+    const lerp3 = gAA1 + u * (gBA1 - gAA1);
+    const lerp4 = gAB1 + u * (gBB1 - gAB1);
+
+    const lerp5 = lerp1 + v * (lerp2 - lerp1);
+    const lerp6 = lerp3 + v * (lerp4 - lerp3);
+
+    return lerp5 + w * (lerp6 - lerp5);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {
