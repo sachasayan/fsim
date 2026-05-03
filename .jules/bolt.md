@@ -1,0 +1,3 @@
+## 2024-05-03 - Hoisting methods to module scope in inner loops
+**Learning:** In highly-executed paths like `Noise.fractal`, V8 performance degrades when referencing inner methods and properties via `this.*` bindings (e.g., `this.noise`, `this.permutation`). Extracting `fade`, `lerp`, `grad` functions and the `permutation` array to the module scope significantly reduces property-lookup overhead. Inlining simple functions like `fade` directly inside `noise` gives a noticeable boost.
+**Action:** When optimizing tight mathematical loops, prefer module-scoped variables and direct function calls instead of object property references.
