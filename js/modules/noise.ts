@@ -1,63 +1,78 @@
 // @ts-check
 
+const P = new Uint8Array(512);
+
+const grad = (hash, x, y, z) => {
+  let h = hash & 15;
+  let u = h < 8 ? x : y;
+  let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+  return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+};
+
 export const Noise = {
-  permutation: new Uint8Array(512),
+  permutation: P,
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
 
     let s = seed;
     for (let i = 255; i > 0; i--) {
-      s = Math.imul(1664525, s) + 1013904223 | 0;
+      s = (Math.imul(1664525, s) + 1013904223) | 0;
       let rand = Math.floor((((s >>> 8) & 0xfffff) / 0x100000) * (i + 1));
       let temp = p[i];
       p[i] = p[rand];
       p[rand] = temp;
     }
-    for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
+    for (let i = 0; i < 512; i++) P[i] = p[i & 255];
   },
   fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
   lerp: (t, a, b) => a + t * (b - a),
-  grad(hash, x, y, z) {
-    let h = hash & 15;
-    let u = h < 8 ? x : y;
-    let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  },
+  grad,
   noise(x, y, z) {
-    let X = Math.floor(x) & 255;
-    let Y = Math.floor(y) & 255;
-    let Z = Math.floor(z) & 255;
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+    let X0 = Math.floor(x);
+    let Y0 = Math.floor(y);
+    let Z0 = Math.floor(z);
+    let X = X0 & 255;
+    let Y = Y0 & 255;
+    let Z = Z0 & 255;
+    x -= X0;
+    y -= Y0;
+    z -= Z0;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    // Inline fade
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let A = P[X] + Y;
+    let AA = P[A] + Z;
+    let AB = P[A + 1] + Z;
+    let B = P[X + 1] + Y;
+    let BA = P[B] + Z;
+    let BB = P[B + 1] + Z;
+
+    // Inline lerp
+    let x1 = grad(P[AA], x, y, z);
+    let x2 = grad(P[BA], x - 1, y, z);
+    let y1 = x1 + u * (x2 - x1);
+
+    let x3 = grad(P[AB], x, y - 1, z);
+    let x4 = grad(P[BB], x - 1, y - 1, z);
+    let y2 = x3 + u * (x4 - x3);
+
+    let z1 = y1 + v * (y2 - y1);
+
+    let x5 = grad(P[AA + 1], x, y, z - 1);
+    let x6 = grad(P[BA + 1], x - 1, y, z - 1);
+    let y3 = x5 + u * (x6 - x5);
+
+    let x7 = grad(P[AB + 1], x, y - 1, z - 1);
+    let x8 = grad(P[BB + 1], x - 1, y - 1, z - 1);
+    let y4 = x7 + u * (x8 - x7);
+
+    let z2 = y3 + v * (y4 - y3);
+
+    return z1 + w * (z2 - z1);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {
@@ -86,7 +101,15 @@ export const Noise = {
         const n4 = this.noise(x * f, 0, z * f);
         f *= 2;
         const n5 = this.noise(x * f, 0, z * f);
-        return (n0 + n1 * 0.5 + n2 * 0.25 + n3 * 0.125 + n4 * 0.0625 + n5 * 0.03125) / 1.96875;
+        return (
+          (n0 +
+            n1 * 0.5 +
+            n2 * 0.25 +
+            n3 * 0.125 +
+            n4 * 0.0625 +
+            n5 * 0.03125) /
+          1.96875
+        );
       }
     }
 
@@ -101,7 +124,7 @@ export const Noise = {
       frequency *= 2;
     }
     return total / maxValue;
-  }
+  },
 };
 
 Noise.init();
