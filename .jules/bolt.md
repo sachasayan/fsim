@@ -1,0 +1,3 @@
+## 2024-05-18 - Fast Perlin Noise Grad Calculations
+**Learning:** Math.floor and bitwise operations aren't necessarily faster in V8 inner loops. The main bottleneck for the 3D perlin noise implementation was accessing variables out of `this` and repeating fade/lerp logic inside deeply nested function calls. Moving state out to module level bindings, avoiding `this`, and manually inlining mathematical fade calculations results in much higher JS engine optimization.
+**Action:** When optimizing hot tight loops, inline small math functions to prevent call stack overhead and extract class properties to module-scope constants.
