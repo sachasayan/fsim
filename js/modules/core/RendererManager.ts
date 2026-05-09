@@ -30,6 +30,9 @@ export function createRendererManager({ container, scene, camera }) {
 
     if (container) {
         container.appendChild(renderer.domElement);
+        // A11Y: Add role and label to the main flight sim canvas
+        renderer.domElement.setAttribute("role", "img");
+        renderer.domElement.setAttribute("aria-label", "Interactive 3D flight simulator view");
     }
 
     const postStack = createPostProcessingStack({
