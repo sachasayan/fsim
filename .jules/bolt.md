@@ -1,0 +1,3 @@
+## 2024-05-18 - Optimized Perlin Noise Generation
+**Learning:** Extracting array initialization and static math functions (like `fade`, `lerp`, `grad`) to module scope inside performance-critical mathematical modules (e.g., `noise.ts`) removes the `this` context binding overhead. This small micro-optimization on inner loops called hundreds of thousands of times per frame significantly reduces the execution time of procedural generation components without changing their outputs.
+**Action:** Always consider moving stateless math helpers and lookup arrays to module scope outside of classes or objects in hot inner loops, avoiding object property lookups entirely.
