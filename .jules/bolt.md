@@ -1,0 +1,3 @@
+## 2024-05-11 - Precalculate noise hashes inside noise.ts
+**Learning:** `noise.ts` operations are a significant bottleneck due to nested lookups in a hot loop. By extracting static arrays to module scope, caching method lookups, and manually inlining calculations like fade (`t * t * t * (t * (t * 6 - 15) + 10)`), we can improve performance significantly without losing bit-for-bit parity.
+**Action:** Always optimize procedural functions by moving static arrays/constants out of `this` scope, caching properties before the loop, and inlining small mathematical expressions directly into the return value, while preserving exact bit precision.

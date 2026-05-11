@@ -1,7 +1,9 @@
 // @ts-check
 
+const permutation = new Uint8Array(512);
+
 export const Noise = {
-  permutation: new Uint8Array(512),
+  permutation,
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
@@ -14,7 +16,7 @@ export const Noise = {
       p[i] = p[rand];
       p[rand] = temp;
     }
-    for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
+    for (let i = 0; i < 512; i++) permutation[i] = p[i & 255];
   },
   fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
   lerp: (t, a, b) => a + t * (b - a),
@@ -31,30 +33,43 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+
+    let u = x * x * x * (x * (x * 6 - 15) + 10);
+    let v = y * y * y * (y * (y * 6 - 15) + 10);
+    let w = z * z * z * (z * (z * 6 - 15) + 10);
+
+    let A = permutation[X] + Y;
+    let AA = permutation[A] + Z;
+    let AB = permutation[A + 1] + Z;
+    let B = permutation[X + 1] + Y;
+    let BA = permutation[B] + Z;
+    let BB = permutation[B + 1] + Z;
+
+    const gAA = permutation[AA];
+    const gBA = permutation[BA];
+    const gAB = permutation[AB];
+    const gBB = permutation[BB];
+    const gAA1 = permutation[AA + 1];
+    const gBA1 = permutation[BA + 1];
+    const gAB1 = permutation[AB + 1];
+    const gBB1 = permutation[BB + 1];
+
+    const grad = this.grad;
 
     return this.lerp(
       w,
       this.lerp(
         v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
+        this.lerp(u, grad(gAA, x, y, z), grad(gBA, x - 1, y, z)),
+        this.lerp(u, grad(gAB, x, y - 1, z), grad(gBB, x - 1, y - 1, z))
       ),
       this.lerp(
         v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
+        this.lerp(u, grad(gAA1, x, y, z - 1), grad(gBA1, x - 1, y, z - 1)),
         this.lerp(
           u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
+          grad(gAB1, x, y - 1, z - 1),
+          grad(gBB1, x - 1, y - 1, z - 1)
         )
       )
     );
