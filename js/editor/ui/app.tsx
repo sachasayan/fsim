@@ -90,7 +90,7 @@ export function EditorApp({
                             <ToolPalette store={store} currentTool={currentTool} toolDefs={toolDefs} />
                         </div>
                         <div id="canvas-container" className={`editor-canvas-container tool-${currentTool}`}>
-                            <canvas id="map-canvas" ref={canvasRef} data-testid="map-canvas" />
+                            <canvas id="map-canvas" ref={canvasRef} data-testid="map-canvas" role="img" aria-label="3D map editor view" />
                         </div>
                     </main>
 
