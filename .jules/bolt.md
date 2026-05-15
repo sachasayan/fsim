@@ -1,0 +1,3 @@
+## 2026-05-15 - Precalculating Noise Operations
+**Learning:** Precalculating all gradient lookups in `noise.ts` directly inline avoids the overhead of internal function calls like `fade` and `lerp` inside loops, drastically reducing time-per-call. Moving these and simplifying standard mathematical calculations inline has measurable impact in hot code paths.
+**Action:** In procedural generation logic that is executed millions of times, favor flattening formulas, minimizing function calls, manually unrolling short loops, and moving array lookups to top-level scoped references without changing functional output.
