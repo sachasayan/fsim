@@ -1,0 +1,3 @@
+## 2024-05-17 - Perlin Noise Context Optimization
+**Learning:** Moving static arrays and manually inlining heavily used simple helper functions (like `fade` and `lerp`) inside hot procedural generation loops completely avoids expensive object property lookups (`this.fade`, `this.lerp`) and function call overhead in V8.
+**Action:** When optimizing extremely hot mathematical inner loops (e.g., Perlin Noise), lift context-agnostic data out of the object entirely and manually expand the smallest atomic helper methods to raw math, provided readability is not significantly impacted and mathematical deterministic parity is strictly maintained.
