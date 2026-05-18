@@ -1,0 +1,3 @@
+## 2024-05-18 - Optimized Perlin Noise function by extracting arrays and inlining operations
+**Learning:** The noise function is an extremely hot path for procedural generation. While originally structured around helper functions (`lerp`, `grad`, `fade`), the overhead of those function calls inside nested loops (called hundreds of thousands of times) was non-negligible. Expanding operations manually inline and unrolling `grad` using constant typed array lookups significantly cut down execution time.
+**Action:** When working on procedural generation, especially on loops scaling with `O(n * octaves)`, prioritize memory O(1) lookups using Typed Arrays and manually inline basic math if performance benchmarks show a budget violation.
