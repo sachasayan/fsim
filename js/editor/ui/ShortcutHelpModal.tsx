@@ -3,6 +3,15 @@ import * as React from 'react';
 import type { EditorStore } from '../core/types.js';
 import { Button, HintCard, Icon, useStore } from './common';
 
+
+function Kbd({ children }: { children: React.ReactNode }) {
+    return (
+        <kbd className="inline-block px-1.5 py-0.5 mx-0.5 text-[11px] font-mono text-[color:var(--text)] bg-white/10 border border-white/20 rounded-md shadow-[inset_0_-1px_0_rgba(0,0,0,0.2)] align-middle">
+            {children}
+        </kbd>
+    );
+}
+
 export function ShortcutHelpButton({ store }: { store: EditorStore }) {
     const showHelp = useStore<boolean>(store, (state) => state.ui.showHelp);
 
@@ -73,13 +82,13 @@ export function ShortcutHelpModal({ store }: { store: EditorStore }) {
 
                 <div className="editor-modal-grid">
                     <HintCard tone="info">
-                        <p>Tools: V Select, A Airport, D District, O Object, W Road, T Region, E Poly Edit, R Raise, L Lower, F Flatten.</p>
+                        <p>Tools: <Kbd>V</Kbd> Select, <Kbd>A</Kbd> Airport, <Kbd>D</Kbd> District, <Kbd>O</Kbd> Object, <Kbd>W</Kbd> Road, <Kbd>T</Kbd> Region, <Kbd>E</Kbd> Poly Edit, <Kbd>R</Kbd> Raise, <Kbd>L</Kbd> Lower, <Kbd>F</Kbd> Flatten.</p>
                         <p>Terrain Regions: drag on the canvas with Region active to claim a rectangular group of tiles.</p>
                     </HintCard>
                     <HintCard>
-                        <p>History: Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y redo.</p>
-                        <p>Navigation: middle mouse pan, wheel zoom, F frame selection, 0 reset view, G toggle grid snap.</p>
-                        <p>Editing: arrows nudge, Shift arrows coarse nudge, Alt arrows fine nudge, Delete removes, Cmd/Ctrl+D duplicates.</p>
+                        <p>History: <Kbd>Cmd</Kbd>/<Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo, <Kbd>Cmd</Kbd>/<Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Z</Kbd> or <Kbd>Cmd</Kbd>/<Kbd>Ctrl</Kbd>+<Kbd>Y</Kbd> redo.</p>
+                        <p>Navigation: middle mouse pan, wheel zoom, <Kbd>F</Kbd> frame selection, <Kbd>0</Kbd> reset view, <Kbd>G</Kbd> toggle grid snap.</p>
+                        <p>Editing: <Kbd>arrows</Kbd> nudge, <Kbd>Shift</Kbd> <Kbd>arrows</Kbd> coarse nudge, <Kbd>Alt</Kbd> <Kbd>arrows</Kbd> fine nudge, <Kbd>Delete</Kbd> removes, <Kbd>Cmd</Kbd>/<Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> duplicates.</p>
                     </HintCard>
                 </div>
             </div>
