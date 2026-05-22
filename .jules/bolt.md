@@ -1,0 +1,3 @@
+## 2024-05-22 - Optimizing Math in Perlin Noise
+**Learning:** Manual mathematical unrolling and inlining of gradient and fading calculations for `Noise.noise()` significantly improves performance by reducing function call overhead in a highly recursive structure like fractal noise, all while maintaining absolute bit-for-bit parity by taking care around logical structures.
+**Action:** Always inline simple math computations like `fade` and `lerp` directly into the hot loop of noise generation, but ensure strict deterministic results by avoiding structural changes to operations like replacing `Math.floor()` with bitwise operations, since bitwise operators truncate to zero which breaks for negative numbers.
