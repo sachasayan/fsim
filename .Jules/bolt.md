@@ -1,0 +1,3 @@
+## 2025-05-28 - Optimizing Perlin Noise Generation Math
+**Learning:** In highly mathematical procedural generation modules like Perlin Noise, pre-calculating the `grad` logic into lookup arrays and expanding the loops/mathematical calls out into the main noise function can yield massive performance wins without breaking strict bit-for-bit equivalence in floating-point operations.
+**Action:** Always consider pre-computing repetitive inner-loop branching structures into `Float32Array` or similar Typed Arrays in O(1) time before optimizing standard engine operations. Ensure the deterministic math doesn't change due to the bitwise constraints of `Math.floor`.
