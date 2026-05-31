@@ -358,7 +358,7 @@ export function ToolButton({
 }) {
     return (
         <Tooltip>
-            <TooltipTrigger>
+            <TooltipTrigger asChild>
                 <Toggle
                     pressed={active}
                     onPressedChange={() => onClick()}
@@ -403,7 +403,7 @@ export function CommandButton({
     }) {
     return (
         <Tooltip>
-            <TooltipTrigger>
+            <TooltipTrigger asChild>
                 <Button
                     type="button"
                     onClick={onClick}

@@ -264,6 +264,8 @@ export function InspectorPanel({ store, controller }: { store: EditorStore; cont
                         variant="danger"
                         disabled={locked}
                         onClick={() => store.runCommand({ type: 'delete-entity', entityId: selectedId })}
+                        title="Delete selection"
+                        aria-label="Delete selection"
                     >
                         Delete Selected
                     </Button>
