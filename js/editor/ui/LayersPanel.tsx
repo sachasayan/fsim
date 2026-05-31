@@ -67,7 +67,7 @@ export function LayerVisibilityControls({
                 const layer = LAYER_DEFS[group.id];
                 return (
                     <Tooltip key={group.id}>
-                        <TooltipTrigger>
+                        <TooltipTrigger asChild>
                             <Toggle
                                 pressed={visible}
                                 onPressedChange={() => store.dispatch({ type: 'toggle-group-visible', groupId: group.id })}

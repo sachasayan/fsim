@@ -1,0 +1,3 @@
+## 2024-06-03 - TooltipTrigger nesting invalid buttons
+**Learning:** In Radix UI, the `<TooltipTrigger>` component renders a `<button>` by default. When wrapping custom UI components like `<Button>` or `<Toggle>` that already render interactive `<button>` elements, this results in an invalid HTML structure (nested buttons) which breaks keyboard focus and screen reader announcements.
+**Action:** Always add the `asChild` prop to `<TooltipTrigger>` when wrapping existing interactive components so the tooltip semantics and event listeners are forwarded directly to the child instead of creating a wrapper element.
