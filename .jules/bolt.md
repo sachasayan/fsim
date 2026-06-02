@@ -1,0 +1,3 @@
+## 2024-06-02 - Inline noise helpers
+**Learning:** Extracting out pure functions to constants and unnesting functions calls in hot path mathematical algorithms provides significant performance boosts. Inlining the helper mathematical functions also prevents the extra lookup, and removing the context variable (`this`) lookup allows for better garbage collection and static analysis inside V8 engines. `cloudNoise.ts` noise evaluation speeds up similarly.
+**Action:** Un-nest functions and explicitly expand small algebraic combinations to variables to increase parsing speeds. Avoid relying heavily on nested calls in deterministic map generation features.
