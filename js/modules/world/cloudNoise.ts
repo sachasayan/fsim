@@ -30,15 +30,23 @@ function valueNoise2D(x, z, seed = 0) {
   const z0 = Math.floor(z);
   const x1 = x0 + 1;
   const z1 = z0 + 1;
-  const tx = smoothstep(x - x0);
-  const tz = smoothstep(z - z0);
+  // Inlined smoothstep formula: t * t * (3 - 2 * t) to save function call overhead
+  const tx = (x - x0) * (x - x0) * (3 - 2 * (x - x0));
+  const tz = (z - z0) * (z - z0) * (3 - 2 * (z - z0));
 
-  const n00 = hash2D(x0, z0, seed);
-  const n10 = hash2D(x1, z0, seed);
-  const n01 = hash2D(x0, z1, seed);
-  const n11 = hash2D(x1, z1, seed);
-  const nx0 = n00 * (1 - tx) + n10 * tx;
-  const nx1 = n01 * (1 - tx) + n11 * tx;
+  // Inlined hash2D calculation to eliminate recursive nested calls inside tight loop
+  const n00 = Math.sin(x0 * 127.1 + z0 * 311.7 + seed * 74.7) * 43758.5453123;
+  const n10 = Math.sin(x1 * 127.1 + z0 * 311.7 + seed * 74.7) * 43758.5453123;
+  const n01 = Math.sin(x0 * 127.1 + z1 * 311.7 + seed * 74.7) * 43758.5453123;
+  const n11 = Math.sin(x1 * 127.1 + z1 * 311.7 + seed * 74.7) * 43758.5453123;
+
+  const f00 = n00 - Math.floor(n00);
+  const f10 = n10 - Math.floor(n10);
+  const f01 = n01 - Math.floor(n01);
+  const f11 = n11 - Math.floor(n11);
+
+  const nx0 = f00 * (1 - tx) + f10 * tx;
+  const nx1 = f01 * (1 - tx) + f11 * tx;
   return nx0 * (1 - tz) + nx1 * tz;
 }
 
@@ -58,7 +66,8 @@ function fbm2D(x, z, octaves, lacunarity, gain, seed = 0) {
   let norm = 0;
 
   for (let i = 0; i < octaves; i++) {
-    sum += valueNoise2D(x * frequency, z * frequency, seed + i * 17) * amplitude;
+    sum +=
+      valueNoise2D(x * frequency, z * frequency, seed + i * 17) * amplitude;
     norm += amplitude;
     frequency *= lacunarity;
     amplitude *= gain;
@@ -71,5 +80,5 @@ export const CLOUD_NOISE = {
   hash2D,
   smoothstep,
   valueNoise2D,
-  fbm2D
+  fbm2D,
 };
