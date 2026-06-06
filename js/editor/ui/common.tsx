@@ -245,6 +245,7 @@ export function NumberInputField({
         <FieldRow label={label}>
             <Input
                 type="number"
+                aria-label={label}
                 disabled={disabled}
                 value={value ?? 0}
                 onChange={onChange}
@@ -277,7 +278,7 @@ export function SelectField({
     return (
         <FieldRow label={label}>
             <Select value={String(value)} onValueChange={onChange} disabled={disabled}>
-                <SelectTrigger data-testid={testId}>
+                <SelectTrigger data-testid={testId} aria-label={typeof label === 'string' ? label : undefined}>
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -327,6 +328,7 @@ export function RangeNumberField({
                 />
                 <Input
                     type="number"
+                    aria-label={label}
                     min={min}
                     max={max}
                     step={step}
@@ -408,6 +410,7 @@ export function CommandButton({
                     type="button"
                     onClick={onClick}
                     disabled={disabled}
+                    aria-busy={busy}
                     data-testid={testId}
                     variant={variant}
                     className={cn('h-11 rounded-2xl px-4', className)}
