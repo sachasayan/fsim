@@ -1,7 +1,18 @@
 // @ts-check
 
+const P = new Uint8Array(512);
+
+const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+const lerp = (t, a, b) => a + t * (b - a);
+const grad = (hash, x, y, z) => {
+  let h = hash & 15;
+  let u = h < 8 ? x : y;
+  let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+  return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+};
+
 export const Noise = {
-  permutation: new Uint8Array(512),
+  permutation: P,
   init(seed = 12345) {
     let p = new Uint8Array(256);
     for (let i = 0; i < 256; i++) p[i] = i;
@@ -14,16 +25,11 @@ export const Noise = {
       p[i] = p[rand];
       p[rand] = temp;
     }
-    for (let i = 0; i < 512; i++) this.permutation[i] = p[i & 255];
+    for (let i = 0; i < 512; i++) P[i] = p[i & 255];
   },
-  fade: (t) => t * t * t * (t * (t * 6 - 15) + 10),
-  lerp: (t, a, b) => a + t * (b - a),
-  grad(hash, x, y, z) {
-    let h = hash & 15;
-    let u = h < 8 ? x : y;
-    let v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  },
+  fade,
+  lerp,
+  grad,
   noise(x, y, z) {
     let X = Math.floor(x) & 255;
     let Y = Math.floor(y) & 255;
@@ -31,33 +37,39 @@ export const Noise = {
     x -= Math.floor(x);
     y -= Math.floor(y);
     z -= Math.floor(z);
-    let u = this.fade(x);
-    let v = this.fade(y);
-    let w = this.fade(z);
-    let A = this.permutation[X] + Y;
-    let AA = this.permutation[A] + Z;
-    let AB = this.permutation[A + 1] + Z;
-    let B = this.permutation[X + 1] + Y;
-    let BA = this.permutation[B] + Z;
-    let BB = this.permutation[B + 1] + Z;
+    let u = fade(x);
+    let v = fade(y);
+    let w = fade(z);
+    let A = P[X] + Y;
+    let AA = P[A] + Z;
+    let AB = P[A + 1] + Z;
+    let B = P[X + 1] + Y;
+    let BA = P[B] + Z;
+    let BB = P[B + 1] + Z;
 
-    return this.lerp(
-      w,
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA], x, y, z), this.grad(this.permutation[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.permutation[AB], x, y - 1, z), this.grad(this.permutation[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(
-        v,
-        this.lerp(u, this.grad(this.permutation[AA + 1], x, y, z - 1), this.grad(this.permutation[BA + 1], x - 1, y, z - 1)),
-        this.lerp(
-          u,
-          this.grad(this.permutation[AB + 1], x, y - 1, z - 1),
-          this.grad(this.permutation[BB + 1], x - 1, y - 1, z - 1)
-        )
-      )
-    );
+    const x1 = x - 1;
+    const y1 = y - 1;
+    const z1 = z - 1;
+
+    const gAA = grad(P[AA], x, y, z);
+    const gBA = grad(P[BA], x1, y, z);
+    const gAB = grad(P[AB], x, y1, z);
+    const gBB = grad(P[BB], x1, y1, z);
+
+    const gAA1 = grad(P[AA + 1], x, y, z1);
+    const gBA1 = grad(P[BA + 1], x1, y, z1);
+    const gAB1 = grad(P[AB + 1], x, y1, z1);
+    const gBB1 = grad(P[BB + 1], x1, y1, z1);
+
+    const l1 = gAA + u * (gBA - gAA);
+    const l2 = gAB + u * (gBB - gAB);
+    const l3 = gAA1 + u * (gBA1 - gAA1);
+    const l4 = gAB1 + u * (gBB1 - gAB1);
+
+    const l5 = l1 + v * (l2 - l1);
+    const l6 = l3 + v * (l4 - l3);
+
+    return l5 + w * (l6 - l5);
   },
   fractal(x, z, octaves, persistence, scale) {
     if (persistence === 0.5) {

@@ -1,0 +1,3 @@
+## 2024-06-07 - Optimization limits of Perlin Noise in V8
+**Learning:** V8 object property lookups (`this.fade`, `this.lerp`, `this.permutation`) are a significant bottleneck in mathematically dense hot loops like procedural noise generation. While extracting variables to module scope and un-nesting deep function calls yielded a ~25% speedup, attempting to inline mathematical operations (like expanding `fade` or `lerp` directly into the loop) actually *degraded* performance by ~20%.
+**Action:** Prioritize lexical scoping and un-nesting over manual math inlining when optimizing hot paths in modern JS engines, as manual inlining can disrupt the engine's built-in JIT optimization heuristics.
