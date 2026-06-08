@@ -107,7 +107,7 @@ export function InspectorPanel({ store, controller }: { store: EditorStore; cont
         >
             <div className="editor-form-stack">
                 <FieldRow label="ID">
-                    <Input type="text" readOnly value={getEntityLabel(document, selectedId)} data-testid="field-id" />
+                    <Input type="text" readOnly value={getEntityLabel(document, selectedId)} aria-label="ID" data-testid="field-id" />
                 </FieldRow>
 
                 {isTerrainRegion(selected) ? (
@@ -180,7 +180,7 @@ export function InspectorPanel({ store, controller }: { store: EditorStore; cont
                 {isTerrainEdit(selected) ? (
                     <>
                         <FieldRow label="Brush Kind">
-                            <Input type="text" readOnly value={selected.kind} />
+                            <Input type="text" readOnly value={selected.kind} aria-label="Brush Kind" />
                         </FieldRow>
                         <RangeNumberField label="Radius" value={selected.radius} min={50} max={2000} step={10} disabled={locked} onChange={(value) => updateProperty('radius', value)} />
                         {selected.kind !== 'flatten' ? (
@@ -197,7 +197,7 @@ export function InspectorPanel({ store, controller }: { store: EditorStore; cont
                 {isAirport(selected) ? (
                     <>
                         <FieldRow label="Template">
-                            <Input type="text" readOnly value={selected.template || 'default'} data-testid="field-airport-template" />
+                            <Input type="text" readOnly value={selected.template || 'default'} aria-label="Template" data-testid="field-airport-template" />
                         </FieldRow>
                         <RangeNumberField label="Yaw (deg)" value={selected.yaw || 0} min={-180} max={180} step={1} disabled={locked} onChange={(value) => updateProperty('yaw', value)} />
                     </>
