@@ -1,0 +1,3 @@
+## 2024-06-09 - Extracted nested math operations and array lookups into explicit variables
+**Learning:** In the `Noise.noise` function, un-nesting deep `lerp` and `grad` calls and storing `permutation` lookups in explicit local variables noticeably reduced execution time from ~127ms to ~107ms on the `Noise.fractal` performance suite. V8 appears to optimize the simplified arithmetic and localized variable scope better than the deeply nested function calls and repeated array lookups.
+**Action:** Always favor explicit local variables over nested function calls and repeated array access in hot loops.
