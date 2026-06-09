@@ -1,0 +1,3 @@
+## 2024-05-17 - Missing ARIA Labels in Input wrappers
+**Learning:** The custom `FieldRow` component layout pattern in this app's design system relies on a generic `<label>` that doesn't use `htmlFor`, and its children do not get `id` bindings. This causes the internal input controls (`<Input>`, `<SelectTrigger>`, etc.) to lose their accessible names for screen readers.
+**Action:** When creating wrapper components over primitives (like `NumberInputField`, `RangeNumberField`, `SelectField`), explicitly pass down the incoming label string as an `aria-label` to the internal interactive element (e.g., `<Input aria-label={label}>` or `<SelectTrigger aria-label={typeof label === 'string' ? label : 'Select option'}>`) to ensure screen reader accessibility.
