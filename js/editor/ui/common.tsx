@@ -249,6 +249,7 @@ export function NumberInputField({
                 value={value ?? 0}
                 onChange={onChange}
                 data-testid={testId || numberFieldTestId(label)}
+                aria-label={label}
             />
         </FieldRow>
     );
@@ -274,10 +275,11 @@ export function SelectField({
     disabled?: boolean;
     testId?: string;
 }) {
+    const ariaLabel = typeof label === 'string' ? label : undefined;
     return (
         <FieldRow label={label}>
             <Select value={String(value)} onValueChange={onChange} disabled={disabled}>
-                <SelectTrigger data-testid={testId}>
+                <SelectTrigger data-testid={testId} aria-label={ariaLabel}>
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -334,6 +336,7 @@ export function RangeNumberField({
                     value={safeValue}
                     onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(Number(event.target.value))}
                     data-testid={`${baseTestId}-number`}
+                    aria-label={`${label} input`}
                 />
             </div>
         </FieldRow>

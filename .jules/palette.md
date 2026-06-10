@@ -1,0 +1,3 @@
+## 2024-05-24 - FieldRow Accessibility Issue
+**Learning:** The `FieldRow` component layout lacks native `htmlFor`/`id` bindings for its inner inputs. Therefore, placing interactive components (like `<Input>` or `<SelectTrigger>`) inside `<FieldRow>` requires explicitly passing an `aria-label` to them to ensure screen reader accessibility.
+**Action:** Always add an explicit `aria-label` (derived from the field label) to interactive components nested inside generic layout wrappers like `<FieldRow>`.
