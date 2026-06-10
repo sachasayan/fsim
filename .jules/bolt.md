@@ -1,0 +1,3 @@
+## 2024-06-10 - Perlin Noise inner loop static bindings
+**Learning:** Extracting inner loop helper functions (`fade`, `lerp`, `grad`) and large lookup tables (`permutation`) from an object's prototype into module-scoped variables drastically speeds up execution in hot loops by eliminating `this.*` context lookup overhead in V8. However, fully inlining complex mathematical expressions didn't yield significant extra performance and hurts readability, so simple extraction of helper functions is the sweet spot.
+**Action:** When optimizing tight mathematical loops, move constants and pure helper functions out of the object scope to local module scope to skip property lookups without sacrificing readability.
