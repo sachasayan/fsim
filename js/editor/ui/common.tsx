@@ -249,6 +249,7 @@ export function NumberInputField({
                 value={value ?? 0}
                 onChange={onChange}
                 data-testid={testId || numberFieldTestId(label)}
+                aria-label={typeof label === 'string' ? label : undefined}
             />
         </FieldRow>
     );
@@ -277,7 +278,7 @@ export function SelectField({
     return (
         <FieldRow label={label}>
             <Select value={String(value)} onValueChange={onChange} disabled={disabled}>
-                <SelectTrigger data-testid={testId}>
+                <SelectTrigger data-testid={testId} aria-label={typeof label === 'string' ? label : undefined}>
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -323,7 +324,7 @@ export function RangeNumberField({
                     onValueChange={(next: number[]) => onChange(Number(next[0]))}
                     data-testid={`${baseTestId}-slider`}
                     thumbTestId={`${baseTestId}-slider-thumb`}
-                    thumbAriaLabel={label}
+                    thumbAriaLabel={typeof label === 'string' ? label : undefined}
                 />
                 <Input
                     type="number"
@@ -334,6 +335,7 @@ export function RangeNumberField({
                     value={safeValue}
                     onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(Number(event.target.value))}
                     data-testid={`${baseTestId}-number`}
+                    aria-label={typeof label === 'string' ? label : undefined}
                 />
             </div>
         </FieldRow>
