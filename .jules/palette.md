@@ -1,0 +1,3 @@
+## 2024-06-13 - FieldRow Input Accessibility
+**Learning:** In this codebase, the `FieldRow` layout component lacks `htmlFor`/`id` bindings for its child inputs. When placing interactive components (like `<Input>` or `<SelectTrigger>`) inside `<FieldRow>`, screen readers may not be able to announce the label correctly.
+**Action:** Explicitly pass an `aria-label` to the interactive child element (e.g., input, select trigger) to ensure screen reader accessibility. Conditionally pass the `label` prop as `aria-label={typeof label === 'string' ? label : undefined}` if the label might be a ReactNode.
