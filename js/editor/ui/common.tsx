@@ -221,6 +221,7 @@ export function CheckboxField({
                     checked={checked === true}
                     disabled={disabled}
                     onChange={(event) => onCheckedChange(event.target.checked)}
+                    aria-label={typeof label === 'string' ? label : undefined}
                 />
                 <span>{label}</span>
             </label>
@@ -249,6 +250,7 @@ export function NumberInputField({
                 value={value ?? 0}
                 onChange={onChange}
                 data-testid={testId || numberFieldTestId(label)}
+                aria-label={label}
             />
         </FieldRow>
     );
@@ -277,7 +279,7 @@ export function SelectField({
     return (
         <FieldRow label={label}>
             <Select value={String(value)} onValueChange={onChange} disabled={disabled}>
-                <SelectTrigger data-testid={testId}>
+                <SelectTrigger data-testid={testId} aria-label={typeof label === 'string' ? label : undefined}>
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -334,6 +336,7 @@ export function RangeNumberField({
                     value={safeValue}
                     onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(Number(event.target.value))}
                     data-testid={`${baseTestId}-number`}
+                    aria-label={label}
                 />
             </div>
         </FieldRow>
