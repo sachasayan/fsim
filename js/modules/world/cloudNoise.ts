@@ -30,16 +30,30 @@ function valueNoise2D(x, z, seed = 0) {
   const z0 = Math.floor(z);
   const x1 = x0 + 1;
   const z1 = z0 + 1;
-  const tx = smoothstep(x - x0);
-  const tz = smoothstep(z - z0);
 
-  const n00 = hash2D(x0, z0, seed);
-  const n10 = hash2D(x1, z0, seed);
-  const n01 = hash2D(x0, z1, seed);
-  const n11 = hash2D(x1, z1, seed);
-  const nx0 = n00 * (1 - tx) + n10 * tx;
-  const nx1 = n01 * (1 - tx) + n11 * tx;
-  return nx0 * (1 - tz) + nx1 * tz;
+  const dx = x - x0;
+  const dz = z - z0;
+  const tx = dx * dx * (3 - 2 * dx);
+  const tz = dz * dz * (3 - 2 * dz);
+
+  const s = seed * 74.7;
+  const s_x0 = x0 * 127.1 + s;
+  const s_x1 = x1 * 127.1 + s;
+  const z0_m = z0 * 311.7;
+  const z1_m = z1 * 311.7;
+
+  let n = Math.sin(s_x0 + z0_m) * 43758.5453123;
+  const h00 = n - Math.floor(n);
+  n = Math.sin(s_x1 + z0_m) * 43758.5453123;
+  const h10 = n - Math.floor(n);
+  n = Math.sin(s_x0 + z1_m) * 43758.5453123;
+  const h01 = n - Math.floor(n);
+  n = Math.sin(s_x1 + z1_m) * 43758.5453123;
+  const h11 = n - Math.floor(n);
+
+  const nx0 = h00 + (h10 - h00) * tx;
+  const nx1 = h01 + (h11 - h01) * tx;
+  return nx0 + (nx1 - nx0) * tz;
 }
 
 /**
